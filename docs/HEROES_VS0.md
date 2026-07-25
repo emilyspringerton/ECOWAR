@@ -493,6 +493,24 @@ or magical one — the roster's own honesty about who actually gets credited.
 
 ---
 
+### Vassago, the Soft Foresight (TYLER `multiverse_heroes.md` #16, "Vassago") — **Support/Diviner** (S170-93)
+
+Founder, same rapid batch as Gunnr (S170-93): "add vassago." Not just a lore entry — real TYLER
+canon: the Eastwind Owls' whole working frequency (11.11 Hz) is his, named directly in
+`TYLER/CLAUDE.md`'s own Goetia frequency table. "Reveal the gentle maybe" is his seed phrase —
+foresight that arrives soft, not declared boldly.
+
+- **Passive — The Frequency**: a small, always-on HP regen, same shape as Dagda's Undry —
+  ambient restorative foresight, sensing and softening harm before it fully lands.
+- **Q — Reveal the Gentle Maybe**: a ranged bolt, damage + silence, same shape as Ghost's Q —
+  foresight cuts off the enemy's next intended action before they take it.
+- **W — The Soft Foresight**: grants the nearest ally `next_cast_refund`, same mechanic as Frog's
+  Borrowed Time — the foresight extended outward, a teammate's next cast comes free.
+- **R — The Gentle Maybe**: a fixed zone, silence-only, no damage at all — the one hero on this
+  roster whose ultimate is pure control. Not a hit. A held breath.
+
+---
+
 ## Starting Item Roster (VS0)
 
 LoL Season 3 is the explicit stylistic northstar here — not its item *names*, its item *stat-line

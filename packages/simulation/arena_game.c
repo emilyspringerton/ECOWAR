@@ -1234,6 +1234,17 @@ static int gunnr_cast_q(ArenaHero *gunnr, ArenaHero *foe) {
     return 1;
 }
 
+/* vassago_cast_q: Reveal the Gentle Maybe -- a ranged bolt, damage + silence, same shape as
+ * Ghost's Q. Returns 1 if it landed. */
+static int vassago_cast_q(ArenaHero *vassago, ArenaHero *foe) {
+    if (!hero_is_hittable(foe)) return 0;
+    float dx = foe->x - vassago->x, dz = foe->z - vassago->z;
+    if (sqrtf(dx * dx + dz * dz) > ARENA_VASSAGO_Q_RANGE) return 0;
+    apply_damage(foe, apply_armor(ARENA_VASSAGO_Q_DAMAGE, arena_hero_armor(foe)));
+    foe->silenced_ms = ARENA_VASSAGO_Q_SILENCE_MS;
+    return 1;
+}
+
 void arena_cast_q(int owner) {
     if (owner < 0 || owner >= ARENA_MAX_HEROES) return;
     ArenaHero *h = &arena_state.heroes[owner];
@@ -1353,6 +1364,11 @@ void arena_cast_q(int owner) {
     case ARENA_HERO_GUNNR:
         if (gunnr_cast_q(h, foe)) {
             h->q_cooldown_ms = cast_cooldown(h, ARENA_GUNNR_Q_COOLDOWN_MS);
+        }
+        break;
+    case ARENA_HERO_VASSAGO:
+        if (vassago_cast_q(h, foe)) {
+            h->q_cooldown_ms = cast_cooldown(h, ARENA_VASSAGO_Q_COOLDOWN_MS);
         }
         break;
     }
@@ -1506,6 +1522,18 @@ void arena_toggle_w(int owner) {
            directly for the regen, same shape as Flute Debt's Recouping Interest. */
         h->w_active = !h->w_active;
         break;
+    case ARENA_HERO_VASSAGO: {
+        /* The Soft Foresight, extended: grants the nearest ally next_cast_refund, same
+           mechanic as Frog's Borrowed Time. No-op, cooldown not consumed, with no living
+           ally to target (1v1 local demo). */
+        if (h->w_cooldown_ms > 0) return;
+        ArenaHero *ally = arena_nearest_ally(owner);
+        if (ally && ally->alive) {
+            ally->next_cast_refund = 1;
+            h->w_cooldown_ms = cast_cooldown(h, ARENA_VASSAGO_W_COOLDOWN_MS);
+        }
+        break;
+    }
     default:
         /* No-op for any hero without a real W in this arena, not a crash
            or a silent wrong kit: Duck's W (Government Clearance) needs
@@ -1709,6 +1737,16 @@ void arena_cast_r(int owner) {
         }
         h->r_cooldown_ms = cast_cooldown(h, ARENA_GUNNR_R_COOLDOWN_MS);
         break;
+    case ARENA_HERO_VASSAGO:
+        /* The Gentle Maybe: fixed zone, same shape as Ghost's Recital/Paimon's Two Hundred
+           Legions -- see tick_hero_kit's zone tick below. No damage component at all, the
+           one hero on this roster whose ultimate is pure control: not a hit, a held breath. */
+        h->r_zone_x = h->x;
+        h->r_zone_z = h->z;
+        h->r_zone_tick_ms = 0;
+        h->r_active_ms = ARENA_VASSAGO_R_DURATION_MS;
+        h->r_cooldown_ms = cast_cooldown(h, ARENA_VASSAGO_R_COOLDOWN_MS);
+        break;
     }
 }
 
@@ -1911,6 +1949,32 @@ static void tick_hero_kit(ArenaHero *h, ArenaHero *foe, ArenaHero *ally, unsigne
             float regen = ARENA_GUNNR_W_REGEN_PER_SEC * ((float)dt_ms / 1000.0f);
             h->hp += (int)regen;
             if (h->hp > h->max_hp) h->hp = h->max_hp;
+        }
+        break;
+    case ARENA_HERO_VASSAGO:
+        /* Passive: same always-on regen shape as Dagda's Undry -- ambient restorative
+           foresight, sensing and softening harm before it fully lands. */
+        if (h->alive) {
+            float regen = ARENA_VASSAGO_PASSIVE_REGEN_PER_SEC * ((float)dt_ms / 1000.0f);
+            h->hp += (int)regen;
+            if (h->hp > h->max_hp) h->hp = h->max_hp;
+        }
+        /* The Gentle Maybe: fixed zone, silence-only tick, no damage -- re-applies the
+           silence to any foe still standing in it, so leaving and re-entering is the
+           only way out, same "you're in it or you're not" logic every other zone uses. */
+        if (h->r_active_ms > 0) {
+            h->r_active_ms -= (int)dt_ms;
+            if (h->r_active_ms < 0) h->r_active_ms = 0;
+            h->r_zone_tick_ms += (int)dt_ms;
+            while (h->r_zone_tick_ms >= 1000) {
+                h->r_zone_tick_ms -= 1000;
+                if (foe && hero_is_hittable(foe)) {
+                    float dx = foe->x - h->r_zone_x, dz = foe->z - h->r_zone_z;
+                    if (sqrtf(dx * dx + dz * dz) <= ARENA_VASSAGO_R_RADIUS) {
+                        foe->silenced_ms = ARENA_VASSAGO_R_SILENCE_MS;
+                    }
+                }
+            }
         }
         break;
     case ARENA_HERO_TYLER:
@@ -2230,6 +2294,17 @@ static void bot_cast_kit_if_ready(ArenaHero *bot, ArenaHero *foe) {
         } else if (bot->q_cooldown_ms <= 0 && dist <= ARENA_GUNNR_Q_RANGE) {
             arena_cast_q(bot->owner);
         } else if (bot->r_cooldown_ms <= 0 && dist <= ARENA_GUNNR_R_RANGE) {
+            arena_cast_r(bot->owner);
+        }
+        break;
+    case ARENA_HERO_VASSAGO:
+        /* W is ally-targeted -- no useful action in the 1v1 local demo's bot
+           heuristic (no ally present), same reasoning as Doc Wheel/Flamel's
+           own W above. Q whenever in range and off cooldown, R when the foe
+           is close enough for the zone to matter. */
+        if (bot->q_cooldown_ms <= 0 && dist <= ARENA_VASSAGO_Q_RANGE) {
+            arena_cast_q(bot->owner);
+        } else if (bot->r_cooldown_ms <= 0 && dist <= ARENA_VASSAGO_R_RADIUS) {
             arena_cast_r(bot->owner);
         }
         break;

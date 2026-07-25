@@ -1,5 +1,28 @@
 # Changelog
 
+## 2026-07-25 (25)
+
+- feat(arena): Vassago, 23rd hero — Support/Diviner (S170-93). Second hero shipped from the
+  batched "next wave" backlog entry. Vassago is real TYLER canon, not just a lore entry — the
+  Eastwind Owls' whole working frequency (11.11 Hz) is his, named directly in `TYLER/CLAUDE.md`'s
+  own Goetia frequency table. Passive small HP regen (Dagda's Undry shape), Q a ranged
+  damage+silence bolt (Ghost's Q shape), W grants the nearest ally `next_cast_refund` (Frog's
+  Borrowed Time mechanic — the first hero on this roster to make that ability its own primary W,
+  not incidental), R a fixed zone that's silence-only with **no damage component at all** — the
+  first purely-control ultimate on the roster, every prior zone (Ghost/Flamel/Morrigan/Paimon/
+  NOOR-1) deals damage. `ARENA_HERO_COUNT` 22 → 23.
+
+  Found and fixed a real design issue while writing the R-zone test: the first-draft silence
+  duration (900ms) was shorter than the zone's own 1000ms re-application tick, which would have
+  left real gaps where a continuously-standing enemy isn't actually silenced between ticks —
+  caught by comparing against Flamel's own proven `ARENA_FLAMEL_R_ROOT_MS` (1200ms, deliberately
+  longer than its 1000ms tick), same margin now applied here.
+
+  6 new headless tests. Verified: full suite (324 checks), VS0/VS1 stable, live — rebuilt +
+  restarted all three systemd units, confirmed a real match drafted 20 distinct heroes with zero
+  duplicates (Vassago, Cain, and Gunnr all included — 23 heroes now means exactly 3 are excluded
+  per match), streamed real snapshots with no crash.
+
 ## 2026-07-25 (24)
 
 - feat(arena): Gunnr, 22nd hero — Duelist (S170-93). First hero shipped from the batched

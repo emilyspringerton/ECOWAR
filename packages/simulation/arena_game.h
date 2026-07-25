@@ -89,8 +89,9 @@ typedef enum {
     ARENA_HERO_NOOR1 = 19, /* TYLER multiverse_heroes.md #3, "NOOR-1 (Four Days Behind)", in-game form: a snowman (S170-104) */
     ARENA_HERO_CAIN = 20, /* TYLER multiverse_heroes.md #80, "Cain, East of Eden" (S170-105, founder: "replace adelle with Cain") */
     ARENA_HERO_GUNNR = 21, /* TYLER multiverse_heroes.md #30, "Gunnr, Who Argued With a Raven" (S170-93) */
+    ARENA_HERO_VASSAGO = 22, /* TYLER multiverse_heroes.md #16, "Vassago, the Soft Foresight" (S170-93); also real TYLER canon, Goetia 11.11 Hz */
 } ArenaHeroID;
-#define ARENA_HERO_COUNT 22
+#define ARENA_HERO_COUNT 23
 
 /* The Unicorn — first real hero kit wired in (S170-18). */
 #define ARENA_UNICORN_ARMOR         4    /* passive: Chassis Claim, flat dmg reduction */
@@ -571,6 +572,24 @@ typedef enum {
 #define ARENA_GUNNR_R_DAMAGE_BASE           10   /* at 100% target HP */
 #define ARENA_GUNNR_R_DAMAGE_LOW_HP         24   /* at ~0% target HP -- an execute */
 #define ARENA_GUNNR_R_COOLDOWN_MS        20000
+
+/* Vassago (S170-93): passive small HP regen, always on, same shape as Dagda's Undry -- ambient
+ * restorative foresight, sensing and softening harm before it fully lands. Q a ranged bolt,
+ * damage + silence (same shape as Ghost's Q) -- foresight cuts off the enemy's next intended
+ * action before they take it. W grants the nearest ally next_cast_refund (same mechanic as
+ * Frog's Borrowed Time) -- "the soft foresight," extended outward, lets a teammate's next cast
+ * come free. R a fixed zone, silence-only, no damage at all -- the one hero on this roster whose
+ * ultimate is pure control, matching "soft" literally: not a hit, a held breath. */
+#define ARENA_VASSAGO_PASSIVE_REGEN_PER_SEC   2
+#define ARENA_VASSAGO_Q_RANGE                 6.5f
+#define ARENA_VASSAGO_Q_DAMAGE                 7
+#define ARENA_VASSAGO_Q_SILENCE_MS          1400
+#define ARENA_VASSAGO_Q_COOLDOWN_MS         4500
+#define ARENA_VASSAGO_W_COOLDOWN_MS        11000
+#define ARENA_VASSAGO_R_RADIUS                 4.5f
+#define ARENA_VASSAGO_R_DURATION_MS         3500
+#define ARENA_VASSAGO_R_SILENCE_MS          1200  /* > the 1000ms tick interval, same margin as Flamel's ROOT_MS -- a shorter value would leave real gaps where a continuously-standing foe isn't silenced between ticks */
+#define ARENA_VASSAGO_R_COOLDOWN_MS        23000
 
 /* ARENA_HERO_RESPAWN_MS (S170-121, "controlling a node enables its spawn
  * for your team"): team-mode-only hero respawn timer. Before this, death

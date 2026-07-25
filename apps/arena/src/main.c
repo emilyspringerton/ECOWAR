@@ -847,6 +847,10 @@ static void draw_hero_model(ArenaHeroID hero_id, float hero_x, float hero_z, con
             BOX(0.0f, 0.65f, 0.0f, 0.75f, 1.3f, 0.75f);
             BOX(-0.65f, 0.65f, 0.0f, 0.10f, 0.55f, 0.45f);
             break;
+        case ARENA_HERO_VASSAGO: /* soft foresight -- slender cloaked body + a small floating orb (S170-93) */
+            BOX(0.0f, 0.60f, 0.0f, 0.55f, 1.2f, 0.55f);
+            BOX(0.0f, 1.55f, 0.0f, 0.16f, 0.16f, 0.16f);
+            break;
         default:
             BOX(0.0f, 0.5f, 0.0f, 0.9f, 1.0f, 0.9f);
             break;

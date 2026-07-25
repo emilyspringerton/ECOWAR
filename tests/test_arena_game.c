@@ -2109,6 +2109,90 @@ static void test_gunnr_r_out_of_range_whiffs_but_still_starts_cooldown(void) {
     CHECK(gunnr->r_cooldown_ms == ARENA_GUNNR_R_COOLDOWN_MS, "R still starts its cooldown even on a whiff");
 }
 
+static void test_vassago_passive_regenerates_hp(void) {
+    arena_init_with_heroes(ARENA_HERO_UNICORN, ARENA_HERO_VASSAGO);
+    ArenaHero *vassago = &arena_state.heroes[1];
+    vassago->hp = 50;
+
+    arena_update(1000); /* one full second of passive regen */
+
+    CHECK(vassago->hp > 50, "The passive regenerates HP every tick with no cast at all");
+}
+
+static void test_vassago_q_damages_and_silences_in_range(void) {
+    arena_init_with_heroes(ARENA_HERO_UNICORN, ARENA_HERO_VASSAGO);
+    ArenaHero *vassago = &arena_state.heroes[1];
+    ArenaHero *foe = &arena_state.heroes[0];
+    foe->x = vassago->x + 4.0f; /* within ARENA_VASSAGO_Q_RANGE */
+    foe->z = vassago->z;
+    int foe_hp_before = foe->hp;
+
+    arena_cast_q(1);
+
+    CHECK(foe->hp < foe_hp_before, "Q damages the foe when in range");
+    CHECK(foe->silenced_ms == ARENA_VASSAGO_Q_SILENCE_MS, "Reveal the Gentle Maybe silences the foe on a landed hit");
+    CHECK(vassago->q_cooldown_ms == ARENA_VASSAGO_Q_COOLDOWN_MS, "Q starts on cooldown after a landed hit");
+}
+
+static void test_vassago_q_out_of_range_whiffs(void) {
+    arena_init_with_heroes(ARENA_HERO_UNICORN, ARENA_HERO_VASSAGO);
+    ArenaHero *vassago = &arena_state.heroes[1];
+    ArenaHero *foe = &arena_state.heroes[0];
+    foe->x = vassago->x + ARENA_VASSAGO_Q_RANGE + 5.0f;
+    foe->z = vassago->z;
+    int foe_hp_before = foe->hp;
+
+    arena_cast_q(1);
+
+    CHECK(foe->hp == foe_hp_before, "Q out of range does not damage the foe");
+    CHECK(foe->silenced_ms == 0, "Q out of range does not silence the foe");
+}
+
+static void test_vassago_w_grants_ally_next_cast_refund(void) {
+    arena_init_teams();
+    for (int i = 2; i < ARENA_MAX_HEROES; i++) arena_state.heroes[i].active = 0;
+    arena_state.heroes[0].hero_id = ARENA_HERO_VASSAGO;
+    arena_state.heroes[0].x = 0; arena_state.heroes[0].z = 0;
+    arena_state.heroes[1].x = 1; arena_state.heroes[1].z = 0; /* ally */
+
+    arena_toggle_w(0);
+
+    CHECK(arena_state.heroes[1].next_cast_refund == 1, "The Soft Foresight grants the nearest ally next_cast_refund");
+    CHECK(arena_state.heroes[0].w_cooldown_ms == ARENA_VASSAGO_W_COOLDOWN_MS, "W starts on its own cooldown after cast");
+}
+
+static void test_vassago_w_no_ally_in_1v1_whiffs(void) {
+    arena_init_with_heroes(ARENA_HERO_UNICORN, ARENA_HERO_VASSAGO);
+    ArenaHero *vassago = &arena_state.heroes[1];
+
+    arena_toggle_w(1);
+
+    CHECK(vassago->w_cooldown_ms == 0, "no ally in 1v1 means the cast whiffs -- cooldown is not consumed");
+}
+
+static void test_vassago_r_zone_silences_but_deals_no_damage(void) {
+    arena_init_teams();
+    for (int i = 2; i < ARENA_MAX_HEROES; i++) arena_state.heroes[i].active = 0;
+    arena_state.heroes[ARENA_TEAM_SIZE].active = 1;
+    arena_state.heroes[ARENA_TEAM_SIZE].alive = 1;
+    arena_state.heroes[0].hero_id = ARENA_HERO_VASSAGO;
+    arena_state.heroes[0].x = 0; arena_state.heroes[0].z = 0;
+    /* 3.0 units away: inside ARENA_VASSAGO_R_RADIUS (4.5) but outside melee auto-attack
+       range (~1.6) -- close enough for x=1 would let the two heroes auto-attack each other
+       for ordinary melee damage in the same tick, which isn't what this test measures. */
+    arena_state.heroes[ARENA_TEAM_SIZE].x = 3.0f; arena_state.heroes[ARENA_TEAM_SIZE].z = 0;
+    arena_state.heroes[ARENA_TEAM_SIZE].hp = arena_state.heroes[ARENA_TEAM_SIZE].max_hp = 100;
+
+    arena_cast_r(0);
+    CHECK(arena_state.heroes[0].r_active_ms == ARENA_VASSAGO_R_DURATION_MS, "R starts its zone duration on cast");
+    CHECK(arena_state.heroes[0].r_cooldown_ms == ARENA_VASSAGO_R_COOLDOWN_MS, "R starts on its own cooldown after cast");
+
+    arena_update_teams(1000); /* one full 1000ms zone tick */
+
+    CHECK(arena_state.heroes[ARENA_TEAM_SIZE].silenced_ms > 0, "The Gentle Maybe silences an enemy standing in the zone");
+    CHECK(arena_state.heroes[ARENA_TEAM_SIZE].hp == 100, "The Gentle Maybe deals no damage at all -- pure control, not a hit");
+}
+
 int main(void) {
     printf("RED GARDEN arena_game headless smoke test\n\n");
     test_movement_reaches_target();
@@ -2235,6 +2319,12 @@ int main(void) {
     test_gunnr_w_is_a_free_toggle_regen();
     test_gunnr_r_executes_harder_at_low_hp();
     test_gunnr_r_out_of_range_whiffs_but_still_starts_cooldown();
+    test_vassago_passive_regenerates_hp();
+    test_vassago_q_damages_and_silences_in_range();
+    test_vassago_q_out_of_range_whiffs();
+    test_vassago_w_grants_ally_next_cast_refund();
+    test_vassago_w_no_ally_in_1v1_whiffs();
+    test_vassago_r_zone_silences_but_deals_no_damage();
     printf("\n%s\n", failures == 0 ? "ALL PASS" : "SOME FAILED");
     return failures == 0 ? 0 : 1;
 }
