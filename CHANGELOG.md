@@ -1,5 +1,18 @@
 # Changelog
 
+## 2026-07-25 (26)
+
+- feat(arena): He Xiangu, 24th hero — Support/Sustain (S170-93). Third hero shipped from the
+  batched "next wave" backlog entry. One of the traditional Eight Immortals — subsists on
+  mother-of-pearl and moonlight, self-denial never once framed as sacrifice. Passive small HP
+  regen (Dagda's shape), Q a ranged bolt that heals her for a fraction of its own damage (Bacon+
+  Puck's heal-pct mechanic, repeatable on Q instead of a one-off R burst — the first real
+  sustain-through-combat on the roster), W a free-toggle second regen layer (Flute Debt's shape),
+  R a heal-only zone with no enemy damage (the mirror of Vassago's silence-only R — pure support
+  vs. pure control). `ARENA_HERO_COUNT` 23 → 24. 5 new headless tests. Verified: full suite
+  (337 checks), VS0/VS1 stable, live — confirmed a real match drafted 20 distinct heroes with
+  zero duplicates (He Xiangu included), streamed real snapshots with no crash.
+
 ## 2026-07-25 (25)
 
 - feat(arena): Vassago, 23rd hero — Support/Diviner (S170-93). Second hero shipped from the

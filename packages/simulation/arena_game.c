@@ -1245,6 +1245,20 @@ static int vassago_cast_q(ArenaHero *vassago, ArenaHero *foe) {
     return 1;
 }
 
+/* he_xiangu_cast_q: Subsisting on Mother-of-Pearl and Moonlight -- a ranged bolt that heals her
+ * for a fraction of the damage it deals, same heal-off-a-fraction mechanic as Bacon+Puck's R,
+ * repeatable on Q instead of a one-off burst. Returns 1 if it landed. */
+static int he_xiangu_cast_q(ArenaHero *he_xiangu, ArenaHero *foe) {
+    if (!hero_is_hittable(foe)) return 0;
+    float dx = foe->x - he_xiangu->x, dz = foe->z - he_xiangu->z;
+    if (sqrtf(dx * dx + dz * dz) > ARENA_HE_XIANGU_Q_RANGE) return 0;
+    int dmg = apply_armor(ARENA_HE_XIANGU_Q_DAMAGE, arena_hero_armor(foe));
+    apply_damage(foe, dmg);
+    he_xiangu->hp += (int)(dmg * ARENA_HE_XIANGU_Q_HEAL_PCT);
+    if (he_xiangu->hp > he_xiangu->max_hp) he_xiangu->hp = he_xiangu->max_hp;
+    return 1;
+}
+
 void arena_cast_q(int owner) {
     if (owner < 0 || owner >= ARENA_MAX_HEROES) return;
     ArenaHero *h = &arena_state.heroes[owner];
@@ -1369,6 +1383,11 @@ void arena_cast_q(int owner) {
     case ARENA_HERO_VASSAGO:
         if (vassago_cast_q(h, foe)) {
             h->q_cooldown_ms = cast_cooldown(h, ARENA_VASSAGO_Q_COOLDOWN_MS);
+        }
+        break;
+    case ARENA_HERO_HE_XIANGU:
+        if (he_xiangu_cast_q(h, foe)) {
+            h->q_cooldown_ms = cast_cooldown(h, ARENA_HE_XIANGU_Q_COOLDOWN_MS);
         }
         break;
     }
@@ -1534,6 +1553,12 @@ void arena_toggle_w(int owner) {
         }
         break;
     }
+    case ARENA_HERO_HE_XIANGU:
+        /* Self-Denial Taken Past the Point: free toggle, no cooldown -- tick_hero_kit
+           reads w_active directly for the regen, same shape as Flute Debt's Recouping
+           Interest. */
+        h->w_active = !h->w_active;
+        break;
     default:
         /* No-op for any hero without a real W in this arena, not a crash
            or a silent wrong kit: Duck's W (Government Clearance) needs
@@ -1746,6 +1771,16 @@ void arena_cast_r(int owner) {
         h->r_zone_tick_ms = 0;
         h->r_active_ms = ARENA_VASSAGO_R_DURATION_MS;
         h->r_cooldown_ms = cast_cooldown(h, ARENA_VASSAGO_R_COOLDOWN_MS);
+        break;
+    case ARENA_HERO_HE_XIANGU:
+        /* Never Once Framed It As Sacrifice: fixed zone, same shape as Flamel's Elixir of
+           Wild Growth, heal-only -- no enemy damage component at all, the mirror of
+           Vassago's purely-controlling R: she shares her sustenance, doesn't hurt anyone. */
+        h->r_zone_x = h->x;
+        h->r_zone_z = h->z;
+        h->r_zone_tick_ms = 0;
+        h->r_active_ms = ARENA_HE_XIANGU_R_DURATION_MS;
+        h->r_cooldown_ms = cast_cooldown(h, ARENA_HE_XIANGU_R_COOLDOWN_MS);
         break;
     }
 }
@@ -1972,6 +2007,40 @@ static void tick_hero_kit(ArenaHero *h, ArenaHero *foe, ArenaHero *ally, unsigne
                     float dx = foe->x - h->r_zone_x, dz = foe->z - h->r_zone_z;
                     if (sqrtf(dx * dx + dz * dz) <= ARENA_VASSAGO_R_RADIUS) {
                         foe->silenced_ms = ARENA_VASSAGO_R_SILENCE_MS;
+                    }
+                }
+            }
+        }
+        break;
+    case ARENA_HERO_HE_XIANGU:
+        /* Passive: same always-on regen shape as Dagda's Undry -- subsisting on almost
+           nothing. */
+        if (h->alive) {
+            float regen = ARENA_HE_XIANGU_PASSIVE_REGEN_PER_SEC * ((float)dt_ms / 1000.0f);
+            h->hp += (int)regen;
+            if (h->hp > h->max_hp) h->hp = h->max_hp;
+        }
+        /* W: same toggle-regen shape as Flute Debt's Recouping Interest -- self-denial as
+           discipline, a second layer of sustain on top of the passive while active. */
+        if (h->w_active && h->alive) {
+            float regen = ARENA_HE_XIANGU_W_REGEN_PER_SEC * ((float)dt_ms / 1000.0f);
+            h->hp += (int)regen;
+            if (h->hp > h->max_hp) h->hp = h->max_hp;
+        }
+        /* Never Once Framed It As Sacrifice: fixed zone, heal-only tick, no damage --
+           re-applies each tick, so an ally has to actually stay in it, same "you're in it
+           or you're not" logic every other zone uses. */
+        if (h->r_active_ms > 0) {
+            h->r_active_ms -= (int)dt_ms;
+            if (h->r_active_ms < 0) h->r_active_ms = 0;
+            h->r_zone_tick_ms += (int)dt_ms;
+            while (h->r_zone_tick_ms >= 1000) {
+                h->r_zone_tick_ms -= 1000;
+                if (ally && ally->alive) {
+                    float adx = ally->x - h->r_zone_x, adz = ally->z - h->r_zone_z;
+                    if (sqrtf(adx * adx + adz * adz) <= ARENA_HE_XIANGU_R_RADIUS) {
+                        ally->hp += ARENA_HE_XIANGU_R_HEAL_PER_TICK;
+                        if (ally->hp > ally->max_hp) ally->hp = ally->max_hp;
                     }
                 }
             }
@@ -2306,6 +2375,19 @@ static void bot_cast_kit_if_ready(ArenaHero *bot, ArenaHero *foe) {
             arena_cast_q(bot->owner);
         } else if (bot->r_cooldown_ms <= 0 && dist <= ARENA_VASSAGO_R_RADIUS) {
             arena_cast_r(bot->owner);
+        }
+        break;
+    case ARENA_HERO_HE_XIANGU:
+        /* R is ally-only (a heal zone) -- no useful action in the 1v1 local
+           demo's bot heuristic (no ally present), same reasoning as Doc
+           Wheel/Flamel/Vassago's own ally-only slots above. W is free
+           self-sustain, toggle on early like Loki's/Flute Debt's own
+           instinct. Q whenever in range and off cooldown -- it self-heals
+           too, always worth using. */
+        if (!bot->w_active) {
+            arena_toggle_w(bot->owner);
+        } else if (bot->q_cooldown_ms <= 0 && dist <= ARENA_HE_XIANGU_Q_RANGE) {
+            arena_cast_q(bot->owner);
         }
         break;
     }

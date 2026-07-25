@@ -90,8 +90,9 @@ typedef enum {
     ARENA_HERO_CAIN = 20, /* TYLER multiverse_heroes.md #80, "Cain, East of Eden" (S170-105, founder: "replace adelle with Cain") */
     ARENA_HERO_GUNNR = 21, /* TYLER multiverse_heroes.md #30, "Gunnr, Who Argued With a Raven" (S170-93) */
     ARENA_HERO_VASSAGO = 22, /* TYLER multiverse_heroes.md #16, "Vassago, the Soft Foresight" (S170-93); also real TYLER canon, Goetia 11.11 Hz */
+    ARENA_HERO_HE_XIANGU = 23, /* TYLER multiverse_heroes.md #39, "He Xiangu, Who Stopped Eating" (S170-93) */
 } ArenaHeroID;
-#define ARENA_HERO_COUNT 23
+#define ARENA_HERO_COUNT 24
 
 /* The Unicorn — first real hero kit wired in (S170-18). */
 #define ARENA_UNICORN_ARMOR         4    /* passive: Chassis Claim, flat dmg reduction */
@@ -590,6 +591,26 @@ typedef enum {
 #define ARENA_VASSAGO_R_DURATION_MS         3500
 #define ARENA_VASSAGO_R_SILENCE_MS          1200  /* > the 1000ms tick interval, same margin as Flamel's ROOT_MS -- a shorter value would leave real gaps where a continuously-standing foe isn't silenced between ticks */
 #define ARENA_VASSAGO_R_COOLDOWN_MS        23000
+
+/* He Xiangu (S170-93): passive small HP regen, always on, same shape as Dagda's Undry --
+ * subsisting on almost nothing, one of the traditional Eight Immortals. Q a ranged bolt that
+ * heals her for a fraction of the damage it deals -- "moonlight is also a kind of eating," the
+ * same heal-off-a-fraction-of-damage mechanic as Bacon+Puck's R, but on a repeatable Q instead
+ * of a one-off burst: the first hero on this roster with real sustain-through-combat on every
+ * cast, not a single moment of it. W a free toggle boosting her own regen further, same shape as
+ * Flute Debt's Recouping Interest -- self-denial as discipline, not deprivation. R a fixed zone,
+ * heal-only, no enemy damage at all -- the roster's first purely-supportive ultimate, the mirror
+ * of Vassago's purely-controlling one: she shares her sustenance, doesn't hurt anyone. */
+#define ARENA_HE_XIANGU_PASSIVE_REGEN_PER_SEC   2
+#define ARENA_HE_XIANGU_Q_RANGE                 6.0f
+#define ARENA_HE_XIANGU_Q_DAMAGE                 7
+#define ARENA_HE_XIANGU_Q_HEAL_PCT               0.6f  /* fraction of Q's damage returned as self-heal */
+#define ARENA_HE_XIANGU_Q_COOLDOWN_MS         4200
+#define ARENA_HE_XIANGU_W_REGEN_PER_SEC          4
+#define ARENA_HE_XIANGU_R_RADIUS                 4.5f
+#define ARENA_HE_XIANGU_R_DURATION_MS         4000
+#define ARENA_HE_XIANGU_R_HEAL_PER_TICK          7
+#define ARENA_HE_XIANGU_R_COOLDOWN_MS        25000
 
 /* ARENA_HERO_RESPAWN_MS (S170-121, "controlling a node enables its spawn
  * for your team"): team-mode-only hero respawn timer. Before this, death

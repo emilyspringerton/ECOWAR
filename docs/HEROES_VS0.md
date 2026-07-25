@@ -511,6 +511,24 @@ foresight that arrives soft, not declared boldly.
 
 ---
 
+### He Xiangu, Who Stopped Eating (TYLER `multiverse_heroes.md` #39, "He Xiangu") — **Support/Sustain** (S170-93)
+
+Founder, same batch (S170-93): "add xiangu." One of the traditional Eight Immortals — achieved
+immortality by subsisting on mother-of-pearl and moonlight, and never once explained why, never
+once framed it as sacrifice. Self-denial taken past the point anyone else was willing to follow.
+
+- **Passive — Subsists on Almost Nothing**: a small, always-on HP regen, same shape as Dagda's
+  Undry.
+- **Q — Mother-of-Pearl and Moonlight**: a ranged bolt that heals her for a fraction of the
+  damage it deals, same heal-off-a-fraction mechanic as Bacon+Puck's R — but repeatable, on every
+  Q, not a one-off burst. The first real sustain-through-combat on this roster.
+- **W — Self-Denial**: a free toggle, no cooldown, a second layer of regen on top of the passive
+  while active, same shape as Flute Debt's Recouping Interest — discipline, not deprivation.
+- **R — Never Once Framed It As Sacrifice**: a fixed zone, heal-only, no enemy damage at all — the
+  mirror of Vassago's purely-controlling R. She shares her sustenance. She doesn't hurt anyone.
+
+---
+
 ## Starting Item Roster (VS0)
 
 LoL Season 3 is the explicit stylistic northstar here — not its item *names*, its item *stat-line

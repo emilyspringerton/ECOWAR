@@ -851,6 +851,10 @@ static void draw_hero_model(ArenaHeroID hero_id, float hero_x, float hero_z, con
             BOX(0.0f, 0.60f, 0.0f, 0.55f, 1.2f, 0.55f);
             BOX(0.0f, 1.55f, 0.0f, 0.16f, 0.16f, 0.16f);
             break;
+        case ARENA_HERO_HE_XIANGU: /* immortal ascetic -- slender robed body + a small crescent accent (S170-93) */
+            BOX(0.0f, 0.62f, 0.0f, 0.5f, 1.25f, 0.5f);
+            BOX(0.0f, 1.5f, 0.35f, 0.2f, 0.06f, 0.06f);
+            break;
         default:
             BOX(0.0f, 0.5f, 0.0f, 0.9f, 1.0f, 0.9f);
             break;

@@ -2193,6 +2193,87 @@ static void test_vassago_r_zone_silences_but_deals_no_damage(void) {
     CHECK(arena_state.heroes[ARENA_TEAM_SIZE].hp == 100, "The Gentle Maybe deals no damage at all -- pure control, not a hit");
 }
 
+static void test_he_xiangu_passive_regenerates_hp(void) {
+    arena_init_with_heroes(ARENA_HERO_UNICORN, ARENA_HERO_HE_XIANGU);
+    ArenaHero *he_xiangu = &arena_state.heroes[1];
+    he_xiangu->hp = 50;
+
+    arena_update(1000);
+
+    CHECK(he_xiangu->hp > 50, "The passive regenerates HP every tick with no cast at all");
+}
+
+static void test_he_xiangu_q_damages_foe_and_heals_self(void) {
+    arena_init_with_heroes(ARENA_HERO_UNICORN, ARENA_HERO_HE_XIANGU);
+    ArenaHero *he_xiangu = &arena_state.heroes[1];
+    ArenaHero *foe = &arena_state.heroes[0];
+    foe->x = he_xiangu->x + 4.0f; /* within ARENA_HE_XIANGU_Q_RANGE */
+    foe->z = he_xiangu->z;
+    he_xiangu->hp = 50;
+    int foe_hp_before = foe->hp;
+
+    arena_cast_q(1);
+
+    CHECK(foe->hp < foe_hp_before, "Q damages the foe when in range");
+    CHECK(he_xiangu->hp > 50, "Subsisting on Mother-of-Pearl and Moonlight heals her for a fraction of the damage dealt");
+    CHECK(he_xiangu->q_cooldown_ms == ARENA_HE_XIANGU_Q_COOLDOWN_MS, "Q starts on cooldown after a landed hit");
+}
+
+static void test_he_xiangu_q_out_of_range_whiffs(void) {
+    arena_init_with_heroes(ARENA_HERO_UNICORN, ARENA_HERO_HE_XIANGU);
+    ArenaHero *he_xiangu = &arena_state.heroes[1];
+    ArenaHero *foe = &arena_state.heroes[0];
+    foe->x = he_xiangu->x + ARENA_HE_XIANGU_Q_RANGE + 5.0f;
+    foe->z = he_xiangu->z;
+    he_xiangu->hp = 50;
+    int foe_hp_before = foe->hp;
+
+    arena_cast_q(1);
+
+    CHECK(foe->hp == foe_hp_before, "Q out of range does not damage the foe");
+    CHECK(he_xiangu->hp == 50, "Q out of range does not heal her either -- it whiffed, not cast");
+}
+
+static void test_he_xiangu_w_is_a_free_toggle_regen(void) {
+    arena_init_with_heroes(ARENA_HERO_UNICORN, ARENA_HERO_HE_XIANGU);
+    ArenaHero *he_xiangu = &arena_state.heroes[1];
+    he_xiangu->hp = 50;
+
+    arena_toggle_w(1);
+    CHECK(he_xiangu->w_active, "W toggles on");
+    CHECK(he_xiangu->w_cooldown_ms == 0, "W is a free toggle, no cooldown");
+
+    arena_update(1000);
+    CHECK(he_xiangu->hp > 52, "Self-Denial regenerates HP on top of the base passive while toggled on");
+}
+
+static void test_he_xiangu_r_zone_heals_ally_no_enemy_damage(void) {
+    arena_init_teams();
+    for (int i = 2; i < ARENA_MAX_HEROES; i++) arena_state.heroes[i].active = 0;
+    arena_state.heroes[ARENA_TEAM_SIZE].active = 1;
+    arena_state.heroes[ARENA_TEAM_SIZE].alive = 1;
+    arena_state.heroes[0].hero_id = ARENA_HERO_HE_XIANGU;
+    arena_state.heroes[0].x = 0; arena_state.heroes[0].z = 0;
+    arena_state.heroes[1].x = 1; arena_state.heroes[1].z = 0; /* ally, inside the zone */
+    arena_state.heroes[1].max_hp = 100; arena_state.heroes[1].hp = 50;
+    /* 3.0 units away: inside ARENA_HE_XIANGU_R_RADIUS but outside melee auto-attack range,
+       same reasoning as Vassago's equivalent test -- isolates the zone's own heal-only
+       property from ordinary melee combat between the two heroes. */
+    arena_state.heroes[ARENA_TEAM_SIZE].x = 3.0f; arena_state.heroes[ARENA_TEAM_SIZE].z = 0;
+    arena_state.heroes[ARENA_TEAM_SIZE].hp = arena_state.heroes[ARENA_TEAM_SIZE].max_hp = 100;
+
+    arena_cast_r(0);
+    CHECK(arena_state.heroes[0].r_active_ms == ARENA_HE_XIANGU_R_DURATION_MS, "R starts its zone duration on cast");
+    CHECK(arena_state.heroes[0].r_cooldown_ms == ARENA_HE_XIANGU_R_COOLDOWN_MS, "R starts on its own cooldown after cast");
+
+    arena_update_teams(1000);
+
+    CHECK(arena_state.heroes[1].hp == 50 + ARENA_HE_XIANGU_R_HEAL_PER_TICK,
+          "Never Once Framed It As Sacrifice heals an ally standing in the zone");
+    CHECK(arena_state.heroes[ARENA_TEAM_SIZE].hp == 100,
+          "the zone deals no damage at all -- pure support, not a hit");
+}
+
 int main(void) {
     printf("RED GARDEN arena_game headless smoke test\n\n");
     test_movement_reaches_target();
@@ -2325,6 +2406,11 @@ int main(void) {
     test_vassago_w_grants_ally_next_cast_refund();
     test_vassago_w_no_ally_in_1v1_whiffs();
     test_vassago_r_zone_silences_but_deals_no_damage();
+    test_he_xiangu_passive_regenerates_hp();
+    test_he_xiangu_q_damages_foe_and_heals_self();
+    test_he_xiangu_q_out_of_range_whiffs();
+    test_he_xiangu_w_is_a_free_toggle_regen();
+    test_he_xiangu_r_zone_heals_ally_no_enemy_damage();
     printf("\n%s\n", failures == 0 ? "ALL PASS" : "SOME FAILED");
     return failures == 0 ? 0 : 1;
 }
