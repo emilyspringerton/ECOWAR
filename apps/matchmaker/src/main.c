@@ -26,6 +26,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <signal.h>
+#include <sys/time.h>
 
 #ifdef _WIN32
     #error "matchmaker requires fork(); not supported on Windows yet"
@@ -48,6 +49,38 @@ typedef struct {
 
 static QueuedClient wait_queue[MAX_QUEUE];
 static int queue_count = 0;
+
+/* recently_matched (S170-85/86, real bug found live): apps/arena_bot's
+ * wait_for_match() resends PACKET_FIND_MATCH if it hasn't seen a reply in
+ * ~5s (its own comment documents this exact race, previously narrowed from
+ * a 1s to a 5s resend interval but never closed). If a client's own stale
+ * retry is still in flight the instant this matchmaker matches and dequeues
+ * it, that late retry arrives here with no way to tell it apart from a
+ * fresh request -- enqueue() re-adds an address that's actually already
+ * off connecting to its real match, permanently costing some future lobby
+ * exactly one slot (it can never actually connect: the client that owns
+ * this address is busy elsewhere and isn't listening for a second
+ * PACKET_MATCH_FOUND). With 19 bots continuously cycling through matches,
+ * this stopped being a rare edge case and started being the reason almost
+ * every lobby landed at N-1: real, live, confirmed via matchmaker/server
+ * logs showing "CLIENT 0..N-2 CONNECTED" then a 60s no-progress timeout,
+ * over and over. Fix: remember every address for a short cooldown after
+ * it's actually been matched, and ignore (not re-enqueue) any FIND_MATCH
+ * from it during that window -- comfortably longer than
+ * connect_to_server's own ~5s max retry window. */
+#define MATCH_COOLDOWN_MS 10000
+typedef struct {
+    struct sockaddr_in addr;
+    unsigned int matched_at_ms;
+} RecentMatch;
+static RecentMatch recently_matched[MAX_QUEUE];
+static int recently_matched_count = 0;
+
+static unsigned int now_ms(void) {
+    struct timeval tv;
+    gettimeofday(&tv, NULL);
+    return (unsigned int)(tv.tv_sec * 1000 + tv.tv_usec / 1000);
+}
 static int listen_port = 7777;
 static int next_game_port = 7100;
 static int lobby_size = 2;
@@ -57,6 +90,41 @@ static char server_bin[256] = "./build/red_garden_server";
 static int addr_eq(const struct sockaddr_in *a, const struct sockaddr_in *b) {
     return memcmp(&a->sin_addr, &b->sin_addr, sizeof(struct in_addr)) == 0 &&
            a->sin_port == b->sin_port;
+}
+
+/* prune_recently_matched: drop entries whose cooldown has elapsed. Called
+ * before every read/write of recently_matched so the list never grows
+ * unbounded and never blocks a genuinely new request from the same address
+ * once it's actually free to queue again. */
+static void prune_recently_matched(unsigned int now) {
+    int w = 0;
+    for (int i = 0; i < recently_matched_count; i++) {
+        if (now - recently_matched[i].matched_at_ms < MATCH_COOLDOWN_MS) {
+            recently_matched[w++] = recently_matched[i];
+        }
+    }
+    recently_matched_count = w;
+}
+
+static int is_recently_matched(const struct sockaddr_in *addr, unsigned int now) {
+    prune_recently_matched(now);
+    for (int i = 0; i < recently_matched_count; i++) {
+        if (addr_eq(&recently_matched[i].addr, addr)) return 1;
+    }
+    return 0;
+}
+
+static void mark_recently_matched(const struct sockaddr_in *addr, unsigned int now) {
+    prune_recently_matched(now);
+    if (recently_matched_count >= MAX_QUEUE) {
+        /* Defensive only -- evict the oldest to make room rather than drop
+           the newest, which is the one most likely to still be mid-race. */
+        memmove(&recently_matched[0], &recently_matched[1], (MAX_QUEUE - 1) * sizeof(RecentMatch));
+        recently_matched_count = MAX_QUEUE - 1;
+    }
+    recently_matched[recently_matched_count].addr = *addr;
+    recently_matched[recently_matched_count].matched_at_ms = now;
+    recently_matched_count++;
 }
 
 static int spawn_game_server(int port) {
@@ -83,6 +151,14 @@ static int spawn_game_server(int port) {
 static void enqueue(struct sockaddr_in *sender) {
     for (int i = 0; i < queue_count; i++) {
         if (addr_eq(&wait_queue[i].addr, sender)) return; // already queued
+    }
+    if (is_recently_matched(sender, now_ms())) {
+        /* A stale retry from a client that's already off connecting to its
+           real match -- see recently_matched's doc comment. Silently
+           ignored, not re-queued: the client isn't listening for a second
+           PACKET_MATCH_FOUND and would just be a permanent hole in some
+           future lobby. */
+        return;
     }
     if (queue_count >= MAX_QUEUE) return;
     wait_queue[queue_count].addr = *sender;
@@ -112,8 +188,10 @@ static void try_match(void) {
         MatchFoundMsg *msg = (MatchFoundMsg *)(buf + sizeof(NetHeader));
         msg->port = (uint16_t)port;
 
+        unsigned int now = now_ms();
         for (int i = 0; i < lobby_size; i++) {
             sendto(sock, buf, sizeof(buf), 0, (struct sockaddr *)&group[i], sizeof(group[i]));
+            mark_recently_matched(&group[i], now);
         }
     }
 }

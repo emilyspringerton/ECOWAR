@@ -1,5 +1,29 @@
 # Changelog
 
+## 2026-07-25 (13)
+
+- fix(matchmaker): close the phantom-requeue race that was silently capping almost every 10v10
+  lobby at 19/20 (S170-85, S170-86). Founder, real-time: "tried the loki build matchmaking still
+  launches the client but still no players no enemies nothing" → "q w e r t dont seem to work."
+  Root-caused, not guessed: `apps/arena_bot`'s `wait_for_match()` resends `PACKET_FIND_MATCH` if
+  it hasn't seen a reply in ~5s (a prior, partial mitigation from S170-99-era work, narrowed from
+  1s but never closed). If that resend is still in flight the instant the matchmaker actually
+  matches and dequeues the client, the late retry arrives with no way to tell it apart from a
+  fresh request — `enqueue()` re-added an address that was already off connecting to its real
+  match, permanently costing some *future* lobby exactly one slot (that address's owner isn't
+  listening for a second `PACKET_MATCH_FOUND`). With 19 bots continuously cycling through matches,
+  this stopped being a rare edge case and became the reason almost every lobby landed at
+  `phase=0, 19/20 connected` before the server's 60s no-progress timeout tore it down — which
+  also fully explains S170-86: a match that never leaves `ARENA_PHASE_WAITING` never reaches
+  `ARENA_PHASE_LIVE`, so casts are correctly rejected the whole time, not broken. Fix: matchmaker
+  now remembers every address for a 10s cooldown after it's actually been matched (comfortably
+  longer than `connect_to_server`'s own ~5s max retry window) and ignores, rather than re-queues,
+  any `FIND_MATCH` from it during that window. Verified live: before the fix, every real attempt
+  against the 19-bot pool + 1 extra bot capped at 19/20 and timed out; after rebuilding and
+  restarting all three systemd units, the very first attempt reached a genuine 20/20 lobby, all
+  20 heroes picked, `match live`, and real snapshot events streaming to the match log. Headless
+  suite unaffected (`test_arena.sh` all pass, `test_10_bots.sh` VS0/VS1 stability pass).
+
 ## 2026-07-25 (12)
 
 - feat(arena): hero respawn, gated on node control (S170-121). Founder, real-time: "redgarden
