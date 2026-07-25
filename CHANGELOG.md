@@ -16,7 +16,7 @@
 
 ## 2026-07-25 (31)
 
-- docs(arena): Weatherman + Donkey spec, NORTHSTAR §16 (S170-93/S170-133) — spec only, no code.
+- docs(arena): Weatherman + Donkey spec, NORTHSTAR §16 (S170-93) — spec only, no code.
   Scoped via AskUserQuestion to spec-first: Donkey is documented Indirect-Control (never
   owner-piloted, auto-triggers on HP threshold and an escape condition) and blocked on a
   non-piloted-unit system that doesn't exist in `arena_game.c` yet — every hero implemented so

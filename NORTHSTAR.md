@@ -1133,7 +1133,7 @@ Nothing built this pass. If either half gets promoted to real work, the open que
 the actual design surface to resolve first -- not just "add camera lock" or "add fog of war" as
 originally framed.
 
-## 16. Weatherman + Donkey, and the non-piloted-unit gap (2026-07-25, S170-93/S170-133) -- spec only, no code yet
+## 16. Weatherman + Donkey, and the non-piloted-unit gap (2026-07-25, S170-93) -- spec only, no code yet
 
 Founder, real-time, part of the same batched hero-wave as He Xiangu/Gunnr/Vassago/Beleth: "add the
 weatherman and donkey specific donkey paper airplane weatherman interractions." Scoped via
