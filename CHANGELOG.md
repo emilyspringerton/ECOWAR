@@ -1,5 +1,24 @@
 # Changelog
 
+## 2026-07-25 (14)
+
+- feat(arena): finish wiring Paimon into the live roster (S170-55). The hero (enum entry, kit
+  dispatch, docs writeup) was added in an earlier, uncommitted pass but was never actually
+  reachable: no `arena_hero_name()`/`arena_ability_name()` entries (rendered as "unknown"),
+  `apps/arena_server`'s pick-validation bound stopped at `ARENA_HERO_TYLER`, the draft-modulo in
+  `apps/arena_bot`/`apps/arena` (both `% 18`) meant Paimon could never be drafted at all, and
+  `tick_hero_kit`/`bot_cast_kit_if_ready` had no Paimon case (the latter a real compiler warning:
+  "enumeration value 'ARENA_HERO_PAIMON' not handled in switch"). Fixed all five gaps: name +
+  ability-name table entries, pick-validation bound raised to `ARENA_HERO_PAIMON`, draft-modulo
+  bumped to `% 19` in both bot and human clients, passive aura-silence + R-zone damage/heal tick
+  added to `tick_hero_kit` (new `ARENA_PAIMON_PASSIVE_INTERVAL_MS` constant), bot-cast heuristic
+  added. Also gave Paimon a distinct 3D silhouette (robed body + raised scepter accent) instead of
+  falling through to the generic default cube. 5 new headless tests (Q root+damage in/out of
+  range, W damage+silence, passive periodic silence, R zone damage-to-enemy/heal-to-ally).
+  Verified: full suite passes (272 checks), live: rebuilt + restarted all three systemd units,
+  confirmed Paimon (`hero_id=18`) actually gets drafted in a real 20/20 match and the match runs
+  stably with real snapshots streaming, no crash.
+
 ## 2026-07-25 (13)
 
 - fix(matchmaker): close the phantom-requeue race that was silently capping almost every 10v10

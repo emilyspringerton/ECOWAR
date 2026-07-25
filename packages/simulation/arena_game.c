@@ -1776,6 +1776,49 @@ static void tick_hero_kit(ArenaHero *h, ArenaHero *foe, ArenaHero *ally, unsigne
             if (h->r_active_ms < 0) h->r_active_ms = 0;
         }
         break;
+    case ARENA_HERO_PAIMON:
+        /* Keeping the Peace: always-on passive, same aura-tick idiom as
+           Pizza's burn aura -- periodically silences the nearest enemy in
+           range without being cast, talking a fight down before it
+           escalates rather than burning it. */
+        if (h->alive) {
+            h->aura_tick_ms += (int)dt_ms;
+            while (h->aura_tick_ms >= ARENA_PAIMON_PASSIVE_INTERVAL_MS) {
+                h->aura_tick_ms -= ARENA_PAIMON_PASSIVE_INTERVAL_MS;
+                if (foe && hero_is_hittable(foe)) {
+                    float dx = foe->x - h->x, dz = foe->z - h->z;
+                    if (sqrtf(dx * dx + dz * dz) <= ARENA_PAIMON_PASSIVE_AURA_RADIUS) {
+                        foe->silenced_ms = ARENA_PAIMON_PASSIVE_SILENCE_MS;
+                    }
+                }
+            }
+        }
+        /* Two Hundred Legions: fixed zone, damage-to-enemy + heal-to-ally
+           tick, same shape as Ghost's Recital / Flamel's Elixir of Wild
+           Growth -- the literal presence of a commanded army felt by both
+           sides at once. */
+        if (h->r_active_ms > 0) {
+            h->r_active_ms -= (int)dt_ms;
+            if (h->r_active_ms < 0) h->r_active_ms = 0;
+            h->r_zone_tick_ms += (int)dt_ms;
+            while (h->r_zone_tick_ms >= 1000) {
+                h->r_zone_tick_ms -= 1000;
+                if (foe && hero_is_hittable(foe)) {
+                    float dx = foe->x - h->r_zone_x, dz = foe->z - h->r_zone_z;
+                    if (sqrtf(dx * dx + dz * dz) <= ARENA_PAIMON_R_RADIUS) {
+                        apply_damage(foe, ARENA_PAIMON_R_DPS);
+                    }
+                }
+                if (ally && ally->alive) {
+                    float adx = ally->x - h->r_zone_x, adz = ally->z - h->r_zone_z;
+                    if (sqrtf(adx * adx + adz * adz) <= ARENA_PAIMON_R_RADIUS) {
+                        ally->hp += ARENA_PAIMON_R_HEAL_PER_TICK;
+                        if (ally->hp > ally->max_hp) ally->hp = ally->max_hp;
+                    }
+                }
+            }
+        }
+        break;
     default:
         break;
     }
@@ -1957,6 +2000,19 @@ static void bot_cast_kit_if_ready(ArenaHero *bot, ArenaHero *foe) {
         } else if (bot->w_cooldown_ms <= 0) {
             arena_toggle_w(bot->owner);
         } else if (bot->r_cooldown_ms <= 0 && dist <= ARENA_TYLER_R_RANGE && bot->hp > bot->max_hp / 2) {
+            arena_cast_r(bot->owner);
+        }
+        break;
+    case ARENA_HERO_PAIMON:
+        /* Q for the ranged root+damage poke, W as the instant-decree
+           follow-up, R (the zone) when the foe is close enough for it to
+           matter -- same "Q leads, W/R follow once in range" shape as
+           Ghost/Gary above. */
+        if (bot->q_cooldown_ms <= 0 && dist <= ARENA_PAIMON_Q_RANGE) {
+            arena_cast_q(bot->owner);
+        } else if (bot->w_cooldown_ms <= 0 && dist <= ARENA_PAIMON_W_RANGE) {
+            arena_toggle_w(bot->owner);
+        } else if (bot->r_cooldown_ms <= 0 && dist <= ARENA_PAIMON_R_RADIUS) {
             arena_cast_r(bot->owner);
         }
         break;

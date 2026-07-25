@@ -24,6 +24,7 @@ const char *arena_hero_name(ArenaHeroID hero_id) {
     case ARENA_HERO_ABRAHAM: return "abraham";
     case ARENA_HERO_ADA:     return "ada";
     case ARENA_HERO_TYLER:   return "tyler";
+    case ARENA_HERO_PAIMON:  return "paimon";
     default:                 return "unknown";
     }
 }
@@ -51,6 +52,7 @@ const char *arena_ability_name(ArenaHeroID hero_id, int slot) {
         [ARENA_HERO_ABRAHAM]    = {"THE SACRED MAGIC", "THE BOOK, UNATTESTED", "THE GUARDIAN ANGEL, CONTACTED"},
         [ARENA_HERO_ADA]        = {"THE ANALYTICAL ENGINE", "POETICAL SCIENCE", "FIRST PROGRAM, RUN LATE"},
         [ARENA_HERO_TYLER]      = {"EARTHBIND", "POOF", "DIVIDED WE STAND"},
+        [ARENA_HERO_PAIMON]     = {"TEACHES ALL ARTS", "SPEAKS WITH TOTAL AUTHORITY", "TWO HUNDRED LEGIONS"},
     };
     if (hero_id < 0 || hero_id >= ARENA_HERO_COUNT || slot < 0 || slot > 2) return "?";
     const char *name = NAMES[hero_id][slot];

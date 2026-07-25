@@ -392,7 +392,7 @@ static void net_poll_snapshots(uint32_t now_ms) {
                        founder confirmed auto-draft is fine for now -- same roster-spread
                        rule apps/arena_bot already uses, so the human doesn't get stuck
                        in ARENA_PHASE_DRAFT forever waiting on input that never comes. */
-                    int hero_id = my_owner % 18; /* ARENA_HERO_UNICORN..BACON_PUCK (S170-79, S170-91, S170-94) */
+                    int hero_id = my_owner % 19; /* ARENA_HERO_UNICORN..PAIMON (S170-79, S170-91, S170-94, S170-55) */
                     net_send_pick(hero_id);
                     net_picked = 1;
                     net_last_pick_send_ms = now_ms;
@@ -435,7 +435,7 @@ static void net_poll_snapshots(uint32_t now_ms) {
      * harmless if the original arrived (server's own PACKET_ARENA_PICK handling just re-records
      * the same hero_id), the actual fix if it didn't. */
     if (net_phase == ARENA_PHASE_DRAFT && net_picked && now_ms - net_last_pick_send_ms > 1000) {
-        int hero_id = my_owner % 18;
+        int hero_id = my_owner % 19;
         net_send_pick(hero_id);
         net_last_pick_send_ms = now_ms;
     }
@@ -793,6 +793,10 @@ static void draw_hero_model(ArenaHeroID hero_id, float hero_x, float hero_z, con
             break;
         case ARENA_HERO_TYLER: /* deliberately unremarkable plain humanoid, per character */
             BOX(0.0f, 0.65f, 0.0f, 0.75f, 1.3f, 0.75f);
+            break;
+        case ARENA_HERO_PAIMON: /* Court Voice -- robed commander body + a raised scepter accent */
+            BOX(0.0f, 0.65f, 0.0f, 0.85f, 1.3f, 0.85f);
+            BOX(0.35f, 1.3f, 0.0f, 0.12f, 0.5f, 0.12f);
             break;
         default:
             BOX(0.0f, 0.5f, 0.0f, 0.9f, 1.0f, 0.9f);

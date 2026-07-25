@@ -498,6 +498,7 @@ typedef enum {
  * Recital/Flamel's Elixir of Wild Growth. */
 #define ARENA_PAIMON_PASSIVE_AURA_RADIUS   3.5f
 #define ARENA_PAIMON_PASSIVE_SILENCE_MS    800
+#define ARENA_PAIMON_PASSIVE_INTERVAL_MS  4000 /* "periodically," not every tick like Pizza's DPS aura -- talking a fight down takes longer than burning */
 #define ARENA_PAIMON_Q_RANGE                5.5f
 #define ARENA_PAIMON_Q_DAMAGE               9
 #define ARENA_PAIMON_Q_ROOT_MS              1400

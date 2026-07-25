@@ -1726,6 +1726,88 @@ static void test_team_wipe_ends_match_once_the_team_owns_nothing(void) {
     CHECK(arena_state.winner == 2, "team 0 wiped with no nodes to respawn onto -- team 1 wins");
 }
 
+static void test_paimon_q_damages_and_roots_in_range(void) {
+    arena_init_with_heroes(ARENA_HERO_UNICORN, ARENA_HERO_PAIMON);
+    ArenaHero *paimon = &arena_state.heroes[1];
+    ArenaHero *foe = &arena_state.heroes[0];
+    foe->x = paimon->x + 4.0f; /* within ARENA_PAIMON_Q_RANGE */
+    foe->z = paimon->z;
+    int foe_hp_before = foe->hp;
+
+    arena_cast_q(1);
+
+    CHECK(foe->hp < foe_hp_before, "Q damages the foe when in range");
+    CHECK(foe->rooted_ms == ARENA_PAIMON_Q_ROOT_MS, "Q roots the foe on a landed hit");
+    CHECK(paimon->q_cooldown_ms == ARENA_PAIMON_Q_COOLDOWN_MS, "Q starts on cooldown after a landed hit");
+}
+
+static void test_paimon_q_out_of_range_whiffs(void) {
+    arena_init_with_heroes(ARENA_HERO_UNICORN, ARENA_HERO_PAIMON);
+    ArenaHero *paimon = &arena_state.heroes[1];
+    ArenaHero *foe = &arena_state.heroes[0];
+    foe->x = paimon->x + ARENA_PAIMON_Q_RANGE + 5.0f;
+    foe->z = paimon->z;
+    int foe_hp_before = foe->hp;
+
+    arena_cast_q(1);
+
+    CHECK(foe->hp == foe_hp_before, "Q out of range does not damage the foe");
+    CHECK(foe->rooted_ms == 0, "Q out of range does not root the foe");
+}
+
+static void test_paimon_w_damages_and_silences_in_range(void) {
+    arena_init_with_heroes(ARENA_HERO_UNICORN, ARENA_HERO_PAIMON);
+    ArenaHero *paimon = &arena_state.heroes[1];
+    ArenaHero *foe = &arena_state.heroes[0];
+    foe->x = paimon->x + 4.0f; /* within ARENA_PAIMON_W_RANGE */
+    foe->z = paimon->z;
+    int foe_hp_before = foe->hp;
+
+    arena_toggle_w(1);
+
+    CHECK(foe->hp < foe_hp_before, "Speaks With Total Authority damages the nearest enemy in range");
+    CHECK(foe->silenced_ms == ARENA_PAIMON_W_SILENCE_MS, "Speaks With Total Authority silences the nearest enemy");
+    CHECK(paimon->w_cooldown_ms == ARENA_PAIMON_W_COOLDOWN_MS, "W starts on its own cooldown after cast");
+}
+
+static void test_paimon_passive_silences_nearest_enemy_periodically(void) {
+    arena_init_with_heroes(ARENA_HERO_UNICORN, ARENA_HERO_PAIMON);
+    ArenaHero *paimon = &arena_state.heroes[1];
+    ArenaHero *foe = &arena_state.heroes[0];
+    foe->x = paimon->x + 2.0f; /* within ARENA_PAIMON_PASSIVE_AURA_RADIUS */
+    foe->z = paimon->z;
+    foe->target_x = foe->x; /* don't wander out of aura range before the tick lands */
+    foe->target_z = foe->z;
+
+    arena_update(ARENA_PAIMON_PASSIVE_INTERVAL_MS);
+
+    CHECK(foe->silenced_ms > 0, "Keeping the Peace silences the nearest enemy in range without being cast");
+}
+
+static void test_paimon_r_zone_damages_enemy_and_heals_ally(void) {
+    arena_init_teams();
+    for (int i = 3; i < ARENA_MAX_HEROES; i++) arena_state.heroes[i].active = 0;
+    arena_state.heroes[ARENA_TEAM_SIZE].active = 1;
+    arena_state.heroes[ARENA_TEAM_SIZE].alive = 1;
+    arena_state.heroes[0].hero_id = ARENA_HERO_PAIMON;
+    arena_state.heroes[0].x = 0; arena_state.heroes[0].z = 0;
+    arena_state.heroes[1].x = 1; arena_state.heroes[1].z = 0; /* ally, inside the zone */
+    arena_state.heroes[1].max_hp = 100; arena_state.heroes[1].hp = 50;
+    arena_state.heroes[ARENA_TEAM_SIZE].x = -1; arena_state.heroes[ARENA_TEAM_SIZE].z = 0; /* enemy, inside the zone */
+    arena_state.heroes[ARENA_TEAM_SIZE].hp = arena_state.heroes[ARENA_TEAM_SIZE].max_hp = 100;
+
+    arena_cast_r(0);
+    CHECK(arena_state.heroes[0].r_active_ms == ARENA_PAIMON_R_DURATION_MS, "R starts its zone duration on cast");
+    CHECK(arena_state.heroes[0].r_cooldown_ms == ARENA_PAIMON_R_COOLDOWN_MS, "R starts on its own cooldown after cast");
+
+    arena_update_teams(1000); /* one full 1000ms zone tick */
+
+    CHECK(arena_state.heroes[1].hp == 50 + ARENA_PAIMON_R_HEAL_PER_TICK,
+          "Two Hundred Legions heals an ally standing in the zone");
+    CHECK(arena_state.heroes[ARENA_TEAM_SIZE].hp <= 100 - ARENA_PAIMON_R_DPS,
+          "Two Hundred Legions damages an enemy standing in the zone");
+}
+
 int main(void) {
     printf("RED GARDEN arena_game headless smoke test\n\n");
     test_movement_reaches_target();
@@ -1826,6 +1908,11 @@ int main(void) {
     test_dead_hero_respawns_at_owned_node_once_timer_expires();
     test_team_wipe_does_not_end_match_while_team_still_owns_a_node();
     test_team_wipe_ends_match_once_the_team_owns_nothing();
+    test_paimon_q_damages_and_roots_in_range();
+    test_paimon_q_out_of_range_whiffs();
+    test_paimon_w_damages_and_silences_in_range();
+    test_paimon_passive_silences_nearest_enemy_periodically();
+    test_paimon_r_zone_damages_enemy_and_heals_ally();
     printf("\n%s\n", failures == 0 ? "ALL PASS" : "SOME FAILED");
     return failures == 0 ? 0 : 1;
 }
