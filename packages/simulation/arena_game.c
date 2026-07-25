@@ -1173,6 +1173,7 @@ void arena_cast_q(int owner) {
     ArenaHero *h = &arena_state.heroes[owner];
     ArenaHero *foe = arena_nearest_enemy(owner);
     if (!h->alive || h->silenced_ms > 0 || h->q_cooldown_ms > 0) return;
+    h->cast_flash_slot = 1;
 
     switch (h->hero_id) {
     case ARENA_HERO_UNICORN:
@@ -1280,6 +1281,12 @@ void arena_toggle_w(int owner) {
     if (owner < 0 || owner >= ARENA_MAX_HEROES) return;
     ArenaHero *h = &arena_state.heroes[owner];
     if (!h->alive || h->silenced_ms > 0) return;
+    /* w_cooldown_ms is 0 (and never touched) for the pure-toggle heroes
+       below, so this passes for them unconditionally -- correctly gates
+       only the instant-cast-with-cooldown heroes (Ghost, Tyler, Paimon,
+       etc.), whose own internal `if (w_cooldown_ms > 0) return;` a few
+       lines into their case would otherwise let a blocked cast still flash. */
+    if (h->w_cooldown_ms <= 0) h->cast_flash_slot = 2;
 
     switch (h->hero_id) {
     case ARENA_HERO_UNICORN:
@@ -1414,6 +1421,7 @@ void arena_cast_r(int owner) {
     ArenaHero *h = &arena_state.heroes[owner];
     ArenaHero *foe = arena_nearest_enemy(owner);
     if (!h->alive || h->silenced_ms > 0 || h->r_cooldown_ms > 0) return;
+    h->cast_flash_slot = 3;
 
     switch (h->hero_id) {
     case ARENA_HERO_UNICORN:

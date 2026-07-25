@@ -295,6 +295,7 @@ static void server_broadcast(void) {
         msg.heroes[i].max_hp = (uint16_t)h->max_hp;
         msg.heroes[i].alive = (uint8_t)h->alive;
         msg.heroes[i].hero_id = (uint8_t)h->hero_id;
+        msg.heroes[i].cast_flash_slot = (uint8_t)h->cast_flash_slot;
         msg.picked[i] = (uint8_t)hero_picked[i];
     }
     msg.winner = (uint8_t)arena_state.winner;
@@ -315,6 +316,13 @@ static void server_broadcast(void) {
         if (client_active[i]) {
             sendto(sock, buffer, sizeof(buffer), 0, (struct sockaddr *)&clients[i], sizeof(struct sockaddr_in));
         }
+    }
+
+    /* cast_flash_slot is a one-tick wire signal (S170-124) -- already
+       copied into msg above, clear the sim's own copy now so it doesn't
+       leak into next tick's broadcast too. */
+    for (int i = 0; i < lobby_size; i++) {
+        arena_state.heroes[i].cast_flash_slot = 0;
     }
 }
 

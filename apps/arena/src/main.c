@@ -375,6 +375,11 @@ static uint8_t net_phase = ARENA_PHASE_WAITING;
 static int net_picked = 0; /* have we sent our PACKET_ARENA_PICK for the current draft yet */
 static uint32_t net_last_pick_send_ms = 0; /* for retry -- see net_poll_snapshots' resend logic */
 
+/* Defined further down alongside the other particle-effect state
+   (spawn_ring/AttackFlash) -- forward-declared here so net_poll_snapshots
+   can consume the wire's cast_flash_slot the instant a snapshot arrives. */
+static void spawn_spell_flash(float x, float z, int slot);
+
 static void net_poll_snapshots(uint32_t now_ms) {
     char rbuf[2048];
     struct sockaddr_in sender;
@@ -411,6 +416,9 @@ static void net_poll_snapshots(uint32_t now_ms) {
                     dst->active = 1;
                     dst->team = (i < msg->count / 2) ? 0 : 1;
                     dst->hero_id = (ArenaHeroID)msg->heroes[i].hero_id;
+                    if (msg->heroes[i].cast_flash_slot > 0) {
+                        spawn_spell_flash(dst->x, dst->z, msg->heroes[i].cast_flash_slot);
+                    }
                 }
                 arena_state.winner = msg->winner;
                 for (int i = 0; i < ARENA_SNAPSHOT_NODE_COUNT && i < ARENA_NODE_COUNT; i++) {
@@ -1053,6 +1061,35 @@ static void spawn_attack_flash(float x, float z) {
     }
 }
 
+/* ---------------- spell flashes (S170-124, "add particle effects to
+ * spells") ---------------- */
+/* Unlike auto-attacks (S170-122, HP-delta is a decent-enough proxy), a real
+ * "a spell was just cast" signal doesn't exist in HP alone -- several kits
+ * have no damage component on some slots (Frog's Q rewinds position/HP with
+ * no damage at all; Unicorn's W is a pure toggle). Carried over the wire for
+ * real instead: ArenaHeroSnapshot.cast_flash_slot (0/1/2/3 = none/Q/W/R),
+ * a one-tick signal the server sets the instant a cast clears its gate and
+ * clears again right after broadcasting it. Slot gets its own color/size so
+ * Q/W/R read as visually distinct tiers, same convention as any real MOBA
+ * (bigger, brighter effect for the ultimate). */
+#define MAX_SPELL_FLASHES (ARENA_MAX_HEROES * 2)
+#define SPELL_FLASH_LIFETIME_MS 260.0f
+typedef struct { float x, z, age_ms; int slot; int active; } SpellFlash;
+static SpellFlash spell_flashes[MAX_SPELL_FLASHES];
+
+static void spawn_spell_flash(float x, float z, int slot) {
+    for (int i = 0; i < MAX_SPELL_FLASHES; i++) {
+        if (!spell_flashes[i].active) {
+            spell_flashes[i].active = 1;
+            spell_flashes[i].x = x;
+            spell_flashes[i].z = z;
+            spell_flashes[i].slot = slot;
+            spell_flashes[i].age_ms = 0;
+            return;
+        }
+    }
+}
+
 /* ---------------- camera ---------------- */
 static float cam_yaw = 45.0f, cam_pitch = 40.0f, cam_dist = 16.0f;
 
@@ -1395,6 +1432,24 @@ int main(int argc, char *argv[]) {
             attack_flashes[i].age_ms += dt;
             if (attack_flashes[i].age_ms >= ATTACK_FLASH_LIFETIME_MS) attack_flashes[i].active = 0;
         }
+        /* Local-mode cast_flash_slot drain (S170-124): net_mode already spawns spell
+           flashes directly off the wire snapshot inside net_poll_snapshots and never
+           writes this field locally, so this loop is a no-op there -- it only ever
+           fires for the local 1v1 demo, where arena_cast_q/toggle_w/cast_r are called
+           directly (both the human's own key presses and the internal bot AI), with no
+           server-side broadcast/clear step to do this job instead. */
+        for (int i = 0; i < ARENA_MAX_HEROES; i++) {
+            ArenaHero *h = &arena_state.heroes[i];
+            if (h->cast_flash_slot > 0) {
+                spawn_spell_flash(h->x, h->z, h->cast_flash_slot);
+                h->cast_flash_slot = 0;
+            }
+        }
+        for (int i = 0; i < MAX_SPELL_FLASHES; i++) {
+            if (!spell_flashes[i].active) continue;
+            spell_flashes[i].age_ms += dt;
+            if (spell_flashes[i].age_ms >= SPELL_FLASH_LIFETIME_MS) spell_flashes[i].active = 0;
+        }
 
         glViewport(0, 0, win_w, win_h);
         glClearColor(0.03f, 0.05f, 0.04f, 1.0f);
@@ -1492,6 +1547,31 @@ int main(int argc, char *argv[]) {
             glUniformMatrix4fv_(loc_mvp, 1, GL_FALSE, mvp.m);
             glUniformMatrix4fv_(loc_model, 1, GL_FALSE, model.m);
             glUniform4f_(loc_color, 1.0f, 0.75f, 0.15f, alpha);
+            draw_mesh(&ring_mesh);
+        }
+        /* spell flashes (S170-124): one look per ability tier, same
+           low-basic to high-ultimate color/size ramp any real MOBA uses --
+           Q small and cyan-arcane, W a bit bigger and violet, R the
+           biggest and gold, so which slot someone just cast reads at a
+           glance even in a crowded team fight. */
+        for (int i = 0; i < MAX_SPELL_FLASHES; i++) {
+            if (!spell_flashes[i].active) continue;
+            float t01 = spell_flashes[i].age_ms / SPELL_FLASH_LIFETIME_MS;
+            float alpha = 1.0f - t01;
+            float base_scale, rr, gg, bb;
+            switch (spell_flashes[i].slot) {
+                case 1: base_scale = 0.6f; rr = 0.3f; gg = 0.7f; bb = 1.0f; break;  /* Q: cyan-arcane */
+                case 2: base_scale = 0.8f; rr = 0.7f; gg = 0.3f; bb = 1.0f; break;  /* W: violet */
+                default: base_scale = 1.1f; rr = 1.0f; gg = 0.85f; bb = 0.2f; break; /* R: gold, biggest */
+            }
+            float scale = base_scale + t01 * 0.6f;
+            Mat4 tr = mat4_translate(spell_flashes[i].x, 0.08f, spell_flashes[i].z);
+            Mat4 sc = mat4_scale(scale, 1.0f, scale);
+            Mat4 model = mat4_multiply(&tr, &sc);
+            Mat4 mvp = mat4_multiply(&vp, &model);
+            glUniformMatrix4fv_(loc_mvp, 1, GL_FALSE, mvp.m);
+            glUniformMatrix4fv_(loc_model, 1, GL_FALSE, model.m);
+            glUniform4f_(loc_color, rr, gg, bb, alpha);
             draw_mesh(&ring_mesh);
         }
         glDepthMask(GL_TRUE);

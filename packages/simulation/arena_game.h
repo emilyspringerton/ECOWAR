@@ -611,6 +611,17 @@ typedef struct {
      * check each tick until the team owns a node to respawn onto. Unused by
      * the 1v1 local demo (arena_update), which still ends on first death. */
     int respawn_ms_remaining;
+    /* cast_flash_slot (S170-124, "particle effects for spells"): 0 = none,
+     * 1/2/3 = Q/W/R -- set unconditionally the instant a cast clears its
+     * gate (alive, not silenced, off cooldown) in arena_cast_q/toggle_w/
+     * cast_r, regardless of whether that specific cast goes on to hit
+     * anything. A real cast animation fires on cast, not just on a landed
+     * hit, same convention as any real MOBA. Consumed once per tick by
+     * server_broadcast (packaged into the wire snapshot) and cleared right
+     * after, same one-tick-lifetime idiom as damaged_this_tick. Unused by
+     * the 1v1 local demo, which renders straight off arena_state with no
+     * wire hop needed. */
+    int cast_flash_slot;
 } ArenaHero;
 
 typedef struct {

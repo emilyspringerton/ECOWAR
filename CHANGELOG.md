@@ -1,5 +1,27 @@
 # Changelog
 
+## 2026-07-25 (17)
+
+- feat(arena): particle effects for spells (S170-124). Founder, real-time: "redgarden add
+  particle effects to spells." Distinct from S170-122's auto-attack flash, which fires on any HP
+  decrease -- a signal several kits' spells don't produce at all (Frog's Q rewinds position/HP
+  with no damage; Unicorn's W is a pure toggle). Real wire-protocol addition instead of another
+  client-side guess: `ArenaHeroSnapshot.cast_flash_slot` (0/1/2/3 = none/Q/W/R), set the instant a
+  cast clears its gate in `arena_cast_q`/`arena_toggle_w`/`arena_cast_r` regardless of whether it
+  goes on to hit anything (a real cast animation fires on cast, not just on a landed hit) -- W
+  needed care since only some heroes have an internal cooldown gate (instant-cast heroes like
+  Ghost/Tyler/Paimon) while others are pure toggles (Unicorn) with no cooldown at all; gated on
+  `w_cooldown_ms <= 0`, which is always true for toggle heroes and only true for cooldown heroes
+  when actually available. Server clears its own copy right after each broadcast, one-tick
+  lifetime, same idiom as `damaged_this_tick`. Client renders Q/W/R as visually distinct tiers
+  (small cyan, bigger violet, biggest gold) via the existing ring-mesh machinery; local 1v1 demo
+  mode (no server broadcast to hook) drains the same field directly off `arena_state` each frame
+  instead. 5 new headless tests (cast_flash_slot set correctly on Q/W-toggle/R, not set when
+  blocked by cooldown on Q or a cooldown-gated W). Verified: full suite (277 checks), VS0/VS1
+  stable. Wire-format change (ArenaHeroSnapshot grew by one byte) -- rebuilt and restarted all
+  three live systemd units together, confirmed a real 20/20 match forms, drafts, and streams real
+  snapshots with no crash.
+
 ## 2026-07-25 (16)
 
 - feat(arena): enhanced cursor hover state, enemy vs. ally (S170-69 revisited). Founder,

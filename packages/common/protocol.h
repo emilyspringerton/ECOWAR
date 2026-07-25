@@ -113,6 +113,14 @@ typedef struct {
     uint16_t max_hp;
     uint8_t alive;
     uint8_t hero_id;
+    // cast_flash_slot (S170-124, "particle effects for spells"): 0 = none,
+    // 1/2/3 = Q/W/R -- set the tick a cast clears its gate (alive, not
+    // silenced, off cooldown), regardless of whether it goes on to hit
+    // anything, same "cast fires the effect, not just a landed hit"
+    // convention as any real MOBA. One-tick lifetime: the server clears its
+    // own copy right after broadcasting it, so this is only ever nonzero in
+    // the single snapshot immediately following the cast.
+    uint8_t cast_flash_slot;
 } ArenaHeroSnapshot;
 
 // ARENA_SNAPSHOT_MAX_HEROES must match packages/simulation/arena_game.h's

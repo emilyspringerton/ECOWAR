@@ -1808,6 +1808,58 @@ static void test_paimon_r_zone_damages_enemy_and_heals_ally(void) {
           "Two Hundred Legions damages an enemy standing in the zone");
 }
 
+static void test_cast_flash_slot_set_on_q(void) {
+    arena_init_with_heroes(ARENA_HERO_UNICORN, ARENA_HERO_GHOST);
+    ArenaHero *ghost = &arena_state.heroes[1];
+    ArenaHero *foe = &arena_state.heroes[0];
+    foe->x = ghost->x + 4.0f;
+    foe->z = ghost->z;
+
+    arena_cast_q(1);
+
+    CHECK(ghost->cast_flash_slot == 1, "a successful Q cast sets cast_flash_slot to 1");
+}
+
+static void test_cast_flash_slot_set_on_w_toggle_hero(void) {
+    arena_init_with_heroes(ARENA_HERO_UNICORN, ARENA_HERO_DUCK);
+    ArenaHero *unicorn = &arena_state.heroes[0];
+
+    arena_toggle_w(0);
+
+    CHECK(unicorn->cast_flash_slot == 2, "toggling a pure-toggle W (Unicorn) sets cast_flash_slot to 2");
+}
+
+static void test_cast_flash_slot_set_on_r(void) {
+    arena_init_with_heroes(ARENA_HERO_UNICORN, ARENA_HERO_GHOST);
+    ArenaHero *ghost = &arena_state.heroes[1];
+
+    arena_cast_r(1);
+
+    CHECK(ghost->cast_flash_slot == 3, "a successful R cast sets cast_flash_slot to 3");
+}
+
+static void test_cast_flash_slot_not_set_when_q_blocked_by_cooldown(void) {
+    arena_init_with_heroes(ARENA_HERO_UNICORN, ARENA_HERO_GHOST);
+    ArenaHero *ghost = &arena_state.heroes[1];
+    ghost->q_cooldown_ms = 1000;
+
+    arena_cast_q(1);
+
+    CHECK(ghost->cast_flash_slot == 0, "a Q blocked by its own cooldown does not set cast_flash_slot");
+}
+
+static void test_cast_flash_slot_not_set_when_w_blocked_by_its_own_cooldown(void) {
+    /* Ghost's W is instant-with-cooldown (not a pure toggle like Unicorn's) --
+       exactly the case S170-124's arena_toggle_w gating exists to handle correctly. */
+    arena_init_with_heroes(ARENA_HERO_UNICORN, ARENA_HERO_GHOST);
+    ArenaHero *ghost = &arena_state.heroes[1];
+    ghost->w_cooldown_ms = 1000;
+
+    arena_toggle_w(1);
+
+    CHECK(ghost->cast_flash_slot == 0, "a cooldown-gated W blocked by its own cooldown does not set cast_flash_slot");
+}
+
 int main(void) {
     printf("RED GARDEN arena_game headless smoke test\n\n");
     test_movement_reaches_target();
@@ -1913,6 +1965,11 @@ int main(void) {
     test_paimon_w_damages_and_silences_in_range();
     test_paimon_passive_silences_nearest_enemy_periodically();
     test_paimon_r_zone_damages_enemy_and_heals_ally();
+    test_cast_flash_slot_set_on_q();
+    test_cast_flash_slot_set_on_w_toggle_hero();
+    test_cast_flash_slot_set_on_r();
+    test_cast_flash_slot_not_set_when_q_blocked_by_cooldown();
+    test_cast_flash_slot_not_set_when_w_blocked_by_its_own_cooldown();
     printf("\n%s\n", failures == 0 ? "ALL PASS" : "SOME FAILED");
     return failures == 0 ? 0 : 1;
 }
