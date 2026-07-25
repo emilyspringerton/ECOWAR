@@ -17,6 +17,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+#include <math.h>
 
 #ifdef _WIN32
     #include <winsock2.h>
@@ -430,7 +431,21 @@ static void play_one_match(void) {
                         if (best == -1 || dist < best_dist) { best = i; best_dist = dist; }
                     }
                     if (best != -1) {
-                        send_move(last.heroes[best].x, last.heroes[best].z);
+                        /* S170-90 fix, real bug found live: "all of the bots just bunch up on
+                           eachother." Root cause -- every bot sent its move target as the
+                           nearest enemy's *exact* (x,z). Whenever several bots shared the same
+                           nearest enemy (common once a team clusters up), they'd all converge on
+                           the literal same point and stack. Spread each bot to its own approach
+                           angle around the target instead, derived from its stable owner index
+                           (no coordination needed between bots, no shared state) -- a real
+                           surround formation rather than a single pile. Radius is just outside
+                           ARENA_ATTACK_RANGE (1.6f) so bots still end up in melee range of the
+                           target, just not literally on top of each other or it. */
+                        float approach_angle = (float)(my_owner % 8) * (2.0f * 3.14159265f / 8.0f);
+                        float approach_radius = 2.0f;
+                        float tx = last.heroes[best].x + cosf(approach_angle) * approach_radius;
+                        float tz = last.heroes[best].z + sinf(approach_angle) * approach_radius;
+                        send_move(tx, tz);
                         uint32_t now = (uint32_t)time(NULL) * 1000;
                         if (now - last_cast_ms > 2000) {
                             send_cast(0); /* Q -- server no-ops it if actually on cooldown */

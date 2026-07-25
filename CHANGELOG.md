@@ -1,5 +1,20 @@
 # Changelog
 
+## 2026-07-25 (8)
+
+- fix(arena): bots bunching up on top of each other in a live match (S170-90). Founder, real-time:
+  "all of the bots just bunch up on eachother." Root cause: `apps/arena_bot`'s move-target logic
+  sent the nearest enemy's *exact* (x,z) as the move target -- whenever several bots on one team
+  shared the same nearest enemy (common once a team clusters up mid-fight), they'd all converge on
+  the literal same point and stack. Fixed by spreading each bot to its own approach angle around
+  the target, derived from its stable owner index (`my_owner % 8`, no coordination needed between
+  bots) at a radius just outside `ARENA_ATTACK_RANGE` -- a real surround formation instead of a
+  single pile. Verified: `build.sh`, `test_arena.sh`, `test_10_bots.sh` all clean; restarted the
+  three live systemd units on the new build, then ran a real temporary 20/20 match (added one
+  extra bot to the persistent 19-bot pool's open human slot, removed it after) and confirmed real
+  position data in the match log -- heroes on the same team ended up at genuinely distinct
+  coordinates around a fight, not stacked identically the way the bug produced.
+
 ## 2026-07-25 (7)
 
 - fix(arena): the two capture nodes render compressed onto one point in net_mode (S170-87). Real
