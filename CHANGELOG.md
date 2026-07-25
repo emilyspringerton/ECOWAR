@@ -524,3 +524,18 @@
 - Added connect-ticket accounts (HMAC-SHA256, same scheme as shankpit-460): `packages/common/hmac_sha256.h` ported verbatim, `apps/server` verifies tickets on `PACKET_CONNECT` (fails closed without `REDGARDEN_TICKET_SECRET`), test bots self-mint tickets like shankpit-460's `emily-bot`.
 - Added simple matchmaking: new `apps/matchmaker` pairs `PACKET_FIND_MATCH` requests and spawns a dedicated `red_garden_server --port <N>` per match; new `PACKET_FIND_MATCH`/`PACKET_MATCH_FOUND`/`MatchFoundMsg` wire types.
 - Validated VS0 (bot-vs-bot match) and VS1 (10 independent headless bots, 5 concurrent matches, matchmaking + accounts, 10s sustained load, zero crashes) via new `scripts/test_10_bots.sh`.
+
+## 2026-07-25 (2)
+- feat(arena): real per-hero 3D geometry (S170-118). Founder, real-time: "use shankpit skins as
+  a basic jump in graphics for redgarden models" -> "use shankpit og engine models to enhance
+  redgarden hero legibility." Every hero previously rendered as one identically-shaped colored
+  cube -- S170-89/96 already fixed "who is this" (floating health bars + name labels); this
+  fixes "what does this hero actually look like." New `draw_hero_model()` in
+  `apps/arena/src/main.c`: a per-`hero_id` switch composing 1-3 `draw_mesh()` boxes with real
+  proportions/silhouettes, reusing the design language of the 7 SHANKPIT skins (Duck/Unicorn/
+  Ghost/Frog/Tree/Pizza/Tyler) where a hero overlaps one, new equally-simple 2-3-box designs for
+  the other 11. Relationship coloring (self=cyan/team=blue/enemy=red, S170-89) is preserved
+  unchanged -- shape now encodes hero identity, color still encodes team/self, so neither
+  legibility need overrides the other. Can't literally port SHANKPIT's immediate-mode
+  `draw_player_skin_*()` code (this renderer is shader-based, no `mat4_rotate`) -- boxes are
+  axis-aligned translate+scale only, same convention already used for node rendering.

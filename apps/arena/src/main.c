@@ -696,6 +696,111 @@ static void draw_mesh(const Mesh *m) {
     glBindVertexArray_(0);
 }
 
+/* one box of a hero model, in hero-local space (dx/dy/dz offset from the hero's
+   footprint, sx/sy/sz box scale) -- dy is measured from the ground, not from the
+   hero's own translate, since hero translate is already y=0.5 (see caller) */
+static void draw_hero_box(float hero_x, float hero_z, float dx, float dy, float dz,
+                           float sx, float sy, float sz, const Mat4 *vp,
+                           GLint loc_mvp, GLint loc_model, const Mesh *cube_mesh) {
+    Mat4 t = mat4_translate(hero_x + dx, dy, hero_z + dz);
+    Mat4 s = mat4_scale(sx, sy, sz);
+    Mat4 model = mat4_multiply(&t, &s);
+    Mat4 mvp = mat4_multiply(vp, &model);
+    glUniformMatrix4fv_(loc_mvp, 1, GL_FALSE, mvp.m);
+    glUniformMatrix4fv_(loc_model, 1, GL_FALSE, model.m);
+    draw_mesh(cube_mesh);
+}
+
+/* S170-118 -- real per-hero silhouette instead of one generic cube for all 18.
+   Every box shares the caller's relationship color (self/team/enemy, see the
+   call site) so team/self legibility -- already solved by S170-89/96 -- is
+   never overridden by per-hero identity; only SHAPE encodes which hero this is.
+   Reuses the silhouette concepts already designed for the 7 SHANKPIT skins
+   (apps/lobby/src/main.c draw_player_skin_*) where a hero overlaps one, expressed
+   here as axis-aligned draw_mesh() boxes since this renderer has no mat4_rotate
+   and SHANKPIT's immediate-mode glPushMatrix/glRotatef code can't port verbatim. */
+static void draw_hero_model(ArenaHeroID hero_id, float hero_x, float hero_z, const Mat4 *vp,
+                             GLint loc_mvp, GLint loc_model, const Mesh *cube_mesh) {
+#define BOX(dx, dy, dz, sx, sy, sz) \
+    draw_hero_box(hero_x, hero_z, dx, dy, dz, sx, sy, sz, vp, loc_mvp, loc_model, cube_mesh)
+    switch (hero_id) {
+        case ARENA_HERO_UNICORN: /* SHANKPIT SKIN_UNICORN: body + tapered horn */
+            BOX(0.0f, 0.55f, 0.0f, 0.85f, 1.1f, 0.85f);
+            BOX(0.0f, 1.25f, 0.35f, 0.14f, 0.4f, 0.14f);
+            break;
+        case ARENA_HERO_DUCK: /* SHANKPIT SKIN_DUCK: squat wide body + forward bill */
+            BOX(0.0f, 0.35f, 0.0f, 1.0f, 0.7f, 1.0f);
+            BOX(0.0f, 0.35f, 0.55f, 0.3f, 0.16f, 0.35f);
+            break;
+        case ARENA_HERO_GHOST: /* SHANKPIT SKIN_GHOST: tall tapered legless body */
+            BOX(0.0f, 0.8f, 0.0f, 0.55f, 1.6f, 0.55f);
+            break;
+        case ARENA_HERO_FROG: /* SHANKPIT SKIN_FROG: wide flat body + bulging eyes */
+            BOX(0.0f, 0.3f, 0.0f, 1.1f, 0.55f, 1.05f);
+            BOX(-0.25f, 0.68f, 0.3f, 0.2f, 0.2f, 0.2f);
+            BOX(0.25f, 0.68f, 0.3f, 0.2f, 0.2f, 0.2f);
+            break;
+        case ARENA_HERO_DOC_WHEEL: /* wide flat base "wheel" + upright body */
+            BOX(0.0f, 0.55f, 0.0f, 0.65f, 1.0f, 0.65f);
+            BOX(0.0f, 0.12f, 0.0f, 1.15f, 0.16f, 1.15f);
+            break;
+        case ARENA_HERO_TREE: /* SHANKPIT SKIN_TREE: narrow trunk + wide canopy */
+            BOX(0.0f, 0.5f, 0.0f, 0.4f, 1.6f, 0.4f);
+            BOX(0.0f, 1.25f, 0.0f, 1.05f, 0.55f, 1.05f);
+            break;
+        case ARENA_HERO_PIZZA: /* SHANKPIT SKIN_PIZZA: flat wide wedge */
+            BOX(0.0f, 0.18f, 0.0f, 1.3f, 0.3f, 1.3f);
+            break;
+        case ARENA_HERO_FLAMEL: /* alchemist -- body + a small flame-accent box */
+            BOX(0.0f, 0.6f, 0.0f, 0.8f, 1.2f, 0.8f);
+            BOX(0.3f, 1.35f, 0.0f, 0.2f, 0.3f, 0.2f);
+            break;
+        case ARENA_HERO_MORRIGAN: /* raven-goddess -- body + two side wing slabs */
+            BOX(0.0f, 0.65f, 0.0f, 0.75f, 1.3f, 0.75f);
+            BOX(-0.55f, 0.9f, 0.0f, 0.35f, 0.55f, 0.15f);
+            BOX(0.55f, 0.9f, 0.0f, 0.35f, 0.55f, 0.15f);
+            break;
+        case ARENA_HERO_DAGDA: /* bruiser king -- one big bulky box */
+            BOX(0.0f, 0.65f, 0.0f, 1.2f, 1.3f, 1.2f);
+            break;
+        case ARENA_HERO_COURIER: /* Ratatoskr -- thin tall messenger + tail-flick accent */
+            BOX(0.0f, 0.7f, 0.0f, 0.65f, 1.4f, 0.65f);
+            BOX(0.0f, 1.1f, -0.45f, 0.18f, 0.5f, 0.18f);
+            break;
+        case ARENA_HERO_LOKI: /* duality -- main body + a smaller offset "double" */
+            BOX(0.0f, 0.6f, 0.0f, 0.8f, 1.2f, 0.8f);
+            BOX(0.5f, 0.4f, 0.35f, 0.4f, 0.8f, 0.4f);
+            break;
+        case ARENA_HERO_GARY: /* off-duty security -- boxy body + flat clipboard accent */
+            BOX(0.0f, 0.65f, 0.0f, 0.8f, 1.3f, 0.8f);
+            BOX(0.0f, 0.7f, 0.45f, 0.35f, 0.5f, 0.08f);
+            break;
+        case ARENA_HERO_FLUTE_DEBT: /* thin tall body + horizontal flute accent */
+            BOX(0.0f, 0.7f, 0.0f, 0.65f, 1.4f, 0.65f);
+            BOX(0.45f, 0.95f, 0.0f, 0.55f, 0.1f, 0.1f);
+            break;
+        case ARENA_HERO_BACON_PUCK: /* two merged heroes -- two half-width bodies side by side */
+            BOX(-0.32f, 0.6f, 0.0f, 0.55f, 1.2f, 0.75f);
+            BOX(0.32f, 0.5f, 0.0f, 0.55f, 1.0f, 0.75f);
+            break;
+        case ARENA_HERO_ABRAHAM: /* mage -- body + a flat "grimoire" accent */
+            BOX(0.0f, 0.65f, 0.0f, 0.8f, 1.3f, 0.8f);
+            BOX(0.0f, 0.65f, 0.45f, 0.3f, 0.4f, 0.08f);
+            break;
+        case ARENA_HERO_ADA: /* mech pilot -- boxy, oversized mech-like frame */
+            BOX(0.0f, 0.7f, 0.0f, 1.0f, 1.4f, 1.0f);
+            BOX(0.0f, 1.55f, 0.0f, 0.4f, 0.3f, 0.4f);
+            break;
+        case ARENA_HERO_TYLER: /* deliberately unremarkable plain humanoid, per character */
+            BOX(0.0f, 0.65f, 0.0f, 0.75f, 1.3f, 0.75f);
+            break;
+        default:
+            BOX(0.0f, 0.5f, 0.0f, 0.9f, 1.0f, 0.9f);
+            break;
+    }
+#undef BOX
+}
+
 /* ---------------- tiny immediate-mode HUD text (ported from apps/lobby) ---------------- */
 static void draw_char(char c, float x, float y, float s) {
     if (c >= 'a' && c <= 'z') c = (char)(c - 'a' + 'A'); /* fold lowercase -- one glyph set, not two */
@@ -1290,12 +1395,6 @@ int main(int argc, char *argv[]) {
         for (int i = 0; i < ARENA_MAX_HEROES; i++) {
             ArenaHero *h = &arena_state.heroes[i];
             if (!h->alive) continue;
-            Mat4 t = mat4_translate(h->x, 0.5f, h->z);
-            Mat4 s = mat4_scale(0.9f, 1.0f, 0.9f);
-            Mat4 model = mat4_multiply(&t, &s);
-            Mat4 mvp = mat4_multiply(&vp, &model);
-            glUniformMatrix4fv_(loc_mvp, 1, GL_FALSE, mvp.m);
-            glUniformMatrix4fv_(loc_model, 1, GL_FALSE, model.m);
             if (i == my_owner) {
                 glUniform4f_(loc_color, 0.1f, 0.8f, 0.95f, 1.0f); /* my hero: bright cyan */
             } else if (h->team == arena_state.heroes[my_owner].team) {
@@ -1303,7 +1402,9 @@ int main(int argc, char *argv[]) {
             } else {
                 glUniform4f_(loc_color, 0.95f, 0.25f, 0.15f, 1.0f); /* enemy: red */
             }
-            draw_mesh(&cube_mesh);
+            /* S170-118: per-hero_id silhouette (multi-box), not one generic cube --
+               relationship color above still wins for self/team/enemy legibility. */
+            draw_hero_model(h->hero_id, h->x, h->z, &vp, loc_mvp, loc_model, &cube_mesh);
         }
 
         /* placement rings */
