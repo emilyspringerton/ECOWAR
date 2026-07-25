@@ -689,6 +689,7 @@ static void draw_mesh(const Mesh *m) {
 
 /* ---------------- tiny immediate-mode HUD text (ported from apps/lobby) ---------------- */
 static void draw_char(char c, float x, float y, float s) {
+    if (c >= 'a' && c <= 'z') c = (char)(c - 'a' + 'A'); /* fold lowercase -- one glyph set, not two */
     glLineWidth(2.0f);
     glBegin(GL_LINES);
     if (c >= '0' && c <= '9') {
@@ -744,6 +745,104 @@ static void draw_char(char c, float x, float y, float s) {
         glVertex2f(x + s, y + s); glVertex2f(x + s, y + s / 2);
         glVertex2f(x + s, y + s / 2); glVertex2f(x, y + s / 2);
     } else if (c == ' ') {
+    /* The rest of the alphabet + a handful of punctuation marks (S170's font-glyph gap, found
+       live: tonight's new hero names -- Gary, Bacon+Puck, Abraham, Ada -- use letters this font
+       never covered, falling through to the generic missing-glyph box below for most of their
+       own names). Same simple GL_LINES stroke style as the letters above, not a real font. */
+    } else if (c == 'A') {
+        glVertex2f(x, y); glVertex2f(x + s / 2, y + s);
+        glVertex2f(x + s / 2, y + s); glVertex2f(x + s, y);
+        glVertex2f(x + s * 0.25f, y + s * 0.4f); glVertex2f(x + s * 0.75f, y + s * 0.4f);
+    } else if (c == 'B') {
+        glVertex2f(x, y); glVertex2f(x, y + s);
+        glVertex2f(x, y + s); glVertex2f(x + s * 0.7f, y + s);
+        glVertex2f(x + s * 0.7f, y + s); glVertex2f(x + s * 0.7f, y + s / 2);
+        glVertex2f(x + s * 0.7f, y + s / 2); glVertex2f(x, y + s / 2);
+        glVertex2f(x, y + s / 2); glVertex2f(x + s * 0.7f, y + s / 2);
+        glVertex2f(x + s * 0.7f, y + s / 2); glVertex2f(x + s * 0.7f, y);
+        glVertex2f(x + s * 0.7f, y); glVertex2f(x, y);
+    } else if (c == 'C') {
+        glVertex2f(x + s, y); glVertex2f(x, y);
+        glVertex2f(x, y); glVertex2f(x, y + s);
+        glVertex2f(x, y + s); glVertex2f(x + s, y + s);
+    } else if (c == 'D') {
+        glVertex2f(x, y); glVertex2f(x, y + s);
+        glVertex2f(x, y + s); glVertex2f(x + s * 0.6f, y + s);
+        glVertex2f(x + s * 0.6f, y + s); glVertex2f(x + s, y + s * 0.7f);
+        glVertex2f(x + s, y + s * 0.7f); glVertex2f(x + s, y + s * 0.3f);
+        glVertex2f(x + s, y + s * 0.3f); glVertex2f(x + s * 0.6f, y);
+        glVertex2f(x + s * 0.6f, y); glVertex2f(x, y);
+    } else if (c == 'F') {
+        glVertex2f(x, y); glVertex2f(x, y + s);
+        glVertex2f(x, y + s); glVertex2f(x + s, y + s);
+        glVertex2f(x, y + s / 2); glVertex2f(x + s * 0.8f, y + s / 2);
+    } else if (c == 'G') {
+        glVertex2f(x + s, y); glVertex2f(x, y);
+        glVertex2f(x, y); glVertex2f(x, y + s);
+        glVertex2f(x, y + s); glVertex2f(x + s, y + s);
+        glVertex2f(x + s, y + s); glVertex2f(x + s, y + s * 0.5f);
+        glVertex2f(x + s * 0.5f, y + s * 0.5f); glVertex2f(x + s, y + s * 0.5f);
+    } else if (c == 'J') {
+        glVertex2f(x + s * 0.7f, y + s); glVertex2f(x + s * 0.7f, y + s * 0.2f);
+        glVertex2f(x + s * 0.7f, y + s * 0.2f); glVertex2f(x + s * 0.3f, y);
+        glVertex2f(x + s * 0.3f, y); glVertex2f(x, y + s * 0.2f);
+    } else if (c == 'K') {
+        glVertex2f(x, y); glVertex2f(x, y + s);
+        glVertex2f(x, y + s / 2); glVertex2f(x + s, y + s);
+        glVertex2f(x, y + s / 2); glVertex2f(x + s, y);
+    } else if (c == 'M') {
+        glVertex2f(x, y); glVertex2f(x, y + s);
+        glVertex2f(x, y + s); glVertex2f(x + s / 2, y + s / 2);
+        glVertex2f(x + s / 2, y + s / 2); glVertex2f(x + s, y + s);
+        glVertex2f(x + s, y + s); glVertex2f(x + s, y);
+    } else if (c == 'Q') {
+        glVertex2f(x, y); glVertex2f(x + s, y);
+        glVertex2f(x + s, y); glVertex2f(x + s, y + s);
+        glVertex2f(x + s, y + s); glVertex2f(x, y + s);
+        glVertex2f(x, y + s); glVertex2f(x, y);
+        glVertex2f(x + s * 0.55f, y + s * 0.35f); glVertex2f(x + s, y);
+    } else if (c == 'R') {
+        glVertex2f(x, y); glVertex2f(x, y + s);
+        glVertex2f(x, y + s); glVertex2f(x + s, y + s);
+        glVertex2f(x + s, y + s); glVertex2f(x + s, y + s / 2);
+        glVertex2f(x + s, y + s / 2); glVertex2f(x, y + s / 2);
+        glVertex2f(x + s / 2, y + s / 2); glVertex2f(x + s, y);
+    } else if (c == 'T') {
+        glVertex2f(x, y + s); glVertex2f(x + s, y + s);
+        glVertex2f(x + s / 2, y + s); glVertex2f(x + s / 2, y);
+    } else if (c == 'V') {
+        glVertex2f(x, y + s); glVertex2f(x + s / 2, y);
+        glVertex2f(x + s / 2, y); glVertex2f(x + s, y + s);
+    } else if (c == 'X') {
+        glVertex2f(x, y); glVertex2f(x + s, y + s);
+        glVertex2f(x, y + s); glVertex2f(x + s, y);
+    } else if (c == 'Z') {
+        glVertex2f(x, y + s); glVertex2f(x + s, y + s);
+        glVertex2f(x + s, y + s); glVertex2f(x, y);
+        glVertex2f(x, y); glVertex2f(x + s, y);
+    } else if (c == '-') {
+        glVertex2f(x, y + s / 2); glVertex2f(x + s, y + s / 2);
+    } else if (c == '+') {
+        glVertex2f(x, y + s / 2); glVertex2f(x + s, y + s / 2);
+        glVertex2f(x + s / 2, y); glVertex2f(x + s / 2, y + s);
+    } else if (c == '\'' || c == '"') {
+        glVertex2f(x + s * 0.5f, y + s * 0.75f); glVertex2f(x + s * 0.5f, y + s);
+    } else if (c == '.') {
+        glVertex2f(x + s * 0.4f, y); glVertex2f(x + s * 0.6f, y);
+    } else if (c == ',') {
+        glVertex2f(x + s * 0.5f, y); glVertex2f(x + s * 0.3f, y - s * 0.25f);
+    } else if (c == ':') {
+        glVertex2f(x + s * 0.4f, y + s * 0.7f); glVertex2f(x + s * 0.6f, y + s * 0.7f);
+        glVertex2f(x + s * 0.4f, y + s * 0.25f); glVertex2f(x + s * 0.6f, y + s * 0.25f);
+    } else if (c == '!') {
+        glVertex2f(x + s / 2, y + s); glVertex2f(x + s / 2, y + s * 0.3f);
+        glVertex2f(x + s * 0.4f, y); glVertex2f(x + s * 0.6f, y);
+    } else if (c == '(') {
+        glVertex2f(x + s * 0.7f, y + s); glVertex2f(x + s * 0.3f, y + s * 0.5f);
+        glVertex2f(x + s * 0.3f, y + s * 0.5f); glVertex2f(x + s * 0.7f, y);
+    } else if (c == ')') {
+        glVertex2f(x + s * 0.3f, y + s); glVertex2f(x + s * 0.7f, y + s * 0.5f);
+        glVertex2f(x + s * 0.7f, y + s * 0.5f); glVertex2f(x + s * 0.3f, y);
     } else {
         glVertex2f(x, y); glVertex2f(x + s, y);
         glVertex2f(x + s, y); glVertex2f(x + s, y + s);

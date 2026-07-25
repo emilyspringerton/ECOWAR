@@ -1,5 +1,17 @@
 # Changelog
 
+## 2026-07-25 (6)
+
+- fix(arena): missing font glyphs. Founder: "we are missing a lot of font glyphs in redgarden."
+  `draw_char()`'s hand-drawn vector font only ever covered digits + `W,I,N,L,O,S,E,U,Y,H,P` +
+  space -- everything else (15 missing uppercase letters, all of lowercase, punctuation) fell
+  through to a generic missing-glyph placeholder box. Tonight's own hero-name expansion (Gary,
+  Bacon+Puck, Abraham, Ada, Flute Debt) made this much more visible, since most of those names use
+  letters the font never had. Added the remaining 15 letters (A,B,C,D,F,G,J,K,M,Q,R,T,V,X,Z),
+  lowercase-folds-to-uppercase (one glyph set, not two), and common punctuation (`- + ' " . , : ! ( )`)
+  in the same simple `GL_LINES` stroke style as the existing letters. Verified: `build_arena.sh`,
+  `test_arena.sh`, `test_10_bots.sh`, and a local mingw cross-compile, all clean.
+
 ## 2026-07-25 (5)
 
 - feat(arena): 16th/17th heroes, Abraham the Mage and Ada Lovelace (S170-103). Founder: "add
