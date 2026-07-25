@@ -203,6 +203,10 @@ float arena_hero_armor(const ArenaHero *h) {
     if (h->hero_id == ARENA_HERO_LOKI && h->w_active) {
         return (float)ARENA_LOKI_W_ARMOR_BONUS;
     }
+    /* Ada's frame plating (W, S170-103): flat armor while toggled on. */
+    if (h->hero_id == ARENA_HERO_ADA && h->w_active) {
+        return (float)ARENA_ADA_W_ARMOR_BONUS;
+    }
     return 0.0f;
 }
 
@@ -1028,6 +1032,52 @@ static int bacon_puck_cast_r(ArenaHero *bp, ArenaHero *foe) {
     return 1;
 }
 
+/* abraham_cast_q: The Sacred Magic -- a real ranged magic bolt, stronger while W (channeling
+ * the book) is toggled on. Returns 1 if it landed. */
+static int abraham_cast_q(ArenaHero *abraham, ArenaHero *foe) {
+    if (!hero_is_hittable(foe)) return 0;
+    float dx = foe->x - abraham->x, dz = foe->z - abraham->z;
+    if (sqrtf(dx * dx + dz * dz) > ARENA_ABRAHAM_Q_RANGE) return 0;
+    int dmg = abraham->w_active ? ARENA_ABRAHAM_Q_DAMAGE_CHANNELING : ARENA_ABRAHAM_Q_DAMAGE;
+    apply_damage(foe, apply_armor(dmg, arena_hero_armor(foe)));
+    return 1;
+}
+
+/* abraham_cast_r: The Guardian Angel, Contacted -- a full self-cleanse (every debuff field
+ * this roster tracks) plus a real heal, the ritual's actual promised payoff. Always "lands"
+ * (self-targeted, no foe check) -- same always-commits convention as Doc Wheel's/Flamel's R. */
+static void abraham_cast_r(ArenaHero *abraham) {
+    abraham->silenced_ms = 0;
+    abraham->rooted_ms = 0;
+    abraham->burning_ms = 0;
+    abraham->burn_dps = 0;
+    abraham->burn_tick_ms = 0;
+    abraham->hp += ARENA_ABRAHAM_R_HEAL;
+    if (abraham->hp > abraham->max_hp) abraham->hp = abraham->max_hp;
+}
+
+/* ada_cast_q: computes the nearest enemy's movement to a halt -- a real root, same "slow
+ * simplified to a stop" convention Tree's/Flamel's/Gary's R already use, here on Q instead.
+ * Returns 1 if it landed. */
+static int ada_cast_q(ArenaHero *ada, ArenaHero *foe) {
+    if (!hero_is_hittable(foe)) return 0;
+    float dx = foe->x - ada->x, dz = foe->z - ada->z;
+    if (sqrtf(dx * dx + dz * dz) > ARENA_ADA_Q_RANGE) return 0;
+    foe->rooted_ms = ARENA_ADA_Q_ROOT_MS;
+    return 1;
+}
+
+/* ada_cast_r: The First Program, Run a Century Late -- the engine finally executes: real
+ * damage plus a short follow-up root. Returns 1 if it landed. */
+static int ada_cast_r(ArenaHero *ada, ArenaHero *foe) {
+    if (!hero_is_hittable(foe)) return 0;
+    float dx = foe->x - ada->x, dz = foe->z - ada->z;
+    if (sqrtf(dx * dx + dz * dz) > ARENA_ADA_R_RANGE) return 0;
+    apply_damage(foe, apply_armor(ARENA_ADA_R_DAMAGE, arena_hero_armor(foe)));
+    foe->rooted_ms = ARENA_ADA_R_ROOT_MS;
+    return 1;
+}
+
 void arena_cast_q(int owner) {
     if (owner < 0 || owner >= ARENA_MAX_HEROES) return;
     ArenaHero *h = &arena_state.heroes[owner];
@@ -1112,6 +1162,16 @@ void arena_cast_q(int owner) {
     case ARENA_HERO_BACON_PUCK:
         bacon_puck_cast_q(h);
         h->q_cooldown_ms = cast_cooldown(h, ARENA_BACON_PUCK_Q_COOLDOWN_MS);
+        break;
+    case ARENA_HERO_ABRAHAM:
+        if (abraham_cast_q(h, foe)) {
+            h->q_cooldown_ms = cast_cooldown(h, ARENA_ABRAHAM_Q_COOLDOWN_MS);
+        }
+        break;
+    case ARENA_HERO_ADA:
+        if (ada_cast_q(h, foe)) {
+            h->q_cooldown_ms = cast_cooldown(h, ARENA_ADA_Q_COOLDOWN_MS);
+        }
         break;
     }
 }
@@ -1212,6 +1272,16 @@ void arena_toggle_w(int owner) {
         /* Which One Is The Real One: free toggle, no cooldown --
            bacon_puck_cast_q() reads w_active directly for Q's extended
            intangibility duration, not a stat bonus. */
+        h->w_active = !h->w_active;
+        break;
+    case ARENA_HERO_ABRAHAM:
+        /* The Book, Unattested: free toggle, no cooldown -- abraham_cast_q()
+           reads w_active directly for Q's boosted damage while channeling. */
+        h->w_active = !h->w_active;
+        break;
+    case ARENA_HERO_ADA:
+        /* The frame's own plating: free toggle, no cooldown --
+           arena_hero_armor() reads w_active directly for the bonus. */
         h->w_active = !h->w_active;
         break;
     default:
@@ -1363,6 +1433,15 @@ void arena_cast_r(int owner) {
     case ARENA_HERO_BACON_PUCK:
         if (bacon_puck_cast_r(h, foe)) {
             h->r_cooldown_ms = cast_cooldown(h, ARENA_BACON_PUCK_R_COOLDOWN_MS);
+        }
+        break;
+    case ARENA_HERO_ABRAHAM:
+        abraham_cast_r(h);
+        h->r_cooldown_ms = cast_cooldown(h, ARENA_ABRAHAM_R_COOLDOWN_MS);
+        break;
+    case ARENA_HERO_ADA:
+        if (ada_cast_r(h, foe)) {
+            h->r_cooldown_ms = cast_cooldown(h, ARENA_ADA_R_COOLDOWN_MS);
         }
         break;
     }
@@ -1705,6 +1784,30 @@ static void bot_cast_kit_if_ready(ArenaHero *bot, ArenaHero *foe) {
         if (bot->hp < bot->max_hp / 3 && bot->q_cooldown_ms <= 0) {
             arena_cast_q(bot->owner);
         } else if (bot->r_cooldown_ms <= 0 && dist <= ARENA_BACON_PUCK_R_RANGE) {
+            arena_cast_r(bot->owner);
+        }
+        break;
+    case ARENA_HERO_ABRAHAM:
+        /* Toggle W on early for the channeled Q damage, poke with Q
+           whenever in range and off cooldown, cleanse+heal with R when hurt
+           or carrying a debuff. */
+        if (!bot->w_active) {
+            arena_toggle_w(bot->owner);
+        } else if (bot->q_cooldown_ms <= 0 && dist <= ARENA_ABRAHAM_Q_RANGE) {
+            arena_cast_q(bot->owner);
+        } else if (bot->r_cooldown_ms <= 0 &&
+                   (bot->hp < bot->max_hp / 2 || bot->silenced_ms > 0 || bot->rooted_ms > 0 || bot->burning_ms > 0)) {
+            arena_cast_r(bot->owner);
+        }
+        break;
+    case ARENA_HERO_ADA:
+        /* Toggle W on early for the frame's armor, root with Q at range,
+           finish with R once close enough. */
+        if (!bot->w_active) {
+            arena_toggle_w(bot->owner);
+        } else if (bot->q_cooldown_ms <= 0 && dist <= ARENA_ADA_Q_RANGE) {
+            arena_cast_q(bot->owner);
+        } else if (bot->r_cooldown_ms <= 0 && dist <= ARENA_ADA_R_RANGE) {
             arena_cast_r(bot->owner);
         }
         break;

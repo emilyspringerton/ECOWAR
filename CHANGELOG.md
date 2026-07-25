@@ -1,5 +1,18 @@
 # Changelog
 
+## 2026-07-25 (5)
+
+- feat(arena): 16th/17th heroes, Abraham the Mage and Ada Lovelace (S170-103). Founder: "add
+  abraham the mage" → "add ada lovelace mech pilot." Ada already had full lore
+  (`multiverse_heroes.md` #112); Abraham needed new lore, written this pass (#113, The Unbound
+  Historicals — Abraham of Worms, disputed author of the real grimoire behind Crowley's actual
+  Abramelin Operation). `ARENA_HERO_COUNT` 15→17. Abraham: caster, Q a ranged bolt boosted by a
+  toggle (W boosts Q's damage rather than range/duration, a new toggle shape), R a full
+  self-cleanse + heal. Ada: tank/controller, Q roots at range, W is a toggled armor bonus
+  (`arena_hero_armor()`), R real damage + a follow-up root. Wired into every real call site.
+  Verified: `build.sh`, `build_arena.sh`, `test_arena.sh`, `test_10_bots.sh`, and a local mingw
+  cross-compile, all clean.
+
 ## 2026-07-25 (4)
 
 - docs: FFXI Rise of the Zilart-era item parity seed list (S170-102). Founder direction, real-time

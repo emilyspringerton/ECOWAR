@@ -356,6 +356,33 @@ a kit built around not being pinned down.
 
 ---
 
+### Abraham the Mage (TYLER `multiverse_heroes.md` #113, "Abraham of Worms, the Mage") — **Caster** (S170-103)
+
+The disputed author of a real grimoire — *The Book of the Sacred Magic of Abramelin the Mage* —
+whose own existence has never been confirmed, but whose ritual real occultists (Crowley) actually
+organized their lives around centuries later.
+
+- **Q — The Sacred Magic**: a real ranged magic bolt, stronger while W is toggled on.
+- **W — The Book, Unattested**: a free toggle (no cooldown) that boosts Q's own damage rather than
+  granting a stat like most toggles in this roster.
+- **R — The Guardian Angel, Contacted**: a full self-cleanse (every debuff this roster tracks)
+  plus a real heal — the ritual's actual promised payoff.
+
+---
+
+### Ada Lovelace (TYLER `multiverse_heroes.md` #112, "Ada Lovelace, Pilot") — **Tank/Controller** (S170-103)
+
+Wrote the first computer program for a machine that wasn't built for a century — cast here as a
+mech pilot, someone who wrote the operating logic for a frame before the frame existed.
+
+- **Q — The Analytical Engine**: computes the nearest enemy's movement to a halt — a real root,
+  same "slow simplified to a stop" convention Tree's/Flamel's/Gary's R already use, here on Q.
+- **W — Poetical Science**: a free toggle (no cooldown) flat armor bonus — the frame's own plating.
+- **R — The First Program, Run a Century Late**: the engine finally executes — real damage plus a
+  short follow-up root.
+
+---
+
 ## Starting Item Roster (VS0)
 
 LoL Season 3 is the explicit stylistic northstar here — not its item *names*, its item *stat-line

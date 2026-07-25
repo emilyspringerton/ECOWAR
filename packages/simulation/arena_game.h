@@ -82,8 +82,10 @@ typedef enum {
     ARENA_HERO_GARY = 12, /* TYLER multiverse_heroes.md #35, "Gary, Bifrost Security (Off-Duty)" (S170-91) */
     ARENA_HERO_FLUTE_DEBT = 13, /* TYLER multiverse_heroes.md #42, "Han Xiangzi's Flute-Debt" (S170-91) */
     ARENA_HERO_BACON_PUCK = 14, /* TYLER multiverse_heroes.md #5 + #67, merged (S170-94) */
+    ARENA_HERO_ABRAHAM = 15, /* TYLER multiverse_heroes.md #113, "Abraham of Worms, the Mage" (S170-103) */
+    ARENA_HERO_ADA = 16, /* TYLER multiverse_heroes.md #112, "Ada Lovelace, Pilot" (S170-103) */
 } ArenaHeroID;
-#define ARENA_HERO_COUNT 15
+#define ARENA_HERO_COUNT 17
 
 /* The Unicorn — first real hero kit wired in (S170-18). */
 #define ARENA_UNICORN_ARMOR         4    /* passive: Chassis Claim, flat dmg reduction */
@@ -427,6 +429,36 @@ typedef enum {
 #define ARENA_BACON_PUCK_R_DAMAGE                  16
 #define ARENA_BACON_PUCK_R_HEAL_PCT                0.5f /* fraction of R's damage returned as self-heal */
 #define ARENA_BACON_PUCK_R_COOLDOWN_MS              15000
+
+/* Abraham of Worms, the Mage (S170-103, TYLER multiverse_heroes.md #113) -- a caster whose
+ * whole real-world hook is a book whose ritual made a real man (Crowley) organize a life
+ * around it. Q is a real ranged magic bolt, stronger while W (channeling the book) is
+ * toggled on -- the first toggle in this roster that boosts a Q's damage rather than its
+ * range/duration or granting armor/regen. R is "the Guardian Angel, contacted": a full
+ * self-cleanse (every debuff field this roster tracks) plus a real heal, the ritual's
+ * actual real-world promised payoff. */
+#define ARENA_ABRAHAM_Q_DAMAGE            9
+#define ARENA_ABRAHAM_Q_DAMAGE_CHANNELING 15 /* Q's damage while W is toggled on */
+#define ARENA_ABRAHAM_Q_RANGE             5.5f
+#define ARENA_ABRAHAM_Q_COOLDOWN_MS       3200
+#define ARENA_ABRAHAM_R_HEAL              20
+#define ARENA_ABRAHAM_R_COOLDOWN_MS       17000
+
+/* Ada Lovelace, Pilot (S170-103, TYLER multiverse_heroes.md #112) -- "wrote the operating
+ * logic for a frame before the frame existed." A heavy, deliberate tank/controller: Q
+ * computes the nearest enemy's movement to a halt (a real root, matching Tree's/Flamel's
+ * "slow simplified to a stop" convention), W is a free-toggle armor bonus (the frame's own
+ * plating, same shape as Loki's but a different hero's reason for it), R is the engine
+ * finally executing: a real burst of damage plus a short follow-up root, "the first
+ * program, run a century late." */
+#define ARENA_ADA_Q_RANGE          5.0f
+#define ARENA_ADA_Q_ROOT_MS        1800
+#define ARENA_ADA_Q_COOLDOWN_MS    6000
+#define ARENA_ADA_W_ARMOR_BONUS    6
+#define ARENA_ADA_R_RANGE          2.5f
+#define ARENA_ADA_R_DAMAGE         18
+#define ARENA_ADA_R_ROOT_MS        1200
+#define ARENA_ADA_R_COOLDOWN_MS    16000
 
 typedef struct {
     float x, z;
