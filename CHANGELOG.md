@@ -1,5 +1,20 @@
 # Changelog
 
+## 2026-07-25 (11)
+
+- fix(arena): requeue looked exactly like a crash (S170-115, real bug found by reading the
+  matchmaker log). `net_find_and_connect()` blocks the whole event loop for up to 60s with no
+  frame rendered in between -- the window shows whatever was on screen before the click and
+  never updates for the entire wait, indistinguishable from a hang. Confirmed live: 13+ distinct
+  source ports from the founder's own IP within a few minutes, consistent with force-quitting an
+  apparently-frozen window and relaunching, over and over, each relaunch abandoning the previous
+  queue attempt mid-match (which is also why those matches kept stalling at high-but-not-full
+  connect counts). New `draw_queuing_screen()` renders and presents one real "QUEUING FOR MATCH /
+  PLEASE WAIT" frame immediately before the blocking call starts, wired into the OK-button
+  requeue handler. Doesn't make the wait non-blocking (bigger rearchitecture, not this pass) but
+  makes the wait visibly a wait instead of a crash. Verified: `build_arena.sh`, `test_arena.sh`,
+  and a local mingw cross-compile, all clean.
+
 ## 2026-07-25 (10)
 
 - fix(ci): Windows cross-compile broken by S170-96's hero-name labels -- `arena_ai_bridge.c` (home

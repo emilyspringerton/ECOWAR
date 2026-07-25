@@ -869,6 +869,33 @@ static void draw_string(const char *str, float x, float y, float size) {
     }
 }
 
+/* draw_queuing_screen (S170-115, real bug found live): net_find_and_connect()/net_connect() both
+ * block the whole event loop for up to 60s -- with no frame rendered during that whole wait, the
+ * window shows whatever was on screen before the click and never updates, which is genuinely
+ * indistinguishable from a hang. The matchmaker log confirmed it: 13+ distinct source ports from
+ * the same external IP in a few minutes, consistent with the founder force-quitting an apparently
+ * frozen window and relaunching, over and over, each relaunch a fresh queue attempt that
+ * abandoned the previous one mid-match. This renders one real "please wait" frame and presents
+ * it (SDL_GL_SwapWindow) *before* the blocking call starts, so the last thing on screen is an
+ * honest status, not a stale frame. Doesn't make the wait non-blocking -- that's a bigger
+ * rearchitecture -- but makes the wait visibly a wait, not a crash. */
+static void draw_queuing_screen(SDL_Window *win, int win_w, int win_h) {
+    glClearColor(0.03f, 0.05f, 0.04f, 1.0f);
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+    glDisable(GL_DEPTH_TEST);
+    glMatrixMode(GL_PROJECTION);
+    glLoadIdentity();
+    glOrtho(0, win_w, 0, win_h, -1, 1);
+    glMatrixMode(GL_MODELVIEW);
+    glLoadIdentity();
+    glColor3f(0.6f, 1.0f, 0.7f);
+    draw_string("QUEUING FOR MATCH", win_w / 2.0f - 190, win_h / 2.0f + 20, 20);
+    glColor3f(0.7f, 0.8f, 0.75f);
+    draw_string("PLEASE WAIT - THIS CAN TAKE UP TO 60 SECONDS", win_w / 2.0f - 300, win_h / 2.0f - 20, 12);
+    draw_string("THE WINDOW WILL NOT RESPOND UNTIL A MATCH IS FOUND", win_w / 2.0f - 330, win_h / 2.0f - 44, 12);
+    SDL_GL_SwapWindow(win);
+}
+
 /* ---------------- placement rings ---------------- */
 #define MAX_RINGS 6
 #define RING_LIFETIME_MS 500.0f
@@ -1143,6 +1170,7 @@ int main(int argc, char *argv[]) {
                     win_logged = 0;
                     net_picked = 0;
                     net_phase = ARENA_PHASE_WAITING;
+                    draw_queuing_screen(win, win_w, win_h);
                     int reconnected = queue_host ? net_find_and_connect(queue_host, queue_port)
                                                   : net_connect(connect_host, connect_port);
                     if (!reconnected) {
