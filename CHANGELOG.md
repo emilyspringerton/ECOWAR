@@ -1,5 +1,15 @@
 # Changelog
 
+## 2026-07-25 (15)
+
+- docs(readme): real "How to Play" section for the arena MOBA (S170-97). Founder, real-time: "put
+  all the hero doc comments that say how to play them (what the kit keybinds do) move that up to
+  the top of the readme." The keybind contract was scattered as code comments in
+  `apps/arena/src/main.c` and left implicit across every per-hero entry in `docs/HEROES_VS0.md` —
+  no single place explained "Q/W/E are your three ability slots, click to move, right-drag/wheel
+  for camera." New section right under the title: a real synthesis (checked directly against the
+  actual SDL event handling, not guessed), not comments moved verbatim.
+
 ## 2026-07-25 (14)
 
 - feat(arena): finish wiring Paimon into the live roster (S170-55). The hero (enum entry, kit

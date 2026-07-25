@@ -1,5 +1,25 @@
 # RED GARDEN
 
+## How to Play (Knights of the Void — the arena MOBA, `apps/arena`)
+
+*S170-97: the real keybind contract, synthesized in one place rather than scattered as code
+comments in `apps/arena/src/main.c` and left implicit across every hero entry in
+`docs/HEROES_VS0.md`.*
+
+| Input | Does |
+|---|---|
+| **Left click** | Move to that point. Walking into range of an enemy auto-attacks it — there's no separate "attack" click, melee combat just resolves automatically once you're close enough. |
+| **Q / W / E** | Your three ability slots, in order. Every hero's kit maps its abilities to exactly these three — `docs/HEROES_VS0.md` lists each hero's real Q/W/R names and effects, but the *keys* are always Q/W/E, never anything hero-specific. |
+| **Right click + drag** | Rotate the camera around your hero. |
+| **Mouse wheel** | Zoom the camera in/out. |
+| **F11** | Toggle the APM (actions-per-minute) overlay. Works in any mode. |
+| **R** | Restart the match. Local practice mode only (against the built-in bot) — disabled entirely once you're in a real networked match, since a real match has other players in it. |
+| **Click "OK"** | After a match ends (win or loss), requeues you for another one. Networked mode only. |
+
+Draft is automatic right now — no pick UI yet, you're assigned a hero based on your slot in the
+lobby (`docs/HEROES_VS0.md` documents every hero's kit if you want to know what you're about to
+play before the match starts).
+
 ## Current Status (2026-07-23)
 
 See `NORTHSTAR.md` for the full, up-to-date direction — this README's "Acceptance Criteria" and
