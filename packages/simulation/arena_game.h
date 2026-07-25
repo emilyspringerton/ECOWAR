@@ -1,12 +1,12 @@
 #ifndef ARENA_GAME_H
 #define ARENA_GAME_H
 
-#define ARENA_HALF_EXTENT 12.0f
+#define ARENA_HALF_EXTENT 20.0f /* S170-119: was 12.0f -- widened for a real Arathi Basin-size spread of 5 nodes */
 #define ARENA_HERO_SPEED 4.0f      /* units/sec */
 #define ARENA_ATTACK_RANGE 1.6f
 #define ARENA_ATTACK_DAMAGE 8
 #define ARENA_ATTACK_COOLDOWN_MS 700
-#define ARENA_NODE_COUNT 2
+#define ARENA_NODE_COUNT 5 /* S170-119: was 2 -- real Arathi Basin has 5 (Stables/Farm/Blacksmith/Lumber Mill/Gold Mine) */
 
 /* Territorial dynamic jungle creeps (S170-51). Founder direction: territory
  * is the macro/economy layer, objectives (the team-wipe win condition) are

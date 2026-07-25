@@ -67,6 +67,27 @@ static void bot_brain_forward(const float in[4], float out[2]) {
     }
 }
 
+/* S170-119: Arathi Basin-style 5-node spread -- two flanking nodes near each
+ * team's spawn (heroes[0] at x=-6, heroes[1] at x=6, see below) plus one
+ * contested center node, same "two-near-each-side plus a middle" shape as
+ * the real Stables/Farm .. Blacksmith .. Lumber Mill/Gold Mine layout, just
+ * along this arena's existing spawn axis instead of Arathi's own geography. */
+static void arena_nodes_reset_layout(void) {
+    static const float layout[ARENA_NODE_COUNT][2] = {
+        { -13.0f,  8.0f }, /* Stables */
+        { -13.0f, -8.0f }, /* Farm */
+        {   0.0f,  0.0f }, /* Blacksmith (center, contested) */
+        {  13.0f,  8.0f }, /* Lumber Mill */
+        {  13.0f, -8.0f }, /* Gold Mine */
+    };
+    for (int n = 0; n < ARENA_NODE_COUNT; n++) {
+        arena_state.nodes[n].x = layout[n][0];
+        arena_state.nodes[n].z = layout[n][1];
+        arena_state.nodes[n].marked_by_team = -1;
+        arena_state.nodes[n].capturing_team = -1;
+    }
+}
+
 void arena_init_with_heroes(ArenaHeroID player_hero, ArenaHeroID bot_hero) {
     memset(&arena_state, 0, sizeof(arena_state));
 
@@ -92,14 +113,7 @@ void arena_init_with_heroes(ArenaHeroID player_hero, ArenaHeroID bot_hero) {
     arena_state.heroes[1].team = 1;
     arena_state.heroes[1].hero_id = bot_hero;
 
-    arena_state.nodes[0].x = -4.0f;
-    arena_state.nodes[0].z = 4.0f;
-    arena_state.nodes[1].x = 4.0f;
-    arena_state.nodes[1].z = -4.0f;
-    arena_state.nodes[0].marked_by_team = -1;
-    arena_state.nodes[1].marked_by_team = -1;
-    arena_state.nodes[0].capturing_team = -1;
-    arena_state.nodes[1].capturing_team = -1;
+    arena_nodes_reset_layout();
     arena_creeps_reset();
 
     arena_state.winner = 0;
@@ -909,17 +923,22 @@ static int courier_cast_q(ArenaHero *courier, ArenaHero *foe) {
 }
 
 /* courier_toggle_w: Between Eagle and Serpent -- instantly repositions to
- * whichever of the two map nodes is farther from The Courier's current
- * position, always making real progress "along the tree" rather than
- * bouncing back and forth to the same one. Pure fixed-geography teleport,
- * distinct from every other hero's ally/foe-relative one. Always lands
- * (there are always exactly two nodes) -- no whiff case. */
+ * whichever map node is farthest from The Courier's current position,
+ * always making real progress "along the tree" rather than bouncing back
+ * and forth to the same one. Pure fixed-geography teleport, distinct from
+ * every other hero's ally/foe-relative one. Always lands (there is always
+ * at least one node) -- no whiff case. S170-119: generalized from a
+ * hardcoded "farther of the two nodes" to farthest-of-N when the map grew
+ * from 2 nodes to 5 -- the "always real progress" property holds the same
+ * way for any N. */
 static void courier_toggle_w(ArenaHero *courier) {
-    float d0x = arena_state.nodes[0].x - courier->x, d0z = arena_state.nodes[0].z - courier->z;
-    float d1x = arena_state.nodes[1].x - courier->x, d1z = arena_state.nodes[1].z - courier->z;
-    float dist0 = sqrtf(d0x * d0x + d0z * d0z);
-    float dist1 = sqrtf(d1x * d1x + d1z * d1z);
-    int target = (dist1 > dist0) ? 1 : 0;
+    int target = 0;
+    float best_dist = -1.0f;
+    for (int n = 0; n < ARENA_NODE_COUNT; n++) {
+        float dx = arena_state.nodes[n].x - courier->x, dz = arena_state.nodes[n].z - courier->z;
+        float dist = sqrtf(dx * dx + dz * dz);
+        if (dist > best_dist) { best_dist = dist; target = n; }
+    }
     courier->x = arena_state.nodes[target].x;
     courier->z = arena_state.nodes[target].z;
     courier->moving = 0;
@@ -1299,8 +1318,8 @@ void arena_toggle_w(int owner) {
         h->w_cooldown_ms = cast_cooldown(h, ARENA_DAGDA_W_COOLDOWN_MS);
         break;
     case ARENA_HERO_COURIER:
-        /* Between Eagle and Serpent: always lands, there are always
-           exactly two nodes to jump between. */
+        /* Between Eagle and Serpent: always lands, jumps to whichever
+           of the ARENA_NODE_COUNT nodes is farthest right now. */
         if (h->w_cooldown_ms > 0) return;
         courier_toggle_w(h);
         h->w_cooldown_ms = cast_cooldown(h, ARENA_COURIER_W_COOLDOWN_MS);
@@ -1979,14 +1998,7 @@ void arena_init_teams(void) {
         h->alive = 1;
         h->hero_id = ARENA_HERO_UNICORN; /* placeholder until the real client's draft pick overrides it */
     }
-    arena_state.nodes[0].x = -4.0f;
-    arena_state.nodes[0].z = 4.0f;
-    arena_state.nodes[1].x = 4.0f;
-    arena_state.nodes[1].z = -4.0f;
-    arena_state.nodes[0].marked_by_team = -1;
-    arena_state.nodes[1].marked_by_team = -1;
-    arena_state.nodes[0].capturing_team = -1;
-    arena_state.nodes[1].capturing_team = -1;
+    arena_nodes_reset_layout();
     arena_creeps_reset();
     arena_state.winner = 0;
 }

@@ -539,3 +539,26 @@
   legibility need overrides the other. Can't literally port SHANKPIT's immediate-mode
   `draw_player_skin_*()` code (this renderer is shader-based, no `mat4_rotate`) -- boxes are
   axis-aligned translate+scale only, same convention already used for node rendering.
+
+## 2026-07-25 (3)
+- feat(arena): expand map to Arathi Basin size, 5 capture nodes (S170-119). Founder, real-time:
+  "expand the redgarden map to arathi size and 5 nodes." `ARENA_NODE_COUNT` 2->5 and its wire
+  mirror `ARENA_SNAPSHOT_NODE_COUNT` (packages/common/protocol.h), `ARENA_HALF_EXTENT` 12->20 for
+  real room (ground plane, movement clamp, and minimap all derive from this constant already, no
+  separate edits needed). New `arena_nodes_reset_layout()` lays out 5 nodes Arathi-style: two
+  flanking each team's spawn (Stables/Farm near owner 0, Lumber Mill/Gold Mine near owner 1) plus
+  one contested center (Blacksmith, 0,0). Jungle creeps (S170-51) scale to 5 automatically --
+  `ARENA_MAX_CREEPS` is `#define`d off `ARENA_NODE_COUNT` and flavor derives from `node->owner`
+  dynamically, no hardcoded index. One real hardcode found and fixed: Courier's W
+  (`courier_toggle_w`, "Between Eagle and Serpent") assumed exactly 2 nodes ("always lands, there
+  are always exactly two nodes to jump between" -- own comment, now false) -- generalized to a
+  farthest-of-N loop; `docs/HEROES_VS0.md`'s Courier section and a stale test
+  (`test_courier_w_teleports_to_farther_node`, previously hardcoded "node 1 is farther") updated
+  to match. Second real bug found via test failure: the new center node at (0,0) collided with
+  `test_arena_bot_enabled_gates_kit_casts_too`'s own arbitrary hero test position (also (0,0)) --
+  a jungle creep spawning on top of the hero dealt damage the test misattributed to ungated bot
+  AI; fixed by moving the test's positions off every node's aggro footprint (z=15), not by moving
+  the node (the center node belongs on the direct line between both spawns, same "contested
+  middle" design as real Arathi Basin). Verified: scripts/build.sh, scripts/build_arena.sh,
+  scripts/test_arena.sh, scripts/test_10_bots.sh all pass; local mingw cross-compile (all 4
+  source files) links clean.

@@ -280,17 +280,18 @@ her here.
 
 Has carried insults up and down Yggdrasil, between the eagle at the crown and Nidhogg at the root,
 for centuries — and has started editing them along the way, a job that was never meant to involve
-judgment. That two-fixed-endpoint framing maps directly onto this arena's two existing `ArenaNode`
-positions rather than needing a new system: The Courier's whole kit is about running the line
-between two points and taking a cut off whatever passes through.
+judgment. That fixed-endpoint framing maps directly onto this arena's `ArenaNode` positions rather
+than needing a new system: The Courier's whole kit is about running the line between fixed points
+and taking a cut off whatever passes through. (S170-119: the arena grew from 2 nodes to 5 —
+Ratatoskr runs the whole tree now, not just the one branch, same "always real progress" property.)
 
 - **Passive — Lightly Edited**: whenever The Courier's Q lands a hit, it cleanses any active debuff
   on him (silence, root) — he edits the message addressed back to him out of the delivery.
 - **Q — The Insult, Lightly Edited**: dashes toward the nearest enemy (same shape as Unicorn's
   Diagnostic Charge) and deals damage on arrival — the insult delivered in person.
-- **W — Between Eagle and Serpent**: instantly repositions to whichever of the two map nodes is
-  farther from his current position — always making real progress along the tree, a pure mobility
-  tool distinct from every other hero's teleport (which are all ally- or foe-relative; this one is
+- **W — Between Eagle and Serpent**: instantly repositions to whichever map node is farthest from
+  his current position — always making real progress along the tree, a pure mobility tool distinct
+  from every other hero's teleport (which are all ally- or foe-relative; this one is
   fixed-geography).
 - **R — The Debt Collector's Due**: a long-tenured job has, over time, started to involve judgment
   it was never meant to — seizes a flat amount of HP from the nearest enemy and delivers it to

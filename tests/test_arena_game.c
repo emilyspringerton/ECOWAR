@@ -442,9 +442,13 @@ static void test_arena_bot_enabled_gates_kit_casts_too(void) {
     arena_bot_enabled = 0;
     /* Put the Duck (owner 1) in range of the Unicorn (owner 0) with its Q
        off cooldown -- if kit-casting weren't gated, this alone would pull
-       and damage owner 0 within a handful of ticks. */
-    arena_state.heroes[0].x = 0; arena_state.heroes[0].z = 0;
-    arena_state.heroes[1].x = 3.0f; arena_state.heroes[1].z = 0.0f;
+       and damage owner 0 within a handful of ticks. z=15 keeps both heroes
+       clear of every ArenaNode's jungle-creep aggro radius (S170-119: the
+       map's center node now sits at (0,0), which this test used to use
+       directly -- a creep spawning on the hero would confound this test's
+       own signal with an unrelated system). */
+    arena_state.heroes[0].x = 0; arena_state.heroes[0].z = 15.0f;
+    arena_state.heroes[1].x = 3.0f; arena_state.heroes[1].z = 15.0f;
     int start_hp = arena_state.heroes[0].hp;
     float start_x = arena_state.heroes[0].x;
 
@@ -1363,13 +1367,25 @@ static void test_courier_w_teleports_to_farther_node(void) {
     arena_init_teams();
     for (int i = 1; i < ARENA_MAX_HEROES; i++) arena_state.heroes[i].active = 0;
     arena_state.heroes[0].hero_id = ARENA_HERO_COURIER;
-    /* Stand exactly on node 0 -- node 1 is now strictly farther. */
+    /* Stand exactly on node 0 -- whichever OTHER node is farthest from here
+       is computed below rather than hardcoded, so this test stays valid
+       across any ARENA_NODE_COUNT/layout (S170-119: was a 2-node map with
+       a hardcoded "node 1 is farther" expectation; now 5 nodes). */
     arena_state.heroes[0].x = arena_state.nodes[0].x;
     arena_state.heroes[0].z = arena_state.nodes[0].z;
 
+    int expected = 0;
+    float best_dist = -1.0f;
+    for (int n = 0; n < ARENA_NODE_COUNT; n++) {
+        float dx = arena_state.nodes[n].x - arena_state.heroes[0].x;
+        float dz = arena_state.nodes[n].z - arena_state.heroes[0].z;
+        float dist = dx * dx + dz * dz;
+        if (dist > best_dist) { best_dist = dist; expected = n; }
+    }
+
     arena_toggle_w(0);
 
-    CHECK(arena_state.heroes[0].x == arena_state.nodes[1].x && arena_state.heroes[0].z == arena_state.nodes[1].z,
+    CHECK(arena_state.heroes[0].x == arena_state.nodes[expected].x && arena_state.heroes[0].z == arena_state.nodes[expected].z,
           "Between Eagle and Serpent teleports to whichever node is farther away");
 }
 

@@ -137,7 +137,7 @@ typedef struct {
 
 // ARENA_SNAPSHOT_NODE_COUNT must match packages/simulation/arena_game.h's
 // ARENA_NODE_COUNT, same duplication reasoning as ARENA_SNAPSHOT_MAX_HEROES.
-#define ARENA_SNAPSHOT_NODE_COUNT 2
+#define ARENA_SNAPSHOT_NODE_COUNT 5 /* S170-119: was 2, mirrors arena_game.h's ARENA_NODE_COUNT */
 
 // PACKET_ARENA_SNAPSHOT payload: up to ARENA_SNAPSHOT_MAX_HEROES hero
 // slots, in owner order -- `count` says how many are actually meaningful
