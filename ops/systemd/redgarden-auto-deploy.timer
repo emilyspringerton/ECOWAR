@@ -1,0 +1,10 @@
+# Fires redgarden-auto-deploy.service every 10 minutes. 6 GitHub API calls/hour, well under the
+# 60/hour unauthenticated rate limit for a public repo.
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=10min
+Persistent=true
+
+[Install]
+WantedBy=timers.target

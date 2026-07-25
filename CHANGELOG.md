@@ -1,5 +1,30 @@
 # Changelog
 
+## 2026-07-25 (19)
+
+- feat(ops): auto-deploy the live arena binaries on green CI (S170-100). Founder, real-time:
+  "ensure the server version always stays current with the currently latest passing build." New
+  `scripts/auto_deploy.sh`, polled by `redgarden-auto-deploy.timer` (every 10 min, 6 GitHub API
+  calls/hour, well under the unauthenticated rate limit) + `.service`. Real design, not a quick
+  bolt-on, given tonight's own S170-84 CI-hang incident:
+  - Operates on a **separate checkout** (`~/redgarden-deploy`), never the interactive dev
+    directory this script lives in -- an automated `git checkout <sha>` against the same
+    directory active development happens in would risk clobbering uncommitted work or racing a
+    build.
+  - Only ever considers GitHub Actions runs with `status=completed` AND `conclusion=success` --
+    guards against exactly the CI-hang failure mode that can sit "in_progress" indefinitely.
+  - **Re-verifies locally before touching anything live** -- rebuilds and reruns
+    `test_arena.sh`/`test_10_bots.sh` against the fresh checkout rather than trusting CI's word
+    alone; aborts and leaves the old binaries in place on any local failure.
+  - Publishes via copy-then-rename, not a direct overwrite -- found live, first real run: a
+    direct `cp` onto `red_garden_arena_bot` hit `ETXTBSY` because the 19-bot pool has that binary
+    mapped the whole time it runs. `rename()` atomically repoints the path to a new inode;
+    already-running processes keep the old one mapped until they're actually restarted.
+  Verified live, real end-to-end run (not simulated): bootstrapped the deploy checkout, found and
+  deployed the latest green SHA, restarted all three systemd units, confirmed a real 20/20 match
+  still forms afterward. Second run correctly no-ops ("already deployed... up to date"). Timer
+  installed and enabled for real.
+
 ## 2026-07-25 (18)
 
 - docs(northstar): spec camera lock/unlock + fog of war (S170-125), no code yet. Founder,
