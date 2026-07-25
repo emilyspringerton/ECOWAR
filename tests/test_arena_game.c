@@ -2274,6 +2274,111 @@ static void test_he_xiangu_r_zone_heals_ally_no_enemy_damage(void) {
           "the zone deals no damage at all -- pure support, not a hit");
 }
 
+static void test_beleth_passive_grants_flat_armor(void) {
+    arena_init_with_heroes(ARENA_HERO_UNICORN, ARENA_HERO_BELETH);
+    ArenaHero *beleth = &arena_state.heroes[1];
+    CHECK(arena_hero_armor(beleth) == (float)ARENA_BELETH_PASSIVE_ARMOR,
+          "Beleth's own survival grants a flat, always-on armor bonus");
+}
+
+static void test_beleth_q_damages_and_burns_foe(void) {
+    arena_init_with_heroes(ARENA_HERO_UNICORN, ARENA_HERO_BELETH);
+    ArenaHero *beleth = &arena_state.heroes[1];
+    ArenaHero *foe = &arena_state.heroes[0];
+    foe->x = beleth->x + 4.0f; /* within ARENA_BELETH_Q_RANGE */
+    foe->z = beleth->z;
+    int foe_hp_before = foe->hp;
+
+    arena_cast_q(1);
+
+    CHECK(foe->hp < foe_hp_before, "Q damages the foe when in range");
+    CHECK(foe->burning_ms == ARENA_BELETH_Q_BURN_MS, "Q applies the burn DoT");
+    CHECK(foe->burn_dps == ARENA_BELETH_Q_BURN_DPS, "the burn ticks at Beleth's own Q burn rate");
+    CHECK(beleth->q_cooldown_ms == ARENA_BELETH_Q_COOLDOWN_MS, "Q starts on cooldown after a landed hit");
+}
+
+static void test_beleth_w_silences_no_damage(void) {
+    arena_init_with_heroes(ARENA_HERO_UNICORN, ARENA_HERO_BELETH);
+    ArenaHero *beleth = &arena_state.heroes[1];
+    ArenaHero *foe = &arena_state.heroes[0];
+    foe->x = beleth->x + 4.0f; /* within ARENA_BELETH_W_RANGE */
+    foe->z = beleth->z;
+    int foe_hp_before = foe->hp;
+
+    arena_toggle_w(1);
+
+    CHECK(foe->silenced_ms == ARENA_BELETH_W_SILENCE_MS, "W silences the nearest enemy");
+    CHECK(foe->hp == foe_hp_before, "W is escalation-denial only -- it deals no damage at all");
+    CHECK(beleth->w_cooldown_ms == ARENA_BELETH_W_COOLDOWN_MS, "W starts on its own cooldown after a landed decree");
+}
+
+static void test_beleth_r_marks_zone_no_immediate_damage(void) {
+    arena_init_with_heroes(ARENA_HERO_UNICORN, ARENA_HERO_BELETH);
+    ArenaHero *beleth = &arena_state.heroes[1];
+    ArenaHero *foe = &arena_state.heroes[0];
+    foe->x = beleth->x + 3.0f; /* within ARENA_BELETH_R_RANGE, and later inside R_RADIUS too */
+    foe->z = beleth->z;
+    int foe_hp_before = foe->hp;
+
+    arena_cast_r(1);
+
+    CHECK(beleth->r_active_ms == ARENA_BELETH_R_FUSE_MS, "R starts the fuse on cast");
+    CHECK(beleth->r_cooldown_ms == ARENA_BELETH_R_COOLDOWN_MS, "R starts on its own cooldown after cast");
+    CHECK(foe->hp == foe_hp_before, "the detonation hasn't happened yet -- no damage at cast time, only a mark");
+}
+
+static void test_beleth_r_detonates_after_fuse(void) {
+    /* Team mode, not arena_init_with_heroes/arena_update: the 1v1 local-demo path's
+       arena_update runs an autonomous chase-bot on owner 1 (arena_bot_enabled defaults on)
+       that would close the distance to melee range well within the fuse's 1.8s window at
+       ARENA_HERO_SPEED, contaminating the burst-damage check with an extra melee trade --
+       found via this exact test failing. Team mode's arena_update_teams has no such chase
+       AI (update_hero_motion only moves a hero toward an explicitly-set target), same
+       reasoning as Vassago's/He Xiangu's own R tests using team mode for their zone checks. */
+    arena_init_teams();
+    for (int i = 1; i < ARENA_MAX_HEROES; i++) {
+        if (i == ARENA_TEAM_SIZE) continue;
+        arena_state.heroes[i].active = 0;
+    }
+    arena_state.heroes[0].hero_id = ARENA_HERO_BELETH;
+    /* z=15: off every node's aggro/capture footprint (the Blacksmith node sits at (0,0), same
+       real bug this session already hit once for a different hero's test -- a jungle creep
+       spawning on the node dealt real damage the strict-equality check misattributed to the
+       ability itself). heroes[ARENA_TEAM_SIZE]: the enemy team, same convention as Vassago's/
+       He Xiangu's own team-mode R tests (heroes[0]/[1] are the SAME team by default). 3.0
+       units: inside ARENA_BELETH_R_RADIUS but outside melee auto-attack range, isolating the
+       zone's own effect from ordinary melee. */
+    arena_state.heroes[0].x = 0; arena_state.heroes[0].z = 15.0f;
+    /* arena_init_teams() leaves every hero_id at its own ARENA_HERO_UNICORN placeholder
+       ("until the real client's draft pick overrides it", per its own comment) -- Unicorn
+       carries a flat +4 armor passive, which would silently eat 4 of this test's exact
+       damage figure. Duck has no passive at all, so the burst lands un-mitigated. */
+    arena_state.heroes[ARENA_TEAM_SIZE].hero_id = ARENA_HERO_DUCK;
+    arena_state.heroes[ARENA_TEAM_SIZE].x = 3.0f; arena_state.heroes[ARENA_TEAM_SIZE].z = 15.0f;
+    arena_state.heroes[ARENA_TEAM_SIZE].hp = arena_state.heroes[ARENA_TEAM_SIZE].max_hp = 100;
+    int foe_hp_before = arena_state.heroes[ARENA_TEAM_SIZE].hp;
+
+    arena_cast_r(0);
+    arena_update_teams(ARENA_BELETH_R_FUSE_MS); /* one big tick, past the whole fuse */
+
+    CHECK(arena_state.heroes[ARENA_TEAM_SIZE].hp == foe_hp_before - ARENA_BELETH_R_DAMAGE,
+          "the fuse hitting zero deals ONE full, un-mitigated burst to whoever's still in the zone");
+    CHECK(arena_state.heroes[0].r_active_ms == 0, "the fuse doesn't go negative or wrap, it pins at zero");
+}
+
+static void test_beleth_r_out_of_range_whiffs(void) {
+    arena_init_with_heroes(ARENA_HERO_UNICORN, ARENA_HERO_BELETH);
+    ArenaHero *beleth = &arena_state.heroes[1];
+    ArenaHero *foe = &arena_state.heroes[0];
+    foe->x = beleth->x + ARENA_BELETH_R_RANGE + 5.0f;
+    foe->z = beleth->z;
+
+    arena_cast_r(1);
+
+    CHECK(beleth->r_active_ms == 0, "R out of range doesn't start the fuse -- it whiffed, not cast");
+    CHECK(beleth->r_cooldown_ms == 0, "a whiffed R doesn't consume the cooldown either");
+}
+
 int main(void) {
     printf("RED GARDEN arena_game headless smoke test\n\n");
     test_movement_reaches_target();
@@ -2411,6 +2516,12 @@ int main(void) {
     test_he_xiangu_q_out_of_range_whiffs();
     test_he_xiangu_w_is_a_free_toggle_regen();
     test_he_xiangu_r_zone_heals_ally_no_enemy_damage();
+    test_beleth_passive_grants_flat_armor();
+    test_beleth_q_damages_and_burns_foe();
+    test_beleth_w_silences_no_damage();
+    test_beleth_r_marks_zone_no_immediate_damage();
+    test_beleth_r_detonates_after_fuse();
+    test_beleth_r_out_of_range_whiffs();
     printf("\n%s\n", failures == 0 ? "ALL PASS" : "SOME FAILED");
     return failures == 0 ? 0 : 1;
 }

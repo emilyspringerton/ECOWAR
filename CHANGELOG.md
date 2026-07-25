@@ -1,5 +1,30 @@
 # Changelog
 
+## 2026-07-25 (29)
+
+- feat(arena): Beleth, the Detonation, 25th hero — Burst/Control (S170-93). Fourth and final hero
+  shipped from the batched "next wave" backlog entry. Real TYLER canon (`multiverse_heroes.md`
+  #14) — 2.22 Hz, the emotional-detonation frequency behind every love triangle in the show's
+  history. Passive flat armor (Cain's/Gunnr's shape), Q a ranged bolt + burn (Pizza's Q shape), W
+  an instant silence-only decree on the nearest enemy (Paimon's W shape with the damage stripped
+  out — pure escalation-denial). R is the roster's first genuinely delayed-payoff ultimate: marks
+  the target's position at cast time and starts a silent fuse via `r_active_ms`; the instant it
+  hits zero, whoever's still in the zone takes one large one-time burst — not a continuously-
+  ticking zone like every other zone hero on this roster. `ARENA_HERO_COUNT` 24 → 25. 6 new
+  headless tests. Two real test bugs found and fixed before landing: the fuse-detonation test
+  originally ran in the 1v1 local-demo path, whose `arena_update` runs an autonomous chase-bot
+  by default that closed distance to melee range well within the 1.8s fuse window, contaminating
+  the burst-damage assertion with an extra melee trade — moved to team mode, which has no such
+  chase AI. Second: even after that fix the damage still came up 4 short, because
+  `arena_init_teams()` leaves every hero at its own `ARENA_HERO_UNICORN` placeholder id until a
+  real draft pick overrides it, and Unicorn carries a flat +4 armor passive that was silently
+  eating part of the burst — fixed by giving the test target an armor-less hero_id explicitly.
+  Verified: full suite (352 checks), VS0/VS1 stable, live — restarted the three systemd units on
+  the freshly built binaries, forced a real 20-bot match, confirmed 20 distinct hero picks with
+  zero duplicates at the new 25-hero roster size (Beleth wasn't in this particular match's 20 of
+  25, which is expected and not a bug — the port-derived draft-offset scheme this session already
+  proved for hero counts exceeding lobby size continues to hold).
+
 ## 2026-07-25 (28)
 
 - fix(arena): unique skinmodels for all 24 heroes (S170-131). Founder, real-time: "ensure all

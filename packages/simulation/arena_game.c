@@ -236,6 +236,12 @@ float arena_hero_armor(const ArenaHero *h) {
     if (h->hero_id == ARENA_HERO_GUNNR) {
         return (float)ARENA_GUNNR_PASSIVE_ARMOR;
     }
+    /* Beleth's own survival (passive, S170-93): flat, always-on, same shape as Cain's/
+       Gunnr's -- she's outlived every escalation she's ever caused. Lower than either of
+       theirs; her kit's damage/control already does the heavy lifting. */
+    if (h->hero_id == ARENA_HERO_BELETH) {
+        return (float)ARENA_BELETH_PASSIVE_ARMOR;
+    }
     return 0.0f;
 }
 
@@ -1259,6 +1265,29 @@ static int he_xiangu_cast_q(ArenaHero *he_xiangu, ArenaHero *foe) {
     return 1;
 }
 
+/* beleth_cast_q: a ranged bolt + burn, same shape as Pizza's Q (S170-46) -- damage that keeps
+ * paying out after contact. Returns 1 if it landed. */
+static int beleth_cast_q(ArenaHero *beleth, ArenaHero *foe) {
+    if (!hero_is_hittable(foe)) return 0;
+    float dx = foe->x - beleth->x, dz = foe->z - beleth->z;
+    if (sqrtf(dx * dx + dz * dz) > ARENA_BELETH_Q_RANGE) return 0;
+    apply_damage(foe, apply_armor(ARENA_BELETH_Q_DAMAGE, arena_hero_armor(foe)));
+    foe->burning_ms = ARENA_BELETH_Q_BURN_MS;
+    foe->burn_dps = ARENA_BELETH_Q_BURN_DPS;
+    return 1;
+}
+
+/* beleth_cast_w: an instant decree, same in-range shape as Paimon's Speaks With Total
+ * Authority (S170-55) but silence-only, no damage component -- pure escalation-denial.
+ * Returns 1 if it landed. */
+static int beleth_cast_w(ArenaHero *beleth, ArenaHero *foe) {
+    if (!hero_is_hittable(foe)) return 0;
+    float dx = foe->x - beleth->x, dz = foe->z - beleth->z;
+    if (sqrtf(dx * dx + dz * dz) > ARENA_BELETH_W_RANGE) return 0;
+    foe->silenced_ms = ARENA_BELETH_W_SILENCE_MS;
+    return 1;
+}
+
 void arena_cast_q(int owner) {
     if (owner < 0 || owner >= ARENA_MAX_HEROES) return;
     ArenaHero *h = &arena_state.heroes[owner];
@@ -1388,6 +1417,11 @@ void arena_cast_q(int owner) {
     case ARENA_HERO_HE_XIANGU:
         if (he_xiangu_cast_q(h, foe)) {
             h->q_cooldown_ms = cast_cooldown(h, ARENA_HE_XIANGU_Q_COOLDOWN_MS);
+        }
+        break;
+    case ARENA_HERO_BELETH:
+        if (beleth_cast_q(h, foe)) {
+            h->q_cooldown_ms = cast_cooldown(h, ARENA_BELETH_Q_COOLDOWN_MS);
         }
         break;
     }
@@ -1558,6 +1592,15 @@ void arena_toggle_w(int owner) {
            reads w_active directly for the regen, same shape as Flute Debt's Recouping
            Interest. */
         h->w_active = !h->w_active;
+        break;
+    case ARENA_HERO_BELETH:
+        /* Hope Is a Terror I Leash With Song: instant silence-only decree on its own
+           cooldown, same in-range shape as Paimon's Speaks With Total Authority but with
+           the damage stripped out -- escalation denied, not a hit landed. */
+        if (h->w_cooldown_ms > 0) return;
+        if (beleth_cast_w(h, arena_nearest_enemy(owner))) {
+            h->w_cooldown_ms = cast_cooldown(h, ARENA_BELETH_W_COOLDOWN_MS);
+        }
         break;
     default:
         /* No-op for any hero without a real W in this arena, not a crash
@@ -1781,6 +1824,23 @@ void arena_cast_r(int owner) {
         h->r_zone_tick_ms = 0;
         h->r_active_ms = ARENA_HE_XIANGU_R_DURATION_MS;
         h->r_cooldown_ms = cast_cooldown(h, ARENA_HE_XIANGU_R_COOLDOWN_MS);
+        break;
+    case ARENA_HERO_BELETH:
+        /* The Detonation: marks the foe's CURRENT position at cast time (not a
+           continuously-tracked target) and starts a silent fuse -- reuses Ghost's own
+           r_zone_x/z fields but not r_zone_tick_ms's periodic-tick idiom, since this fires
+           exactly once, in tick_hero_kit, the instant r_active_ms counts down to zero.
+           Whiffs (consumes no cooldown) with no foe in range -- same "real commitment, not
+           a guaranteed poke" shape as every other ranged cast on this roster. */
+        if (foe && hero_is_hittable(foe)) {
+            float dx = foe->x - h->x, dz = foe->z - h->z;
+            if (sqrtf(dx * dx + dz * dz) <= ARENA_BELETH_R_RANGE) {
+                h->r_zone_x = foe->x;
+                h->r_zone_z = foe->z;
+                h->r_active_ms = ARENA_BELETH_R_FUSE_MS;
+                h->r_cooldown_ms = cast_cooldown(h, ARENA_BELETH_R_COOLDOWN_MS);
+            }
+        }
         break;
     }
 }
@@ -2041,6 +2101,26 @@ static void tick_hero_kit(ArenaHero *h, ArenaHero *foe, ArenaHero *ally, unsigne
                     if (sqrtf(adx * adx + adz * adz) <= ARENA_HE_XIANGU_R_RADIUS) {
                         ally->hp += ARENA_HE_XIANGU_R_HEAL_PER_TICK;
                         if (ally->hp > ally->max_hp) ally->hp = ally->max_hp;
+                    }
+                }
+            }
+        }
+        break;
+    case ARENA_HERO_BELETH:
+        /* The Detonation: NOT a periodic zone tick like Ghost/Vassago/He Xiangu's own R
+           zones above -- the fuse counts down once, and the instant it crosses from >0 to
+           <=0 (this exact branch only ever runs on that one tick, since r_active_ms then
+           sits at 0 and the outer guard stops re-entry until the next real cast) it deals
+           ONE large burst to whoever's still standing in the marked zone. "The threat
+           builds in total silence and only resolves once, all at once." */
+        if (h->r_active_ms > 0) {
+            h->r_active_ms -= (int)dt_ms;
+            if (h->r_active_ms <= 0) {
+                h->r_active_ms = 0;
+                if (foe && hero_is_hittable(foe)) {
+                    float dx = foe->x - h->r_zone_x, dz = foe->z - h->r_zone_z;
+                    if (sqrtf(dx * dx + dz * dz) <= ARENA_BELETH_R_RADIUS) {
+                        apply_damage(foe, apply_armor(ARENA_BELETH_R_DAMAGE, arena_hero_armor(foe)));
                     }
                 }
             }
@@ -2387,6 +2467,19 @@ static void bot_cast_kit_if_ready(ArenaHero *bot, ArenaHero *foe) {
         if (!bot->w_active) {
             arena_toggle_w(bot->owner);
         } else if (bot->q_cooldown_ms <= 0 && dist <= ARENA_HE_XIANGU_Q_RANGE) {
+            arena_cast_q(bot->owner);
+        }
+        break;
+    case ARENA_HERO_BELETH:
+        /* W first when in range and off cooldown -- the silence buys the window
+           everything else needs. R next: marks the zone and starts the fuse the instant
+           a foe is close enough to be worth the long cooldown. Q whenever in range and
+           off cooldown otherwise -- the reliable poke+burn. */
+        if (bot->w_cooldown_ms <= 0 && dist <= ARENA_BELETH_W_RANGE) {
+            arena_toggle_w(bot->owner);
+        } else if (bot->r_cooldown_ms <= 0 && dist <= ARENA_BELETH_R_RANGE) {
+            arena_cast_r(bot->owner);
+        } else if (bot->q_cooldown_ms <= 0 && dist <= ARENA_BELETH_Q_RANGE) {
             arena_cast_q(bot->owner);
         }
         break;

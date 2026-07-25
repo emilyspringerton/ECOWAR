@@ -91,8 +91,9 @@ typedef enum {
     ARENA_HERO_GUNNR = 21, /* TYLER multiverse_heroes.md #30, "Gunnr, Who Argued With a Raven" (S170-93) */
     ARENA_HERO_VASSAGO = 22, /* TYLER multiverse_heroes.md #16, "Vassago, the Soft Foresight" (S170-93); also real TYLER canon, Goetia 11.11 Hz */
     ARENA_HERO_HE_XIANGU = 23, /* TYLER multiverse_heroes.md #39, "He Xiangu, Who Stopped Eating" (S170-93) */
+    ARENA_HERO_BELETH = 24, /* TYLER multiverse_heroes.md #14, "Beleth, the Detonation" (S170-93) */
 } ArenaHeroID;
-#define ARENA_HERO_COUNT 24
+#define ARENA_HERO_COUNT 25
 
 /* The Unicorn — first real hero kit wired in (S170-18). */
 #define ARENA_UNICORN_ARMOR         4    /* passive: Chassis Claim, flat dmg reduction */
@@ -611,6 +612,35 @@ typedef enum {
 #define ARENA_HE_XIANGU_R_DURATION_MS         4000
 #define ARENA_HE_XIANGU_R_HEAL_PER_TICK          7
 #define ARENA_HE_XIANGU_R_COOLDOWN_MS        25000
+
+/* Beleth, the Detonation (S170-93 batch, TYLER multiverse_heroes.md #14, "Beleth, the
+ * Detonation" -- 2.22 Hz, emotional detonation/escalation, "every love triangle in the record
+ * traces back to her," seed phrase "hope is a terror I leash with song"). Passive flat armor,
+ * same always-on shape as Cain's/Gunnr's own (S170-105/S170-93) -- she's survived every
+ * escalation she's ever caused. Q a ranged bolt + burn, same shape as Pizza's Q (S170-46) --
+ * damage that keeps paying out after contact, matching "no love story... resolves without her
+ * frequency somewhere in its last act." W an instant silence-only decree on the nearest enemy,
+ * same instant-in-range shape as Paimon's Speaks With Total Authority (S170-55) but with the
+ * damage component removed -- pure escalation-denial, not a hit. R, "The Detonation" itself: a
+ * genuinely novel shape on this roster -- marks the target's position at cast time (not a
+ * continuously-ticking zone like Ghost's/Vassago's/He Xiangu's own R zones), counts down a fuse
+ * via r_active_ms, and deals ONE large burst to whoever's still standing in it the instant the
+ * fuse hits zero -- "hope is a terror I leash with song": the threat builds in total silence and
+ * only resolves once, all at once, exactly like the thing she's named for. */
+#define ARENA_BELETH_PASSIVE_ARMOR              3
+#define ARENA_BELETH_Q_RANGE                    6.5f
+#define ARENA_BELETH_Q_DAMAGE                   7
+#define ARENA_BELETH_Q_BURN_MS               2800
+#define ARENA_BELETH_Q_BURN_DPS                 6
+#define ARENA_BELETH_Q_COOLDOWN_MS           4300
+#define ARENA_BELETH_W_RANGE                    6.0f
+#define ARENA_BELETH_W_SILENCE_MS            1900
+#define ARENA_BELETH_W_COOLDOWN_MS           8500
+#define ARENA_BELETH_R_RANGE                    7.0f
+#define ARENA_BELETH_R_RADIUS                   3.0f
+#define ARENA_BELETH_R_FUSE_MS                1800
+#define ARENA_BELETH_R_DAMAGE                  32
+#define ARENA_BELETH_R_COOLDOWN_MS           26000
 
 /* ARENA_HERO_RESPAWN_MS (S170-121, "controlling a node enables its spawn
  * for your team"): team-mode-only hero respawn timer. Before this, death

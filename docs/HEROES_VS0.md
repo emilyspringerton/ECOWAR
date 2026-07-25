@@ -527,6 +527,27 @@ once framed it as sacrifice. Self-denial taken past the point anyone else was wi
 - **R — Never Once Framed It As Sacrifice**: a fixed zone, heal-only, no enemy damage at all — the
   mirror of Vassago's purely-controlling R. She shares her sustenance. She doesn't hurt anyone.
 
+### Beleth, the Detonation (TYLER `multiverse_heroes.md` #14, "Beleth") — **Burst/Control** (S170-93)
+
+Founder, same batch (S170-93): "add beleth." Real TYLER canon — 2.22 Hz, the emotional-detonation
+frequency. "No love story in the show's history has resolved without her frequency somewhere in
+its last act," and Beleth has started to suspect that isn't coincidence so much as something
+closer to authorship. Seed phrase: "hope is a terror I leash with song."
+
+- **Passive — Every Love Triangle**: a small, always-on flat armor bonus, same shape as Cain's/
+  Gunnr's own — she's survived every escalation she's ever caused.
+- **Q — Every Love Triangle**: a ranged bolt that damages and burns, same shape as Pizza's Q —
+  damage that keeps paying out after contact, matching "no love story... resolves without her
+  frequency somewhere in its last act."
+- **W — Hope Is a Terror I Leash With Song**: an instant decree on the nearest enemy, same
+  in-range shape as Paimon's Speaks With Total Authority, but silence-only — no damage component
+  at all. Pure escalation-denial, not a hit.
+- **R — The Detonation**: the roster's first delayed-payoff ultimate. Marks the target's current
+  position at cast time and starts a silent fuse; the instant the fuse hits zero, whoever's still
+  standing in the zone takes one large burst — not a continuously-ticking zone like Ghost's/
+  Vassago's/He Xiangu's own R zones. The threat builds in total silence and only resolves once,
+  all at once, exactly like the thing she's named for.
+
 ---
 
 ## Starting Item Roster (VS0)

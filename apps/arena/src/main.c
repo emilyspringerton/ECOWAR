@@ -877,6 +877,14 @@ static void draw_hero_model(ArenaHeroID hero_id, float hero_x, float hero_z, flo
             BOX(0.0f, 0.62f, 0.0f, 0.5f, 1.25f, 0.5f);
             BOX(0.0f, 1.5f, 0.35f, 0.2f, 0.06f, 0.06f);
             break;
+        case ARENA_HERO_BELETH: /* the Detonation -- body + three angled shard accents radiating
+                                    outward, a burst pattern no other silhouette on the roster
+                                    uses (S170-93) */
+            BOX(0.0f, 0.6f, 0.0f, 0.7f, 1.25f, 0.7f);
+            BOX(0.4f, 0.9f, 0.25f, 0.12f, 0.12f, 0.35f);
+            BOX(-0.4f, 0.9f, 0.25f, 0.12f, 0.12f, 0.35f);
+            BOX(0.0f, 1.15f, -0.35f, 0.12f, 0.12f, 0.35f);
+            break;
         default:
             BOX(0.0f, 0.5f, 0.0f, 0.9f, 1.0f, 0.9f);
             break;
