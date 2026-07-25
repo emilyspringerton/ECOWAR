@@ -1065,6 +1065,29 @@ static void draw_string(const char *str, float x, float y, float size) {
     }
 }
 
+/* hero_status_label (S170-133, founder: "text label above health bar above hero shows status
+ * effects like stun silence root slow etc"): composes a short space-separated tag string from
+ * whichever generic status-effect fields are currently active on this hero. "Stun" and "slow"
+ * aren't modeled as their own generic fields yet (only silenced_ms/rooted_ms/intangible_ms/
+ * burning_ms/survive_floor_ms exist on ArenaHero today) -- this surfaces what the sim actually
+ * tracks rather than inventing new effect types as a UI-only side effect; adding a real stun/slow
+ * mechanic is separate kit work, not a HUD task. Returns 1 if buf has anything to draw. */
+static int hero_status_label(const ArenaHero *h, char *buf, size_t bufsize) {
+    buf[0] = '\0';
+    size_t used = 0;
+#define APPEND_TAG(tag) do { \
+        int n = snprintf(buf + used, bufsize - used, "%s%s", used > 0 ? " " : "", tag); \
+        if (n > 0 && (size_t)n < bufsize - used) used += (size_t)n; \
+    } while (0)
+    if (h->silenced_ms > 0) APPEND_TAG("SILENCED");
+    if (h->rooted_ms > 0) APPEND_TAG("ROOTED");
+    if (h->intangible_ms > 0) APPEND_TAG("INTANGIBLE");
+    if (h->burning_ms > 0) APPEND_TAG("BURNING");
+    if (h->survive_floor_ms > 0) APPEND_TAG("UNKILLABLE");
+#undef APPEND_TAG
+    return used > 0;
+}
+
 /* draw_queuing_screen (S170-115, real bug found live): net_find_and_connect()/net_connect() both
  * block the whole event loop for up to 60s -- with no frame rendered during that whole wait, the
  * window shows whatever was on screen before the click and never updates, which is genuinely
@@ -1944,6 +1967,18 @@ int main(int argc, char *argv[]) {
                height in pixels; centered by eye against the bar width,
                not measured -- good enough for a short lowercase token. */
             draw_string(arena_hero_name(h->hero_id), sx - bw / 2, sy + bh + 2.0f, 10);
+
+            /* Status-effect label (S170-133): a further line above the name, only drawn when
+               something's actually active -- most heroes most ticks have nothing to show, and an
+               always-present empty line would just be clutter. */
+            char status_buf[64];
+            if (hero_status_label(h, status_buf, sizeof(status_buf))) {
+                glColor3f(0.95f, 0.75f, 0.15f);
+                draw_string(status_buf, sx - bw / 2, sy + bh + 14.0f, 9);
+                if (i == my_owner) glColor3f(0.1f, 0.8f, 0.95f);
+                else if (h->team == arena_state.heroes[my_owner].team) glColor3f(0.15f, 0.55f, 0.95f);
+                else glColor3f(0.9f, 0.25f, 0.15f);
+            }
 
             float hdx = mouse_hx - sx, hdy = mouse_hy - (sy + bh / 2);
             float hdist_sq = hdx * hdx + hdy * hdy;

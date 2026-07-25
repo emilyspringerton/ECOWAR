@@ -1,5 +1,19 @@
 # Changelog
 
+## 2026-07-25 (32)
+
+- feat(arena): status-effect text label above the health bar (S170-133). Founder, real-time:
+  "text label above health bar above hero shows status effects like stun silence root slow etc."
+  New `hero_status_label()` composes a short space-separated tag string (SILENCED, ROOTED,
+  INTANGIBLE, BURNING, UNKILLABLE) from whichever generic status-effect fields — already shared
+  across every hero's kit — are currently active, drawn above the existing name label, only when
+  there's something to show (no empty-line clutter on the common case). "Stun" and "slow" aren't
+  modeled as their own generic fields in the sim yet (only silence/root/intangible/burn/
+  survive-floor exist today) — this surfaces what the sim actually tracks rather than inventing
+  new effect types as a side effect of a HUD task; a real stun/slow mechanic would be separate
+  kit work. Purely client-side (`apps/arena/src/main.c` only), no protocol/server changes.
+  Verified: clean build, full headless suite (366 checks) unaffected.
+
 ## 2026-07-25 (31)
 
 - docs(arena): Weatherman + Donkey spec, NORTHSTAR §16 (S170-93/S170-133) — spec only, no code.
