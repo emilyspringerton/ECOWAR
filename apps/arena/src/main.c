@@ -379,6 +379,9 @@ static uint32_t net_last_pick_send_ms = 0; /* for retry -- see net_poll_snapshot
    (spawn_ring/AttackFlash) -- forward-declared here so net_poll_snapshots
    can consume the wire's cast_flash_slot the instant a snapshot arrives. */
 static void spawn_spell_flash(float x, float z, int slot);
+static void play_tone(float freq_hz, float duration_ms, float volume);
+static void play_cast_tone(int slot);
+#define ARENA_AUDIO_HEARING_RADIUS 15.0f /* how far from the local player's own hero a cast/hit sound is still audible */
 
 static void net_poll_snapshots(uint32_t now_ms) {
     char rbuf[2048];
@@ -418,6 +421,17 @@ static void net_poll_snapshots(uint32_t now_ms) {
                     dst->hero_id = (ArenaHeroID)msg->heroes[i].hero_id;
                     if (msg->heroes[i].cast_flash_slot > 0) {
                         spawn_spell_flash(dst->x, dst->z, msg->heroes[i].cast_flash_slot);
+                        /* Hearing range (S170-92): a real 20-hero match can have several
+                           casts landing every second across the whole map -- unfiltered,
+                           that's noise, not legibility. Only sound cues for casts within a
+                           reasonable radius of the local player's own hero, same "you can
+                           hear nearby fights, not the whole battlefield" scoping real games
+                           use for audio falloff. */
+                        float adx = dst->x - arena_state.heroes[my_owner].x;
+                        float adz = dst->z - arena_state.heroes[my_owner].z;
+                        if (adx * adx + adz * adz <= ARENA_AUDIO_HEARING_RADIUS * ARENA_AUDIO_HEARING_RADIUS) {
+                            play_cast_tone(msg->heroes[i].cast_flash_slot);
+                        }
                     }
                 }
                 arena_state.winner = msg->winner;
@@ -1159,6 +1173,73 @@ static int world_to_screen(const Mat4 *vp, float wx, float wy, float wz, int win
     return 1;
 }
 
+/* ---------------- audio (S170-92, "add little musical sound effects... for
+ * legibility via midi") ---------------- */
+/* Real scope call, not guessed: raw SDL2 core audio (SDL_OpenAudioDevice +
+ * SDL_QueueAudio), no SDL2_mixer. The backlog item's own open questions --
+ * whether a new mixer dependency is acceptable, what the Windows-bundle
+ * story is for a second DLL alongside SDL2.dll -- both dissolve if nothing
+ * new gets linked at all: SDL2 core already has an audio subsystem, already
+ * ships in every build (Linux and the mingw cross-compile alike), so short
+ * procedurally-synthesized tones need zero new toolchain/CI/bundling work.
+ * "Via midi" read as "short, distinct musical notes per event," not literal
+ * .mid file playback -- a simple sine tone per cue is the honest match for
+ * that intent at this scope ("little," per the founder's own word).
+ * Graceful degradation: if no audio device is available (this box is
+ * headless; a real player's box might also have no sound hardware, or it's
+ * muted), audio_dev stays 0 and every play_tone() call is a silent no-op --
+ * never a crash. */
+static SDL_AudioDeviceID audio_dev = 0;
+
+static void audio_init(void) {
+    SDL_AudioSpec want = {0}, have;
+    want.freq = 44100;
+    want.format = AUDIO_S16SYS;
+    want.channels = 1;
+    want.samples = 1024;
+    audio_dev = SDL_OpenAudioDevice(NULL, 0, &want, &have, 0);
+    if (audio_dev == 0) {
+        fprintf(stderr, "[arena client] no audio device available (%s) -- sound effects disabled\n", SDL_GetError());
+        return;
+    }
+    SDL_PauseAudioDevice(audio_dev, 0);
+}
+
+/* play_tone: synthesizes duration_ms of a sine wave at freq_hz and queues it
+ * for immediate playback. Linear fade-out over the last ~15ms avoids the
+ * audible click a hard-cut sine wave would otherwise produce. */
+static void play_tone(float freq_hz, float duration_ms, float volume) {
+    if (audio_dev == 0) return;
+    int sample_rate = 44100;
+    int n = (int)(sample_rate * duration_ms / 1000.0f);
+    if (n <= 0) return;
+    int16_t *buf = (int16_t *)malloc((size_t)n * sizeof(int16_t));
+    if (!buf) return;
+    int fade_samples = sample_rate * 15 / 1000;
+    if (fade_samples > n) fade_samples = n;
+    for (int i = 0; i < n; i++) {
+        float t = (float)i / (float)sample_rate;
+        float env = 1.0f;
+        if (i > n - fade_samples) env = (float)(n - i) / (float)fade_samples;
+        float sample = sinf(2.0f * 3.14159265f * freq_hz * t) * volume * env;
+        buf[i] = (int16_t)(sample * 32000.0f);
+    }
+    SDL_QueueAudio(audio_dev, buf, (Uint32)n * sizeof(int16_t));
+    free(buf);
+}
+
+/* play_cast_tone: one distinct note per ability slot -- an ascending triad
+   (Q/W/R -> A4/C#5/E5), same "which slot just fired" legibility the spell
+   flash's cyan/violet/gold color tiers already give visually, mirrored in
+   sound so it reads even without looking at the cast location. */
+static void play_cast_tone(int slot) {
+    switch (slot) {
+        case 1: play_tone(440.0f, 90.0f, 0.3f); break;  /* Q: A4 */
+        case 2: play_tone(554.0f, 110.0f, 0.3f); break; /* W: C#5 */
+        default: play_tone(659.0f, 140.0f, 0.32f); break; /* R: E5, longest and loudest -- the ultimate */
+    }
+}
+
 int main(int argc, char *argv[]) {
     /* Observer mode (NORTHSTAR §12 Phase C, EMILY/BACKLOG.md S170-30):
      * `red_garden_arena --observe var/matches/arena-<ts>.jsonl` plays back
@@ -1222,7 +1303,8 @@ int main(int argc, char *argv[]) {
         }
     }
 
-    SDL_Init(SDL_INIT_VIDEO);
+    SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO);
+    audio_init();
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 2);
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_COMPATIBILITY);
@@ -1423,6 +1505,11 @@ int main(int argc, char *argv[]) {
             }
             if (prev_hero_hp_valid[i] && h->hp < prev_hero_hp[i]) {
                 spawn_attack_flash(h->x, h->z);
+                float hdx = h->x - arena_state.heroes[my_owner].x;
+                float hdz = h->z - arena_state.heroes[my_owner].z;
+                if (hdx * hdx + hdz * hdz <= ARENA_AUDIO_HEARING_RADIUS * ARENA_AUDIO_HEARING_RADIUS) {
+                    play_tone(220.0f, 60.0f, 0.35f); /* short low thud, distinct from the higher/longer cast tones */
+                }
             }
             prev_hero_hp[i] = h->hp;
             prev_hero_hp_valid[i] = 1;
@@ -1442,6 +1529,11 @@ int main(int argc, char *argv[]) {
             ArenaHero *h = &arena_state.heroes[i];
             if (h->cast_flash_slot > 0) {
                 spawn_spell_flash(h->x, h->z, h->cast_flash_slot);
+                float sdx = h->x - arena_state.heroes[my_owner].x;
+                float sdz = h->z - arena_state.heroes[my_owner].z;
+                if (sdx * sdx + sdz * sdz <= ARENA_AUDIO_HEARING_RADIUS * ARENA_AUDIO_HEARING_RADIUS) {
+                    play_cast_tone(h->cast_flash_slot);
+                }
                 h->cast_flash_slot = 0;
             }
         }
@@ -1770,6 +1862,7 @@ int main(int argc, char *argv[]) {
         SDL_Delay(16);
     }
 
+    if (audio_dev != 0) SDL_CloseAudioDevice(audio_dev);
     SDL_GL_DeleteContext(ctx);
     SDL_DestroyWindow(win);
     SDL_Quit();

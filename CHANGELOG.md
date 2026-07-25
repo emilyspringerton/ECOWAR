@@ -1,5 +1,28 @@
 # Changelog
 
+## 2026-07-25 (20)
+
+- feat(arena): small musical sound effects for gameplay legibility (S170-92). Founder, real-time:
+  "add little musical sound effects to redgarden to add legibility via midi." Real scope decision
+  made, not guessed: raw SDL2 core audio (`SDL_OpenAudioDevice`/`SDL_QueueAudio`), no SDL2_mixer.
+  The backlog item's own open questions (new mixer dependency? second DLL to bundle in `PLAY.bat`'s
+  zip alongside SDL2.dll?) both dissolve if nothing new gets linked at all -- SDL2 core already has
+  an audio subsystem, already ships in every existing build. "Via midi" read as "short, distinct
+  musical notes per event," not literal `.mid` playback -- a procedurally-synthesized sine tone per
+  cue is the honest match at this scope ("little," per the founder's own word). Two cues: a short
+  low thud (220Hz) on any hit landing, and an ascending A4/C#5/E5 triad per ability slot (Q/W/R) on
+  cast -- mirrors the spell-flash color tiers (S170-124) in sound, so which slot just fired reads
+  even without looking at the cast location. Gated to a ~15-unit hearing radius around the local
+  player's own hero -- unfiltered, a real 20-hero match's several-casts-per-second would be noise,
+  not legibility. Graceful degradation: no audio device available (this box is headless; a real
+  player's box might also lack sound hardware) means every `play_tone()` call is a silent no-op,
+  never a crash. Client-only change (`apps/arena`) -- no protocol/server/bot changes, no live
+  systemd restart needed. Verified: clean build (both native and, per the existing CI workflow's
+  own mingw step, expected to cross-compile cleanly since only core SDL2 functions are used --
+  not locally re-verified, mingw isn't installed on this box), full headless suite (277 checks),
+  VS0/VS1 stable. No headless test possible for actual audio playback, same limitation as the
+  earlier hover-cursor/flash-animation work.
+
 ## 2026-07-25 (19)
 
 - feat(ops): auto-deploy the live arena binaries on green CI (S170-100). Founder, real-time:
