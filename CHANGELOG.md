@@ -1,5 +1,17 @@
 # Changelog
 
+## 2026-07-25 (16)
+
+- feat(arena): enhanced cursor hover state, enemy vs. ally (S170-69 revisited). Founder,
+  real-time: "do the enhanced cursor hover state work" — promotes this from the northstar/design
+  note it was logged at to real implementation. Purely client-side: `arena_state.heroes[i].team`
+  is already populated in every render mode, no wire changes needed. Hovering near a hero's
+  floating health bar now draws a bracket outline (same relationship color as the bar fill —
+  self/ally/enemy) plus a tooltip with relationship, hero name, and real HP numbers near the
+  cursor. Found in the same pass the health bars already run (world_to_screen per hero), no extra
+  per-frame cost. Client-only rendering change — no headless test possible (same limitation as the
+  earlier attack-flash/melee-animation work), verified via clean build only.
+
 ## 2026-07-25 (15)
 
 - docs(readme): real "How to Play" section for the arena MOBA (S170-97). Founder, real-time: "put

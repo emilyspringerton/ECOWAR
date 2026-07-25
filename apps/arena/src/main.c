@@ -1506,6 +1506,19 @@ int main(int argc, char *argv[]) {
         glMatrixMode(GL_MODELVIEW);
         glLoadIdentity();
 
+        /* Enhanced cursor hover state (S170-69 revisited): which hero, if any, the mouse is
+           currently over, and its screen-space bar position -- found in the same pass as the
+           health bars below (cheapest place to do it, world_to_screen already runs there for
+           every hero) and consumed just after the loop to draw a highlight + tooltip on top of
+           everything. SDL mouse Y is top-down; world_to_screen's sy is bottom-up (matches this
+           HUD's own glOrtho), same flip the OK-button hit test already uses. */
+        int raw_mx, raw_my;
+        SDL_GetMouseState(&raw_mx, &raw_my);
+        float mouse_hx = (float)raw_mx, mouse_hy = (float)(win_h - raw_my);
+        int hovered_i = -1;
+        float hovered_sx = 0, hovered_sy = 0;
+        float hovered_best_dist_sq = 30.0f * 30.0f; /* hover radius */
+
         /* Per-hero floating health bars (S170-89: "health bar hovers over hero") -- every
            alive hero, not just YOU/nearest-enemy's fixed HUD bars, so a 20-hero team match
            actually shows damage landing on whoever's in view. Reuses the same vp matrix the
@@ -1539,6 +1552,45 @@ int main(int argc, char *argv[]) {
                height in pixels; centered by eye against the bar width,
                not measured -- good enough for a short lowercase token. */
             draw_string(arena_hero_name(h->hero_id), sx - bw / 2, sy + bh + 2.0f, 10);
+
+            float hdx = mouse_hx - sx, hdy = mouse_hy - (sy + bh / 2);
+            float hdist_sq = hdx * hdx + hdy * hdy;
+            if (hdist_sq < hovered_best_dist_sq) {
+                hovered_best_dist_sq = hdist_sq;
+                hovered_i = i;
+                hovered_sx = sx;
+                hovered_sy = sy;
+            }
+        }
+        if (hovered_i >= 0) {
+            ArenaHero *hh = &arena_state.heroes[hovered_i];
+            float bw = 40.0f, bh = 5.0f;
+            /* Relationship color, same convention as the bar fill above --
+               self/ally/enemy read identically everywhere in this HUD. */
+            float rr, gg, bb;
+            const char *relation;
+            if (hovered_i == my_owner) { rr = 0.1f; gg = 0.8f; bb = 0.95f; relation = "YOU"; }
+            else if (hh->team == arena_state.heroes[my_owner].team) { rr = 0.15f; gg = 0.55f; bb = 0.95f; relation = "ALLY"; }
+            else { rr = 0.95f; gg = 0.25f; bb = 0.15f; relation = "ENEMY"; }
+
+            /* Bracket outline around the bar -- distinct from the bar's own
+               border (which is always drawn, hover or not): a wider,
+               brighter box just outside it. */
+            glColor3f(rr, gg, bb);
+            glLineWidth(2.0f);
+            glBegin(GL_LINE_LOOP);
+            glVertex2f(hovered_sx - bw / 2 - 3, hovered_sy - 3);
+            glVertex2f(hovered_sx + bw / 2 + 3, hovered_sy - 3);
+            glVertex2f(hovered_sx + bw / 2 + 3, hovered_sy + bh + 3);
+            glVertex2f(hovered_sx - bw / 2 - 3, hovered_sy + bh + 3);
+            glEnd();
+
+            /* Tooltip near the cursor: relationship + name + real HP numbers,
+               not just the bar's fractional fill. */
+            char tip[64];
+            snprintf(tip, sizeof(tip), "%s - %s (%d/%d)", relation, arena_hero_name(hh->hero_id), hh->hp, hh->max_hp);
+            glColor3f(rr, gg, bb);
+            draw_string(tip, mouse_hx + 14.0f, mouse_hy + 6.0f, 11);
         }
 
         glColor3f(0.1f, 0.8f, 0.95f);
