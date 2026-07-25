@@ -121,6 +121,24 @@ typedef struct {
 // otherwise depend on the sim package.
 #define ARENA_SNAPSHOT_MAX_HEROES 20
 
+// Per-node territory state broadcast in PACKET_ARENA_SNAPSHOT (S170-87 fix
+// -- this didn't exist before, and its absence is the real root cause of
+// "the two capture nodes render compressed onto one point in net_mode":
+// arena_state.nodes[] was never populated client-side at all, left at
+// whatever memset zeroed it to (both nodes at the same (0,0) origin).
+// capturing_team mirrors ArenaNode's own -1-or-team-index convention but as
+// a signed int8 over the wire (uint8 can't represent -1).
+typedef struct {
+    float x, z;
+    uint8_t owner;            /* 0=neutral/contested, 1=team0, 2=team1 -- matches ArenaNode.owner exactly */
+    int8_t capturing_team;    /* -1 = no active channel, else 0/1 */
+    uint16_t capture_progress_ms;
+} ArenaNodeSnapshot;
+
+// ARENA_SNAPSHOT_NODE_COUNT must match packages/simulation/arena_game.h's
+// ARENA_NODE_COUNT, same duplication reasoning as ARENA_SNAPSHOT_MAX_HEROES.
+#define ARENA_SNAPSHOT_NODE_COUNT 2
+
 // PACKET_ARENA_SNAPSHOT payload: up to ARENA_SNAPSHOT_MAX_HEROES hero
 // slots, in owner order -- `count` says how many are actually meaningful
 // (2 for a 1v1 match, up to 20 for a full 10v10 lobby), same "count +
@@ -136,6 +154,7 @@ typedef struct {
     uint8_t winner; /* 0 = none yet, 1 = team/owner 0 won, 2 = team/owner 1 won */
     uint8_t phase;  /* ARENA_PHASE_WAITING/DRAFT/LIVE */
     uint8_t picked[ARENA_SNAPSHOT_MAX_HEROES]; /* 1 once that slot has locked in a hero this draft */
+    ArenaNodeSnapshot nodes[ARENA_SNAPSHOT_NODE_COUNT]; /* S170-87 */
 } ArenaSnapshotMsg;
 
 #endif

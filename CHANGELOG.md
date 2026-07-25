@@ -1,5 +1,23 @@
 # Changelog
 
+## 2026-07-25 (7)
+
+- fix(arena): the two capture nodes render compressed onto one point in net_mode (S170-87). Real
+  protocol gap, exactly as diagnosed but not yet fixed: `ArenaSnapshotMsg` never included node data
+  at all -- only `heroes[]`, `winner`, `phase`, `picked[]`. In net_mode the client never calls
+  `arena_init()`/`arena_init_teams()` locally (the server owns that), so `arena_state.nodes[0]`/
+  `nodes[1]` stayed at the global static default -- both zeroed to `(0,0)` -- making both nodes
+  render on top of each other at the world origin. Added `ArenaNodeSnapshot` (x/z/owner/
+  capturing_team/capture_progress_ms) + `ArenaNodeSnapshot nodes[ARENA_SNAPSHOT_NODE_COUNT]` to
+  `ArenaSnapshotMsg`, populated server-side in `server_broadcast()`, consumed client-side in
+  `net_poll_snapshots()`. Also colored the node cubes by owner (blue/red/gold matching the hero
+  team-color convention) now that ownership actually reaches the client -- the territory redesign's
+  whole point, who controls the ground right now, was invisible before this. Verified: `build.sh`,
+  `build_arena.sh`, `test_arena.sh`, `test_10_bots.sh` all clean; restarted all three live systemd
+  units (`redgarden-matchmaker-bots`, `redgarden-matchmaker-players`, `redgarden-bot-pool`) on the
+  new build since this is a wire-format change -- confirmed the pool re-fills cleanly to 19/20 with
+  no size-mismatch/crash on the new binary.
+
 ## 2026-07-25 (6)
 
 - fix(arena): missing font glyphs. Founder: "we are missing a lot of font glyphs in redgarden."

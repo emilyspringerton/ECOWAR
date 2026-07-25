@@ -299,6 +299,14 @@ static void server_broadcast(void) {
     }
     msg.winner = (uint8_t)arena_state.winner;
     msg.phase = (uint8_t)match_phase;
+    for (int i = 0; i < ARENA_SNAPSHOT_NODE_COUNT; i++) {
+        ArenaNode *node = &arena_state.nodes[i];
+        msg.nodes[i].x = node->x;
+        msg.nodes[i].z = node->z;
+        msg.nodes[i].owner = (uint8_t)node->owner;
+        msg.nodes[i].capturing_team = (int8_t)node->capturing_team;
+        msg.nodes[i].capture_progress_ms = (uint16_t)(node->capture_progress_ms > 0 ? node->capture_progress_ms : 0);
+    }
 
     memcpy(buffer, &head, sizeof(NetHeader));
     memcpy(buffer + sizeof(NetHeader), &msg, sizeof(ArenaSnapshotMsg));

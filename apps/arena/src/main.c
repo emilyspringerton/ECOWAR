@@ -412,6 +412,14 @@ static void net_poll_snapshots(uint32_t now_ms) {
                     dst->hero_id = (ArenaHeroID)msg->heroes[i].hero_id;
                 }
                 arena_state.winner = msg->winner;
+                for (int i = 0; i < ARENA_SNAPSHOT_NODE_COUNT && i < ARENA_NODE_COUNT; i++) {
+                    ArenaNode *dst = &arena_state.nodes[i];
+                    dst->x = msg->nodes[i].x;
+                    dst->z = msg->nodes[i].z;
+                    dst->owner = msg->nodes[i].owner;
+                    dst->capturing_team = msg->nodes[i].capturing_team;
+                    dst->capture_progress_ms = msg->nodes[i].capture_progress_ms;
+                }
             }
         }
         len = recvfrom(net_sock, rbuf, sizeof(rbuf), 0, (struct sockaddr *)&sender, &slen);
@@ -1225,7 +1233,13 @@ int main(int argc, char *argv[]) {
             draw_mesh(&plane_mesh);
         }
 
-        /* nodes */
+        /* nodes -- colored by owner (S170-87 cont'd, now that ownership
+           actually reaches the client at all) so the capture redesign's
+           whole point -- who controls this ground right now -- is visible,
+           not just the node's existence/position. Same team-color
+           convention as the hero cubes below (blue = team 0, red =
+           team 1), gold for neutral/contested, matching the territory
+           system's own owner encoding (0/1/2). */
         for (int i = 0; i < ARENA_NODE_COUNT; i++) {
             Mat4 t = mat4_translate(arena_state.nodes[i].x, 0.15f, arena_state.nodes[i].z);
             Mat4 s = mat4_scale(1.2f, 0.3f, 1.2f);
@@ -1233,7 +1247,11 @@ int main(int argc, char *argv[]) {
             Mat4 mvp = mat4_multiply(&vp, &model);
             glUniformMatrix4fv_(loc_mvp, 1, GL_FALSE, mvp.m);
             glUniformMatrix4fv_(loc_model, 1, GL_FALSE, model.m);
-            glUniform4f_(loc_color, 0.85f, 0.7f, 0.1f, 1.0f);
+            switch (arena_state.nodes[i].owner) {
+                case 1: glUniform4f_(loc_color, 0.15f, 0.35f, 0.95f, 1.0f); break; /* team 0's */
+                case 2: glUniform4f_(loc_color, 0.95f, 0.25f, 0.15f, 1.0f); break; /* team 1's */
+                default: glUniform4f_(loc_color, 0.85f, 0.7f, 0.1f, 1.0f); break;  /* neutral/contested */
+            }
             draw_mesh(&cube_mesh);
         }
 
