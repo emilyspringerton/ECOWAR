@@ -1,5 +1,28 @@
 # Changelog
 
+## 2026-07-25 (21)
+
+- feat(arena): Overwatch-style recast-time tiles for Q/W/E (S170-127). Founder, real-time: "add
+  the ability frame cooldown timer tiles from shankpit og engine as recast time affordances" ->
+  "make it like overwatch recast frames for q w e." Replaced the plain three-line text HUD
+  ("Q: NAME [CD]") with real square ability tiles. Visual language ported from SHANKPIT's own
+  `apps/lobby/src/main.c` `draw_ability_one_tile()` (bordered square, background/border color
+  swap on cooldown, big centered countdown number, keybind label below) plus a real radial
+  cooldown wipe on top -- SHANKPIT's tile was for one hero's one fixed-length ability; REDGARDEN
+  has 19 heroes across 3 slots with cooldowns ranging roughly 2s-26s+, where "how much is left"
+  matters more than a flat color tint alone shows. No per-hero max-cooldown table exists
+  client-side to compute that fraction against, so it's tracked locally instead:
+  `draw_ability_tile()` remembers the highest `cooldown_ms` seen since it last hit 0 (arms the
+  instant a cast starts counting down from its real peak) and wipes that fraction away as a dark
+  wedge sweeping clockwise from 12 o'clock -- self-correcting per-slot, no new wire data needed.
+  W's tile lights bright toggle-green while `w_active`, matching the existing "W is ON" HUD
+  convention it replaces. Ability-name caption kept (S170-96/S170-112's "show which real ability
+  that is" work), drawn small below each tile -- known limitation, not hidden: several hero names
+  are long enough to visually overflow the caption's tight column width at this tile size, a
+  cosmetic issue only, worth a follow-up pass if it reads as messy in practice. Client-only
+  change, no protocol/server changes. Verified: clean build, full headless suite (277 checks),
+  VS0/VS1 stable. No headless test possible for the actual rendered tile layout.
+
 ## 2026-07-25 (20)
 
 - feat(arena): small musical sound effects for gameplay legibility (S170-92). Founder, real-time:

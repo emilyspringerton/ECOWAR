@@ -1104,6 +1104,98 @@ static void spawn_spell_flash(float x, float z, int slot) {
     }
 }
 
+/* ---------------- ability recast tiles (S170-127, "add the ability frame
+ * cooldown timer tiles from shankpit og engine as recast time affordances"
+ * -> "make it like overwatch recast frames for q w e") ---------------- */
+/* Peak-cooldown tracking for the local player's own Q/W/E, one float each --
+ * see the call site's own comment for why this exists (no per-hero max-
+ * cooldown table to compute a wipe fraction against otherwise). */
+static float q_cooldown_peak_ms = 0.0f;
+static float w_cooldown_peak_ms = 0.0f;
+static float r_cooldown_peak_ms = 0.0f;
+
+/* draw_ability_tile: one Overwatch-style square ability icon -- bordered
+ * tile, a radial dark wedge (GL_TRIANGLE_FAN from the tile's center)
+ * sweeping clockwise from 12 o'clock that shrinks as cooldown counts down
+ * (SHANKPIT's draw_ability_one_tile() only ever showed a flat color swap +
+ * a number, no progress wipe -- REDGARDEN's 19-hero, 3-slot roster spans
+ * cooldowns from ~2s to 26s+, where "how much is left" matters more than
+ * SHANKPIT's single fixed-cooldown blade dash), a big centered countdown
+ * number while on cooldown, and a keybind label below. `active` lights the
+ * tile a bright toggle-green regardless of cooldown state, matching the
+ * existing "W is ON" HUD convention this replaces. `peak_ms` is the
+ * caller's own persistent float -- updated here, not reset by this
+ * function, so it survives across frames. */
+static void draw_ability_tile(float x, float y, float size, int cooldown_ms, float *peak_ms,
+                               int active, const char *keybind, const char *ability_name,
+                               float base_r, float base_g, float base_b) {
+    if (cooldown_ms > 0) {
+        if ((float)cooldown_ms > *peak_ms) *peak_ms = (float)cooldown_ms;
+    } else {
+        *peak_ms = 0.0f;
+    }
+    int on_cooldown = cooldown_ms > 0;
+    float frac_remaining = (on_cooldown && *peak_ms > 0.0f) ? (float)cooldown_ms / *peak_ms : 0.0f;
+    if (frac_remaining > 1.0f) frac_remaining = 1.0f;
+
+    float bg_r = active ? 0.15f : (on_cooldown ? 0.10f : 0.08f);
+    float bg_g = active ? 0.45f : (on_cooldown ? 0.10f : 0.08f);
+    float bg_b = active ? 0.20f : (on_cooldown ? 0.12f : 0.10f);
+    glColor4f(bg_r, bg_g, bg_b, 0.85f);
+    glRectf(x, y, x + size, y + size);
+
+    /* Border: the ability's own base color at full brightness when ready
+       or active, dimmed to near-gray while on cooldown -- same "ready
+       pops, cooldown recedes" legibility Overwatch's own icon border uses. */
+    float border_scale = (on_cooldown && !active) ? 0.35f : 1.0f;
+    glColor4f(base_r * border_scale + (1.0f - border_scale) * 0.3f,
+              base_g * border_scale + (1.0f - border_scale) * 0.3f,
+              base_b * border_scale + (1.0f - border_scale) * 0.3f, 0.95f);
+    glLineWidth(2.0f);
+    glBegin(GL_LINE_LOOP);
+    glVertex2f(x, y); glVertex2f(x + size, y);
+    glVertex2f(x + size, y + size); glVertex2f(x, y + size);
+    glEnd();
+    glLineWidth(1.0f);
+
+    /* Radial cooldown wipe: a dark wedge from the tile's center, starting
+       at 12 o'clock, sweeping clockwise for frac_remaining * 360 degrees --
+       shrinks toward nothing as the ability approaches ready, exactly the
+       "watch the pie empty" affordance real ability HUDs use. */
+    if (on_cooldown && frac_remaining > 0.0f) {
+        float cx = x + size / 2.0f, cy = y + size / 2.0f;
+        float radius = size * 0.75f; /* overshoots the tile corners so the wedge always fully covers it */
+        int segments = 24;
+        int sweep_segments = (int)(segments * frac_remaining);
+        if (sweep_segments < 1) sweep_segments = 1;
+        glColor4f(0.0f, 0.0f, 0.0f, 0.72f);
+        glBegin(GL_TRIANGLE_FAN);
+        glVertex2f(cx, cy);
+        for (int s = 0; s <= sweep_segments; s++) {
+            float t = (float)s / (float)segments;
+            float angle = -3.14159265f / 2.0f + t * 2.0f * 3.14159265f; /* start at 12 o'clock, sweep clockwise */
+            glVertex2f(cx + cosf(angle) * radius, cy + sinf(angle) * radius);
+        }
+        glEnd();
+    }
+
+    if (on_cooldown) {
+        char buf[8];
+        int seconds = (int)ceilf((float)cooldown_ms / 1000.0f);
+        if (seconds < 1) seconds = 1;
+        snprintf(buf, sizeof(buf), "%d", seconds);
+        float text_size = size * 0.05f;
+        float approx_w = (float)strlen(buf) * text_size * 3.8f;
+        glColor3f(1.0f, 0.95f, 0.95f);
+        draw_string(buf, x + (size - approx_w) / 2.0f, y + size * 0.4f, text_size);
+    }
+
+    glColor3f(0.92f, 0.96f, 1.0f);
+    draw_string(keybind, x + size / 2.0f - 3.0f, y - 12.0f, 8.0f);
+    glColor3f(0.75f, 0.8f, 0.85f);
+    draw_string(ability_name, x, y - 24.0f, 6.0f);
+}
+
 /* ---------------- camera ---------------- */
 static float cam_yaw = 45.0f, cam_pitch = 40.0f, cam_dist = 16.0f;
 
@@ -1807,25 +1899,27 @@ int main(int argc, char *argv[]) {
         }
 
         {
-            /* Own hero's kit status (docs/HEROES_VS0.md) — Q/W/E readiness, real ability
-               names (S170-96/S170-112 follow-up: "show ability names on screen" -- this used
-               to just say "Q READY"/"W ON", never which real ability that was). Stacked
-               vertically now, not side by side -- real names run much longer than "Q READY"
-               ever did. */
+            /* Own hero's kit status -- real Overwatch-style recast-time tiles (S170-127,
+               "add the ability frame cooldown timer tiles from shankpit og engine as recast
+               time affordances" -> "make it like overwatch recast frames for q w e"). Ported
+               the tile visual language from SHANKPIT's apps/lobby/src/main.c
+               draw_ability_one_tile() (bordered square, background/border color swap on
+               cooldown, big centered countdown number, keybind label) and added a real radial
+               wipe on top -- REDGARDEN has 3 slots with very different cooldown lengths across
+               19 heroes, not SHANKPIT's single fixed-cooldown ability, so a flat color tint
+               alone doesn't show *how much* cooldown is left the way Overwatch's ability icons
+               do. No per-hero max-cooldown table exists client-side to compute that fraction
+               against, so it's tracked locally instead: remember the highest cooldown_ms value
+               seen since it last hit 0 (arms the instant a cast starts it counting down from
+               its real peak) and wipe the fraction of that peak still remaining -- self-
+               correcting per-hero-per-slot with no new wire data needed. */
             ArenaHero *h = &arena_state.heroes[my_owner];
-            char qbuf[64], wbuf[64], ebuf[64];
-            snprintf(qbuf, sizeof(qbuf), "Q: %s [%s]", arena_ability_name(h->hero_id, 0),
-                     h->q_cooldown_ms > 0 ? "CD" : "READY");
-            snprintf(wbuf, sizeof(wbuf), "W: %s [%s]", arena_ability_name(h->hero_id, 1),
-                     h->w_active ? "ON" : (h->w_cooldown_ms > 0 ? "CD" : "READY"));
-            snprintf(ebuf, sizeof(ebuf), "E: %s [%s%s]", arena_ability_name(h->hero_id, 2),
-                     h->r_cooldown_ms > 0 ? "CD" : "READY", h->r_active_ms > 0 ? " ACTIVE" : "");
-            glColor3f(h->q_cooldown_ms > 0 ? 0.5f : 0.2f, h->q_cooldown_ms > 0 ? 0.5f : 1.0f, 0.9f);
-            draw_string(qbuf, 20, win_h - 95.0f, 10);
-            glColor3f(h->w_active ? 0.2f : 0.6f, h->w_active ? 1.0f : 0.6f, 0.3f);
-            draw_string(wbuf, 20, win_h - 112.0f, 10);
-            glColor3f(h->r_cooldown_ms > 0 ? 0.5f : 0.9f, 0.4f, h->r_cooldown_ms > 0 ? 0.5f : 0.9f);
-            draw_string(ebuf, 20, win_h - 129.0f, 10);
+            draw_ability_tile(20.0f, win_h - 168.0f, 56.0f, h->q_cooldown_ms, &q_cooldown_peak_ms,
+                               0, "Q", arena_ability_name(h->hero_id, 0), 0.3f, 0.7f, 1.0f);
+            draw_ability_tile(86.0f, win_h - 168.0f, 56.0f, h->w_cooldown_ms, &w_cooldown_peak_ms,
+                               h->w_active, "W", arena_ability_name(h->hero_id, 1), 0.7f, 0.3f, 1.0f);
+            draw_ability_tile(152.0f, win_h - 168.0f, 56.0f, h->r_cooldown_ms, &r_cooldown_peak_ms,
+                               h->r_active_ms > 0, "E", arena_ability_name(h->hero_id, 2), 1.0f, 0.85f, 0.2f);
         }
 
         if (show_apm) {
