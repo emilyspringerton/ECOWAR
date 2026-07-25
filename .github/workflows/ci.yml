@@ -75,6 +75,7 @@ jobs:
             apps/arena/src/main.c \
             packages/simulation/arena_game.c \
             packages/simulation/arena_replay.c \
+            packages/simulation/arena_ai_bridge.c \
             -I./sdl2_mingw/include \
             -Ipackages \
             -L./sdl2_mingw/lib \

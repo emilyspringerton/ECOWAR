@@ -392,7 +392,7 @@ static void net_poll_snapshots(uint32_t now_ms) {
                        founder confirmed auto-draft is fine for now -- same roster-spread
                        rule apps/arena_bot already uses, so the human doesn't get stuck
                        in ARENA_PHASE_DRAFT forever waiting on input that never comes. */
-                    int hero_id = my_owner % 17; /* ARENA_HERO_UNICORN..BACON_PUCK (S170-79, S170-91, S170-94) */
+                    int hero_id = my_owner % 18; /* ARENA_HERO_UNICORN..BACON_PUCK (S170-79, S170-91, S170-94) */
                     net_send_pick(hero_id);
                     net_picked = 1;
                     net_last_pick_send_ms = now_ms;
@@ -435,7 +435,7 @@ static void net_poll_snapshots(uint32_t now_ms) {
      * harmless if the original arrived (server's own PACKET_ARENA_PICK handling just re-records
      * the same hero_id), the actual fix if it didn't. */
     if (net_phase == ARENA_PHASE_DRAFT && net_picked && now_ms - net_last_pick_send_ms > 1000) {
-        int hero_id = my_owner % 17;
+        int hero_id = my_owner % 18;
         net_send_pick(hero_id);
         net_last_pick_send_ms = now_ms;
     }
@@ -1385,19 +1385,25 @@ int main(int argc, char *argv[]) {
         }
 
         {
-            /* Own hero's kit status (docs/HEROES_VS0.md) — Q/W/E readiness. */
+            /* Own hero's kit status (docs/HEROES_VS0.md) — Q/W/E readiness, real ability
+               names (S170-96/S170-112 follow-up: "show ability names on screen" -- this used
+               to just say "Q READY"/"W ON", never which real ability that was). Stacked
+               vertically now, not side by side -- real names run much longer than "Q READY"
+               ever did. */
             ArenaHero *h = &arena_state.heroes[my_owner];
-            char qbuf[24], wbuf[24], ebuf[24];
-            snprintf(qbuf, sizeof(qbuf), "Q %s", h->q_cooldown_ms > 0 ? "CD" : "READY");
-            snprintf(wbuf, sizeof(wbuf), "W %s", h->w_active ? "ON" : "OFF");
-            snprintf(ebuf, sizeof(ebuf), "E %s%s", h->r_cooldown_ms > 0 ? "CD" : "READY",
-                     h->r_active_ms > 0 ? " (ACTIVE)" : "");
+            char qbuf[64], wbuf[64], ebuf[64];
+            snprintf(qbuf, sizeof(qbuf), "Q: %s [%s]", arena_ability_name(h->hero_id, 0),
+                     h->q_cooldown_ms > 0 ? "CD" : "READY");
+            snprintf(wbuf, sizeof(wbuf), "W: %s [%s]", arena_ability_name(h->hero_id, 1),
+                     h->w_active ? "ON" : (h->w_cooldown_ms > 0 ? "CD" : "READY"));
+            snprintf(ebuf, sizeof(ebuf), "E: %s [%s%s]", arena_ability_name(h->hero_id, 2),
+                     h->r_cooldown_ms > 0 ? "CD" : "READY", h->r_active_ms > 0 ? " ACTIVE" : "");
             glColor3f(h->q_cooldown_ms > 0 ? 0.5f : 0.2f, h->q_cooldown_ms > 0 ? 0.5f : 1.0f, 0.9f);
-            draw_string(qbuf, 20, win_h - 95.0f, 12);
+            draw_string(qbuf, 20, win_h - 95.0f, 10);
             glColor3f(h->w_active ? 0.2f : 0.6f, h->w_active ? 1.0f : 0.6f, 0.3f);
-            draw_string(wbuf, 120, win_h - 95.0f, 12);
+            draw_string(wbuf, 20, win_h - 112.0f, 10);
             glColor3f(h->r_cooldown_ms > 0 ? 0.5f : 0.9f, 0.4f, h->r_cooldown_ms > 0 ? 0.5f : 0.9f);
-            draw_string(ebuf, 220, win_h - 95.0f, 12);
+            draw_string(ebuf, 20, win_h - 129.0f, 10);
         }
 
         if (show_apm) {

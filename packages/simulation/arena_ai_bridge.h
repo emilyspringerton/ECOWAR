@@ -25,6 +25,13 @@
  * pointer or crash. */
 const char *arena_hero_name(ArenaHeroID hero_id);
 
+/* arena_ability_name returns the real ability name for hero_id's Q/W/R slot
+ * (slot 0/1/2), matching docs/HEROES_VS0.md's own naming ("EARTHBIND", "POOF",
+ * not a generic "Q"/"W"/"R" label) -- S170-96/S170-112, the client HUD only
+ * ever showed cooldown state, never which real ability was on cooldown.
+ * Returns "?" for an out-of-range hero_id or slot rather than garbage. */
+const char *arena_ability_name(ArenaHeroID hero_id, int slot);
+
 /* arena_serialize_state writes a stable, natural-language state token
  * string for the match as seen from owner's point of view ("self" =
  * owner's hero, "foe" = the other) into out (NUL-terminated, truncated to

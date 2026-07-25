@@ -174,23 +174,32 @@ being the correct ally to have nearby.
   this fully removes all debuffs and grants max-HP-scaled shields to every ally in a wide radius —
   a pure defensive teamwide panic button, nothing else.
 
-### TYLER — **Fighter/Assassin — exact reskin of DOTA's OG Meepo**
+### TYLER — **Fighter/Assassin — exact reskin of DOTA's OG Meepo** (implemented S170-111)
 
 Founder-requested: an exact copy of Meepo's classic kit, including the original (pre-rework,
 unforgiving) "OG" clone-death rule, reskinned as TYLER rather than renamed into something softer.
+Written here well before code existed for it (docs before software) — implemented for real in
+S170-111, simplified from the literal multi-clone design below, documented honestly rather than
+silently narrowed: this engine's `ArenaHero` slots are one-per-connected-client, not
+multi-entity-per-player, so true clones sharing one HP pool aren't buildable without touching the
+draft/pick/connection model the whole roster depends on. What shipped: **Q — Earthbind** roots +
+a DoT (folds in Geostrike's poison, since there's no generic per-melee-attack passive hook to hang
+a separate armor-shred off). **W — Poof** is a real instant blink-strike to the nearest enemy —
+one body, one blink, not "every clone." **R — Divided We Stand** keeps the actual point of the OG
+rule — real risk/reward — as a self-buff that hits hard on cast and leaves Tyler's own armor
+negative (more fragile, not literally shared-fate-with-clones) for the window after.
 
-- **Q — Earthbind**: Fires a net at a target area; any enemy hit is rooted and treated as a bigger
-  hitbox for a few seconds (classic setup for the blink-strike below).
-- **W — Poof**: After a short delay, TYLER and every active clone teleport to the target point,
-  dealing AoE AD damage both where each one left from and where each one lands. Chainable with
-  itself across clones — a full-team dive tool in the hands of a good player.
-  Yes, this stacks with itself across every clone TYLER is currently split into.
-- **E — Geostrike (passive)**: Every melee attack from TYLER or any clone reduces the target's
-  Armor and applies a stacking poison DoT.
-- **R — Divided We Stand**: Splits TYLER into an additional clone (up to 5 total), each with a
-  percentage of TYLER's stats and sharing TYLER's items and cooldowns. **OG rule, exactly as
-  requested**: all clones share a single pool of fate — if any one TYLER dies, every TYLER dies,
-  no exceptions. High-risk, high-reward, exactly like the original.
+- **Q — Earthbind** *(original design)*: Fires a net at a target area; any enemy hit is rooted and
+  treated as a bigger hitbox for a few seconds (classic setup for the blink-strike below).
+- **W — Poof** *(original design)*: After a short delay, TYLER and every active clone teleport to
+  the target point, dealing AoE AD damage both where each one left from and where each one lands.
+  Chainable with itself across clones — a full-team dive tool in the hands of a good player.
+- **E — Geostrike (passive)** *(original design)*: Every melee attack from TYLER or any clone
+  reduces the target's Armor and applies a stacking poison DoT.
+- **R — Divided We Stand** *(original design)*: Splits TYLER into an additional clone (up to 5
+  total), each with a percentage of TYLER's stats and sharing TYLER's items and cooldowns. **OG
+  rule, exactly as requested**: all clones share a single pool of fate — if any one TYLER dies,
+  every TYLER dies, no exceptions. High-risk, high-reward, exactly like the original.
 
 ### Flamel — **Support — Alchemist-Gardener** (merged with the former "Druid" entry, 2026-07-24)
 

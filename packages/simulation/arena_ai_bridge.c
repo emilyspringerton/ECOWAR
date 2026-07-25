@@ -23,8 +23,38 @@ const char *arena_hero_name(ArenaHeroID hero_id) {
     case ARENA_HERO_BACON_PUCK: return "bacon_puck";
     case ARENA_HERO_ABRAHAM: return "abraham";
     case ARENA_HERO_ADA:     return "ada";
+    case ARENA_HERO_TYLER:   return "tyler";
     default:                 return "unknown";
     }
+}
+
+/* Real ability names, one row per hero, matching docs/HEROES_VS0.md exactly (S170-96/S170-112
+ * follow-up: the HUD only ever showed generic "Q READY/CD", never which real ability that was).
+ * {Q, W, R} -- kept short enough to fit the existing cooldown-strip HUD slots. */
+const char *arena_ability_name(ArenaHeroID hero_id, int slot) {
+    static const char *NAMES[ARENA_HERO_COUNT][3] = {
+        [ARENA_HERO_UNICORN]    = {"DIAGNOSTIC CHARGE", "SPAGHETTI VENT", "FULL DISCLOSURE"},
+        [ARENA_HERO_DUCK]       = {"TELEKINETIC YANK", "GOVERNMENT CLEARANCE", "TOTAL TELEKINESIS"},
+        [ARENA_HERO_GHOST]      = {"ALIEN FREQUENCY", "NOT A GHOST", "RECITAL"},
+        [ARENA_HERO_FROG]       = {"LOOP BACK", "BORROWED TIME", "THE SECRET"},
+        [ARENA_HERO_DOC_WHEEL]  = {"BEDSIDE MANNER", "HOUSE CALL", "NO COMBAT POWER"},
+        [ARENA_HERO_TREE]       = {"VINE LASH", "UNTRANSLATED", "GRAND SECRET"},
+        [ARENA_HERO_PIZZA]      = {"NOBODY CHECKED", "I AM THE CHOSEN ONE", "NOBODY EVER CHECKS"},
+        [ARENA_HERO_FLAMEL]     = {"VINE GROWTH", "PHILOSOPHER'S BLOOM", "ELIXIR OF WILD GROWTH"},
+        [ARENA_HERO_MORRIGAN]   = {"THE WASHER'S STRIKE", "THREE FORMS", "THE CROW CONFIRMS IT"},
+        [ARENA_HERO_DAGDA]      = {"THE WHEELED CLUB", "UAITHNE, CALLED BY NAME", "THE PORRIDGE"},
+        [ARENA_HERO_COURIER]    = {"THE INSULT, LIGHTLY EDITED", "BETWEEN EAGLE AND SERPENT", "THE DEBT COLLECTOR'S DUE"},
+        [ARENA_HERO_LOKI]       = {"INTERFERENCE, NOT A SIGNAL", "BOUND WHERE THE MYTH SAYS", "HELD FOR AS LONG AS THE MYTH DEMANDS"},
+        [ARENA_HERO_GARY]       = {"THE PROPERTY", "WATCHING THE BRIDGE", "SLOW DOWN, TRACK MEET"},
+        [ARENA_HERO_FLUTE_DEBT] = {"THE WRONG NOTE", "RECOUPING INTEREST", "EVENTUALLY COLLECTS"},
+        [ARENA_HERO_BACON_PUCK] = {"ASK AGAIN LATER", "WHICH ONE IS REAL", "THE TRICK WAS ALWAYS THE SAME"},
+        [ARENA_HERO_ABRAHAM]    = {"THE SACRED MAGIC", "THE BOOK, UNATTESTED", "THE GUARDIAN ANGEL, CONTACTED"},
+        [ARENA_HERO_ADA]        = {"THE ANALYTICAL ENGINE", "POETICAL SCIENCE", "FIRST PROGRAM, RUN LATE"},
+        [ARENA_HERO_TYLER]      = {"EARTHBIND", "POOF", "DIVIDED WE STAND"},
+    };
+    if (hero_id < 0 || hero_id >= ARENA_HERO_COUNT || slot < 0 || slot > 2) return "?";
+    const char *name = NAMES[hero_id][slot];
+    return name ? name : "?";
 }
 
 void arena_serialize_state(int owner, unsigned int tick_ms, char *out, size_t out_len) {

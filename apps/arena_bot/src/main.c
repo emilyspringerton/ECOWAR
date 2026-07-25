@@ -392,7 +392,7 @@ static void play_one_match(void) {
                 /* Simple roster spread: pick based on owner slot so a full
                    lobby doesn't converge on one hero -- real draft strategy
                    is a later, separate concern. */
-                int hero_id = my_owner % 17; /* ARENA_HERO_UNICORN..BACON_PUCK (S170-48, S170-79, S170-91, S170-94) */
+                int hero_id = my_owner % 18; /* ARENA_HERO_UNICORN..BACON_PUCK (S170-48, S170-79, S170-91, S170-94) */
                 send_pick(hero_id);
                 picked = 1;
                 ticks_since_pick_send = 0;
@@ -405,7 +405,7 @@ static void play_one_match(void) {
                    localhost loopback so it never surfaced here, but it's the same latent gap --
                    resend every ~1s (10 ticks @ 100ms) while still stuck in draft. */
                 if (++ticks_since_pick_send > 10) {
-                    send_pick(my_owner % 17);
+                    send_pick(my_owner % 18);
                     ticks_since_pick_send = 0;
                 }
             } else if (last.phase == ARENA_PHASE_LIVE) {

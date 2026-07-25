@@ -84,8 +84,9 @@ typedef enum {
     ARENA_HERO_BACON_PUCK = 14, /* TYLER multiverse_heroes.md #5 + #67, merged (S170-94) */
     ARENA_HERO_ABRAHAM = 15, /* TYLER multiverse_heroes.md #113, "Abraham of Worms, the Mage" (S170-103) */
     ARENA_HERO_ADA = 16, /* TYLER multiverse_heroes.md #112, "Ada Lovelace, Pilot" (S170-103) */
+    ARENA_HERO_TYLER = 17, /* docs/HEROES_VS0.md's own pre-existing design, never implemented until now (S170-111) */
 } ArenaHeroID;
-#define ARENA_HERO_COUNT 17
+#define ARENA_HERO_COUNT 18
 
 /* The Unicorn — first real hero kit wired in (S170-18). */
 #define ARENA_UNICORN_ARMOR         4    /* passive: Chassis Claim, flat dmg reduction */
@@ -413,6 +414,33 @@ typedef enum {
 #define ARENA_FLUTE_DEBT_R_DAMAGE_BASE  8
 #define ARENA_FLUTE_DEBT_R_DAMAGE_DEBT  22 /* dealt instead of BASE if the target's debt (burning_ms) is still active */
 #define ARENA_FLUTE_DEBT_R_COOLDOWN_MS  18000
+
+/* TYLER (S170-111) -- docs/HEROES_VS0.md already wrote this kit as "an exact copy of Meepo's
+ * classic kit... reskinned as TYLER," including the original OG clone-death rule: every clone
+ * shares one pool of fate, one dies, all die. That's not buildable as written on this engine
+ * -- ArenaHero slots are one-per-connected-client, not multi-entity-per-player, and adding real
+ * clone spawning would mean touching the draft/pick/connection model this whole roster depends
+ * on. Simplified, documented here rather than silently narrowed the way every other "doesn't
+ * fit this engine" gap in this roster already is (Frog's R, Tree's R, Courier's cleansed-debuff
+ * passive): Q keeps Earthbind's root+setup role, W keeps Poof's blink-and-strike shape, E's
+ * "geostrike on every melee attack" folds into Q's DoT since there's no generic per-attack
+ * status hook to hang a real passive off, and R keeps the actual point of "Divided We Stand" --
+ * real risk/reward -- as a self-buff that hits harder while making Tyler take more damage for
+ * its duration (his own armor goes negative), rather than literal clones sharing literal HP. */
+#define ARENA_TYLER_Q_DAMAGE          8
+#define ARENA_TYLER_Q_RANGE           4.5f
+#define ARENA_TYLER_Q_ROOT_MS         1600
+#define ARENA_TYLER_Q_BURN_DPS        3
+#define ARENA_TYLER_Q_BURN_MS         3500
+#define ARENA_TYLER_Q_COOLDOWN_MS     4200
+#define ARENA_TYLER_W_DAMAGE          12
+#define ARENA_TYLER_W_HIT_RADIUS      1.8f
+#define ARENA_TYLER_W_COOLDOWN_MS     5500
+#define ARENA_TYLER_R_DAMAGE          16
+#define ARENA_TYLER_R_RANGE           4.0f
+#define ARENA_TYLER_R_VULNERABLE_MS   3500 /* r_active_ms window: Tyler's own armor goes negative for this long */
+#define ARENA_TYLER_R_NEGATIVE_ARMOR  6.0f
+#define ARENA_TYLER_R_COOLDOWN_MS     19000
 
 /* Bacon+Puck, merged (S170-94, TYLER multiverse_heroes.md #5 + #67) -- Bacon's whole
  * character is withholding ("custodian of the one location nobody's allowed to know yet,"

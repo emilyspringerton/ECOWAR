@@ -1,5 +1,29 @@
 # Changelog
 
+## 2026-07-25 (10)
+
+- fix(ci): Windows cross-compile broken by S170-96's hero-name labels -- `arena_ai_bridge.c` (home
+  of `arena_hero_name()`) was never added to the mingw link command when the HUD started calling
+  it, so CI has been red on every commit since (`e53ee5f` confirmed failed via the Actions API).
+  No valid Windows build existed for the founder to download. Fixed in the CI workflow and
+  verified with a local mingw cross-compile using the same toolchain/flags, 0 errors.
+- feat(arena): 18th hero, TYLER -- `docs/HEROES_VS0.md` already specced this as "an exact copy of
+  Meepo's classic kit" (real OG clone-death rule) well before any code existed for it (S170-111).
+  True multi-clone spawning isn't buildable on this engine without touching the draft/pick/
+  connection model every other hero depends on (`ArenaHero` slots are one-per-client) -- honestly
+  simplified and documented as such: Q "Earthbind" roots + a DoT (folds in Geostrike's poison,
+  no generic per-melee-attack passive hook exists to hang it off separately), W "Poof" is a real
+  instant blink-strike, R "Divided We Stand" keeps the actual point of the OG rule (real risk/
+  reward) as a self-buff that hits hard and leaves Tyler's own armor negative for the window
+  after, rather than literal shared-fate clones. `ARENA_HERO_COUNT` 17→18.
+- feat(arena): real ability names on the HUD (S170-96 follow-up). Founder, live: "show ability
+  names on screen." The Q/W/E cooldown strip only ever showed generic "Q READY"/"W ON" -- new
+  `arena_ability_name(hero_id, slot)` (`packages/simulation/arena_ai_bridge.c`) returns each
+  hero's real ability name from `docs/HEROES_VS0.md` (e.g. "EARTHBIND", "THE SACRED MAGIC"),
+  stacked vertically on the HUD now since real names run much longer than "Q READY" ever did.
+  Verified: `build.sh`, `build_arena.sh`, `test_arena.sh`, `test_10_bots.sh`, and a local mingw
+  cross-compile (including `arena_ai_bridge.c`), all clean.
+
 ## 2026-07-25 (9)
 
 - feat(arena): hero name labels above the floating health bars (S170-96). Founder: "add hero name

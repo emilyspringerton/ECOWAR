@@ -207,6 +207,12 @@ float arena_hero_armor(const ArenaHero *h) {
     if (h->hero_id == ARENA_HERO_ADA && h->w_active) {
         return (float)ARENA_ADA_W_ARMOR_BONUS;
     }
+    /* Tyler's Divided We Stand (R, S170-111): armor goes NEGATIVE for the window --
+       apply_armor does raw_damage - armor, so a negative value increases damage taken.
+       The real risk half of the risk/reward the OG clone-death rule was standing in for. */
+    if (h->hero_id == ARENA_HERO_TYLER && h->r_active_ms > 0) {
+        return -ARENA_TYLER_R_NEGATIVE_ARMOR;
+    }
     return 0.0f;
 }
 
@@ -1078,6 +1084,48 @@ static int ada_cast_r(ArenaHero *ada, ArenaHero *foe) {
     return 1;
 }
 
+/* tyler_cast_q: Earthbind -- roots + a DoT (Geostrike's poison, folded in here since there's
+ * no generic per-melee-attack passive hook to hang it off separately). Returns 1 if it landed. */
+static int tyler_cast_q(ArenaHero *tyler, ArenaHero *foe) {
+    if (!hero_is_hittable(foe)) return 0;
+    float dx = foe->x - tyler->x, dz = foe->z - tyler->z;
+    if (sqrtf(dx * dx + dz * dz) > ARENA_TYLER_Q_RANGE) return 0;
+    apply_damage(foe, apply_armor(ARENA_TYLER_Q_DAMAGE, arena_hero_armor(foe)));
+    foe->rooted_ms = ARENA_TYLER_Q_ROOT_MS;
+    foe->burning_ms = ARENA_TYLER_Q_BURN_MS;
+    foe->burn_dps = ARENA_TYLER_Q_BURN_DPS;
+    return 1;
+}
+
+/* tyler_cast_w: Poof -- an instant blink to the nearest enemy plus real damage on arrival.
+ * One body, one blink, not "every clone" -- see the header comment on why. Returns 1 if a
+ * living enemy was there to blink to. */
+static int tyler_cast_w(ArenaHero *tyler, ArenaHero *foe) {
+    if (!hero_is_hittable(foe)) return 0;
+    tyler->x = foe->x;
+    tyler->z = foe->z;
+    tyler->moving = 0;
+    float fdx = foe->x - tyler->x, fdz = foe->z - tyler->z;
+    if (sqrtf(fdx * fdx + fdz * fdz) <= ARENA_TYLER_W_HIT_RADIUS) {
+        apply_damage(foe, apply_armor(ARENA_TYLER_W_DAMAGE, arena_hero_armor(foe)));
+    }
+    return 1;
+}
+
+/* tyler_cast_r: Divided We Stand -- the actual point of the OG kit kept honest without literal
+ * clones: hits hard right now, and stays more fragile (own armor goes negative -- see
+ * arena_hero_armor()) for the window after, the real risk/reward "shared fate" was always
+ * standing in for. Always "lands" the self-buff even on a whiff against the foe check. */
+static void tyler_cast_r(ArenaHero *tyler, ArenaHero *foe) {
+    if (hero_is_hittable(foe)) {
+        float dx = foe->x - tyler->x, dz = foe->z - tyler->z;
+        if (sqrtf(dx * dx + dz * dz) <= ARENA_TYLER_R_RANGE) {
+            apply_damage(foe, apply_armor(ARENA_TYLER_R_DAMAGE, arena_hero_armor(foe)));
+        }
+    }
+    tyler->r_active_ms = ARENA_TYLER_R_VULNERABLE_MS;
+}
+
 void arena_cast_q(int owner) {
     if (owner < 0 || owner >= ARENA_MAX_HEROES) return;
     ArenaHero *h = &arena_state.heroes[owner];
@@ -1171,6 +1219,11 @@ void arena_cast_q(int owner) {
     case ARENA_HERO_ADA:
         if (ada_cast_q(h, foe)) {
             h->q_cooldown_ms = cast_cooldown(h, ARENA_ADA_Q_COOLDOWN_MS);
+        }
+        break;
+    case ARENA_HERO_TYLER:
+        if (tyler_cast_q(h, foe)) {
+            h->q_cooldown_ms = cast_cooldown(h, ARENA_TYLER_Q_COOLDOWN_MS);
         }
         break;
     }
@@ -1283,6 +1336,14 @@ void arena_toggle_w(int owner) {
         /* The frame's own plating: free toggle, no cooldown --
            arena_hero_armor() reads w_active directly for the bonus. */
         h->w_active = !h->w_active;
+        break;
+    case ARENA_HERO_TYLER:
+        /* Poof: an instant-use blink-strike on its own cooldown, not a toggle --
+           same shape as Ghost's W. */
+        if (h->w_cooldown_ms > 0) return;
+        if (tyler_cast_w(h, arena_nearest_enemy(owner))) {
+            h->w_cooldown_ms = cast_cooldown(h, ARENA_TYLER_W_COOLDOWN_MS);
+        }
         break;
     default:
         /* No-op for any hero without a real W in this arena, not a crash
@@ -1443,6 +1504,10 @@ void arena_cast_r(int owner) {
         if (ada_cast_r(h, foe)) {
             h->r_cooldown_ms = cast_cooldown(h, ARENA_ADA_R_COOLDOWN_MS);
         }
+        break;
+    case ARENA_HERO_TYLER:
+        tyler_cast_r(h, foe);
+        h->r_cooldown_ms = cast_cooldown(h, ARENA_TYLER_R_COOLDOWN_MS);
         break;
     }
 }
@@ -1639,6 +1704,14 @@ static void tick_hero_kit(ArenaHero *h, ArenaHero *foe, ArenaHero *ally, unsigne
             if (h->hp > h->max_hp) h->hp = h->max_hp;
         }
         break;
+    case ARENA_HERO_TYLER:
+        /* Divided We Stand's vulnerability window -- arena_hero_armor() reads r_active_ms
+           directly for the negative-armor effect; this just counts it down. */
+        if (h->r_active_ms > 0) {
+            h->r_active_ms -= (int)dt_ms;
+            if (h->r_active_ms < 0) h->r_active_ms = 0;
+        }
+        break;
     default:
         break;
     }
@@ -1808,6 +1881,18 @@ static void bot_cast_kit_if_ready(ArenaHero *bot, ArenaHero *foe) {
         } else if (bot->q_cooldown_ms <= 0 && dist <= ARENA_ADA_Q_RANGE) {
             arena_cast_q(bot->owner);
         } else if (bot->r_cooldown_ms <= 0 && dist <= ARENA_ADA_R_RANGE) {
+            arena_cast_r(bot->owner);
+        }
+        break;
+    case ARENA_HERO_TYLER:
+        /* Root+DoT with Q at range, blink-strike with W to close distance,
+           R (the vulnerability window) only when confident -- healthy and
+           already in range, not a panic button like Loki's/Bacon+Puck's Q. */
+        if (bot->q_cooldown_ms <= 0 && dist <= ARENA_TYLER_Q_RANGE) {
+            arena_cast_q(bot->owner);
+        } else if (bot->w_cooldown_ms <= 0) {
+            arena_toggle_w(bot->owner);
+        } else if (bot->r_cooldown_ms <= 0 && dist <= ARENA_TYLER_R_RANGE && bot->hp > bot->max_hp / 2) {
             arena_cast_r(bot->owner);
         }
         break;
