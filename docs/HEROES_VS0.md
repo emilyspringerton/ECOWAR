@@ -475,6 +475,24 @@ lore and kit land first, matching the founder's own sequencing.
 
 ---
 
+### Gunnr, Who Argued With a Raven (TYLER `multiverse_heroes.md` #30, "The Raven-Caller") — **Duelist** (S170-93)
+
+Founder, in a rapid real-time batch (S170-93): "add gunnr." A shieldmaiden with no magic of her
+own — "told one of Odin's own ravens it was wrong, and was right," then quietly proven right about
+three more things since, none of it formally acknowledged. A plain, mundane fighter, not a mythic
+or magical one — the roster's own honesty about who actually gets credited.
+
+- **Passive — Quietly Been Right**: a flat, always-on armor bonus, same shape as Cain's/Unicorn's
+  own — the shieldmaiden's stance, always ready for the fight everyone else dismissed.
+- **Q — Argued With a Raven**: a plain melee-range strike, damage only, no status effect — a
+  correction, not a flourish.
+- **W — Three More Things**: a free toggle, no cooldown, self-regen while active, same shape as
+  Flute Debt's Recouping Interest — being quietly right keeps paying off over time.
+- **R — Valhalla Has Yet To Admit It**: an execute-scaled burst, same shape as Morrigan's/Cain's Q
+  — the vindication finally lands, hardest against a target who's already nearly beaten.
+
+---
+
 ## Starting Item Roster (VS0)
 
 LoL Season 3 is the explicit stylistic northstar here — not its item *names*, its item *stat-line

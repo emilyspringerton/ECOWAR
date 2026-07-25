@@ -1,5 +1,22 @@
 # Changelog
 
+## 2026-07-25 (24)
+
+- feat(arena): Gunnr, 22nd hero — Duelist (S170-93). First hero shipped from the batched
+  "next wave" backlog entry (Xiangu, Gunnr, Drowned Prince, Vassago, Beleth, Weatherman+Donkey
+  interaction) — the rest queued for follow-up passes. Gunnr already has a real entry
+  (`multiverse_heroes.md` #30): a shieldmaiden with no magic of her own who correctly disagreed
+  with one of Odin's own ravens, then was quietly right about three more things since, none of it
+  acknowledged. Passive flat armor (same shape as Cain's/Unicorn's), Q a plain melee-range strike
+  (no status effect, "a correction, not a flourish"), W a free toggle self-regen (same shape as
+  Flute Debt's Recouping Interest), R an execute-scaled burst (same shape as Morrigan's/Cain's Q).
+  `ARENA_HERO_COUNT` 21 → 22. Draft-modulo needed no manual update this time — the port-derived
+  shared-offset fix from S170-105 already scales with `ARENA_HERO_COUNT` automatically. 6 new
+  headless tests. Verified: full suite (311 checks), VS0/VS1 stable, live — rebuilt + restarted
+  all three systemd units, confirmed a real match drafted 20 distinct heroes with zero duplicates
+  (Gunnr and Cain both included, since 22 heroes now means exactly 2 are excluded per match, not
+  1), streamed real snapshots with no crash.
+
 ## 2026-07-25 (23)
 
 - feat(arena): Cain, 21st hero — Duelist (S170-105). Founder, real-time: "add Adelle" → "to the

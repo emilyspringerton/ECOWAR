@@ -2019,6 +2019,96 @@ static void test_cain_r_arms_the_survive_floor(void) {
     CHECK(cain->r_cooldown_ms == ARENA_CAIN_R_COOLDOWN_MS, "R starts on its own cooldown after cast");
 }
 
+static void test_gunnr_passive_grants_flat_armor(void) {
+    arena_init_with_heroes(ARENA_HERO_UNICORN, ARENA_HERO_GUNNR);
+    ArenaHero *gunnr = &arena_state.heroes[1];
+    CHECK(arena_hero_armor(gunnr) == (float)ARENA_GUNNR_PASSIVE_ARMOR,
+          "Gunnr's shieldmaiden stance grants a flat, always-on armor bonus");
+}
+
+static void test_gunnr_q_damages_in_melee_range(void) {
+    arena_init_with_heroes(ARENA_HERO_UNICORN, ARENA_HERO_GUNNR);
+    ArenaHero *gunnr = &arena_state.heroes[1];
+    ArenaHero *foe = &arena_state.heroes[0];
+    foe->x = gunnr->x + 1.5f; /* within ARENA_GUNNR_Q_RANGE */
+    foe->z = gunnr->z;
+    int foe_hp_before = foe->hp;
+
+    arena_cast_q(1);
+
+    CHECK(foe->hp < foe_hp_before, "Q damages the foe when in melee range");
+    CHECK(gunnr->q_cooldown_ms == ARENA_GUNNR_Q_COOLDOWN_MS, "Q starts on cooldown after a landed hit");
+}
+
+static void test_gunnr_q_out_of_range_whiffs(void) {
+    arena_init_with_heroes(ARENA_HERO_UNICORN, ARENA_HERO_GUNNR);
+    ArenaHero *gunnr = &arena_state.heroes[1];
+    ArenaHero *foe = &arena_state.heroes[0];
+    foe->x = gunnr->x + ARENA_GUNNR_Q_RANGE + 5.0f;
+    foe->z = gunnr->z;
+    int foe_hp_before = foe->hp;
+
+    arena_cast_q(1);
+
+    CHECK(foe->hp == foe_hp_before, "Q out of melee range does not damage the foe");
+    CHECK(gunnr->q_cooldown_ms == 0, "Q out of range does not start its cooldown");
+}
+
+static void test_gunnr_w_is_a_free_toggle_regen(void) {
+    arena_init_with_heroes(ARENA_HERO_UNICORN, ARENA_HERO_GUNNR);
+    ArenaHero *gunnr = &arena_state.heroes[1];
+    gunnr->hp = 50;
+
+    arena_toggle_w(1);
+    CHECK(gunnr->w_active, "W toggles on");
+    CHECK(gunnr->w_cooldown_ms == 0, "W is a free toggle, no cooldown");
+
+    arena_update(1000); /* one full second of regen */
+    CHECK(gunnr->hp > 50, "Three More Things regenerates HP while toggled on");
+}
+
+static void test_gunnr_r_executes_harder_at_low_hp(void) {
+    arena_init_with_heroes(ARENA_HERO_UNICORN, ARENA_HERO_GUNNR);
+    ArenaHero *gunnr = &arena_state.heroes[1];
+    ArenaHero *full_hp_foe = &arena_state.heroes[0];
+    full_hp_foe->x = gunnr->x + 4.0f;
+    full_hp_foe->z = gunnr->z;
+    int hp_before_full = full_hp_foe->hp;
+    arena_cast_r(1);
+    int dmg_at_full_hp = hp_before_full - full_hp_foe->hp;
+
+    arena_init_with_heroes(ARENA_HERO_UNICORN, ARENA_HERO_GUNNR);
+    gunnr = &arena_state.heroes[1];
+    ArenaHero *low_hp_foe = &arena_state.heroes[0];
+    low_hp_foe->x = gunnr->x + 4.0f;
+    low_hp_foe->z = gunnr->z;
+    low_hp_foe->max_hp = 1000;
+    low_hp_foe->hp = 10; /* 1% HP -- near the low_hp_dmg end of the scale */
+    int hp_before_low = low_hp_foe->hp;
+    arena_cast_r(1);
+    int dmg_at_low_hp = hp_before_low - low_hp_foe->hp;
+
+    CHECK(dmg_at_low_hp >= dmg_at_full_hp, "Valhalla Has Yet To Admit It deals at least as much damage against a near-dead foe as a full-HP one");
+    CHECK(gunnr->r_cooldown_ms == ARENA_GUNNR_R_COOLDOWN_MS, "R starts on its own cooldown after cast");
+}
+
+static void test_gunnr_r_out_of_range_whiffs_but_still_starts_cooldown(void) {
+    /* Gunnr's R dispatch sets the cooldown unconditionally, not gated on a helper's
+       return value like Q is -- a deliberate, documented choice for this kit (the R is
+       inlined directly in arena_cast_r's switch, not routed through a landed/whiff helper). */
+    arena_init_with_heroes(ARENA_HERO_UNICORN, ARENA_HERO_GUNNR);
+    ArenaHero *gunnr = &arena_state.heroes[1];
+    ArenaHero *foe = &arena_state.heroes[0];
+    foe->x = gunnr->x + ARENA_GUNNR_R_RANGE + 5.0f;
+    foe->z = gunnr->z;
+    int foe_hp_before = foe->hp;
+
+    arena_cast_r(1);
+
+    CHECK(foe->hp == foe_hp_before, "R out of range does not damage the foe");
+    CHECK(gunnr->r_cooldown_ms == ARENA_GUNNR_R_COOLDOWN_MS, "R still starts its cooldown even on a whiff");
+}
+
 int main(void) {
     printf("RED GARDEN arena_game headless smoke test\n\n");
     test_movement_reaches_target();
@@ -2139,6 +2229,12 @@ int main(void) {
     test_cain_q_out_of_range_whiffs();
     test_cain_w_dashes_away_from_foe_and_cleanses();
     test_cain_r_arms_the_survive_floor();
+    test_gunnr_passive_grants_flat_armor();
+    test_gunnr_q_damages_in_melee_range();
+    test_gunnr_q_out_of_range_whiffs();
+    test_gunnr_w_is_a_free_toggle_regen();
+    test_gunnr_r_executes_harder_at_low_hp();
+    test_gunnr_r_out_of_range_whiffs_but_still_starts_cooldown();
     printf("\n%s\n", failures == 0 ? "ALL PASS" : "SOME FAILED");
     return failures == 0 ? 0 : 1;
 }

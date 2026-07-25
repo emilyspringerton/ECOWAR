@@ -88,8 +88,9 @@ typedef enum {
     ARENA_HERO_PAIMON = 18, /* TYLER multiverse_heroes.md #20, "Paimon, the Court Voice", channeled by the real John Dee (S170-55) */
     ARENA_HERO_NOOR1 = 19, /* TYLER multiverse_heroes.md #3, "NOOR-1 (Four Days Behind)", in-game form: a snowman (S170-104) */
     ARENA_HERO_CAIN = 20, /* TYLER multiverse_heroes.md #80, "Cain, East of Eden" (S170-105, founder: "replace adelle with Cain") */
+    ARENA_HERO_GUNNR = 21, /* TYLER multiverse_heroes.md #30, "Gunnr, Who Argued With a Raven" (S170-93) */
 } ArenaHeroID;
-#define ARENA_HERO_COUNT 21
+#define ARENA_HERO_COUNT 22
 
 /* The Unicorn — first real hero kit wired in (S170-18). */
 #define ARENA_UNICORN_ARMOR         4    /* passive: Chassis Claim, flat dmg reduction */
@@ -553,6 +554,23 @@ typedef enum {
 #define ARENA_CAIN_W_COOLDOWN_MS         9000
 #define ARENA_CAIN_R_FLOOR_MS            3800
 #define ARENA_CAIN_R_COOLDOWN_MS        27000
+
+/* Gunnr (S170-93): passive flat armor bonus, always on -- "quietly been right about three more
+ * things," the shieldmaiden's stance, same shape as Cain's own passive. Q a melee-range direct
+ * strike, no status effect -- "argued with a raven and was right," a plain correction, not a
+ * flourish. W a free toggle self-regen, same shape as Flute Debt's Recouping Interest -- being
+ * quietly right keeps paying off over time. R an execute-scaled burst, same shape as Morrigan's/
+ * Cain's Q -- "Valhalla has yet to admit it," the vindication finally landing hardest against a
+ * target who's already nearly beaten. */
+#define ARENA_GUNNR_PASSIVE_ARMOR            4
+#define ARENA_GUNNR_Q_RANGE                  2.2f  /* melee range -- close, not a skillshot */
+#define ARENA_GUNNR_Q_DAMAGE                10
+#define ARENA_GUNNR_Q_COOLDOWN_MS         3200
+#define ARENA_GUNNR_W_REGEN_PER_SEC          4
+#define ARENA_GUNNR_R_RANGE                  6.0f
+#define ARENA_GUNNR_R_DAMAGE_BASE           10   /* at 100% target HP */
+#define ARENA_GUNNR_R_DAMAGE_LOW_HP         24   /* at ~0% target HP -- an execute */
+#define ARENA_GUNNR_R_COOLDOWN_MS        20000
 
 /* ARENA_HERO_RESPAWN_MS (S170-121, "controlling a node enables its spawn
  * for your team"): team-mode-only hero respawn timer. Before this, death

@@ -232,6 +232,10 @@ float arena_hero_armor(const ArenaHero *h) {
     if (h->hero_id == ARENA_HERO_CAIN) {
         return (float)ARENA_CAIN_PASSIVE_ARMOR;
     }
+    /* Gunnr's shieldmaiden stance (passive, S170-93): flat, always-on, same shape as Cain's own. */
+    if (h->hero_id == ARENA_HERO_GUNNR) {
+        return (float)ARENA_GUNNR_PASSIVE_ARMOR;
+    }
     return 0.0f;
 }
 
@@ -1220,6 +1224,16 @@ static int cain_cast_w(ArenaHero *cain, ArenaHero *foe) {
     return 1;
 }
 
+/* gunnr_cast_q: Argued With a Raven -- a plain melee-range correction, damage only, no status
+ * effect. Returns 1 if it landed. */
+static int gunnr_cast_q(ArenaHero *gunnr, ArenaHero *foe) {
+    if (!hero_is_hittable(foe)) return 0;
+    float dx = foe->x - gunnr->x, dz = foe->z - gunnr->z;
+    if (sqrtf(dx * dx + dz * dz) > ARENA_GUNNR_Q_RANGE) return 0;
+    apply_damage(foe, apply_armor(ARENA_GUNNR_Q_DAMAGE, arena_hero_armor(foe)));
+    return 1;
+}
+
 void arena_cast_q(int owner) {
     if (owner < 0 || owner >= ARENA_MAX_HEROES) return;
     ArenaHero *h = &arena_state.heroes[owner];
@@ -1334,6 +1348,11 @@ void arena_cast_q(int owner) {
     case ARENA_HERO_CAIN:
         if (cain_cast_q(h, foe)) {
             h->q_cooldown_ms = cast_cooldown(h, ARENA_CAIN_Q_COOLDOWN_MS);
+        }
+        break;
+    case ARENA_HERO_GUNNR:
+        if (gunnr_cast_q(h, foe)) {
+            h->q_cooldown_ms = cast_cooldown(h, ARENA_GUNNR_Q_COOLDOWN_MS);
         }
         break;
     }
@@ -1481,6 +1500,11 @@ void arena_toggle_w(int owner) {
         if (cain_cast_w(h, arena_nearest_enemy(owner))) {
             h->w_cooldown_ms = cast_cooldown(h, ARENA_CAIN_W_COOLDOWN_MS);
         }
+        break;
+    case ARENA_HERO_GUNNR:
+        /* Three More Things: free toggle, no cooldown -- tick_hero_kit reads w_active
+           directly for the regen, same shape as Flute Debt's Recouping Interest. */
+        h->w_active = !h->w_active;
         break;
     default:
         /* No-op for any hero without a real W in this arena, not a crash
@@ -1671,6 +1695,19 @@ void arena_cast_r(int owner) {
            "a mark that is a curse and a protection at the same time," made literal. */
         h->survive_floor_ms = ARENA_CAIN_R_FLOOR_MS;
         h->r_cooldown_ms = cast_cooldown(h, ARENA_CAIN_R_COOLDOWN_MS);
+        break;
+    case ARENA_HERO_GUNNR:
+        /* Valhalla Has Yet To Admit It: instant hit-if-in-range, execute-scaled via
+           execute_scale_damage, same shape as Morrigan's/Cain's Q -- the vindication
+           finally lands hardest against a target who's already nearly beaten. */
+        if (foe && hero_is_hittable(foe)) {
+            float dx = foe->x - h->x, dz = foe->z - h->z;
+            if (sqrtf(dx * dx + dz * dz) <= ARENA_GUNNR_R_RANGE) {
+                apply_damage(foe, apply_armor(execute_scale_damage(foe, ARENA_GUNNR_R_DAMAGE_BASE, ARENA_GUNNR_R_DAMAGE_LOW_HP),
+                                               arena_hero_armor(foe)));
+            }
+        }
+        h->r_cooldown_ms = cast_cooldown(h, ARENA_GUNNR_R_COOLDOWN_MS);
         break;
     }
 }
@@ -1863,6 +1900,15 @@ static void tick_hero_kit(ArenaHero *h, ArenaHero *foe, ArenaHero *ally, unsigne
         /* Recouping Interest: same toggle-regen shape as Unicorn's W. */
         if (h->w_active && h->alive) {
             float regen = ARENA_FLUTE_DEBT_W_REGEN_PER_SEC * ((float)dt_ms / 1000.0f);
+            h->hp += (int)regen;
+            if (h->hp > h->max_hp) h->hp = h->max_hp;
+        }
+        break;
+    case ARENA_HERO_GUNNR:
+        /* Three More Things: same toggle-regen shape as Flute Debt's Recouping Interest --
+           being quietly right keeps paying off over time. */
+        if (h->w_active && h->alive) {
+            float regen = ARENA_GUNNR_W_REGEN_PER_SEC * ((float)dt_ms / 1000.0f);
             h->hp += (int)regen;
             if (h->hp > h->max_hp) h->hp = h->max_hp;
         }
@@ -2173,6 +2219,18 @@ static void bot_cast_kit_if_ready(ArenaHero *bot, ArenaHero *foe) {
             arena_toggle_w(bot->owner);
         } else if (bot->q_cooldown_ms <= 0 && dist <= ARENA_CAIN_Q_RANGE) {
             arena_cast_q(bot->owner);
+        }
+        break;
+    case ARENA_HERO_GUNNR:
+        /* W is free sustain, toggle on early like Loki's/Flute Debt's own
+           instinct. Q whenever in melee range and off cooldown. R when the
+           foe is close enough for the execute to matter. */
+        if (!bot->w_active) {
+            arena_toggle_w(bot->owner);
+        } else if (bot->q_cooldown_ms <= 0 && dist <= ARENA_GUNNR_Q_RANGE) {
+            arena_cast_q(bot->owner);
+        } else if (bot->r_cooldown_ms <= 0 && dist <= ARENA_GUNNR_R_RANGE) {
+            arena_cast_r(bot->owner);
         }
         break;
     }
