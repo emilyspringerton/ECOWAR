@@ -1058,3 +1058,77 @@ to bolt on as a minor draft-phase feature without first knowing which community 
 open questions above (order, back-loading, ban-vs-pick-first, the toxicity-vs-meta framing
 specifically) are the actual design surface to resolve -- not just "add 3 bans per team" as
 originally framed.
+
+## 15. Camera lock/unlock + fog of war (2026-07-25, S170-125) -- spec only, no code yet
+
+Founder, real-time: "specdd unlockable and lockable camera and fog of war." Read as: capture this
+as a real design, same treatment as §14's draft-ban thread -- not "add 3 bans per team" scope, an
+actual spec with real open questions named, before anything gets built. Two related but separable
+features.
+
+### 15.1 Camera lock/unlock
+
+Today (`apps/arena/src/main.c`, per the README's "How to Play" section): the camera is always in
+free-orbit mode -- right-click-drag rotates yaw/pitch, mouse wheel zooms, and it never
+automatically re-centers on anything. That's *unlocked* by definition; there's no locked mode to
+toggle away from yet.
+
+**Proposed locked mode:** camera yaw/pitch/distance become read-only (right-drag/wheel become
+no-ops, or are simply not gated -- open question below) and the camera hard-centers every frame on
+`arena_state.heroes[my_owner]`'s current position, same `focus_x`/`focus_z` the unlocked mode
+already computes for its orbit pivot -- locking removes the player's ability to *look away* from
+their own hero, it doesn't change what "centered on" means.
+
+**Toggle:** a dedicated key, not currently bound to anything -- `C` for "camera," clean of every
+existing binding (left-click move, Q/W/E abilities, right-click-drag rotate, wheel zoom, F11 APM,
+R local-restart). Starts unlocked (today's behavior), matching "don't regress what already works."
+
+**Open questions, not resolved here:**
+- Does locked mode still allow *zoom* (wheel) while forbidding rotation, or lock both? Most real
+  MOBAs (League, Dota) lock rotation/pan but leave zoom free -- likely the right default, not
+  confirmed with the founder yet.
+- Should locking be per-player-preference (persisted somewhere) or always start unlocked each
+  match? No account/settings-persistence layer exists yet for this client at all (S170-105-
+  adjacent territory -- accounts exist for connect-tickets, not client-side preferences), so
+  "always starts unlocked" is the only option that doesn't require new infrastructure.
+
+### 15.2 Fog of war
+
+**Explicit scope decision (founder confirmed, 2026-07-25): client-side visual only for a first
+pass, not real server-side vision culling.** Named and accepted, not hidden: a modified/custom
+client could still see everything, because the server would keep broadcasting every hero's real
+position in the snapshot regardless of who's "supposed" to see whom -- this pass only changes what
+the *stock* client chooses to render. Real anti-cheat fog (server only ever sends a client the
+subset of `ArenaHeroSnapshot` entries their team can actually see) is a materially bigger change --
+touches `server_broadcast()`'s per-client payload (today one identical broadcast goes to everyone),
+needs a real per-team vision-set computed every tick, and is explicitly **deferred, not this pass.**
+
+**Proposed first pass, purely client-side (`apps/arena/src/main.c`):**
+- A fixed vision radius around the local player's own hero (`arena_state.heroes[my_owner]`) --
+  reuse an existing distance constant in the same neighborhood as `ARENA_NODE_CAPTURE_RADIUS`/
+  `ARENA_CREEP_AGGRO_RADIUS` for a sense of scale, not invented from nothing.
+- Enemy heroes (not allies -- allies should always be visible, matching every real MOBA's "you
+  always see your own team" convention) outside that radius: skip the 3D model draw and the
+  floating health bar/name/hover-tooltip (S170-69) entirely, rather than dimming them -- this map
+  has no terrain/occlusion geometry to justify a soft fade, a hard radius cutoff is the honest
+  match for what the data actually supports.
+- No minimap exists in this client at all yet -- fog of war without a minimap only ever hides/
+  reveals the main 3D view, which is still a real, useful signal (matches what a player standing
+  in the world would actually be able to see) but is a narrower feature than "real" MOBA fog,
+  worth naming so it isn't assumed to include minimap vision dots that don't exist.
+
+**Open questions, not resolved here:**
+- Team vision sharing: does a teammate's vision radius count toward yours (the real-MOBA norm), or
+  is vision strictly per-hero? Team vision sharing needs each ally's position (already available
+  client-side) but is a real design choice about how much information asymmetry the game wants,
+  not just an implementation detail.
+- Interaction with capture nodes: should owning a node grant vision around it (a real strategic
+  reward for territory control, echoing S170-121's "controlling a node enables its spawn for your
+  team" -- territory keeps mattering mechanically, not just cosmetically)? Not decided.
+- Whether jungle creeps (S170-51) should be vision-gated the same as enemy heroes, or always
+  visible (they're neutral/environmental, not a "the enemy team hid something from you" case) --
+  leans toward always-visible, not confirmed.
+
+Nothing built this pass. If either half gets promoted to real work, the open questions above are
+the actual design surface to resolve first -- not just "add camera lock" or "add fog of war" as
+originally framed.

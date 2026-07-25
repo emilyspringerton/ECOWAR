@@ -1,5 +1,17 @@
 # Changelog
 
+## 2026-07-25 (18)
+
+- docs(northstar): spec camera lock/unlock + fog of war (S170-125), no code yet. Founder,
+  real-time: "specdd unlockable and lockable camera and fog of war." Asked and confirmed scope
+  before writing: spec only (same treatment as §14's draft-ban thread), and if/when fog of war
+  gets built, client-side visual only for a first pass, not real server-side vision culling. New
+  `NORTHSTAR.md` §15: camera lock proposal (hard-center on the local hero, `C` to toggle, open
+  question on whether zoom stays free while rotation locks), fog-of-war proposal (radius-based
+  hard cutoff around the local hero, allies always visible, honestly scoped as "the stock client
+  chooses not to render this" rather than real anti-cheat), and named open questions (team vision
+  sharing, node-ownership vision bonus, jungle-creep visibility) for whoever picks this up next.
+
 ## 2026-07-25 (17)
 
 - feat(arena): particle effects for spells (S170-124). Founder, real-time: "redgarden add
