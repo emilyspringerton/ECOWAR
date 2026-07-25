@@ -372,8 +372,9 @@ static void net_send_pick(int hero_id) {
 static int net_lobby_size = 2; /* set from the server's own msg->count once a snapshot arrives */
 static uint8_t net_phase = ARENA_PHASE_WAITING;
 static int net_picked = 0; /* have we sent our PACKET_ARENA_PICK for the current draft yet */
+static uint32_t net_last_pick_send_ms = 0; /* for retry -- see net_poll_snapshots' resend logic */
 
-static void net_poll_snapshots(void) {
+static void net_poll_snapshots(uint32_t now_ms) {
     char rbuf[2048];
     struct sockaddr_in sender;
     socklen_t slen = sizeof(sender);
@@ -393,6 +394,7 @@ static void net_poll_snapshots(void) {
                     int hero_id = my_owner % 15; /* ARENA_HERO_UNICORN..BACON_PUCK (S170-79, S170-91, S170-94) */
                     net_send_pick(hero_id);
                     net_picked = 1;
+                    net_last_pick_send_ms = now_ms;
                     printf("[arena client] auto-drafted hero_id=%d for slot %d\n", hero_id, my_owner);
                     fflush(stdout);
                 } else if (net_phase != ARENA_PHASE_DRAFT) {
@@ -413,6 +415,20 @@ static void net_poll_snapshots(void) {
             }
         }
         len = recvfrom(net_sock, rbuf, sizeof(rbuf), 0, (struct sockaddr *)&sender, &slen);
+    }
+    /* Pick retry (S170-99, real bug found live: a genuinely full 20/20 lobby stalled in
+     * ARENA_PHASE_DRAFT and died on the server's own 60s no-progress timeout). Root cause:
+     * net_send_pick(), unlike net_connect()/net_find_and_connect(), was a single fire-and-
+     * forget UDP send with no retry at all -- rock-solid over localhost loopback (bots, which
+     * is all this path was ever tested against), but a real external connection can drop that
+     * one unacknowledged packet, and net_picked latching to 1 on send (not on confirmation)
+     * meant it would never be resent. Resend every 1s while still in draft and not yet live --
+     * harmless if the original arrived (server's own PACKET_ARENA_PICK handling just re-records
+     * the same hero_id), the actual fix if it didn't. */
+    if (net_phase == ARENA_PHASE_DRAFT && net_picked && now_ms - net_last_pick_send_ms > 1000) {
+        int hero_id = my_owner % 15;
+        net_send_pick(hero_id);
+        net_last_pick_send_ms = now_ms;
     }
 }
 /* end of the S170-54 cross-platform networking section */
@@ -1069,7 +1085,7 @@ int main(int argc, char *argv[]) {
             /* apps/arena_server is authoritative -- apply its snapshots
                rather than running arena_update() locally (that would
                double-simulate and diverge from the server's own state). */
-            net_poll_snapshots();
+            net_poll_snapshots(now);
         }
         else if (arena_state.winner == 0) {
             arena_update(dt);

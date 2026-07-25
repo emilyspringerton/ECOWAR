@@ -359,6 +359,7 @@ static void play_one_match(void) {
     ArenaSnapshotMsg last = {0};
     int have_snapshot = 0;
     int picked = 0;
+    int ticks_since_pick_send = 0; /* retry, see below -- S170-99 */
     uint32_t last_cast_ms = 0;
     int silent_ticks = 0;
 
@@ -393,7 +394,19 @@ static void play_one_match(void) {
                 int hero_id = my_owner % 15; /* ARENA_HERO_UNICORN..BACON_PUCK (S170-48, S170-79, S170-91, S170-94) */
                 send_pick(hero_id);
                 picked = 1;
+                ticks_since_pick_send = 0;
                 printf("[arena_bot %d] drafted hero_id=%d\n", (int)getpid(), hero_id);
+            } else if (last.phase == ARENA_PHASE_DRAFT && picked) {
+                /* Retry (S170-99, real bug found live against a real human client): a single
+                   fire-and-forget send_pick() with no retry meant one dropped UDP packet left
+                   the pick never actually received, stalling a full lobby until the server's
+                   60s no-progress timeout killed the match. Rock-solid over this bot's own
+                   localhost loopback so it never surfaced here, but it's the same latent gap --
+                   resend every ~1s (10 ticks @ 100ms) while still stuck in draft. */
+                if (++ticks_since_pick_send > 10) {
+                    send_pick(my_owner % 15);
+                    ticks_since_pick_send = 0;
+                }
             } else if (last.phase == ARENA_PHASE_LIVE) {
                 if (last.winner != 0) {
                     printf("[arena_bot %d] match ended, winner=%d\n", (int)getpid(), last.winner);

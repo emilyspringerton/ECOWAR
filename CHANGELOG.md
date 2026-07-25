@@ -1,5 +1,23 @@
 # Changelog
 
+## 2026-07-25 (3)
+
+- fix(arena): real root cause of "everything breaks after 1 game" (S170-99). Founder, live:
+  "still after 1 game in redgarden everything breaks." Confirmed via the matchmaker log: a
+  genuinely full 20/20 lobby (including the founder's own external IP) entered draft and then --
+  "No lobby progress in 60s (phase=1, 20/20 connected) -- shutting down." Reproduced a bot-only
+  20/20 lobby live to rule out a server-side draft bug: it completed cleanly every time, meaning
+  the human's own pick specifically was the one never landing. Root cause: `net_send_pick()` (and
+  `apps/arena_bot`'s own `send_pick()`) was a single fire-and-forget UDP send with **no retry** --
+  unlike `net_connect()`/`net_find_and_connect()`, which both already retry on a timer. Rock-solid
+  over localhost loopback (bots, which is all this path was ever tested against all session), but
+  a real external connection can drop that one unacknowledged packet, and `net_picked` latching to
+  1 on *send* rather than *confirmation* meant it would never be resent -- the client believed it
+  had drafted while the server waited forever for a pick that was never coming. Fixed in both the
+  human client and `arena_bot`: resend the pick every ~1s while still stuck in draft, harmless if
+  the original arrived (the server just re-records the same hero_id). Verified: `build.sh`,
+  `build_arena.sh`, `test_arena.sh`, `test_10_bots.sh`, and a local mingw cross-compile, all clean.
+
 ## 2026-07-25 (2)
 
 - feat(arena): 15th hero, Bacon+Puck merged (S170-94). Founder: "add bacon and puck as the same
