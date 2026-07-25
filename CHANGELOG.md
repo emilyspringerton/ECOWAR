@@ -1,5 +1,23 @@
 # Changelog
 
+## 2026-07-25 (33)
+
+- feat(arena): MnM, the Shapeshifting Crab, 26th hero — Tank (S170-134). Founder, real-time: "add
+  MnM a shapeshifting rapping crab tank from detroit to the lore docs first" → "have tyler and
+  mid-piano cowrite it." Lore landed first (TYLER `multiverse_heroes.md` #114, framed as
+  literally co-written by Tyler and Mid-Piano); this is the follow-on kit pass. Passive flat
+  armor (Cain's/Gunnr's/Beleth's shape), Q a melee root+poke (Paimon's Q shape), W a free toggle
+  bonus armor stacking on top of the passive (Loki's/Ada's shape, but additive rather than
+  replacing), R the literal mechanical translation of the lore's own line — Mid-Piano's framing
+  that the shapeshifting is just what happens to a body that's absorbed hits meant for somebody
+  else, built as self-root + a guaranteed-survival window (`survive_floor_ms`, same real damage
+  floor as Pizza's R) combining two existing generic fields the same way Tree's Grand Secret
+  does. `ARENA_HERO_COUNT` 25 → 26. 6 new headless tests, including one that actually fires a
+  real lethal Duck Q at a 1-HP MnM under R and confirms it survives at 1 HP — not just that the
+  flag gets set. Verified: full suite (379 checks), VS0/VS1 stable, live — restarted the three
+  systemd units, confirmed a real 20-player match drafted MnM (hero_id 25) among 20 distinct
+  picks with zero duplicates.
+
 ## 2026-07-25 (32)
 
 - feat(arena): status-effect text label above the health bar (S170-133). Founder, real-time:

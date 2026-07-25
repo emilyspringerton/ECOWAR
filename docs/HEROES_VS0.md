@@ -548,6 +548,27 @@ closer to authorship. Seed phrase: "hope is a terror I leash with song."
   Vassago's/He Xiangu's own R zones. The threat builds in total silence and only resolves once,
   all at once, exactly like the thing she's named for.
 
+### MnM, the Shapeshifting Crab (TYLER `multiverse_heroes.md` #114, "MnM") — **Tank** (S170-134)
+
+Founder, real-time: "add MnM a shapeshifting rapping crab tank from detroit to the lore docs
+first" → "have tyler and mid-piano cowrite it." The lore entry itself is framed as literally
+co-written by Tyler and Mid-Piano — a crab the size of a doorway who raps and never holds one
+shell long enough to finish an argument. Mid-Piano's own contribution to the bit: the
+shapeshifting isn't a power, it's just what happens to a body that's spent that long absorbing
+hits meant for somebody else. That line is the kit, mechanically, not just flavor text.
+
+- **Passive — Detroit's Own**: a flat, always-on armor bonus, same shape as Cain's/Gunnr's/
+  Beleth's own — the tank archetype's baseline stat profile, not a conditional buff.
+- **Q — Clamp Down**: a melee-range poke that damages and roots, same shape as Paimon's Q.
+- **W — Wasn't That Shape A Second Ago**: a free toggle bonus armor, same shape as Loki's/Ada's
+  own, stacking on top of the passive rather than replacing it — MnM is armored by default and
+  more so at will.
+- **R — Absorbing Hits Meant For Somebody Else**: the literal mechanical translation of
+  Mid-Piano's line. Self-root + a guaranteed-survival window (HP cannot drop below 1 for the
+  duration, same real damage-floor mechanic as Pizza's R) — combining two existing generic
+  fields the same way Tree's Grand Secret does, just with `survive_floor_ms` standing in for
+  Tree's armor buff. The shell takes the hit instead of the crab underneath it.
+
 ---
 
 ## Starting Item Roster (VS0)

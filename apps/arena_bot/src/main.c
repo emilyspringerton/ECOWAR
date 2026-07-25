@@ -43,7 +43,7 @@
    client and deliberately doesn't include the sim header (no direct ArenaState access, wire
    protocol only), so the roster size has to be kept in sync by hand here. Bump this alongside
    ARENA_HERO_COUNT whenever a new hero is added. */
-#define ARENA_HERO_COUNT 25
+#define ARENA_HERO_COUNT 26
 
 /* Memorable bot names (founder: "prep for an observation phase... the bots
  * should have interesting memorable names"), so the leaderboard reads as a

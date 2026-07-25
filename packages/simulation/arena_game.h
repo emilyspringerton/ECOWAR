@@ -92,8 +92,9 @@ typedef enum {
     ARENA_HERO_VASSAGO = 22, /* TYLER multiverse_heroes.md #16, "Vassago, the Soft Foresight" (S170-93); also real TYLER canon, Goetia 11.11 Hz */
     ARENA_HERO_HE_XIANGU = 23, /* TYLER multiverse_heroes.md #39, "He Xiangu, Who Stopped Eating" (S170-93) */
     ARENA_HERO_BELETH = 24, /* TYLER multiverse_heroes.md #14, "Beleth, the Detonation" (S170-93) */
+    ARENA_HERO_MNM = 25, /* TYLER multiverse_heroes.md #114, "MnM, the Shapeshifting Crab" (S170-134) */
 } ArenaHeroID;
-#define ARENA_HERO_COUNT 25
+#define ARENA_HERO_COUNT 26
 
 /* The Unicorn — first real hero kit wired in (S170-18). */
 #define ARENA_UNICORN_ARMOR         4    /* passive: Chassis Claim, flat dmg reduction */
@@ -641,6 +642,26 @@ typedef enum {
 #define ARENA_BELETH_R_FUSE_MS                1800
 #define ARENA_BELETH_R_DAMAGE                  32
 #define ARENA_BELETH_R_COOLDOWN_MS           26000
+
+/* MnM, the Shapeshifting Crab (S170-134, TYLER multiverse_heroes.md #114). Founder: "add MnM a
+ * shapeshifting rapping crab tank from detroit" -- "tank" is the archetype ask, translated into
+ * this roster's existing toolkit rather than a new mechanic: high passive armor (Cain's/Gunnr's
+ * flat-armor shape), a toggle for sustained extra tankiness while active (Loki's/Ada's W-armor
+ * shape), a melee root+poke Q (Paimon's Q shape), and an R that's the literal mechanical
+ * translation of the lore's own framing of "shapeshifting" -- Mid-Piano's line that it's just
+ * what happens to a body that's absorbed hits meant for somebody else, built here as a
+ * self-root + guaranteed-survival window (Tree's R root+buff shape, with survive_floor_ms in
+ * place of Tree's armor bonus): for a few seconds nothing can bring MnM below 1 HP, the shell
+ * takes the hit instead of the crab underneath it. */
+#define ARENA_MNM_PASSIVE_ARMOR              6
+#define ARENA_MNM_W_ARMOR_BONUS               5 /* free toggle, no cooldown -- same convention as Loki's/Ada's own */
+#define ARENA_MNM_Q_RANGE                     2.4f /* melee-range clamp, not a skillshot */
+#define ARENA_MNM_Q_DAMAGE                    9
+#define ARENA_MNM_Q_ROOT_MS                1300
+#define ARENA_MNM_Q_COOLDOWN_MS            4000
+#define ARENA_MNM_R_ROOT_MS                6000
+#define ARENA_MNM_R_SURVIVE_FLOOR_MS        6000
+#define ARENA_MNM_R_COOLDOWN_MS            27000
 
 /* ARENA_HERO_RESPAWN_MS (S170-121, "controlling a node enables its spawn
  * for your team"): team-mode-only hero respawn timer. Before this, death

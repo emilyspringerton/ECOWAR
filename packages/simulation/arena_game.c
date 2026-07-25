@@ -244,6 +244,15 @@ float arena_hero_armor(const ArenaHero *h) {
     if (h->hero_id == ARENA_HERO_BELETH) {
         return (float)ARENA_BELETH_PASSIVE_ARMOR;
     }
+    /* MnM's shell (passive + W, S170-134): a flat always-on base, same shape as Cain's/Gunnr's/
+       Beleth's own, PLUS a further toggle bonus while W is active (Loki's/Ada's own toggle
+       shape) -- the two stack, unlike Loki/Ada whose entire armor value comes only from the
+       toggle. The tank archetype's stat profile: consistently armored, more so at will. */
+    if (h->hero_id == ARENA_HERO_MNM) {
+        float armor = (float)ARENA_MNM_PASSIVE_ARMOR;
+        if (h->w_active) armor += (float)ARENA_MNM_W_ARMOR_BONUS;
+        return armor;
+    }
     return 0.0f;
 }
 
@@ -1291,6 +1300,16 @@ static int beleth_cast_w(ArenaHero *beleth, ArenaHero *foe) {
     return 1;
 }
 
+/* mnm_cast_q: a melee-range clamp+damage, same shape as Paimon's Q. Returns 1 if it landed. */
+static int mnm_cast_q(ArenaHero *mnm, ArenaHero *foe) {
+    if (!hero_is_hittable(foe)) return 0;
+    float dx = foe->x - mnm->x, dz = foe->z - mnm->z;
+    if (sqrtf(dx * dx + dz * dz) > ARENA_MNM_Q_RANGE) return 0;
+    apply_damage(foe, apply_armor(ARENA_MNM_Q_DAMAGE, arena_hero_armor(foe)));
+    foe->rooted_ms = ARENA_MNM_Q_ROOT_MS;
+    return 1;
+}
+
 void arena_cast_q(int owner) {
     if (owner < 0 || owner >= ARENA_MAX_HEROES) return;
     ArenaHero *h = &arena_state.heroes[owner];
@@ -1448,6 +1467,12 @@ void arena_cast_q(int owner) {
     case ARENA_HERO_BELETH:
         if (beleth_cast_q(h, foe)) {
             h->q_cooldown_ms = cast_cooldown(h, ARENA_BELETH_Q_COOLDOWN_MS);
+            h->mp -= ARENA_MP_COST_Q;
+        }
+        break;
+    case ARENA_HERO_MNM:
+        if (mnm_cast_q(h, foe)) {
+            h->q_cooldown_ms = cast_cooldown(h, ARENA_MNM_Q_COOLDOWN_MS);
             h->mp -= ARENA_MP_COST_Q;
         }
         break;
@@ -1659,6 +1684,13 @@ void arena_toggle_w(int owner) {
             h->w_cooldown_ms = cast_cooldown(h, ARENA_BELETH_W_COOLDOWN_MS);
             h->mp -= ARENA_MP_COST_W;
         }
+        break;
+    case ARENA_HERO_MNM:
+        /* Wasn't That Shape A Second Ago: free toggle bonus armor, same shape as Loki's/Ada's
+           own -- arena_hero_armor() reads w_active directly for the bonus. */
+        if (!h->w_active && h->mp < ARENA_MP_COST_W) return;
+        h->w_active = !h->w_active;
+        if (h->w_active) h->mp -= ARENA_MP_COST_W;
         break;
     default:
         /* No-op for any hero without a real W in this arena, not a crash
@@ -1924,6 +1956,18 @@ void arena_cast_r(int owner) {
                 h->mp -= ARENA_MP_COST_R;
             }
         }
+        break;
+    case ARENA_HERO_MNM:
+        /* Absorbing Hits Meant For Somebody Else: self-root + a guaranteed-survival window,
+           same combining-two-generic-fields shape as Tree's Grand Secret (rooted_ms + a buff),
+           with survive_floor_ms standing in for Tree's armor bonus -- the literal mechanical
+           translation of the lore's own line that the shapeshifting is just what happens to a
+           body that's absorbed hits meant for someone else. Always lands, same "real ultimate
+           commitment" convention as every other unconditional self-buff R on this roster. */
+        h->rooted_ms = ARENA_MNM_R_ROOT_MS;
+        h->survive_floor_ms = ARENA_MNM_R_SURVIVE_FLOOR_MS;
+        h->r_cooldown_ms = cast_cooldown(h, ARENA_MNM_R_COOLDOWN_MS);
+        h->mp -= ARENA_MP_COST_R;
         break;
     }
 }
@@ -2570,6 +2614,18 @@ static void bot_cast_kit_if_ready(ArenaHero *bot, ArenaHero *foe) {
         } else if (bot->r_cooldown_ms <= 0 && dist <= ARENA_BELETH_R_RANGE) {
             arena_cast_r(bot->owner);
         } else if (bot->q_cooldown_ms <= 0 && dist <= ARENA_BELETH_Q_RANGE) {
+            arena_cast_q(bot->owner);
+        }
+        break;
+    case ARENA_HERO_MNM:
+        /* R is the survive-floor panic button, same low-HP threshold as every other hero that
+           carries one (Cain's own). W is free sustained-tankiness, toggle on early like
+           Loki's/Ada's own instinct. Q whenever in melee range and off cooldown. */
+        if (bot->hp < bot->max_hp / 4 && bot->r_cooldown_ms <= 0) {
+            arena_cast_r(bot->owner);
+        } else if (!bot->w_active) {
+            arena_toggle_w(bot->owner);
+        } else if (bot->q_cooldown_ms <= 0 && dist <= ARENA_MNM_Q_RANGE) {
             arena_cast_q(bot->owner);
         }
         break;

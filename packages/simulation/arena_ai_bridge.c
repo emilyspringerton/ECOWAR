@@ -31,6 +31,7 @@ const char *arena_hero_name(ArenaHeroID hero_id) {
     case ARENA_HERO_VASSAGO: return "vassago";
     case ARENA_HERO_HE_XIANGU: return "he_xiangu";
     case ARENA_HERO_BELETH:  return "beleth";
+    case ARENA_HERO_MNM:     return "mnm";
     default:                 return "unknown";
     }
 }
@@ -65,6 +66,7 @@ const char *arena_ability_name(ArenaHeroID hero_id, int slot) {
         [ARENA_HERO_VASSAGO]    = {"REVEAL THE GENTLE MAYBE", "THE SOFT FORESIGHT", "THE GENTLE MAYBE"},
         [ARENA_HERO_HE_XIANGU]  = {"MOTHER-OF-PEARL AND MOONLIGHT", "SELF-DENIAL", "NEVER FRAMED AS SACRIFICE"},
         [ARENA_HERO_BELETH]     = {"EVERY LOVE TRIANGLE", "HOPE IS A TERROR I LEASH WITH SONG", "THE DETONATION"},
+        [ARENA_HERO_MNM]        = {"CLAMP DOWN", "WASN'T THAT SHAPE A SECOND AGO", "ABSORBING HITS MEANT FOR SOMEBODY ELSE"},
     };
     if (hero_id < 0 || hero_id >= ARENA_HERO_COUNT || slot < 0 || slot > 2) return "?";
     const char *name = NAMES[hero_id][slot];

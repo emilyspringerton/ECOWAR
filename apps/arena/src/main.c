@@ -885,6 +885,13 @@ static void draw_hero_model(ArenaHeroID hero_id, float hero_x, float hero_z, flo
             BOX(-0.4f, 0.9f, 0.25f, 0.12f, 0.12f, 0.35f);
             BOX(0.0f, 1.15f, -0.35f, 0.12f, 0.12f, 0.35f);
             break;
+        case ARENA_HERO_MNM: /* the Shapeshifting Crab -- wide low shell + two forward claw
+                                 accents, low center of gravity distinct from every other
+                                 silhouette on the roster (S170-134) */
+            BOX(0.0f, 0.35f, 0.0f, 1.15f, 0.6f, 1.0f);
+            BOX(0.75f, 0.35f, 0.35f, 0.25f, 0.25f, 0.4f);
+            BOX(-0.75f, 0.35f, 0.35f, 0.25f, 0.25f, 0.4f);
+            break;
         default:
             BOX(0.0f, 0.5f, 0.0f, 0.9f, 1.0f, 0.9f);
             break;

@@ -2455,6 +2455,76 @@ static void test_beleth_r_out_of_range_whiffs(void) {
     CHECK(beleth->r_cooldown_ms == 0, "a whiffed R doesn't consume the cooldown either");
 }
 
+static void test_mnm_passive_grants_flat_armor(void) {
+    arena_init_with_heroes(ARENA_HERO_UNICORN, ARENA_HERO_MNM);
+    ArenaHero *mnm = &arena_state.heroes[1];
+    CHECK(arena_hero_armor(mnm) == (float)ARENA_MNM_PASSIVE_ARMOR,
+          "MnM's shell grants a flat, always-on armor bonus even with W off");
+}
+
+static void test_mnm_w_toggle_stacks_on_top_of_passive_armor(void) {
+    arena_init_with_heroes(ARENA_HERO_UNICORN, ARENA_HERO_MNM);
+    ArenaHero *mnm = &arena_state.heroes[1];
+
+    arena_toggle_w(1);
+
+    CHECK(mnm->w_active == 1, "W toggles on");
+    CHECK(arena_hero_armor(mnm) == (float)(ARENA_MNM_PASSIVE_ARMOR + ARENA_MNM_W_ARMOR_BONUS),
+          "the toggle bonus stacks on top of the passive, not replaces it");
+
+    arena_toggle_w(1);
+    CHECK(mnm->w_active == 0, "W toggles back off");
+    CHECK(arena_hero_armor(mnm) == (float)ARENA_MNM_PASSIVE_ARMOR,
+          "toggling off drops back to just the passive base");
+}
+
+static void test_mnm_q_damages_and_roots_in_melee_range(void) {
+    arena_init_with_heroes(ARENA_HERO_UNICORN, ARENA_HERO_MNM);
+    ArenaHero *mnm = &arena_state.heroes[1];
+    ArenaHero *foe = &arena_state.heroes[0];
+    foe->x = mnm->x + 1.5f; /* within ARENA_MNM_Q_RANGE */
+    foe->z = mnm->z;
+    int foe_hp_before = foe->hp;
+
+    arena_cast_q(1);
+
+    CHECK(foe->hp < foe_hp_before, "Q damages the foe when in melee range");
+    CHECK(foe->rooted_ms == ARENA_MNM_Q_ROOT_MS, "Q roots the foe on a landed hit");
+    CHECK(mnm->q_cooldown_ms == ARENA_MNM_Q_COOLDOWN_MS, "Q starts on cooldown after a landed hit");
+}
+
+static void test_mnm_r_roots_self_and_grants_survive_floor(void) {
+    arena_init_with_heroes(ARENA_HERO_UNICORN, ARENA_HERO_MNM);
+    ArenaHero *mnm = &arena_state.heroes[1];
+
+    arena_cast_r(1);
+
+    CHECK(mnm->rooted_ms == ARENA_MNM_R_ROOT_MS, "R roots MnM in place");
+    CHECK(mnm->survive_floor_ms == ARENA_MNM_R_SURVIVE_FLOOR_MS, "R grants the guaranteed-survival window");
+    CHECK(mnm->r_cooldown_ms == ARENA_MNM_R_COOLDOWN_MS, "R starts on its own cooldown after cast");
+}
+
+static void test_mnm_r_survive_floor_actually_blocks_lethal_damage(void) {
+    /* Same real-ability-not-fake-damage pattern as test_pizza_r_prevents_death_for_duration:
+       a real Duck Q (Telekinetic Yank), not a synthetic damage injection. */
+    arena_init_teams();
+    for (int i = 2; i < ARENA_MAX_HEROES; i++) arena_state.heroes[i].active = 0;
+    arena_state.heroes[ARENA_TEAM_SIZE].active = 1;
+    arena_state.heroes[ARENA_TEAM_SIZE].alive = 1;
+    arena_state.heroes[1].active = 0;
+    arena_state.heroes[0].hero_id = ARENA_HERO_MNM;
+    arena_state.heroes[0].x = 0; arena_state.heroes[0].z = 0;
+    arena_state.heroes[0].hp = 1; arena_state.heroes[0].max_hp = 100; /* one hit from death */
+    arena_state.heroes[ARENA_TEAM_SIZE].hero_id = ARENA_HERO_DUCK;
+    arena_state.heroes[ARENA_TEAM_SIZE].x = ARENA_DUCK_Q_RANGE - 1.0f; arena_state.heroes[ARENA_TEAM_SIZE].z = 0;
+
+    arena_cast_r(0); /* Absorbing Hits Meant For Somebody Else */
+    arena_cast_q(ARENA_TEAM_SIZE); /* Duck's Telekinetic Yank, would normally kill a 1-HP target */
+
+    CHECK(arena_state.heroes[0].hp == 1, "the shell absorbs it -- HP floors at 1 against lethal damage");
+    CHECK(arena_state.heroes[0].alive, "MnM survives a hit that would kill anyone else on the roster outright");
+}
+
 int main(void) {
     printf("RED GARDEN arena_game headless smoke test\n\n");
     test_movement_reaches_target();
@@ -2604,6 +2674,11 @@ int main(void) {
     test_beleth_r_marks_zone_no_immediate_damage();
     test_beleth_r_detonates_after_fuse();
     test_beleth_r_out_of_range_whiffs();
+    test_mnm_passive_grants_flat_armor();
+    test_mnm_w_toggle_stacks_on_top_of_passive_armor();
+    test_mnm_q_damages_and_roots_in_melee_range();
+    test_mnm_r_roots_self_and_grants_survive_floor();
+    test_mnm_r_survive_floor_actually_blocks_lethal_damage();
     printf("\n%s\n", failures == 0 ? "ALL PASS" : "SOME FAILED");
     return failures == 0 ? 0 : 1;
 }
