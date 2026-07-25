@@ -96,6 +96,7 @@ void arena_init_with_heroes(ArenaHeroID player_hero, ArenaHeroID bot_hero) {
     arena_state.heroes[0].target_x = -6.0f;
     arena_state.heroes[0].target_z = 0.0f;
     arena_state.heroes[0].hp = arena_state.heroes[0].max_hp = 100;
+    arena_state.heroes[0].mp = arena_state.heroes[0].max_mp = ARENA_MP_MAX;
     arena_state.heroes[0].owner = 0;
     arena_state.heroes[0].alive = 1;
     arena_state.heroes[0].active = 1;
@@ -107,6 +108,7 @@ void arena_init_with_heroes(ArenaHeroID player_hero, ArenaHeroID bot_hero) {
     arena_state.heroes[1].target_x = 6.0f;
     arena_state.heroes[1].target_z = 0.0f;
     arena_state.heroes[1].hp = arena_state.heroes[1].max_hp = 100;
+    arena_state.heroes[1].mp = arena_state.heroes[1].max_mp = ARENA_MP_MAX;
     arena_state.heroes[1].owner = 1;
     arena_state.heroes[1].alive = 1;
     arena_state.heroes[1].active = 1;
@@ -674,6 +676,7 @@ static void unicorn_cast_q(ArenaHero *h, ArenaHero *foe) {
         }
     }
     h->q_cooldown_ms = cast_cooldown(h, ARENA_UNICORN_Q_COOLDOWN_MS);
+    h->mp -= ARENA_MP_COST_Q;
 }
 
 /* duck_pull_foe: shared logic for Telekinetic Yank (Q) and the bigger
@@ -1292,7 +1295,7 @@ void arena_cast_q(int owner) {
     if (owner < 0 || owner >= ARENA_MAX_HEROES) return;
     ArenaHero *h = &arena_state.heroes[owner];
     ArenaHero *foe = arena_nearest_enemy(owner);
-    if (!h->alive || h->silenced_ms > 0 || h->q_cooldown_ms > 0) return;
+    if (!h->alive || h->silenced_ms > 0 || h->q_cooldown_ms > 0 || h->mp < ARENA_MP_COST_Q) return;
     h->cast_flash_slot = 1;
 
     switch (h->hero_id) {
@@ -1302,16 +1305,19 @@ void arena_cast_q(int owner) {
     case ARENA_HERO_DUCK:
         if (duck_pull_foe(h, foe, ARENA_DUCK_Q_PULL_DIST, ARENA_DUCK_Q_DAMAGE, ARENA_DUCK_Q_RANGE)) {
             h->q_cooldown_ms = cast_cooldown(h, ARENA_DUCK_Q_COOLDOWN_MS);
+            h->mp -= ARENA_MP_COST_Q;
         }
         break;
     case ARENA_HERO_GHOST:
         if (ghost_cast_q(h, foe)) {
             h->q_cooldown_ms = cast_cooldown(h, ARENA_GHOST_Q_COOLDOWN_MS);
+            h->mp -= ARENA_MP_COST_Q;
         }
         break;
     case ARENA_HERO_FROG:
         frog_cast_q(h);
         h->q_cooldown_ms = cast_cooldown(h, ARENA_FROG_Q_COOLDOWN_MS);
+        h->mp -= ARENA_MP_COST_Q;
         break;
     case ARENA_HERO_DOC_WHEEL: {
         /* Bedside Manner: single-target heal + cleanse, on the nearest
@@ -1322,106 +1328,127 @@ void arena_cast_q(int owner) {
         if (ally && ally->alive) {
             doc_wheel_heal_and_cleanse(ally, doc_wheel_heal_amount(ally));
             h->q_cooldown_ms = cast_cooldown(h, ARENA_DOC_WHEEL_Q_COOLDOWN_MS);
+            h->mp -= ARENA_MP_COST_Q;
         }
         break;
     }
     case ARENA_HERO_TREE:
         if (tree_cast_q(h, foe)) {
             h->q_cooldown_ms = cast_cooldown(h, ARENA_TREE_Q_COOLDOWN_MS);
+            h->mp -= ARENA_MP_COST_Q;
         }
         break;
     case ARENA_HERO_PIZZA:
         if (pizza_cast_q(h, foe)) {
             h->q_cooldown_ms = cast_cooldown(h, ARENA_PIZZA_Q_COOLDOWN_MS);
+            h->mp -= ARENA_MP_COST_Q;
         }
         break;
     case ARENA_HERO_FLAMEL:
         if (flamel_cast_q(h, foe)) {
             h->q_cooldown_ms = cast_cooldown(h, ARENA_FLAMEL_Q_COOLDOWN_MS);
+            h->mp -= ARENA_MP_COST_Q;
         }
         break;
     case ARENA_HERO_MORRIGAN:
         if (morrigan_cast_q(h, foe)) {
             h->q_cooldown_ms = cast_cooldown(h, ARENA_MORRIGAN_Q_COOLDOWN_MS);
+            h->mp -= ARENA_MP_COST_Q;
         }
         break;
     case ARENA_HERO_DAGDA:
         if (dagda_cast_q(h, foe, arena_nearest_ally(owner))) {
             h->q_cooldown_ms = cast_cooldown(h, ARENA_DAGDA_Q_COOLDOWN_MS);
+            h->mp -= ARENA_MP_COST_Q;
         }
         break;
     case ARENA_HERO_COURIER:
         if (courier_cast_q(h, foe)) {
             h->q_cooldown_ms = cast_cooldown(h, ARENA_COURIER_Q_COOLDOWN_MS);
+            h->mp -= ARENA_MP_COST_Q;
         }
         break;
     case ARENA_HERO_LOKI:
         if (loki_cast_q(h, foe)) {
             h->q_cooldown_ms = cast_cooldown(h, ARENA_LOKI_Q_COOLDOWN_MS);
+            h->mp -= ARENA_MP_COST_Q;
         }
         break;
     case ARENA_HERO_GARY:
         if (gary_cast_q(h, foe)) {
             h->q_cooldown_ms = cast_cooldown(h, ARENA_GARY_Q_COOLDOWN_MS);
+            h->mp -= ARENA_MP_COST_Q;
         }
         break;
     case ARENA_HERO_FLUTE_DEBT:
         if (flute_debt_cast_q(h, foe)) {
             h->q_cooldown_ms = cast_cooldown(h, ARENA_FLUTE_DEBT_Q_COOLDOWN_MS);
+            h->mp -= ARENA_MP_COST_Q;
         }
         break;
     case ARENA_HERO_BACON_PUCK:
         bacon_puck_cast_q(h);
         h->q_cooldown_ms = cast_cooldown(h, ARENA_BACON_PUCK_Q_COOLDOWN_MS);
+        h->mp -= ARENA_MP_COST_Q;
         break;
     case ARENA_HERO_ABRAHAM:
         if (abraham_cast_q(h, foe)) {
             h->q_cooldown_ms = cast_cooldown(h, ARENA_ABRAHAM_Q_COOLDOWN_MS);
+            h->mp -= ARENA_MP_COST_Q;
         }
         break;
     case ARENA_HERO_ADA:
         if (ada_cast_q(h, foe)) {
             h->q_cooldown_ms = cast_cooldown(h, ARENA_ADA_Q_COOLDOWN_MS);
+            h->mp -= ARENA_MP_COST_Q;
         }
         break;
     case ARENA_HERO_TYLER:
         if (tyler_cast_q(h, foe)) {
             h->q_cooldown_ms = cast_cooldown(h, ARENA_TYLER_Q_COOLDOWN_MS);
+            h->mp -= ARENA_MP_COST_Q;
         }
         break;
     case ARENA_HERO_PAIMON:
         if (paimon_cast_q(h, foe)) {
             h->q_cooldown_ms = cast_cooldown(h, ARENA_PAIMON_Q_COOLDOWN_MS);
+            h->mp -= ARENA_MP_COST_Q;
         }
         break;
     case ARENA_HERO_NOOR1:
         if (noor1_cast_q(h, foe)) {
             h->q_cooldown_ms = cast_cooldown(h, ARENA_NOOR1_Q_COOLDOWN_MS);
+            h->mp -= ARENA_MP_COST_Q;
         }
         break;
     case ARENA_HERO_CAIN:
         if (cain_cast_q(h, foe)) {
             h->q_cooldown_ms = cast_cooldown(h, ARENA_CAIN_Q_COOLDOWN_MS);
+            h->mp -= ARENA_MP_COST_Q;
         }
         break;
     case ARENA_HERO_GUNNR:
         if (gunnr_cast_q(h, foe)) {
             h->q_cooldown_ms = cast_cooldown(h, ARENA_GUNNR_Q_COOLDOWN_MS);
+            h->mp -= ARENA_MP_COST_Q;
         }
         break;
     case ARENA_HERO_VASSAGO:
         if (vassago_cast_q(h, foe)) {
             h->q_cooldown_ms = cast_cooldown(h, ARENA_VASSAGO_Q_COOLDOWN_MS);
+            h->mp -= ARENA_MP_COST_Q;
         }
         break;
     case ARENA_HERO_HE_XIANGU:
         if (he_xiangu_cast_q(h, foe)) {
             h->q_cooldown_ms = cast_cooldown(h, ARENA_HE_XIANGU_Q_COOLDOWN_MS);
+            h->mp -= ARENA_MP_COST_Q;
         }
         break;
     case ARENA_HERO_BELETH:
         if (beleth_cast_q(h, foe)) {
             h->q_cooldown_ms = cast_cooldown(h, ARENA_BELETH_Q_COOLDOWN_MS);
+            h->mp -= ARENA_MP_COST_Q;
         }
         break;
     }
@@ -1440,33 +1467,37 @@ void arena_toggle_w(int owner) {
 
     switch (h->hero_id) {
     case ARENA_HERO_UNICORN:
+        if (!h->w_active && h->mp < ARENA_MP_COST_W) return; /* insufficient MP to activate; toggling off is always free */
         h->w_active = !h->w_active;
+        if (h->w_active) h->mp -= ARENA_MP_COST_W;
         break;
     case ARENA_HERO_GHOST:
         /* Not a Ghost: an instant-use buff on its own cooldown, not a
            toggle -- reuses the W slot but isn't a hold-on/hold-off state
            like Unicorn's regen. */
-        if (h->w_cooldown_ms > 0) return;
+        if (h->w_cooldown_ms > 0 || h->mp < ARENA_MP_COST_W) return;
         h->intangible_ms = ARENA_GHOST_W_INTANGIBLE_MS;
         h->w_cooldown_ms = cast_cooldown(h, ARENA_GHOST_W_COOLDOWN_MS);
+        h->mp -= ARENA_MP_COST_W;
         break;
     case ARENA_HERO_FROG: {
         /* Borrowed Time: places the refund buff on the nearest ally --
            wired for real now that arena_nearest_ally exists (was skipped
            for no ally target in 1v1, S170-33). No-op, cooldown not
            consumed, if there's no living ally to target. */
-        if (h->w_cooldown_ms > 0) return;
+        if (h->w_cooldown_ms > 0 || h->mp < ARENA_MP_COST_W) return;
         ArenaHero *ally = arena_nearest_ally(owner);
         if (ally && ally->alive) {
             ally->next_cast_refund = 1;
             h->w_cooldown_ms = cast_cooldown(h, ARENA_FROG_W_COOLDOWN_MS);
+            h->mp -= ARENA_MP_COST_W;
         }
         break;
     }
     case ARENA_HERO_DOC_WHEEL:
         /* House Call: instant teleport to the nearest ally's location, on
            a long cooldown ("always shows up"). No-op if there's no ally. */
-        if (h->w_cooldown_ms > 0) return;
+        if (h->w_cooldown_ms > 0 || h->mp < ARENA_MP_COST_W) return;
         {
             ArenaHero *ally = arena_nearest_ally(owner);
             if (ally && ally->alive) {
@@ -1474,6 +1505,7 @@ void arena_toggle_w(int owner) {
                 h->z = ally->z;
                 h->moving = 0;
                 h->w_cooldown_ms = cast_cooldown(h, ARENA_DOC_WHEEL_W_COOLDOWN_MS);
+                h->mp -= ARENA_MP_COST_W;
             }
         }
         break;
@@ -1481,109 +1513,132 @@ void arena_toggle_w(int owner) {
         /* Philosopher's Bloom: AoE ally heal, always lands (see
            flamel_cast_w) -- same always-commits convention as Doc Wheel's
            R, not a whiff-refunded single-target poke. */
-        if (h->w_cooldown_ms > 0) return;
+        if (h->w_cooldown_ms > 0 || h->mp < ARENA_MP_COST_W) return;
         flamel_cast_w(h, owner);
         h->w_cooldown_ms = cast_cooldown(h, ARENA_FLAMEL_W_COOLDOWN_MS);
+        h->mp -= ARENA_MP_COST_W;
         break;
     case ARENA_HERO_MORRIGAN:
         /* Three Forms: gap-close + root on the nearest enemy. No-op,
            cooldown not consumed, if there's no living enemy at all
            (1v1's own bot could still die mid-match). */
-        if (h->w_cooldown_ms > 0) return;
+        if (h->w_cooldown_ms > 0 || h->mp < ARENA_MP_COST_W) return;
         if (morrigan_cast_w(h, arena_nearest_enemy(owner))) {
             h->w_cooldown_ms = cast_cooldown(h, ARENA_MORRIGAN_W_COOLDOWN_MS);
+            h->mp -= ARENA_MP_COST_W;
         }
         break;
     case ARENA_HERO_DAGDA:
         /* Uaithne, called by name: AoE hits everyone in radius, always
            lands (see dagda_cast_w) -- same always-commits convention as
            Flamel's W above. */
-        if (h->w_cooldown_ms > 0) return;
+        if (h->w_cooldown_ms > 0 || h->mp < ARENA_MP_COST_W) return;
         dagda_cast_w(h, owner);
         h->w_cooldown_ms = cast_cooldown(h, ARENA_DAGDA_W_COOLDOWN_MS);
+        h->mp -= ARENA_MP_COST_W;
         break;
     case ARENA_HERO_COURIER:
         /* Between Eagle and Serpent: always lands, jumps to whichever
            of the ARENA_NODE_COUNT nodes is farthest right now. */
-        if (h->w_cooldown_ms > 0) return;
+        if (h->w_cooldown_ms > 0 || h->mp < ARENA_MP_COST_W) return;
         courier_toggle_w(h);
         h->w_cooldown_ms = cast_cooldown(h, ARENA_COURIER_W_COOLDOWN_MS);
+        h->mp -= ARENA_MP_COST_W;
         break;
     case ARENA_HERO_LOKI:
         /* Bound Where the Myth Says: free toggle, no cooldown, same
            convention as Unicorn's W -- arena_hero_armor() reads w_active
            directly for the actual bonus. */
+        if (!h->w_active && h->mp < ARENA_MP_COST_W) return; /* insufficient MP to activate; toggling off is always free */
         h->w_active = !h->w_active;
+        if (h->w_active) h->mp -= ARENA_MP_COST_W;
         break;
     case ARENA_HERO_GARY:
         /* Watching the Bridge: free toggle, no cooldown -- gary_cast_q()
            reads w_active directly for Q's extended range, not a stat bonus. */
+        if (!h->w_active && h->mp < ARENA_MP_COST_W) return; /* insufficient MP to activate; toggling off is always free */
         h->w_active = !h->w_active;
+        if (h->w_active) h->mp -= ARENA_MP_COST_W;
         break;
     case ARENA_HERO_FLUTE_DEBT:
         /* Recouping Interest: free toggle self-heal-over-time, same shape
            as Unicorn's W -- see tick_hero_kit for the actual regen tick. */
+        if (!h->w_active && h->mp < ARENA_MP_COST_W) return; /* insufficient MP to activate; toggling off is always free */
         h->w_active = !h->w_active;
+        if (h->w_active) h->mp -= ARENA_MP_COST_W;
         break;
     case ARENA_HERO_BACON_PUCK:
         /* Which One Is The Real One: free toggle, no cooldown --
            bacon_puck_cast_q() reads w_active directly for Q's extended
            intangibility duration, not a stat bonus. */
+        if (!h->w_active && h->mp < ARENA_MP_COST_W) return; /* insufficient MP to activate; toggling off is always free */
         h->w_active = !h->w_active;
+        if (h->w_active) h->mp -= ARENA_MP_COST_W;
         break;
     case ARENA_HERO_ABRAHAM:
         /* The Book, Unattested: free toggle, no cooldown -- abraham_cast_q()
            reads w_active directly for Q's boosted damage while channeling. */
+        if (!h->w_active && h->mp < ARENA_MP_COST_W) return; /* insufficient MP to activate; toggling off is always free */
         h->w_active = !h->w_active;
+        if (h->w_active) h->mp -= ARENA_MP_COST_W;
         break;
     case ARENA_HERO_ADA:
         /* The frame's own plating: free toggle, no cooldown --
            arena_hero_armor() reads w_active directly for the bonus. */
+        if (!h->w_active && h->mp < ARENA_MP_COST_W) return; /* insufficient MP to activate; toggling off is always free */
         h->w_active = !h->w_active;
+        if (h->w_active) h->mp -= ARENA_MP_COST_W;
         break;
     case ARENA_HERO_TYLER:
         /* Poof: an instant-use blink-strike on its own cooldown, not a toggle --
            same shape as Ghost's W. */
-        if (h->w_cooldown_ms > 0) return;
+        if (h->w_cooldown_ms > 0 || h->mp < ARENA_MP_COST_W) return;
         if (tyler_cast_w(h, arena_nearest_enemy(owner))) {
             h->w_cooldown_ms = cast_cooldown(h, ARENA_TYLER_W_COOLDOWN_MS);
+            h->mp -= ARENA_MP_COST_W;
         }
         break;
     case ARENA_HERO_PAIMON:
         /* Speaks With Total Authority: instant decree on its own cooldown, not a toggle. */
-        if (h->w_cooldown_ms > 0) return;
+        if (h->w_cooldown_ms > 0 || h->mp < ARENA_MP_COST_W) return;
         if (paimon_cast_w(h, arena_nearest_enemy(owner))) {
             h->w_cooldown_ms = cast_cooldown(h, ARENA_PAIMON_W_COOLDOWN_MS);
+            h->mp -= ARENA_MP_COST_W;
         }
         break;
     case ARENA_HERO_NOOR1:
         /* Sent In Clean: same instant-use intangibility as Ghost's Not a Ghost --
            she goes quiet and unreadable herself for a moment. */
-        if (h->w_cooldown_ms > 0) return;
+        if (h->w_cooldown_ms > 0 || h->mp < ARENA_MP_COST_W) return;
         h->intangible_ms = ARENA_NOOR1_W_INTANGIBLE_MS;
         h->w_cooldown_ms = cast_cooldown(h, ARENA_NOOR1_W_COOLDOWN_MS);
+        h->mp -= ARENA_MP_COST_W;
         break;
     case ARENA_HERO_CAIN:
         /* Cursed to Wander: instant-use dash-away + self-cleanse on its own cooldown. */
-        if (h->w_cooldown_ms > 0) return;
+        if (h->w_cooldown_ms > 0 || h->mp < ARENA_MP_COST_W) return;
         if (cain_cast_w(h, arena_nearest_enemy(owner))) {
             h->w_cooldown_ms = cast_cooldown(h, ARENA_CAIN_W_COOLDOWN_MS);
+            h->mp -= ARENA_MP_COST_W;
         }
         break;
     case ARENA_HERO_GUNNR:
         /* Three More Things: free toggle, no cooldown -- tick_hero_kit reads w_active
            directly for the regen, same shape as Flute Debt's Recouping Interest. */
+        if (!h->w_active && h->mp < ARENA_MP_COST_W) return; /* insufficient MP to activate; toggling off is always free */
         h->w_active = !h->w_active;
+        if (h->w_active) h->mp -= ARENA_MP_COST_W;
         break;
     case ARENA_HERO_VASSAGO: {
         /* The Soft Foresight, extended: grants the nearest ally next_cast_refund, same
            mechanic as Frog's Borrowed Time. No-op, cooldown not consumed, with no living
            ally to target (1v1 local demo). */
-        if (h->w_cooldown_ms > 0) return;
+        if (h->w_cooldown_ms > 0 || h->mp < ARENA_MP_COST_W) return;
         ArenaHero *ally = arena_nearest_ally(owner);
         if (ally && ally->alive) {
             ally->next_cast_refund = 1;
             h->w_cooldown_ms = cast_cooldown(h, ARENA_VASSAGO_W_COOLDOWN_MS);
+            h->mp -= ARENA_MP_COST_W;
         }
         break;
     }
@@ -1591,15 +1646,18 @@ void arena_toggle_w(int owner) {
         /* Self-Denial Taken Past the Point: free toggle, no cooldown -- tick_hero_kit
            reads w_active directly for the regen, same shape as Flute Debt's Recouping
            Interest. */
+        if (!h->w_active && h->mp < ARENA_MP_COST_W) return; /* insufficient MP to activate; toggling off is always free */
         h->w_active = !h->w_active;
+        if (h->w_active) h->mp -= ARENA_MP_COST_W;
         break;
     case ARENA_HERO_BELETH:
         /* Hope Is a Terror I Leash With Song: instant silence-only decree on its own
            cooldown, same in-range shape as Paimon's Speaks With Total Authority but with
            the damage stripped out -- escalation denied, not a hit landed. */
-        if (h->w_cooldown_ms > 0) return;
+        if (h->w_cooldown_ms > 0 || h->mp < ARENA_MP_COST_W) return;
         if (beleth_cast_w(h, arena_nearest_enemy(owner))) {
             h->w_cooldown_ms = cast_cooldown(h, ARENA_BELETH_W_COOLDOWN_MS);
+            h->mp -= ARENA_MP_COST_W;
         }
         break;
     default:
@@ -1616,17 +1674,19 @@ void arena_cast_r(int owner) {
     if (owner < 0 || owner >= ARENA_MAX_HEROES) return;
     ArenaHero *h = &arena_state.heroes[owner];
     ArenaHero *foe = arena_nearest_enemy(owner);
-    if (!h->alive || h->silenced_ms > 0 || h->r_cooldown_ms > 0) return;
+    if (!h->alive || h->silenced_ms > 0 || h->r_cooldown_ms > 0 || h->mp < ARENA_MP_COST_R) return;
     h->cast_flash_slot = 3;
 
     switch (h->hero_id) {
     case ARENA_HERO_UNICORN:
         h->r_active_ms = ARENA_UNICORN_R_DURATION_MS;
         h->r_cooldown_ms = cast_cooldown(h, ARENA_UNICORN_R_COOLDOWN_MS);
+        h->mp -= ARENA_MP_COST_R;
         break;
     case ARENA_HERO_DUCK:
         if (duck_pull_foe(h, foe, ARENA_DUCK_R_PULL_DIST, ARENA_DUCK_R_DAMAGE, ARENA_DUCK_R_RANGE)) {
             h->r_cooldown_ms = cast_cooldown(h, ARENA_DUCK_R_COOLDOWN_MS);
+            h->mp -= ARENA_MP_COST_R;
         }
         break;
     case ARENA_HERO_GHOST:
@@ -1640,6 +1700,7 @@ void arena_cast_r(int owner) {
         h->r_zone_tick_ms = 0;
         h->r_active_ms = ARENA_GHOST_R_DURATION_MS;
         h->r_cooldown_ms = cast_cooldown(h, ARENA_GHOST_R_COOLDOWN_MS);
+        h->mp -= ARENA_MP_COST_R;
         break;
     case ARENA_HERO_FROG:
         /* The Secret, simplified: reuses the intangible_ms mechanic at a
@@ -1649,6 +1710,7 @@ void arena_cast_r(int owner) {
            ability. */
         h->intangible_ms = ARENA_FROG_R_VANISH_MS;
         h->r_cooldown_ms = cast_cooldown(h, ARENA_FROG_R_COOLDOWN_MS);
+        h->mp -= ARENA_MP_COST_R;
         break;
     case ARENA_HERO_DOC_WHEEL:
         /* No Combat Power, As Advertised: teamwide cleanse + heal within
@@ -1666,6 +1728,7 @@ void arena_cast_r(int owner) {
             }
         }
         h->r_cooldown_ms = cast_cooldown(h, ARENA_DOC_WHEEL_R_COOLDOWN_MS);
+        h->mp -= ARENA_MP_COST_R;
         break;
     case ARENA_HERO_TREE:
         /* Grand Secret, simplified from "roots until recast, min 8s" to a
@@ -1678,6 +1741,7 @@ void arena_cast_r(int owner) {
         h->hp += ARENA_TREE_R_HEAL;
         if (h->hp > h->max_hp) h->hp = h->max_hp;
         h->r_cooldown_ms = cast_cooldown(h, ARENA_TREE_R_COOLDOWN_MS);
+        h->mp -= ARENA_MP_COST_R;
         break;
     case ARENA_HERO_PIZZA:
         /* Nobody Ever Checks: HP cannot drop below 1 for the duration -- a
@@ -1686,6 +1750,7 @@ void arena_cast_r(int owner) {
            exactly that reason). */
         h->survive_floor_ms = ARENA_PIZZA_R_FLOOR_MS;
         h->r_cooldown_ms = cast_cooldown(h, ARENA_PIZZA_R_COOLDOWN_MS);
+        h->mp -= ARENA_MP_COST_R;
         break;
     case ARENA_HERO_FLAMEL:
         /* Elixir of Wild Growth (Elixir of Life + Wild Growth merged): a
@@ -1708,6 +1773,7 @@ void arena_cast_r(int owner) {
             }
         }
         h->r_cooldown_ms = cast_cooldown(h, ARENA_FLAMEL_R_COOLDOWN_MS);
+        h->mp -= ARENA_MP_COST_R;
         break;
     case ARENA_HERO_MORRIGAN:
         /* The Crow Confirms It: a fixed zone (reusing Ghost's
@@ -1720,6 +1786,7 @@ void arena_cast_r(int owner) {
         h->r_zone_tick_ms = 0;
         h->r_active_ms = ARENA_MORRIGAN_R_DURATION_MS;
         h->r_cooldown_ms = cast_cooldown(h, ARENA_MORRIGAN_R_COOLDOWN_MS);
+        h->mp -= ARENA_MP_COST_R;
         break;
     case ARENA_HERO_DAGDA:
         /* The force-fed porridge: a real damage floor (like Pizza's R) plus
@@ -1730,42 +1797,51 @@ void arena_cast_r(int owner) {
         h->hp += ARENA_DAGDA_R_HEAL;
         if (h->hp > h->max_hp) h->hp = h->max_hp;
         h->r_cooldown_ms = cast_cooldown(h, ARENA_DAGDA_R_COOLDOWN_MS);
+        h->mp -= ARENA_MP_COST_R;
         break;
     case ARENA_HERO_COURIER:
         if (courier_cast_r(h, foe)) {
             h->r_cooldown_ms = cast_cooldown(h, ARENA_COURIER_R_COOLDOWN_MS);
+            h->mp -= ARENA_MP_COST_R;
         }
         break;
     case ARENA_HERO_LOKI:
         loki_cast_r(h);
         h->r_cooldown_ms = cast_cooldown(h, ARENA_LOKI_R_COOLDOWN_MS);
+        h->mp -= ARENA_MP_COST_R;
         break;
     case ARENA_HERO_GARY:
         if (gary_cast_r(h, foe)) {
             h->r_cooldown_ms = cast_cooldown(h, ARENA_GARY_R_COOLDOWN_MS);
+            h->mp -= ARENA_MP_COST_R;
         }
         break;
     case ARENA_HERO_FLUTE_DEBT:
         flute_debt_cast_r(h, foe);
         h->r_cooldown_ms = cast_cooldown(h, ARENA_FLUTE_DEBT_R_COOLDOWN_MS);
+        h->mp -= ARENA_MP_COST_R;
         break;
     case ARENA_HERO_BACON_PUCK:
         if (bacon_puck_cast_r(h, foe)) {
             h->r_cooldown_ms = cast_cooldown(h, ARENA_BACON_PUCK_R_COOLDOWN_MS);
+            h->mp -= ARENA_MP_COST_R;
         }
         break;
     case ARENA_HERO_ABRAHAM:
         abraham_cast_r(h);
         h->r_cooldown_ms = cast_cooldown(h, ARENA_ABRAHAM_R_COOLDOWN_MS);
+        h->mp -= ARENA_MP_COST_R;
         break;
     case ARENA_HERO_ADA:
         if (ada_cast_r(h, foe)) {
             h->r_cooldown_ms = cast_cooldown(h, ARENA_ADA_R_COOLDOWN_MS);
+            h->mp -= ARENA_MP_COST_R;
         }
         break;
     case ARENA_HERO_TYLER:
         tyler_cast_r(h, foe);
         h->r_cooldown_ms = cast_cooldown(h, ARENA_TYLER_R_COOLDOWN_MS);
+        h->mp -= ARENA_MP_COST_R;
         break;
     case ARENA_HERO_PAIMON:
         /* Two Hundred Legions: fixed zone, same shape as Ghost's Recital/
@@ -1776,6 +1852,7 @@ void arena_cast_r(int owner) {
         h->r_zone_tick_ms = 0;
         h->r_active_ms = ARENA_PAIMON_R_DURATION_MS;
         h->r_cooldown_ms = cast_cooldown(h, ARENA_PAIMON_R_COOLDOWN_MS);
+        h->mp -= ARENA_MP_COST_R;
         break;
     case ARENA_HERO_NOOR1:
         /* Do Not Approach: fixed cold zone, damage-only (no ally-heal side --
@@ -1785,12 +1862,14 @@ void arena_cast_r(int owner) {
         h->r_zone_tick_ms = 0;
         h->r_active_ms = ARENA_NOOR1_R_DURATION_MS;
         h->r_cooldown_ms = cast_cooldown(h, ARENA_NOOR1_R_COOLDOWN_MS);
+        h->mp -= ARENA_MP_COST_R;
         break;
     case ARENA_HERO_CAIN:
         /* The Mark: survive-floor panic button, same shape as Pizza's/Loki's R --
            "a mark that is a curse and a protection at the same time," made literal. */
         h->survive_floor_ms = ARENA_CAIN_R_FLOOR_MS;
         h->r_cooldown_ms = cast_cooldown(h, ARENA_CAIN_R_COOLDOWN_MS);
+        h->mp -= ARENA_MP_COST_R;
         break;
     case ARENA_HERO_GUNNR:
         /* Valhalla Has Yet To Admit It: instant hit-if-in-range, execute-scaled via
@@ -1804,6 +1883,7 @@ void arena_cast_r(int owner) {
             }
         }
         h->r_cooldown_ms = cast_cooldown(h, ARENA_GUNNR_R_COOLDOWN_MS);
+        h->mp -= ARENA_MP_COST_R;
         break;
     case ARENA_HERO_VASSAGO:
         /* The Gentle Maybe: fixed zone, same shape as Ghost's Recital/Paimon's Two Hundred
@@ -1814,6 +1894,7 @@ void arena_cast_r(int owner) {
         h->r_zone_tick_ms = 0;
         h->r_active_ms = ARENA_VASSAGO_R_DURATION_MS;
         h->r_cooldown_ms = cast_cooldown(h, ARENA_VASSAGO_R_COOLDOWN_MS);
+        h->mp -= ARENA_MP_COST_R;
         break;
     case ARENA_HERO_HE_XIANGU:
         /* Never Once Framed It As Sacrifice: fixed zone, same shape as Flamel's Elixir of
@@ -1824,6 +1905,7 @@ void arena_cast_r(int owner) {
         h->r_zone_tick_ms = 0;
         h->r_active_ms = ARENA_HE_XIANGU_R_DURATION_MS;
         h->r_cooldown_ms = cast_cooldown(h, ARENA_HE_XIANGU_R_COOLDOWN_MS);
+        h->mp -= ARENA_MP_COST_R;
         break;
     case ARENA_HERO_BELETH:
         /* The Detonation: marks the foe's CURRENT position at cast time (not a
@@ -1839,6 +1921,7 @@ void arena_cast_r(int owner) {
                 h->r_zone_z = foe->z;
                 h->r_active_ms = ARENA_BELETH_R_FUSE_MS;
                 h->r_cooldown_ms = cast_cooldown(h, ARENA_BELETH_R_COOLDOWN_MS);
+                h->mp -= ARENA_MP_COST_R;
             }
         }
         break;
@@ -1852,6 +1935,13 @@ static void tick_hero_kit(ArenaHero *h, ArenaHero *foe, ArenaHero *ally, unsigne
     if (h->q_cooldown_ms > 0) h->q_cooldown_ms -= (int)dt_ms;
     if (h->w_cooldown_ms > 0) h->w_cooldown_ms -= (int)dt_ms;
     if (h->r_cooldown_ms > 0) h->r_cooldown_ms -= (int)dt_ms;
+    /* Mana regen (S170-132): generic and roster-wide, same "runs for every hero every tick
+       regardless of kit" reasoning as the cooldown decrements just above. */
+    if (h->alive && h->mp < h->max_mp) {
+        float regen = ARENA_MP_REGEN_PER_SEC * ((float)dt_ms / 1000.0f);
+        h->mp += (int)regen;
+        if (h->mp > h->max_mp) h->mp = h->max_mp;
+    }
     if (h->silenced_ms > 0) {
         h->silenced_ms -= (int)dt_ms;
         if (h->silenced_ms < 0) h->silenced_ms = 0;
@@ -2560,6 +2650,7 @@ void arena_init_teams(void) {
         h->target_x = h->x;
         h->target_z = h->z;
         h->hp = h->max_hp = 100;
+        h->mp = h->max_mp = ARENA_MP_MAX;
         h->owner = i;
         h->team = team;
         h->active = 1;
@@ -2646,6 +2737,7 @@ static void arena_tick_respawns(unsigned int dt_ms) {
         h->active = 1;
         h->alive = 1;
         h->hp = h->max_hp = 100;
+        h->mp = h->max_mp = ARENA_MP_MAX;
         h->owner = i;
         h->team = team;
         h->hero_id = hero_id;

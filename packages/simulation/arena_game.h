@@ -652,12 +652,31 @@ typedef enum {
  * not just a modifier, matching the founder's framing literally. */
 #define ARENA_HERO_RESPAWN_MS 8000
 
+/* Mana (S170-132): flat, roster-wide -- see ArenaHero.mp's own doc comment above. Regen fills
+ * an empty pool in a bit under 17s; Q is the cheapest, spammable a few times before running dry,
+ * R is the most expensive, deliberately not repeatable back-to-back even when off cooldown. */
+#define ARENA_MP_MAX             100
+#define ARENA_MP_REGEN_PER_SEC     6
+#define ARENA_MP_COST_Q            20
+#define ARENA_MP_COST_W            20
+#define ARENA_MP_COST_R            45
+
 typedef struct {
     float x, z;
     float target_x, target_z;
     int moving;
     int hp;
     int max_hp;
+    /* mp/max_mp (S170-132, founder: "add mp so toggling stuff has a cost spells cant be
+       spammed unless its a zero mana spell or ability"): a second resource layered on top of
+       cooldowns, not a replacement for them -- a Q/W/R can be off cooldown and still blocked
+       for lack of mana. Regenerates passively (see tick_hero_kit); ARENA_MP_COST_Q/W/R are the
+       current flat per-slot rate, applied uniformly across the roster. The "zero mana ability"
+       exception the founder named isn't in use by any kit yet, but the cost is already a named
+       constant per slot rather than inlined at each call site, so making one specific ability
+       free later is a one-line change, not a redesign. */
+    int mp;
+    int max_mp;
     int attack_cooldown_ms;
     int owner; /* 0 = player, 1 = bot in the 1v1 local demo; a slot index 0..ARENA_MAX_HEROES-1 in team mode */
     int alive;

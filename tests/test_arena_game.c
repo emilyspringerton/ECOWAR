@@ -137,6 +137,82 @@ static void test_unicorn_w_regen_toggle(void) {
     CHECK(h->w_active == 0, "W toggles back off");
 }
 
+static void test_mp_starts_full(void) {
+    arena_init();
+    ArenaHero *h = &arena_state.heroes[0];
+    CHECK(h->mp == ARENA_MP_MAX, "a fresh hero starts with a full mana pool");
+    CHECK(h->max_mp == ARENA_MP_MAX, "max_mp is set on init, not left at zero");
+}
+
+static void test_mp_regenerates_over_time(void) {
+    arena_init();
+    ArenaHero *h = &arena_state.heroes[0];
+    h->mp = 0;
+
+    arena_update(1000); /* 1 second of regen */
+
+    CHECK(h->mp > 0, "mana regenerates every tick with no cast at all");
+    CHECK(h->mp <= ARENA_MP_MAX, "regen never overshoots the pool's own max");
+}
+
+static void test_mp_deducted_on_landed_q_cast(void) {
+    arena_init();
+    ArenaHero *h = &arena_state.heroes[0];
+    arena_set_move_target(0, h->x + 4.0f, h->z);
+    ArenaHero *foe = &arena_state.heroes[1];
+    foe->x = h->x + ARENA_UNICORN_Q_DASH_DIST;
+    foe->z = h->z;
+    int mp_before = h->mp;
+
+    arena_cast_q(0);
+
+    CHECK(h->mp == mp_before - ARENA_MP_COST_Q, "a landed Q spends exactly its own flat mana cost");
+}
+
+static void test_mp_blocks_cast_when_insufficient(void) {
+    arena_init();
+    ArenaHero *h = &arena_state.heroes[0];
+    arena_set_move_target(0, h->x + 4.0f, h->z);
+    ArenaHero *foe = &arena_state.heroes[1];
+    foe->x = h->x + ARENA_UNICORN_Q_DASH_DIST;
+    foe->z = h->z;
+    h->mp = ARENA_MP_COST_Q - 1; /* one short */
+    float x_before = h->x;
+    int foe_hp_before = foe->hp;
+
+    arena_cast_q(0);
+
+    CHECK(h->x == x_before, "insufficient mana blocks the cast entirely -- no dash");
+    CHECK(foe->hp == foe_hp_before, "insufficient mana blocks the cast entirely -- no damage either");
+    CHECK(h->q_cooldown_ms == 0, "a cast blocked by mana never starts its cooldown, same as a whiff");
+}
+
+static void test_mp_toggle_w_charges_on_activate_free_on_deactivate(void) {
+    arena_init();
+    ArenaHero *h = &arena_state.heroes[0];
+    int mp_before = h->mp;
+
+    arena_toggle_w(0);
+    CHECK(h->w_active == 1, "W toggles on");
+    CHECK(h->mp == mp_before - ARENA_MP_COST_W, "activating a toggle spends its flat mana cost");
+
+    int mp_after_activate = h->mp;
+    arena_toggle_w(0);
+    CHECK(h->w_active == 0, "W toggles back off");
+    CHECK(h->mp == mp_after_activate, "deactivating a toggle is free -- canceling isn't a new cast");
+}
+
+static void test_mp_toggle_w_blocked_when_insufficient(void) {
+    arena_init();
+    ArenaHero *h = &arena_state.heroes[0];
+    h->mp = ARENA_MP_COST_W - 1; /* one short */
+
+    arena_toggle_w(0);
+
+    CHECK(h->w_active == 0, "insufficient mana blocks activating a toggle, same as any other cast");
+    CHECK(h->mp == ARENA_MP_COST_W - 1, "a blocked activation doesn't spend the mana it didn't have");
+}
+
 static void test_unicorn_r_doubles_armor_temporarily(void) {
     arena_init();
     ArenaHero *h = &arena_state.heroes[0];
@@ -2389,6 +2465,12 @@ int main(void) {
     test_unicorn_q_dashes_and_damages();
     test_unicorn_q_respects_cooldown();
     test_unicorn_w_regen_toggle();
+    test_mp_starts_full();
+    test_mp_regenerates_over_time();
+    test_mp_deducted_on_landed_q_cast();
+    test_mp_blocks_cast_when_insufficient();
+    test_mp_toggle_w_charges_on_activate_free_on_deactivate();
+    test_mp_toggle_w_blocked_when_insufficient();
     test_unicorn_r_doubles_armor_temporarily();
     test_unicorn_armor_reduces_incoming_damage();
     test_duck_q_pulls_foe_and_damages();

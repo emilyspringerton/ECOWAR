@@ -1,5 +1,32 @@
 # Changelog
 
+## 2026-07-25 (30)
+
+- feat(arena): mana resource layer, roster-wide (S170-132). Founder, real-time: "add mp so
+  toggling stuff has a cost spells cant be spammed unless its a zero mana spell or ability." A
+  second resource layered on top of every existing cooldown, not a replacement for them — a
+  Q/W/R can be fully off cooldown and still blocked for lack of mana. `mp`/`max_mp` added to
+  `ArenaHero` (100 max, regenerates ~6/sec, full at spawn and on respawn). Flat per-slot costs
+  (Q 20, W 20, R 45) applied uniformly across all 25 heroes by hooking the codebase's own
+  existing `cast_cooldown()` choke point — every Q/W/R cooldown-assignment site in the file
+  already routed through it, so a scripted pass inserted `h->mp -= COST` at all 63 call sites
+  (25 Q + 13 W-decree + 25 R) without touching per-hero cast logic. Free-toggle W's (Gunnr, Flute
+  Debt, He Xiangu, Loki, Gary, Bacon+Puck, Abraham, Ada, Unicorn — 9 total) previously had zero
+  cost at all; per the founder's own framing ("toggling stuff has a cost"), activating one now
+  costs the flat W rate — deactivating stays free, since canceling isn't casting a new spell. A
+  cast blocked by insufficient mana behaves exactly like a whiff: no cooldown starts, matching
+  the codebase's own established "whiffed casts don't consume the cooldown" precedent extended
+  to the new resource. No ability is flagged zero-mana yet, but the cost lives behind named
+  per-slot constants rather than inlined values, so the founder's "unless it's a zero mana spell"
+  exception is a one-line change away whenever a specific ability needs it, not a redesign. 12
+  new headless tests (starts-full, regen, landed-cast deduction, insufficient-mana block behaves
+  like a whiff, toggle-activate-costs/deactivate-is-free, toggle-blocked-when-insufficient).
+  Verified: full suite (366 checks), VS0/VS1 stable, live — restarted the three systemd units,
+  confirmed two clean real-match connects with no instability (a burst of `SIGKILL`s in the
+  service journal around this same window traced back to my own rapid manual `systemctl restart`
+  calls during testing, not the new code — confirmed by 70+ seconds of clean, event-free
+  operation once the manual restarts stopped).
+
 ## 2026-07-25 (29)
 
 - feat(arena): Beleth, the Detonation, 25th hero — Burst/Control (S170-93). Fourth and final hero
