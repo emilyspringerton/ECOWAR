@@ -1,5 +1,17 @@
 # Changelog
 
+## 2026-07-25 (4)
+
+- docs: FFXI Rise of the Zilart-era item parity seed list (S170-102). Founder direction, real-time
+  sequence: "add parity with all ffxi items at rise of the ziliart launch" → "northstar" →
+  "redgarden into a doc like the hero metaverse guide in tyler" → "for true ip." Real,
+  representative FFXI item names by category (currency, crafting materials, weapons by
+  weapon-skill class, armor by equip slot, real Zilart-mission key items, notable RotZ-era
+  end-game weapons) at `docs/FFXI_ITEM_PARITY_SEED.md`, same doc-first convention as
+  `TYLER/multiverse_heroes.md`. Explicitly not for direct shipping — seed/training data for
+  `gpt2-alpine-c`'s fine-tune pipeline to generate this game's own original item names from.
+  Registered in `EMILY/context/golden-docs-index.md`.
+
 ## 2026-07-25 (3)
 
 - fix(arena): real root cause of "everything breaks after 1 game" (S170-99). Founder, live:
