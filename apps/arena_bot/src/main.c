@@ -39,6 +39,11 @@
 #define TICKET_MAC_LEN 16
 #define TICKET_TOTAL_LEN (TICKET_PAYLOAD_LEN + TICKET_MAC_LEN)
 #define ARENA_MATCHMAKER_PORT 7778 /* separate queue from the card-RTS matchmaker's 7777 */
+/* Mirrors packages/simulation/arena_game.h's ARENA_HERO_COUNT -- this file is a pure network
+   client and deliberately doesn't include the sim header (no direct ArenaState access, wire
+   protocol only), so the roster size has to be kept in sync by hand here. Bump this alongside
+   ARENA_HERO_COUNT whenever a new hero is added. */
+#define ARENA_HERO_COUNT 21
 
 /* Memorable bot names (founder: "prep for an observation phase... the bots
  * should have interesting memorable names"), so the leaderboard reads as a
@@ -356,13 +361,26 @@ static void send_cast(int slot) {
 // play_one_match runs the draft + live-play loop for a single match against
 // the already-connected server. Returns once the match ends (winner != 0)
 // or the connection goes quiet for too long.
-static void play_one_match(void) {
+static void play_one_match(int game_port) {
     ArenaSnapshotMsg last = {0};
     int have_snapshot = 0;
     int picked = 0;
     int ticks_since_pick_send = 0; /* retry, see below -- S170-99 */
     uint32_t last_cast_ms = 0;
     int silent_ticks = 0;
+    /* draft_offset (S170-105, real bug found live, twice): ARENA_HERO_COUNT (21) now exceeds
+       ARENA_MAX_HEROES (20) for the first time -- a full 20-player lobby only ever has owner
+       slots 0..19, so a bare `owner % hero_count` always maps to hero_ids 0..19 and can NEVER
+       reach the last hero in the roster no matter how many matches run; not a rare miss, a
+       permanent, deterministic exclusion. First fix attempt used a per-bot random offset, which
+       is wrong in a different way: every bot in the same match rolls its OWN independent random
+       value, so two different owners can land on the SAME hero_id purely by coincidence --
+       trading a permanent exclusion for a probabilistic duplicate-pick risk that didn't exist
+       before. Derived from game_port instead: every client connecting to the same match already
+       knows the same port (it's how they found this server in the first place), so this is a
+       real shared value with zero coordination needed, deterministic per match, and still varies
+       match to match as the matchmaker increments the port for each new game. */
+    int draft_offset = game_port % ARENA_HERO_COUNT;
 
     while (1) {
         char rbuf[2048];
@@ -392,7 +410,7 @@ static void play_one_match(void) {
                 /* Simple roster spread: pick based on owner slot so a full
                    lobby doesn't converge on one hero -- real draft strategy
                    is a later, separate concern. */
-                int hero_id = my_owner % 20; /* ARENA_HERO_UNICORN..NOOR1 (S170-48, S170-79, S170-91, S170-94, S170-55, S170-104) */
+                int hero_id = (my_owner + draft_offset) % ARENA_HERO_COUNT; /* full roster, rotating exclusion -- see draft_offset's own comment */
                 send_pick(hero_id);
                 picked = 1;
                 ticks_since_pick_send = 0;
@@ -405,7 +423,7 @@ static void play_one_match(void) {
                    localhost loopback so it never surfaced here, but it's the same latent gap --
                    resend every ~1s (10 ticks @ 100ms) while still stuck in draft. */
                 if (++ticks_since_pick_send > 10) {
-                    send_pick(my_owner % 20);
+                    send_pick((my_owner + draft_offset) % ARENA_HERO_COUNT);
                     ticks_since_pick_send = 0;
                 }
             } else if (last.phase == ARENA_PHASE_LIVE) {
@@ -505,7 +523,7 @@ int main(int argc, char *argv[]) {
 
         my_owner = -1;
         if (connect_to_server(ip, game_port)) {
-            play_one_match();
+            play_one_match(game_port);
         } else {
             fprintf(stderr, "[arena_bot %d] failed to connect to server on port %d\n", (int)getpid(), game_port);
         }

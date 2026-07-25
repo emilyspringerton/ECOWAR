@@ -87,8 +87,9 @@ typedef enum {
     ARENA_HERO_TYLER = 17, /* docs/HEROES_VS0.md's own pre-existing design, never implemented until now (S170-111) */
     ARENA_HERO_PAIMON = 18, /* TYLER multiverse_heroes.md #20, "Paimon, the Court Voice", channeled by the real John Dee (S170-55) */
     ARENA_HERO_NOOR1 = 19, /* TYLER multiverse_heroes.md #3, "NOOR-1 (Four Days Behind)", in-game form: a snowman (S170-104) */
+    ARENA_HERO_CAIN = 20, /* TYLER multiverse_heroes.md #80, "Cain, East of Eden" (S170-105, founder: "replace adelle with Cain") */
 } ArenaHeroID;
-#define ARENA_HERO_COUNT 20
+#define ARENA_HERO_COUNT 21
 
 /* The Unicorn — first real hero kit wired in (S170-18). */
 #define ARENA_UNICORN_ARMOR         4    /* passive: Chassis Claim, flat dmg reduction */
@@ -533,6 +534,25 @@ typedef enum {
 #define ARENA_NOOR1_R_DURATION_MS          4000
 #define ARENA_NOOR1_R_DPS                     7
 #define ARENA_NOOR1_R_COOLDOWN_MS         24000
+
+/* Cain (S170-105, "replace adelle with Cain"): passive flat armor bonus, always on -- "the man
+ * cast out to wander settled down and built civilization anyway," the one thing about him that's
+ * permanent (same "always-on flat armor" shape as Unicorn's own passive, minus the R-doubling).
+ * Q an execute-scaled damage bolt ("the first murder," same shape as Morrigan's Q -- a killing
+ * blow that gets easier the closer the target already is to death). W a self-dash directly AWAY
+ * from the nearest enemy plus a self-debuff cleanse ("cursed to wander," the mirror of Courier's
+ * Q dash-toward). R a survive-floor panic button, same shape as Pizza's/Loki's R -- "a mark that
+ * is a curse and a protection at the same time," made literal: for its duration he cannot be
+ * killed, even by the thing that marked him. */
+#define ARENA_CAIN_PASSIVE_ARMOR            4
+#define ARENA_CAIN_Q_RANGE                  6.0f
+#define ARENA_CAIN_Q_DAMAGE_BASE            8   /* at 100% target HP */
+#define ARENA_CAIN_Q_DAMAGE_LOW_HP         18   /* at ~0% target HP -- an execute */
+#define ARENA_CAIN_Q_COOLDOWN_MS         4200
+#define ARENA_CAIN_W_DASH_DIST              4.0f
+#define ARENA_CAIN_W_COOLDOWN_MS         9000
+#define ARENA_CAIN_R_FLOOR_MS            3800
+#define ARENA_CAIN_R_COOLDOWN_MS        27000
 
 /* ARENA_HERO_RESPAWN_MS (S170-121, "controlling a node enables its spawn
  * for your team"): team-mode-only hero respawn timer. Before this, death

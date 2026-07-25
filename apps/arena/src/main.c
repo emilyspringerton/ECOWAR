@@ -374,6 +374,13 @@ static int net_lobby_size = 2; /* set from the server's own msg->count once a sn
 static uint8_t net_phase = ARENA_PHASE_WAITING;
 static int net_picked = 0; /* have we sent our PACKET_ARENA_PICK for the current draft yet */
 static uint32_t net_last_pick_send_ms = 0; /* for retry -- see net_poll_snapshots' resend logic */
+/* net_draft_offset (S170-105, real bug found live): ARENA_HERO_COUNT (21) now exceeds
+   ARENA_MAX_HEROES (20) -- a bare `owner % hero_count` in a full 20-player lobby can never reach
+   the last hero in the roster, a permanent exclusion, not a rare miss (same finding as
+   apps/arena_bot's own fix). Re-rolled every time net_picked resets to 0 (a fresh draft is about
+   to start), so which hero ends up excluded varies match to match instead of always being the
+   same one hero nobody can ever pick. */
+static int net_draft_offset = 0;
 
 /* Defined further down alongside the other particle-effect state
    (spawn_ring/AttackFlash) -- forward-declared here so net_poll_snapshots
@@ -400,7 +407,14 @@ static void net_poll_snapshots(uint32_t now_ms) {
                        founder confirmed auto-draft is fine for now -- same roster-spread
                        rule apps/arena_bot already uses, so the human doesn't get stuck
                        in ARENA_PHASE_DRAFT forever waiting on input that never comes. */
-                    int hero_id = my_owner % 20; /* ARENA_HERO_UNICORN..NOOR1 (S170-79, S170-91, S170-94, S170-55, S170-104) */
+                    /* Derived from the connected server's own port, not rand() -- every client in
+                       this match (bots included, see apps/arena_bot's identical fix) already
+                       knows this same port, so it's a real shared value with zero coordination
+                       needed, not an independent per-client random roll that could collide with
+                       someone else's pick on the same hero. See net_draft_offset's own doc
+                       comment for the full "why not rand()" reasoning. */
+                    net_draft_offset = ntohs(net_server_addr.sin_port) % ARENA_HERO_COUNT;
+                    int hero_id = (my_owner + net_draft_offset) % ARENA_HERO_COUNT;
                     net_send_pick(hero_id);
                     net_picked = 1;
                     net_last_pick_send_ms = now_ms;
@@ -457,7 +471,7 @@ static void net_poll_snapshots(uint32_t now_ms) {
      * harmless if the original arrived (server's own PACKET_ARENA_PICK handling just re-records
      * the same hero_id), the actual fix if it didn't. */
     if (net_phase == ARENA_PHASE_DRAFT && net_picked && now_ms - net_last_pick_send_ms > 1000) {
-        int hero_id = my_owner % 20;
+        int hero_id = (my_owner + net_draft_offset) % ARENA_HERO_COUNT; /* same offset as the original pick -- resend must match, not re-roll */
         net_send_pick(hero_id);
         net_last_pick_send_ms = now_ms;
     }
@@ -824,6 +838,10 @@ static void draw_hero_model(ArenaHeroID hero_id, float hero_x, float hero_z, con
             BOX(0.0f, 0.40f, 0.0f, 0.55f, 0.40f, 0.55f);
             BOX(0.0f, 0.95f, 0.0f, 0.40f, 0.35f, 0.40f);
             BOX(0.0f, 1.40f, 0.0f, 0.28f, 0.28f, 0.28f);
+            break;
+        case ARENA_HERO_CAIN: /* weathered wanderer body + a small marked accent on the shoulder (S170-105) */
+            BOX(0.0f, 0.65f, 0.0f, 0.75f, 1.3f, 0.75f);
+            BOX(0.55f, 1.15f, 0.0f, 0.14f, 0.14f, 0.14f);
             break;
         default:
             BOX(0.0f, 0.5f, 0.0f, 0.9f, 1.0f, 0.9f);
@@ -1338,6 +1356,14 @@ static void play_cast_tone(int slot) {
 }
 
 int main(int argc, char *argv[]) {
+    /* No srand() call existed anywhere in this file before -- mint_ticket_fallback's own
+       rand()-based nonce (used only when IDUNA isn't reachable) was silently using the default
+       seed=1 sequence, identical every single launch, a real if minor pre-existing weakness found
+       while adding this call for an unrelated reason (net_draft_offset originally used rand()
+       too, before being switched to a deterministic port-derived value instead -- see its own
+       doc comment). Left in: real randomness for the ticket nonce is still worth having even
+       though the offset itself no longer needs it. */
+    srand((unsigned int)time(NULL));
     /* Observer mode (NORTHSTAR §12 Phase C, EMILY/BACKLOG.md S170-30):
      * `red_garden_arena --observe var/matches/arena-<ts>.jsonl` plays back
      * a logged match through this exact same renderer instead of driving

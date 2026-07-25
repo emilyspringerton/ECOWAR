@@ -1937,6 +1937,88 @@ static void test_noor1_r_zone_damages_enemy_no_ally_heal(void) {
           "Do Not Approach has no ally-heal side -- an ally standing in the zone is unaffected");
 }
 
+static void test_cain_passive_grants_flat_armor(void) {
+    arena_init_with_heroes(ARENA_HERO_UNICORN, ARENA_HERO_CAIN);
+    ArenaHero *cain = &arena_state.heroes[1];
+    CHECK(arena_hero_armor(cain) == (float)ARENA_CAIN_PASSIVE_ARMOR,
+          "Cain's founded city grants a flat, always-on armor bonus");
+}
+
+static void test_cain_q_executes_harder_at_low_hp(void) {
+    arena_init_with_heroes(ARENA_HERO_UNICORN, ARENA_HERO_CAIN);
+    ArenaHero *cain = &arena_state.heroes[1];
+    ArenaHero *full_hp_foe = &arena_state.heroes[0];
+    full_hp_foe->x = cain->x + 4.0f;
+    full_hp_foe->z = cain->z;
+    int hp_before_full = full_hp_foe->hp;
+    arena_cast_q(1);
+    int dmg_at_full_hp = hp_before_full - full_hp_foe->hp;
+
+    arena_init_with_heroes(ARENA_HERO_UNICORN, ARENA_HERO_CAIN);
+    cain = &arena_state.heroes[1];
+    ArenaHero *low_hp_foe = &arena_state.heroes[0];
+    low_hp_foe->x = cain->x + 4.0f;
+    low_hp_foe->z = cain->z;
+    low_hp_foe->hp = low_hp_foe->max_hp; /* keep it alive after the hit so the damage delta is measurable --
+                                             the point is the execute *scaling*, not landing a kill */
+    /* Simulate "near death" via max_hp rather than a tiny hp value: execute_scale_damage reads
+       hp/max_hp, so a huge max_hp with the same low hp ratio gets the same scaling without risking
+       the foe actually dying (which would make the post-hit hp delta unmeasurable). */
+    low_hp_foe->max_hp = 1000;
+    low_hp_foe->hp = 10; /* 1% HP -- near the low_hp_dmg end of the scale */
+    int hp_before_low = low_hp_foe->hp;
+    arena_cast_q(1);
+    int dmg_at_low_hp = hp_before_low - low_hp_foe->hp;
+
+    CHECK(dmg_at_low_hp >= dmg_at_full_hp, "The First Murder deals at least as much damage against a near-dead foe as a full-HP one");
+    CHECK(cain->q_cooldown_ms == ARENA_CAIN_Q_COOLDOWN_MS, "Q starts on cooldown after a landed hit");
+}
+
+static void test_cain_q_out_of_range_whiffs(void) {
+    arena_init_with_heroes(ARENA_HERO_UNICORN, ARENA_HERO_CAIN);
+    ArenaHero *cain = &arena_state.heroes[1];
+    ArenaHero *foe = &arena_state.heroes[0];
+    foe->x = cain->x + ARENA_CAIN_Q_RANGE + 5.0f;
+    foe->z = cain->z;
+    int foe_hp_before = foe->hp;
+
+    arena_cast_q(1);
+
+    CHECK(foe->hp == foe_hp_before, "Q out of range does not damage the foe");
+    CHECK(cain->q_cooldown_ms == 0, "Q out of range does not start its cooldown");
+}
+
+static void test_cain_w_dashes_away_from_foe_and_cleanses(void) {
+    /* silenced_ms is deliberately NOT pre-set here: silence gates the entire
+       cast at arena_toggle_w's own top-level check (same as every hero), so
+       pre-silencing Cain to test the cleanse would just block the cast that's
+       supposed to do the cleansing -- rooted_ms is the meaningful cleanse to
+       verify, since roots don't block casting, only movement. */
+    arena_init_with_heroes(ARENA_HERO_UNICORN, ARENA_HERO_CAIN);
+    ArenaHero *cain = &arena_state.heroes[1];
+    ArenaHero *foe = &arena_state.heroes[0];
+    foe->x = cain->x + 2.0f;
+    foe->z = cain->z;
+    cain->rooted_ms = 500;
+    float dist_before = fabsf(cain->x - foe->x);
+
+    arena_toggle_w(1);
+
+    float dist_after = fabsf(cain->x - foe->x);
+    CHECK(dist_after > dist_before, "Cursed to Wander dashes Cain away from the nearest enemy, increasing distance");
+    CHECK(cain->rooted_ms == 0, "Cursed to Wander cleanses Cain's own root");
+    CHECK(cain->w_cooldown_ms == ARENA_CAIN_W_COOLDOWN_MS, "W starts on its own cooldown after cast");
+}
+
+static void test_cain_r_arms_the_survive_floor(void) {
+    arena_init_with_heroes(ARENA_HERO_UNICORN, ARENA_HERO_CAIN);
+    ArenaHero *cain = &arena_state.heroes[1];
+
+    arena_cast_r(1);
+    CHECK(cain->survive_floor_ms == ARENA_CAIN_R_FLOOR_MS, "R sets the survive floor for its duration");
+    CHECK(cain->r_cooldown_ms == ARENA_CAIN_R_COOLDOWN_MS, "R starts on its own cooldown after cast");
+}
+
 int main(void) {
     printf("RED GARDEN arena_game headless smoke test\n\n");
     test_movement_reaches_target();
@@ -2052,6 +2134,11 @@ int main(void) {
     test_noor1_w_grants_intangibility_and_cooldown();
     test_noor1_passive_silences_nearest_enemy_periodically();
     test_noor1_r_zone_damages_enemy_no_ally_heal();
+    test_cain_passive_grants_flat_armor();
+    test_cain_q_executes_harder_at_low_hp();
+    test_cain_q_out_of_range_whiffs();
+    test_cain_w_dashes_away_from_foe_and_cleanses();
+    test_cain_r_arms_the_survive_floor();
     printf("\n%s\n", failures == 0 ? "ALL PASS" : "SOME FAILED");
     return failures == 0 ? 0 : 1;
 }

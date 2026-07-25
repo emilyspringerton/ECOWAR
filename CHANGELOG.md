@@ -1,5 +1,41 @@
 # Changelog
 
+## 2026-07-25 (23)
+
+- feat(arena): Cain, 21st hero — Duelist (S170-105). Founder, real-time: "add Adelle" → "to the
+  guide in tyler first" → "and then to the game" → "then the boys do a podcast with her." "Adelle"
+  had zero anchor anywhere in the TYLER corpus (every other hero this session maps to a real
+  mythological/historical figure or an existing lore file) — asked which identity anchor to use;
+  founder's answer: "replace adelle with Cain." Cain already has a real entry (#80) — Genesis's own
+  account: killed his brother Abel, cursed to wander as a fugitive, marked by the same authority
+  that cursed him specifically so no one could kill him in turn ("a punishment that is also,
+  unmistakably, a mercy"), then founded the first city anyway. No new lore needed. Passive flat
+  armor (same shape as Unicorn's own, "the one permanent thing about a man cast out to wander"), Q
+  an execute-scaled bolt ("The First Murder," same shape as Morrigan's Q), W a dash directly *away*
+  from the nearest enemy + self-cleanse ("Cursed to Wander," the mirror of Courier's Q), R a
+  survive-floor panic button ("The Mark," same shape as Pizza's/Loki's R — the curse-and-mercy
+  duality made literal). Distinct silhouette: weathered wanderer body + a small marked accent.
+  `ARENA_HERO_COUNT` 20 → 21.
+
+  **Real, live-found structural bug, fixed in the same pass:** with 21 heroes now exceeding
+  `ARENA_MAX_HEROES` (20) for the first time, the existing `owner % hero_count` auto-draft scheme
+  broke — a full 20-player lobby only ever has owner slots 0..19, so that mapping could *never*
+  produce hero_id 20 no matter how many matches ran; not a rare miss, a permanent, deterministic
+  exclusion, confirmed live (Cain never appeared across a real match with the old scheme). First
+  fix attempt (a per-bot random offset) was itself wrong in a different way: every bot in the same
+  match rolling its own independent random value meant two different owners could land on the same
+  hero_id by coincidence, a duplicate-pick risk that didn't exist before. Corrected to a
+  *shared* offset derived from the match's own connected port (every client in a match already
+  knows the same port) — deterministic per match, varies match to match, zero coordination needed,
+  zero duplicate risk. Verified live end to end: a real match post-fix drafted all 20 distinct
+  heroes with zero duplicates, and Cain (`hero_id=20`) was actually picked. Incidental fix along
+  the way: `apps/arena` never called `srand()` anywhere, so its own ticket-nonce randomness
+  (`mint_ticket_fallback`) was silently identical every launch — now seeded for real.
+
+  5 new headless tests. Verified: full suite (299 checks), VS0/VS1 stable, live — rebuilt +
+  restarted all three systemd units, real match traffic confirmed the draft fix and Cain's
+  reachability directly against the live matchmaker log, not just headless tests.
+
 ## 2026-07-25 (22)
 
 - feat(arena): NOOR-1, 20th hero — Scout (S170-104). Founder, real-time: "add NOOR-1 as a

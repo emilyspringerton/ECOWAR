@@ -227,6 +227,11 @@ float arena_hero_armor(const ArenaHero *h) {
     if (h->hero_id == ARENA_HERO_TYLER && h->r_active_ms > 0) {
         return -ARENA_TYLER_R_NEGATIVE_ARMOR;
     }
+    /* Cain's founded city (passive, S170-105): flat, always-on -- "the man cast out to wander
+       settled down and built civilization anyway," the one permanent thing about him. */
+    if (h->hero_id == ARENA_HERO_CAIN) {
+        return (float)ARENA_CAIN_PASSIVE_ARMOR;
+    }
     return 0.0f;
 }
 
@@ -1179,6 +1184,42 @@ static int noor1_cast_q(ArenaHero *noor1, ArenaHero *foe) {
     return 1;
 }
 
+/* cain_cast_q: The First Murder -- instant hit-if-in-range, execute-scaled via
+ * execute_scale_damage, same shape as Morrigan's Q. Returns 1 if it landed. */
+static int cain_cast_q(ArenaHero *cain, ArenaHero *foe) {
+    if (!hero_is_hittable(foe)) return 0;
+    float dx = foe->x - cain->x, dz = foe->z - cain->z;
+    if (sqrtf(dx * dx + dz * dz) > ARENA_CAIN_Q_RANGE) return 0;
+    apply_damage(foe, apply_armor(execute_scale_damage(foe, ARENA_CAIN_Q_DAMAGE_BASE, ARENA_CAIN_Q_DAMAGE_LOW_HP),
+                                   arena_hero_armor(foe)));
+    return 1;
+}
+
+/* cain_cast_w: Cursed to Wander -- dashes a fixed distance directly AWAY from the nearest enemy
+ * (the mirror of Courier's Q, which dashes toward) and cleanses self debuffs, same self-cleanse
+ * as Courier's own Q. Works even with no foe present (still cleanses, just doesn't reposition) --
+ * always returns 1, this is a self-only effect that can't whiff the way a targeted cast can. */
+static int cain_cast_w(ArenaHero *cain, ArenaHero *foe) {
+    if (foe) {
+        float dx = cain->x - foe->x, dz = cain->z - foe->z;
+        float len = sqrtf(dx * dx + dz * dz);
+        if (len > 0.01f) {
+            float nx = cain->x + dx / len * ARENA_CAIN_W_DASH_DIST;
+            float nz = cain->z + dz / len * ARENA_CAIN_W_DASH_DIST;
+            if (nx < -ARENA_HALF_EXTENT) nx = -ARENA_HALF_EXTENT;
+            if (nx > ARENA_HALF_EXTENT) nx = ARENA_HALF_EXTENT;
+            if (nz < -ARENA_HALF_EXTENT) nz = -ARENA_HALF_EXTENT;
+            if (nz > ARENA_HALF_EXTENT) nz = ARENA_HALF_EXTENT;
+            cain->x = nx;
+            cain->z = nz;
+            cain->moving = 0;
+        }
+    }
+    cain->silenced_ms = 0;
+    cain->rooted_ms = 0;
+    return 1;
+}
+
 void arena_cast_q(int owner) {
     if (owner < 0 || owner >= ARENA_MAX_HEROES) return;
     ArenaHero *h = &arena_state.heroes[owner];
@@ -1288,6 +1329,11 @@ void arena_cast_q(int owner) {
     case ARENA_HERO_NOOR1:
         if (noor1_cast_q(h, foe)) {
             h->q_cooldown_ms = cast_cooldown(h, ARENA_NOOR1_Q_COOLDOWN_MS);
+        }
+        break;
+    case ARENA_HERO_CAIN:
+        if (cain_cast_q(h, foe)) {
+            h->q_cooldown_ms = cast_cooldown(h, ARENA_CAIN_Q_COOLDOWN_MS);
         }
         break;
     }
@@ -1428,6 +1474,13 @@ void arena_toggle_w(int owner) {
         if (h->w_cooldown_ms > 0) return;
         h->intangible_ms = ARENA_NOOR1_W_INTANGIBLE_MS;
         h->w_cooldown_ms = cast_cooldown(h, ARENA_NOOR1_W_COOLDOWN_MS);
+        break;
+    case ARENA_HERO_CAIN:
+        /* Cursed to Wander: instant-use dash-away + self-cleanse on its own cooldown. */
+        if (h->w_cooldown_ms > 0) return;
+        if (cain_cast_w(h, arena_nearest_enemy(owner))) {
+            h->w_cooldown_ms = cast_cooldown(h, ARENA_CAIN_W_COOLDOWN_MS);
+        }
         break;
     default:
         /* No-op for any hero without a real W in this arena, not a crash
@@ -1612,6 +1665,12 @@ void arena_cast_r(int owner) {
         h->r_zone_tick_ms = 0;
         h->r_active_ms = ARENA_NOOR1_R_DURATION_MS;
         h->r_cooldown_ms = cast_cooldown(h, ARENA_NOOR1_R_COOLDOWN_MS);
+        break;
+    case ARENA_HERO_CAIN:
+        /* The Mark: survive-floor panic button, same shape as Pizza's/Loki's R --
+           "a mark that is a curse and a protection at the same time," made literal. */
+        h->survive_floor_ms = ARENA_CAIN_R_FLOOR_MS;
+        h->r_cooldown_ms = cast_cooldown(h, ARENA_CAIN_R_COOLDOWN_MS);
         break;
     }
 }
@@ -2101,6 +2160,19 @@ static void bot_cast_kit_if_ready(ArenaHero *bot, ArenaHero *foe) {
             arena_cast_q(bot->owner);
         } else if (bot->r_cooldown_ms <= 0 && dist <= ARENA_NOOR1_R_RADIUS) {
             arena_cast_r(bot->owner);
+        }
+        break;
+    case ARENA_HERO_CAIN:
+        /* R is the survive-floor panic button, same threshold as every
+           other hero that carries one. Q whenever in range and off
+           cooldown. W (dash away) is defensive, not offensive, so it's
+           gated on low HP too rather than proximity to a foe. */
+        if (bot->hp < bot->max_hp / 4 && bot->r_cooldown_ms <= 0) {
+            arena_cast_r(bot->owner);
+        } else if (bot->hp < bot->max_hp / 3 && bot->w_cooldown_ms <= 0) {
+            arena_toggle_w(bot->owner);
+        } else if (bot->q_cooldown_ms <= 0 && dist <= ARENA_CAIN_Q_RANGE) {
+            arena_cast_q(bot->owner);
         }
         break;
     }

@@ -444,6 +444,37 @@ seen, is the honest visual match for "sent in clean" and "do not approach" both 
 
 ---
 
+### Cain, East of Eden (TYLER `multiverse_heroes.md` #80, "Cain") — **Duelist** (S170-105)
+
+Founder: "add Adelle" → "to the guide in tyler first" → "and then to the game" → "then the boys do
+a podcast with her." Asked which identity anchor "Adelle" should draw on, since — unlike every
+other new hero this session (Loki, Abraham, Paimon, NOOR-1), all of which map to a real
+mythological/historical figure or an existing Jiangshi file — "Adelle" alone had zero anchor
+anywhere in the TYLER corpus. Founder's answer: "replace adelle with Cain." Cain already has a
+real entry (#80, Faction 7/the Abyssal Choir) — Genesis's own account taken at face value: killed
+his brother Abel, was cursed to wander the earth as a fugitive, and was given a mark by the same
+authority that cursed him, specifically so no one who found him would be permitted to kill him in
+turn — "the oldest example on this entire roster of a punishment that is also, unmistakably, a
+mercy, and scripture never resolves which one it actually is." Went on, after the exile, to found
+the first city anyway. No new lore needed — the existing entry already carries the whole kit.
+
+- **Passive — Founded the First City**: a flat, always-on armor bonus, same shape as Unicorn's own
+  passive (minus the R-doubling) — the one permanent thing about a man cast out to wander forever.
+- **Q — The First Murder**: a ranged bolt, execute-scaled (bonus damage the closer the target
+  already is to death), same shape as Morrigan's Q — a killing blow that gets easier to land the
+  more inevitable it already is.
+- **W — Cursed to Wander**: an instant dash directly *away* from the nearest enemy plus a self-
+  cleanse, the mirror of Courier's Q (which dashes toward and cleanses) — the fugitive shakes off
+  what's chasing him and puts distance between them in the same motion.
+- **R — The Mark**: a survive-floor panic button, same shape as Pizza's/Loki's R — "a mark that is
+  a curse and a protection at the same time," made literal: for its duration he cannot be killed,
+  even by the thing that marked him.
+
+Podcast stage (S170-105's third leg, "the boys do a podcast with her/him") not started this pass —
+lore and kit land first, matching the founder's own sequencing.
+
+---
+
 ## Starting Item Roster (VS0)
 
 LoL Season 3 is the explicit stylistic northstar here — not its item *names*, its item *stat-line
