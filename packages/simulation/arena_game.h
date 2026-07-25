@@ -85,8 +85,9 @@ typedef enum {
     ARENA_HERO_ABRAHAM = 15, /* TYLER multiverse_heroes.md #113, "Abraham of Worms, the Mage" (S170-103) */
     ARENA_HERO_ADA = 16, /* TYLER multiverse_heroes.md #112, "Ada Lovelace, Pilot" (S170-103) */
     ARENA_HERO_TYLER = 17, /* docs/HEROES_VS0.md's own pre-existing design, never implemented until now (S170-111) */
+    ARENA_HERO_PAIMON = 18, /* TYLER multiverse_heroes.md #20, "Paimon, the Court Voice", channeled by the real John Dee (S170-55) */
 } ArenaHeroID;
-#define ARENA_HERO_COUNT 18
+#define ARENA_HERO_COUNT 19
 
 /* The Unicorn — first real hero kit wired in (S170-18). */
 #define ARENA_UNICORN_ARMOR         4    /* passive: Chassis Claim, flat dmg reduction */
@@ -488,6 +489,39 @@ typedef enum {
 #define ARENA_ADA_R_ROOT_MS        1200
 #define ARENA_ADA_R_COOLDOWN_MS    16000
 
+/* Paimon (channeled by John Dee) -- nineteenth hero kit (S170-121, docs/HEROES_VS0.md). Passive
+ * (Keeping the Peace) is an always-on silence aura, same aura_tick_ms pattern as Pizza's burn
+ * (S170-46). Q (Teaches All Arts) is an instant-hit-if-in-range damage+root, same simplification
+ * as Ghost/Tree/Flamel's Q. W (Speaks With Total Authority) is an instant damage+silence decree,
+ * same shape as Ghost's Q but on the W slot with its own cooldown. R (Two Hundred Legions) is a
+ * fixed zone dealing periodic damage to enemies and healing allies, same shape as Ghost's
+ * Recital/Flamel's Elixir of Wild Growth. */
+#define ARENA_PAIMON_PASSIVE_AURA_RADIUS   3.5f
+#define ARENA_PAIMON_PASSIVE_SILENCE_MS    800
+#define ARENA_PAIMON_Q_RANGE                5.5f
+#define ARENA_PAIMON_Q_DAMAGE               9
+#define ARENA_PAIMON_Q_ROOT_MS              1400
+#define ARENA_PAIMON_Q_COOLDOWN_MS          4500
+#define ARENA_PAIMON_W_RANGE                6.0f
+#define ARENA_PAIMON_W_DAMAGE                7
+#define ARENA_PAIMON_W_SILENCE_MS           1800
+#define ARENA_PAIMON_W_COOLDOWN_MS          8000
+#define ARENA_PAIMON_R_RADIUS                4.5f
+#define ARENA_PAIMON_R_DURATION_MS          4000
+#define ARENA_PAIMON_R_DPS                    6
+#define ARENA_PAIMON_R_HEAL_PER_TICK          6
+#define ARENA_PAIMON_R_COOLDOWN_MS         26000
+
+/* ARENA_HERO_RESPAWN_MS (S170-121, "controlling a node enables its spawn
+ * for your team"): team-mode-only hero respawn timer. Before this, death
+ * was permanent within a match (arena_update_teams only checked team-wipe
+ * for the win condition) -- there was no respawn system at all. A dead
+ * hero's timer counts down independently of node ownership, but the actual
+ * respawn is withheld (timer pins at 0 and rechecks every tick) until the
+ * hero's team owns at least one ArenaNode: territory control is the gate,
+ * not just a modifier, matching the founder's framing literally. */
+#define ARENA_HERO_RESPAWN_MS 8000
+
 typedef struct {
     float x, z;
     float target_x, target_z;
@@ -570,6 +604,12 @@ typedef struct {
     int loopback_count;       /* how many slots have ever been written (caps at ARENA_FROG_LOOPBACK_SLOTS) */
     int loopback_next_slot;   /* next slot to write (wraps) */
     int loopback_since_sample_ms;
+    /* respawn_ms_remaining (S170-121): only meaningful while !alive in team
+     * mode. Set to ARENA_HERO_RESPAWN_MS on death; counts down to 0, then
+     * arena_update_teams holds the hero at 0 and retries the node-control
+     * check each tick until the team owns a node to respawn onto. Unused by
+     * the 1v1 local demo (arena_update), which still ends on first death. */
+    int respawn_ms_remaining;
 } ArenaHero;
 
 typedef struct {

@@ -393,6 +393,31 @@ mech pilot, someone who wrote the operating logic for a frame before the frame e
 
 ---
 
+### Paimon (TYLER `multiverse_heroes.md` #20, "Paimon, the Court Voice"; channeled by John Dee) — **Commander/Caster** (S170-55)
+
+Founder: "add john DEE /paimon as the same hero" — same merge discipline as Flamel/Druid (S170-46/47)
+and Bacon+Puck (S170-94): checked `multiverse_heroes.md` first. Paimon has a real entry (#20, a
+Goetia king who "commands two hundred legions and would rather talk than fight," "teaches all
+arts," and spends his political capital keeping the rest of the Court from escalating disputes);
+John Dee — the real Elizabethan mathematician, astrologer, and royal advisor who spent his later
+career on Enochian spirit-communication with Edward Kelley — has no entry of his own here. Same
+resolution as Flamel/Druid: keep the name with the real compendium backing (Paimon), fold the other
+in as the vessel/practitioner whose real work manifests the character's power — Dee is the historical
+mage whose scrying summons the Court Voice, not a separate identity.
+
+- **Passive — Keeping the Peace**: periodically silences the nearest enemy in range without being
+  cast — the same always-on aura-tick pattern as Pizza's Uninvestigated Fire (S170-46), themed as
+  Paimon talking a fight down before it escalates rather than burning.
+- **Q — Teaches All Arts**: a ranged bolt that damages and roots — a demonstration of technique,
+  same instant-hit-if-in-range simplification as Ghost's/Tree's/Flamel's Q.
+- **W — Speaks With Total Authority**: an instant decree — damages and silences the nearest enemy on
+  its own cooldown, the Court Voice backed by real consequence, not just a talking-down.
+- **R — Two Hundred Legions**: a fixed battlefield zone (same shape as Ghost's Recital/Flamel's
+  Elixir of Wild Growth) — enemies inside take periodic damage, allies inside are periodically
+  healed, the literal presence of a commanded army felt by both sides at once.
+
+---
+
 ## Starting Item Roster (VS0)
 
 LoL Season 3 is the explicit stylistic northstar here — not its item *names*, its item *stat-line

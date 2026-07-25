@@ -1662,6 +1662,70 @@ static void test_damage_to_channeling_team_interrupts_the_capture(void) {
           "taking damage interrupts the capture channel, same as real Arathi Basin's flag-channel pushback");
 }
 
+static void test_dead_hero_stays_dead_while_team_owns_no_node(void) {
+    arena_init_teams();
+    for (int n = 0; n < ARENA_NODE_COUNT; n++) arena_state.nodes[n].owner = 0;
+
+    ArenaHero *h = &arena_state.heroes[0];
+    h->alive = 0;
+    h->respawn_ms_remaining = ARENA_HERO_RESPAWN_MS;
+
+    /* Well past the respawn timer, but the team owns nothing to respawn onto. */
+    arena_update_teams(ARENA_HERO_RESPAWN_MS + 5000);
+
+    CHECK(!h->alive, "no owned node means the respawn timer expiring is not enough on its own");
+}
+
+static void test_dead_hero_respawns_at_owned_node_once_timer_expires(void) {
+    arena_init_teams();
+    for (int n = 0; n < ARENA_NODE_COUNT; n++) arena_state.nodes[n].owner = 0;
+    arena_state.nodes[0].owner = 1; /* team 0 owns node 0 */
+    arena_state.creeps[0].alive = 0; /* isolate respawn correctness from the node's own creep aggro */
+    arena_state.creeps[0].respawn_ms_remaining = ARENA_HERO_RESPAWN_MS * 10;
+
+    ArenaHero *h = &arena_state.heroes[0];
+    h->alive = 0;
+    h->respawn_ms_remaining = ARENA_HERO_RESPAWN_MS;
+    h->hero_id = ARENA_HERO_GHOST;
+
+    arena_update_teams(ARENA_HERO_RESPAWN_MS / 2);
+    CHECK(!h->alive, "timer hasn't elapsed yet, still dead");
+
+    arena_update_teams(ARENA_HERO_RESPAWN_MS / 2 + 16);
+    CHECK(h->alive, "timer elapsed and the team owns a node -- hero respawns");
+    CHECK(h->hp == h->max_hp, "respawns at full HP");
+    CHECK(h->x == arena_state.nodes[0].x && h->z == arena_state.nodes[0].z,
+          "respawns at the owned node's position");
+    CHECK(h->hero_id == ARENA_HERO_GHOST, "respawning preserves which hero this slot is playing");
+}
+
+static void test_team_wipe_does_not_end_match_while_team_still_owns_a_node(void) {
+    arena_init_teams();
+    for (int n = 0; n < ARENA_NODE_COUNT; n++) arena_state.nodes[n].owner = 0;
+    arena_state.nodes[0].owner = 1; /* team 0 keeps a foothold */
+
+    for (int i = 0; i < ARENA_TEAM_SIZE; i++) {
+        arena_state.heroes[i].alive = 0;
+        arena_state.heroes[i].respawn_ms_remaining = ARENA_HERO_RESPAWN_MS;
+    }
+
+    arena_update_teams(16);
+    CHECK(arena_state.winner == 0, "team 0 is fully wiped but still owns a node, so the match isn't over yet");
+}
+
+static void test_team_wipe_ends_match_once_the_team_owns_nothing(void) {
+    arena_init_teams();
+    for (int n = 0; n < ARENA_NODE_COUNT; n++) arena_state.nodes[n].owner = 0;
+
+    for (int i = 0; i < ARENA_TEAM_SIZE; i++) {
+        arena_state.heroes[i].alive = 0;
+        arena_state.heroes[i].respawn_ms_remaining = ARENA_HERO_RESPAWN_MS;
+    }
+
+    arena_update_teams(16);
+    CHECK(arena_state.winner == 2, "team 0 wiped with no nodes to respawn onto -- team 1 wins");
+}
+
 int main(void) {
     printf("RED GARDEN arena_game headless smoke test\n\n");
     test_movement_reaches_target();
@@ -1758,6 +1822,10 @@ int main(void) {
     test_two_visible_teams_still_interrupt_normally_even_near_a_stealthed_ally();
     test_starting_a_channel_breaks_the_capturer_stealth();
     test_damage_to_channeling_team_interrupts_the_capture();
+    test_dead_hero_stays_dead_while_team_owns_no_node();
+    test_dead_hero_respawns_at_owned_node_once_timer_expires();
+    test_team_wipe_does_not_end_match_while_team_still_owns_a_node();
+    test_team_wipe_ends_match_once_the_team_owns_nothing();
     printf("\n%s\n", failures == 0 ? "ALL PASS" : "SOME FAILED");
     return failures == 0 ? 0 : 1;
 }

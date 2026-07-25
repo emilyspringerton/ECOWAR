@@ -1019,6 +1019,36 @@ static void spawn_ring(float x, float z) {
     }
 }
 
+/* ---------------- attack flashes (S170-122, "add basic animations for auto
+ * attacks") ---------------- */
+/* Neither the wire snapshot (ArenaHeroSnapshot, deliberately minimal --
+ * position/HP/alive/hero_id only) nor the local sim's per-hero state expose
+ * a clean "an auto-attack just landed" signal that's available uniformly in
+ * every render mode (local demo, net_mode, and replay/observe). What IS
+ * available everywhere is HP itself -- so a frame-to-frame HP decrease on
+ * any hero is treated as "something hit them" and gets a brief flash at
+ * their position. This also catches ability damage, not just melee autos,
+ * but for a first basic pass that's an honest, correctly-scoped simplification
+ * rather than a wire-protocol change to carry real attack events. */
+#define MAX_ATTACK_FLASHES ARENA_MAX_HEROES
+#define ATTACK_FLASH_LIFETIME_MS 180.0f
+typedef struct { float x, z, age_ms; int active; } AttackFlash;
+static AttackFlash attack_flashes[MAX_ATTACK_FLASHES];
+static int prev_hero_hp[ARENA_MAX_HEROES];
+static int prev_hero_hp_valid[ARENA_MAX_HEROES];
+
+static void spawn_attack_flash(float x, float z) {
+    for (int i = 0; i < MAX_ATTACK_FLASHES; i++) {
+        if (!attack_flashes[i].active) {
+            attack_flashes[i].active = 1;
+            attack_flashes[i].x = x;
+            attack_flashes[i].z = z;
+            attack_flashes[i].age_ms = 0;
+            return;
+        }
+    }
+}
+
 /* ---------------- camera ---------------- */
 static float cam_yaw = 45.0f, cam_pitch = 40.0f, cam_dist = 16.0f;
 
@@ -1344,6 +1374,23 @@ int main(int argc, char *argv[]) {
             rings[i].age_ms += dt;
             if (rings[i].age_ms >= RING_LIFETIME_MS) rings[i].active = 0;
         }
+        for (int i = 0; i < ARENA_MAX_HEROES; i++) {
+            ArenaHero *h = &arena_state.heroes[i];
+            if (!h->active || !h->alive) {
+                prev_hero_hp_valid[i] = 0;
+                continue;
+            }
+            if (prev_hero_hp_valid[i] && h->hp < prev_hero_hp[i]) {
+                spawn_attack_flash(h->x, h->z);
+            }
+            prev_hero_hp[i] = h->hp;
+            prev_hero_hp_valid[i] = 1;
+        }
+        for (int i = 0; i < MAX_ATTACK_FLASHES; i++) {
+            if (!attack_flashes[i].active) continue;
+            attack_flashes[i].age_ms += dt;
+            if (attack_flashes[i].age_ms >= ATTACK_FLASH_LIFETIME_MS) attack_flashes[i].active = 0;
+        }
 
         glViewport(0, 0, win_w, win_h);
         glClearColor(0.03f, 0.05f, 0.04f, 1.0f);
@@ -1423,6 +1470,24 @@ int main(int argc, char *argv[]) {
             glUniformMatrix4fv_(loc_mvp, 1, GL_FALSE, mvp.m);
             glUniformMatrix4fv_(loc_model, 1, GL_FALSE, model.m);
             glUniform4f_(loc_color, 0.2f, 1.0f, 0.5f, alpha);
+            draw_mesh(&ring_mesh);
+        }
+        /* attack flashes (S170-122): quick, small, orange-white burst right
+           on the hit hero -- visually distinct from the slower green
+           placement ring above (move-click feedback) so the two don't read
+           as the same thing. */
+        for (int i = 0; i < MAX_ATTACK_FLASHES; i++) {
+            if (!attack_flashes[i].active) continue;
+            float t01 = attack_flashes[i].age_ms / ATTACK_FLASH_LIFETIME_MS;
+            float scale = 0.5f + t01 * 0.4f;
+            float alpha = 1.0f - t01;
+            Mat4 tr = mat4_translate(attack_flashes[i].x, 0.05f, attack_flashes[i].z);
+            Mat4 sc = mat4_scale(scale, 1.0f, scale);
+            Mat4 model = mat4_multiply(&tr, &sc);
+            Mat4 mvp = mat4_multiply(&vp, &model);
+            glUniformMatrix4fv_(loc_mvp, 1, GL_FALSE, mvp.m);
+            glUniformMatrix4fv_(loc_model, 1, GL_FALSE, model.m);
+            glUniform4f_(loc_color, 1.0f, 0.75f, 0.15f, alpha);
             draw_mesh(&ring_mesh);
         }
         glDepthMask(GL_TRUE);

@@ -1,5 +1,35 @@
 # Changelog
 
+## 2026-07-25 (12)
+
+- feat(arena): hero respawn, gated on node control (S170-121). Founder, real-time: "redgarden
+  controlling a node enables its spawn for your team." Before this there was no hero respawn
+  system at all -- `arena_update_teams` only ever checked team-wipe (0 alive) for the win
+  condition, so death was permanent for the rest of the match. Added `respawn_ms_remaining`
+  (mirrors `ArenaCreep`'s existing respawn idiom): armed to `ARENA_HERO_RESPAWN_MS` (8s) on death
+  in `apply_damage`, ticked down each frame in the new `arena_tick_respawns`, but the actual
+  respawn is withheld until the hero's team owns at least one `ArenaNode` -- territory is a real
+  gate, not just a speed bonus, matching the founder's framing literally. Respawns at the owned
+  node closest to that team's spawn line, full HP, hero identity preserved. Win condition updated
+  to match: a team-wipe no longer instantly ends the match if that team still holds a node (they
+  can fight back in); only ends once they're wiped AND own nothing to respawn onto. 4 new headless
+  tests covering: stays dead with no node, respawns once a node is owned, match doesn't end
+  prematurely on a wipe with a held node, match does end once truly locked out.
+- feat(arena): basic auto-attack animations (S170-122). Founder, real-time: "add basic animations
+  for auto attacks." Neither the wire snapshot (`ArenaHeroSnapshot`, deliberately minimal) nor a
+  uniform-across-render-modes signal exists for "an attack just landed" -- used frame-to-frame HP
+  decrease instead (available in every render path: local demo, net_mode, replay), spawning a
+  quick orange-white flash at the hit hero's position. Reuses the exact same ring-mesh/shader
+  machinery the existing move-click placement ring already uses, just a different color/scale
+  curve so the two don't read as the same effect.
+- Verified: `build.sh`, `build_arena.sh`, `test_arena.sh` (259/259 pass), `test_10_bots.sh`
+  (VS0/VS1 stability pass). Live: rebuilt and restarted all three systemd units (wire protocol
+  unchanged, but sim behavior changed so old running binaries needed to cycle). Confirmed via a
+  temporary 20th bot that the live pool still forms real matches on the new binary. Noted but not
+  chased down (pre-existing, already tracked as S170-115): the persistent bot pool intermittently
+  gets stuck at 19/20 connected and times out -- matches the already-diagnosed abandoned-queue-slot
+  behavior from force-quit client reconnects, not something introduced by this change.
+
 ## 2026-07-25 (11)
 
 - fix(arena): requeue looked exactly like a crash (S170-115, real bug found by reading the

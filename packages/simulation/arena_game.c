@@ -253,6 +253,7 @@ static void apply_damage(ArenaHero *target, int amount) {
         } else {
             target->hp = 0;
             target->alive = 0;
+            target->respawn_ms_remaining = ARENA_HERO_RESPAWN_MS;
         }
     }
 }
@@ -1145,6 +1146,28 @@ static void tyler_cast_r(ArenaHero *tyler, ArenaHero *foe) {
     tyler->r_active_ms = ARENA_TYLER_R_VULNERABLE_MS;
 }
 
+/* paimon_cast_q: Teaches All Arts -- a ranged bolt that damages and roots, same instant-hit-if-
+ * in-range simplification as Ghost's/Tree's/Flamel's Q. Returns 1 if it landed. */
+static int paimon_cast_q(ArenaHero *paimon, ArenaHero *foe) {
+    if (!hero_is_hittable(foe)) return 0;
+    float dx = foe->x - paimon->x, dz = foe->z - paimon->z;
+    if (sqrtf(dx * dx + dz * dz) > ARENA_PAIMON_Q_RANGE) return 0;
+    apply_damage(foe, apply_armor(ARENA_PAIMON_Q_DAMAGE, arena_hero_armor(foe)));
+    foe->rooted_ms = ARENA_PAIMON_Q_ROOT_MS;
+    return 1;
+}
+
+/* paimon_cast_w: Speaks With Total Authority -- an instant decree, damage + silence, same shape
+ * as Ghost's Q but on the W slot with its own cooldown. Returns 1 if it landed. */
+static int paimon_cast_w(ArenaHero *paimon, ArenaHero *foe) {
+    if (!hero_is_hittable(foe)) return 0;
+    float dx = foe->x - paimon->x, dz = foe->z - paimon->z;
+    if (sqrtf(dx * dx + dz * dz) > ARENA_PAIMON_W_RANGE) return 0;
+    apply_damage(foe, apply_armor(ARENA_PAIMON_W_DAMAGE, arena_hero_armor(foe)));
+    foe->silenced_ms = ARENA_PAIMON_W_SILENCE_MS;
+    return 1;
+}
+
 void arena_cast_q(int owner) {
     if (owner < 0 || owner >= ARENA_MAX_HEROES) return;
     ArenaHero *h = &arena_state.heroes[owner];
@@ -1243,6 +1266,11 @@ void arena_cast_q(int owner) {
     case ARENA_HERO_TYLER:
         if (tyler_cast_q(h, foe)) {
             h->q_cooldown_ms = cast_cooldown(h, ARENA_TYLER_Q_COOLDOWN_MS);
+        }
+        break;
+    case ARENA_HERO_PAIMON:
+        if (paimon_cast_q(h, foe)) {
+            h->q_cooldown_ms = cast_cooldown(h, ARENA_PAIMON_Q_COOLDOWN_MS);
         }
         break;
     }
@@ -1362,6 +1390,13 @@ void arena_toggle_w(int owner) {
         if (h->w_cooldown_ms > 0) return;
         if (tyler_cast_w(h, arena_nearest_enemy(owner))) {
             h->w_cooldown_ms = cast_cooldown(h, ARENA_TYLER_W_COOLDOWN_MS);
+        }
+        break;
+    case ARENA_HERO_PAIMON:
+        /* Speaks With Total Authority: instant decree on its own cooldown, not a toggle. */
+        if (h->w_cooldown_ms > 0) return;
+        if (paimon_cast_w(h, arena_nearest_enemy(owner))) {
+            h->w_cooldown_ms = cast_cooldown(h, ARENA_PAIMON_W_COOLDOWN_MS);
         }
         break;
     default:
@@ -1527,6 +1562,16 @@ void arena_cast_r(int owner) {
     case ARENA_HERO_TYLER:
         tyler_cast_r(h, foe);
         h->r_cooldown_ms = cast_cooldown(h, ARENA_TYLER_R_COOLDOWN_MS);
+        break;
+    case ARENA_HERO_PAIMON:
+        /* Two Hundred Legions: fixed zone, same shape as Ghost's Recital/
+           Flamel's Elixir of Wild Growth -- see tick_hero_kit's zone tick
+           below for the actual periodic damage/heal. */
+        h->r_zone_x = h->x;
+        h->r_zone_z = h->z;
+        h->r_zone_tick_ms = 0;
+        h->r_active_ms = ARENA_PAIMON_R_DURATION_MS;
+        h->r_cooldown_ms = cast_cooldown(h, ARENA_PAIMON_R_COOLDOWN_MS);
         break;
     }
 }
@@ -2016,9 +2061,81 @@ static int arena_team_alive_count(int team) {
     return count;
 }
 
+/* arena_team_owns_any_node (S170-121): node.owner is 1 = team 0, 2 = team 1
+ * (see ArenaNode) -- this is the literal "controlling a node" gate the
+ * founder asked for. */
+static int arena_team_owns_any_node(int team) {
+    for (int n = 0; n < ARENA_NODE_COUNT; n++) {
+        if (arena_state.nodes[n].owner == team + 1) return 1;
+    }
+    return 0;
+}
+
+/* arena_find_owned_node_for_respawn (S170-121): among nodes this team
+ * currently owns, picks the one closest to that team's original spawn line
+ * (x=-8 for team 0, x=+8 for team 1, matching arena_init_teams) -- a simple
+ * stand-in for a real "nearest owned outpost" choice without needing a
+ * dedicated fixed-base concept this map doesn't otherwise have. Returns
+ * NULL if the team owns nothing (caller must already have checked
+ * arena_team_owns_any_node). */
+static ArenaNode *arena_find_owned_node_for_respawn(int team) {
+    float home_x = (team == 0) ? -8.0f : 8.0f;
+    ArenaNode *best = NULL;
+    float best_dist = 0.0f;
+    for (int n = 0; n < ARENA_NODE_COUNT; n++) {
+        ArenaNode *node = &arena_state.nodes[n];
+        if (node->owner != team + 1) continue;
+        float dist = fabsf(node->x - home_x);
+        if (!best || dist < best_dist) {
+            best = node;
+            best_dist = dist;
+        }
+    }
+    return best;
+}
+
+/* arena_tick_respawns (S170-121, "controlling a node enables its spawn for
+ * your team"): before this, hero death was permanent for the rest of the
+ * match -- arena_update_teams only ever checked team-wipe for the win
+ * condition, there was no respawn system at all. Each dead hero counts its
+ * own timer down independently of node control, but the respawn itself is
+ * withheld until the team owns at least one node: territory is the actual
+ * gate, matching the founder's framing literally, not just a speed bonus.
+ * A team holding zero nodes simply stays dead and rechecks every tick,
+ * same idiom as ArenaCreep's respawn_ms_remaining/creep_spawn pair. */
+static void arena_tick_respawns(unsigned int dt_ms) {
+    for (int i = 0; i < ARENA_MAX_HEROES; i++) {
+        ArenaHero *h = &arena_state.heroes[i];
+        if (!h->active || h->alive) continue;
+        if (h->respawn_ms_remaining > 0) h->respawn_ms_remaining -= (int)dt_ms;
+        if (h->respawn_ms_remaining > 0) continue;
+        h->respawn_ms_remaining = 0;
+        if (!arena_team_owns_any_node(h->team)) continue;
+        ArenaNode *node = arena_find_owned_node_for_respawn(h->team);
+        if (!node) continue;
+
+        /* Full clear (status effects, cooldowns, ability state) except the
+           fields that must survive death: which hero this slot is playing,
+           and which team it's on. */
+        ArenaHeroID hero_id = h->hero_id;
+        int team = h->team;
+        memset(h, 0, sizeof(*h));
+        h->active = 1;
+        h->alive = 1;
+        h->hp = h->max_hp = 100;
+        h->owner = i;
+        h->team = team;
+        h->hero_id = hero_id;
+        h->x = h->target_x = node->x;
+        h->z = h->target_z = node->z;
+    }
+}
+
 void arena_update_teams(unsigned int dt_ms) {
     if (arena_state.winner != 0) return;
     float dt_sec = (float)dt_ms / 1000.0f;
+
+    arena_tick_respawns(dt_ms);
 
     for (int i = 0; i < ARENA_MAX_HEROES; i++) {
         ArenaHero *h = &arena_state.heroes[i];
@@ -2058,8 +2175,12 @@ void arena_update_teams(unsigned int dt_ms) {
        melee, kit ticks) before deciding whether it's interrupted. */
     arena_tick_nodes(dt_ms);
 
+    /* S170-121: a team-wipe (0 alive) is no longer instantly final on its
+       own -- a wiped team that still owns a node will respawn back in, so
+       the match only actually ends once they're wiped AND locked out of
+       respawning entirely (own nothing to come back onto). */
     int team0_alive = arena_team_alive_count(0);
     int team1_alive = arena_team_alive_count(1);
-    if (team0_alive == 0) arena_state.winner = 2;
-    else if (team1_alive == 0) arena_state.winner = 1;
+    if (team0_alive == 0 && !arena_team_owns_any_node(0)) arena_state.winner = 2;
+    else if (team1_alive == 0 && !arena_team_owns_any_node(1)) arena_state.winner = 1;
 }
