@@ -1,5 +1,23 @@
 # Changelog
 
+## 2026-07-25 (31)
+
+- docs(arena): Weatherman + Donkey spec, NORTHSTAR §16 (S170-93/S170-133) — spec only, no code.
+  Scoped via AskUserQuestion to spec-first: Donkey is documented Indirect-Control (never
+  owner-piloted, auto-triggers on HP threshold and an escape condition) and blocked on a
+  non-piloted-unit system that doesn't exist in `arena_game.c` yet — every hero implemented so
+  far is owner-piloted. §16.1 specs what that companion-slot system would actually need
+  (folded/unfolded state derived from the owner, not input; a per-tick trigger check shaped like
+  `arena_tick_respawns`; collision rules reusing `hero_is_hittable`; a second-model-per-owner
+  render path that doesn't exist today). §16.2 is Weatherman's full kit, written from scratch
+  (TYLER `multiverse_heroes.md` #45, zero prior kit writeup existed) — passive flavor-only
+  ledger, Q a displacement-only wind knockback (the roster's first push instead of pull/damage),
+  R a fixed-zone AoE ultimate. §16.3 is the specific interaction the founder asked for: W reads
+  ally-vs-enemy on a target currently airborne via Donkey's Paper Glide — grounds an enemy
+  mid-escape, extends an ally's flight instead — same "same ability, opposite effect depending on
+  team" precedent Ghost's Recital already set for this roster. Nothing built; the companion-slot
+  system is the real prerequisite before either hero can wire in for real.
+
 ## 2026-07-25 (30)
 
 - feat(arena): mana resource layer, roster-wide (S170-132). Founder, real-time: "add mp so

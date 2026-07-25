@@ -1132,3 +1132,117 @@ needs a real per-team vision-set computed every tick, and is explicitly **deferr
 Nothing built this pass. If either half gets promoted to real work, the open questions above are
 the actual design surface to resolve first -- not just "add camera lock" or "add fog of war" as
 originally framed.
+
+## 16. Weatherman + Donkey, and the non-piloted-unit gap (2026-07-25, S170-93/S170-133) -- spec only, no code yet
+
+Founder, real-time, part of the same batched hero-wave as He Xiangu/Gunnr/Vassago/Beleth: "add the
+weatherman and donkey specific donkey paper airplane weatherman interractions." Scoped via
+AskUserQuestion to spec-first, same treatment as §15 -- Donkey is not a stock kit-per-lore-entry
+job like this session's other additions (Cain, Gunnr, Vassago, He Xiangu, Beleth all reuse the
+existing generic status-effect toolkit on an owner-piloted hero), and Weatherman has zero kit
+writeup at all yet, only TYLER lore.
+
+### 16.1 The actual blocker: no non-piloted-unit system exists
+
+`docs/HEROES_VS0.md`'s own Donkey entry already names this precisely: Donkey is
+**Indirect-Control** -- never directly commanded, rides folded (inert, untargetable, no collision)
+alongside its owner, and unfolds automatically on trigger conditions (owner drops below 25% HP;
+owner needs an escape). Every hero actually wired into `packages/simulation/arena_game.c` today is
+owner-piloted: `ArenaHero.owner` maps one input stream (or one bot brain) to one fully-controlled
+unit. Donkey needs a second, structurally different kind of thing: a passenger entity whose
+`active`/visible/targetable state is *derived* from its owner's state and an internal trigger
+timer, not from any player input at all.
+
+**What that would actually require, at the level of a real design (not code):**
+- A companion-slot concept on `ArenaHero` (or a small parallel array, index-matched to owner slot,
+  same pattern `ArenaCreep`/`ArenaNode` already use for non-hero entities) -- `folded`/`unfolded`,
+  `unfold_ms_remaining`, `airborne` (for Paper Glide specifically), and a copy of the trigger
+  conditions (owner HP fraction, owner's most recent movement-based "needs distance" signal).
+- A per-tick check, run alongside `tick_hero_kit`, that evaluates the trigger conditions against
+  the *owner's* current state and flips `folded`/`unfolded` accordingly -- structurally the same
+  shape as `arena_tick_respawns` (a system that changes hero-adjacent state on a timer/condition,
+  not on a cast command), reused rather than invented from nothing.
+- Collision/targeting rules that respect `folded` (untargetable, no collision, doesn't block
+  movement or count toward node capture) the same way `intangible_ms` already gates hit-eligibility
+  via `hero_is_hittable` -- likely folded Donkey reuses that exact function rather than a parallel
+  check.
+- A render-side concept of "this slot has a companion" so `apps/arena/src/main.c` knows to draw a
+  second, smaller model near the owner when unfolded -- no such second-model-per-owner rendering
+  path exists today; every draw call today is one model per active hero slot.
+
+None of this is large in the sense of touching many files (unlike, say, the mana system's 63-site
+scripted pass) -- it's large in the sense of being a genuinely new *kind* of simulated entity this
+engine hasn't needed before, and getting the trigger-timing/collision edge cases right the first
+time matters more than the line count.
+
+### 16.2 Weatherman -- full kit (new; TYLER `multiverse_heroes.md` #45, "Ao Guang's Weather-Debt Collector")
+
+Real TYLER canon, not yet a hero-kit entry anywhere: 9.0 Hz, "collects on storms owed and storms
+overdrawn, for the Dragon King of the East Sea" -- a demigod whose entire ledger is meteorological,
+every flood/drought/unseasonable calm somewhere on his books, balanced against a debt system
+nobody outside his office fully understands. Seed phrase: "the debt compounds with the
+barometer." Archetype: **Fighter/Support**, the roster's first hero built around wind/displacement
+rather than direct damage-focused kit shapes.
+
+- **Passive -- The Ledger**: flavor-only for a first pass (no new generic status-effect field
+  needed) -- alternates narratively between "storm owed" and "storm overdrawn," but mechanically
+  reuses the existing always-on regen shape (Dagda's Undry) rather than inventing a new oscillating
+  buff system this pass. A richer version (a real alternating buff/debuff cycle) is a legitimate
+  follow-on, not required to ship a first kit.
+- **Q -- Barometric Shove**: a ranged wind gust that knocks the target back a fixed distance
+  instead of dealing the roster's usual flat damage-on-hit -- the first real displacement-only Q on
+  this roster (Duck's R pulls inward; this pushes outward). Mechanically: on landed hit, move the
+  target's `x`/`z` directly away from Weatherman by a fixed distance, same "instant position
+  change, no travel-time projectile" simplification `duck_pull_foe` already established, clamped to
+  the arena bounds the same way `update_hero_motion` already clamps normal movement.
+- **W -- Collects On What's Owed**: the specific Donkey interaction the founder asked for, see
+  §16.3.
+- **R -- The Debt Compounds**: an AoE ultimate, fixed zone (reuses `r_zone_x`/`r_zone_z`/
+  `r_zone_tick_ms`, same shape as Ghost's Recital/Paimon's Two Hundred Legions) that deals periodic
+  damage to enemies standing in it -- the literal storm finally collecting, biggest and simplest
+  ability on the kit by design, so the interesting design surface stays on W where the actual ask
+  was.
+
+### 16.3 The specific interaction: W reads ally-vs-enemy, same shape as Ghost's Recital
+
+**Collects On What's Owed**, cast on the nearest hero (ally or enemy, `arena_nearest_enemy`/
+`arena_nearest_ally` already both exist and are already used this way by several W's this session,
+e.g. Vassago's/Frog's ally-targeted refund):
+
+- **Cast on an enemy who is currently airborne** (Donkey's Paper Glide, `airborne` from §16.1):
+  immediately ends the glide and grounds them in place -- "the debt catches up to you no matter how
+  far you fly." A hard, thematically exact counter to the escape Donkey's whole kit exists to
+  provide, giving Weatherman a real reason to be picked into a Donkey-carrying comp.
+- **Cast on an allied Donkey currently mid-glide**: extends the glide's remaining airborne duration
+  and travel distance instead -- a tailwind, not a headwind. Same button, opposite effect depending
+  on team, the exact "same zone, opposite effect depending on team" precedent Ghost's Recital
+  already set for this roster (`docs/HEROES_VS0.md`'s own line), just applied to a targeted cast
+  instead of a zone.
+- **Cast on anyone not currently airborne at all** (the overwhelmingly common case, since Donkey's
+  Paper Glide is a rare auto-trigger, not a constant state): no-op, cooldown not consumed -- same
+  "whiffed cast costs nothing" convention every other conditional W on this roster already follows
+  (Frog's Borrowed Time, Vassago's own W, Morrigan's Three Forms).
+
+This is deliberately a narrow, high-specificity interaction rather than a generic "wind affects
+movement speed" buff/debuff -- the founder asked for *this* interaction, between *these* two
+characters, not a reusable systemic wind mechanic. A broader wind-affects-everyone system would be
+scope creep past what was actually requested.
+
+### 16.4 Open questions, not resolved here
+
+- Does §16.1's companion-slot system get built generically enough that a *second* Indirect-Control
+  hero (none currently planned) could reuse it, or does it stay Donkey-specific until a second
+  need actually materializes? Leans toward Donkey-specific first (same "don't build for hypothetical
+  future requirements" discipline as everything else in this codebase), not confirmed.
+- Weatherman's Q (knockback) interacting with node capture channels: does a knocked-back capturing
+  hero have their channel interrupted the same way `damaged_this_tick` already interrupts it, or is
+  displacement-without-damage a separate case? Not decided.
+- Whether W's grounding effect on an enemy Donkey should apply a brief `silenced_ms` too (can't
+  immediately re-trigger a new escape) or just end the current flight -- "the debt catches up to
+  you" reads stronger with a beat of vulnerability after, but isn't confirmed as intended balance.
+
+Nothing built this pass. §16.1's companion-slot system is the actual prerequisite before either
+hero can be wired in for real -- Weatherman alone (without the Donkey-specific half of W) could
+technically ship early as a stock owner-piloted kit, but that would mean building W's ally/enemy
+branch against a Donkey `airborne` flag that doesn't exist yet, the kind of "papers over a real gap"
+shortcut this doc's own Donkey entry already explicitly declined to take.
