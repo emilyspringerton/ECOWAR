@@ -36,6 +36,7 @@
 #include "../../../packages/common/hmac_sha256.h"
 #include "../../../packages/common/http_client.h"
 #include "../../../packages/simulation/arena_game.h"
+#include "../../../packages/simulation/arena_ai_bridge.h"
 #include "../../../packages/simulation/arena_replay.h"
 
 /* ---------------- networked PvP (2026-07-24 pivot, NORTHSTAR §13) ----------------
@@ -1331,6 +1332,15 @@ int main(int argc, char *argv[]) {
             glVertex2f(sx - bw / 2, sy); glVertex2f(sx - bw / 2 + bw * frac, sy);
             glVertex2f(sx - bw / 2 + bw * frac, sy + bh); glVertex2f(sx - bw / 2, sy + bh);
             glEnd();
+            /* S170-96: name label above the bar -- with 17+ heroes in the
+               roster now, a colored bar alone doesn't say who's who at a
+               glance. arena_hero_name() is the same token vocabulary the
+               Game AI bridge already uses (lowercase, e.g. "morrigan"),
+               reused here rather than inventing a separate display-name
+               table. draw_string's own size param is roughly the glyph
+               height in pixels; centered by eye against the bar width,
+               not measured -- good enough for a short lowercase token. */
+            draw_string(arena_hero_name(h->hero_id), sx - bw / 2, sy + bh + 2.0f, 10);
         }
 
         glColor3f(0.1f, 0.8f, 0.95f);

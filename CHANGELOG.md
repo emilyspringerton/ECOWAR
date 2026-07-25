@@ -1,5 +1,19 @@
 # Changelog
 
+## 2026-07-25 (9)
+
+- feat(arena): hero name labels above the floating health bars (S170-96). Founder: "add hero name
+  labels above health bars." With 17+ heroes in the roster, a colored bar alone doesn't say who's
+  who at a glance. One more `draw_string()` call per alive hero in the existing per-hero HUD loop
+  (S170-89), using `arena_hero_name()` (`packages/simulation/arena_ai_bridge.c` -- the same token
+  vocabulary the Game AI bridge already uses, e.g. "morrigan") for the text, reusing whatever GL
+  color was already set for that hero's bar (team-colored labels, no extra color call needed).
+  `arena_ai_bridge.c` wasn't previously linked into the arena client at all -- added it to
+  `scripts/build_arena.sh`. Verified: `build.sh`, `build_arena.sh`, `test_arena.sh` all clean.
+  Client-only change (no wire-protocol/gameplay-logic touched), so no live systemd restart needed.
+  This box has no display, so verified by code review + clean compile only, same standing
+  limitation as every other windowed-client-only change this session -- not run interactively.
+
 ## 2026-07-25 (8)
 
 - fix(arena): bots bunching up on top of each other in a live match (S170-90). Founder, real-time:

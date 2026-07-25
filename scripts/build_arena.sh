@@ -18,4 +18,5 @@ gcc -std=c99 -D_DEFAULT_SOURCE -O2 -Wall -Wextra -I"${ROOT_DIR}/packages" \
   "${ROOT_DIR}/apps/arena/src/main.c" \
   "${ROOT_DIR}/packages/simulation/arena_game.c" \
   "${ROOT_DIR}/packages/simulation/arena_replay.c" \
+  "${ROOT_DIR}/packages/simulation/arena_ai_bridge.c" \
   -lSDL2 -lGL -lm
