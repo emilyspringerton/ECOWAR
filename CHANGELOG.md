@@ -1,5 +1,25 @@
 # Changelog
 
+## 2026-07-25 (22)
+
+- feat(arena): NOOR-1, 20th hero — Scout (S170-104). Founder, real-time: "add NOOR-1 as a
+  snowman." NOOR-1 ("Four Days Behind", `multiverse_heroes.md` #3, Jiangshi Syndicate MUNDANE)
+  already has a real lore entry — an operative sent in clean, being read by her own subject
+  before she's filed a word on him. "As a snowman" read as an in-game FORM directive, the same
+  convention the original roster already uses (a Duck, a Unicorn, a Pizza, a Tree), not a lore
+  change. Full kit, fully wired end to end this pass (not left partial like Paimon originally
+  was): passive periodic-silence aura (same idiom as Pizza's/Paimon's, themed as reading the
+  enemy's next move before they commit to it), Q a ranged damage+root bolt, W a self-cast
+  intangibility on its own cooldown (same mechanic as Ghost's Not a Ghost, themed as "sent in
+  clean" — going quiet and unreadable herself), R a fixed cold zone dealing periodic damage with
+  no ally-heal side ("do not approach" is one-sided). Distinct 3D silhouette: three stacked boxes
+  of decreasing size, the literal snowman form. `ARENA_HERO_COUNT` 19 → 20; pick-validation bound,
+  draft-modulo (both bot and human clients), name/ability-name tables all updated in the same
+  pass — every gap Paimon's initial landing left behind (S170-55) closed here from the start. 5
+  new headless tests. Verified: full suite (289 checks), VS0/VS1 stable, live — rebuilt +
+  restarted all three systemd units, confirmed NOOR-1 (`hero_id=19`) actually gets drafted in a
+  real 20/20 match and the match runs stably with real snapshots streaming, no crash.
+
 ## 2026-07-25 (21)
 
 - feat(arena): Overwatch-style recast-time tiles for Q/W/E (S170-127). Founder, real-time: "add

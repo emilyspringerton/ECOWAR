@@ -1860,6 +1860,83 @@ static void test_cast_flash_slot_not_set_when_w_blocked_by_its_own_cooldown(void
     CHECK(ghost->cast_flash_slot == 0, "a cooldown-gated W blocked by its own cooldown does not set cast_flash_slot");
 }
 
+static void test_noor1_q_damages_and_roots_in_range(void) {
+    arena_init_with_heroes(ARENA_HERO_UNICORN, ARENA_HERO_NOOR1);
+    ArenaHero *noor1 = &arena_state.heroes[1];
+    ArenaHero *foe = &arena_state.heroes[0];
+    foe->x = noor1->x + 4.0f; /* within ARENA_NOOR1_Q_RANGE */
+    foe->z = noor1->z;
+    int foe_hp_before = foe->hp;
+
+    arena_cast_q(1);
+
+    CHECK(foe->hp < foe_hp_before, "Q damages the foe when in range");
+    CHECK(foe->rooted_ms == ARENA_NOOR1_Q_ROOT_MS, "Q roots the foe on a landed hit");
+    CHECK(noor1->q_cooldown_ms == ARENA_NOOR1_Q_COOLDOWN_MS, "Q starts on cooldown after a landed hit");
+}
+
+static void test_noor1_q_out_of_range_whiffs(void) {
+    arena_init_with_heroes(ARENA_HERO_UNICORN, ARENA_HERO_NOOR1);
+    ArenaHero *noor1 = &arena_state.heroes[1];
+    ArenaHero *foe = &arena_state.heroes[0];
+    foe->x = noor1->x + ARENA_NOOR1_Q_RANGE + 5.0f;
+    foe->z = noor1->z;
+    int foe_hp_before = foe->hp;
+
+    arena_cast_q(1);
+
+    CHECK(foe->hp == foe_hp_before, "Q out of range does not damage the foe");
+    CHECK(foe->rooted_ms == 0, "Q out of range does not root the foe");
+}
+
+static void test_noor1_w_grants_intangibility_and_cooldown(void) {
+    arena_init_with_heroes(ARENA_HERO_UNICORN, ARENA_HERO_NOOR1);
+    ArenaHero *noor1 = &arena_state.heroes[1];
+
+    arena_toggle_w(1);
+
+    CHECK(noor1->intangible_ms == ARENA_NOOR1_W_INTANGIBLE_MS, "Sent In Clean grants self-intangibility");
+    CHECK(noor1->w_cooldown_ms == ARENA_NOOR1_W_COOLDOWN_MS, "W starts on its own cooldown after cast");
+}
+
+static void test_noor1_passive_silences_nearest_enemy_periodically(void) {
+    arena_init_with_heroes(ARENA_HERO_UNICORN, ARENA_HERO_NOOR1);
+    ArenaHero *noor1 = &arena_state.heroes[1];
+    ArenaHero *foe = &arena_state.heroes[0];
+    foe->x = noor1->x + 2.0f; /* within ARENA_NOOR1_PASSIVE_AURA_RADIUS */
+    foe->z = noor1->z;
+    foe->target_x = foe->x; /* don't wander out of aura range before the tick lands */
+    foe->target_z = foe->z;
+
+    arena_update(ARENA_NOOR1_PASSIVE_INTERVAL_MS);
+
+    CHECK(foe->silenced_ms > 0, "About Four Days Behind silences the nearest enemy in range without being cast");
+}
+
+static void test_noor1_r_zone_damages_enemy_no_ally_heal(void) {
+    arena_init_teams();
+    for (int i = 3; i < ARENA_MAX_HEROES; i++) arena_state.heroes[i].active = 0;
+    arena_state.heroes[ARENA_TEAM_SIZE].active = 1;
+    arena_state.heroes[ARENA_TEAM_SIZE].alive = 1;
+    arena_state.heroes[0].hero_id = ARENA_HERO_NOOR1;
+    arena_state.heroes[0].x = 0; arena_state.heroes[0].z = 0;
+    arena_state.heroes[1].x = 1; arena_state.heroes[1].z = 0; /* ally, inside the zone */
+    arena_state.heroes[1].max_hp = 100; arena_state.heroes[1].hp = 50;
+    arena_state.heroes[ARENA_TEAM_SIZE].x = -1; arena_state.heroes[ARENA_TEAM_SIZE].z = 0; /* enemy, inside the zone */
+    arena_state.heroes[ARENA_TEAM_SIZE].hp = arena_state.heroes[ARENA_TEAM_SIZE].max_hp = 100;
+
+    arena_cast_r(0);
+    CHECK(arena_state.heroes[0].r_active_ms == ARENA_NOOR1_R_DURATION_MS, "R starts its zone duration on cast");
+    CHECK(arena_state.heroes[0].r_cooldown_ms == ARENA_NOOR1_R_COOLDOWN_MS, "R starts on its own cooldown after cast");
+
+    arena_update_teams(1000); /* one full 1000ms zone tick */
+
+    CHECK(arena_state.heroes[ARENA_TEAM_SIZE].hp <= 100 - ARENA_NOOR1_R_DPS,
+          "Do Not Approach damages an enemy standing in the zone");
+    CHECK(arena_state.heroes[1].hp == 50,
+          "Do Not Approach has no ally-heal side -- an ally standing in the zone is unaffected");
+}
+
 int main(void) {
     printf("RED GARDEN arena_game headless smoke test\n\n");
     test_movement_reaches_target();
@@ -1970,6 +2047,11 @@ int main(void) {
     test_cast_flash_slot_set_on_r();
     test_cast_flash_slot_not_set_when_q_blocked_by_cooldown();
     test_cast_flash_slot_not_set_when_w_blocked_by_its_own_cooldown();
+    test_noor1_q_damages_and_roots_in_range();
+    test_noor1_q_out_of_range_whiffs();
+    test_noor1_w_grants_intangibility_and_cooldown();
+    test_noor1_passive_silences_nearest_enemy_periodically();
+    test_noor1_r_zone_damages_enemy_no_ally_heal();
     printf("\n%s\n", failures == 0 ? "ALL PASS" : "SOME FAILED");
     return failures == 0 ? 0 : 1;
 }

@@ -1168,6 +1168,17 @@ static int paimon_cast_w(ArenaHero *paimon, ArenaHero *foe) {
     return 1;
 }
 
+/* noor1_cast_q: File What Is Actually There -- a ranged bolt that damages and roots, same
+ * instant-hit-if-in-range shape as Paimon's/Ghost's/Tree's Q. Returns 1 if it landed. */
+static int noor1_cast_q(ArenaHero *noor1, ArenaHero *foe) {
+    if (!hero_is_hittable(foe)) return 0;
+    float dx = foe->x - noor1->x, dz = foe->z - noor1->z;
+    if (sqrtf(dx * dx + dz * dz) > ARENA_NOOR1_Q_RANGE) return 0;
+    apply_damage(foe, apply_armor(ARENA_NOOR1_Q_DAMAGE, arena_hero_armor(foe)));
+    foe->rooted_ms = ARENA_NOOR1_Q_ROOT_MS;
+    return 1;
+}
+
 void arena_cast_q(int owner) {
     if (owner < 0 || owner >= ARENA_MAX_HEROES) return;
     ArenaHero *h = &arena_state.heroes[owner];
@@ -1272,6 +1283,11 @@ void arena_cast_q(int owner) {
     case ARENA_HERO_PAIMON:
         if (paimon_cast_q(h, foe)) {
             h->q_cooldown_ms = cast_cooldown(h, ARENA_PAIMON_Q_COOLDOWN_MS);
+        }
+        break;
+    case ARENA_HERO_NOOR1:
+        if (noor1_cast_q(h, foe)) {
+            h->q_cooldown_ms = cast_cooldown(h, ARENA_NOOR1_Q_COOLDOWN_MS);
         }
         break;
     }
@@ -1405,6 +1421,13 @@ void arena_toggle_w(int owner) {
         if (paimon_cast_w(h, arena_nearest_enemy(owner))) {
             h->w_cooldown_ms = cast_cooldown(h, ARENA_PAIMON_W_COOLDOWN_MS);
         }
+        break;
+    case ARENA_HERO_NOOR1:
+        /* Sent In Clean: same instant-use intangibility as Ghost's Not a Ghost --
+           she goes quiet and unreadable herself for a moment. */
+        if (h->w_cooldown_ms > 0) return;
+        h->intangible_ms = ARENA_NOOR1_W_INTANGIBLE_MS;
+        h->w_cooldown_ms = cast_cooldown(h, ARENA_NOOR1_W_COOLDOWN_MS);
         break;
     default:
         /* No-op for any hero without a real W in this arena, not a crash
@@ -1580,6 +1603,15 @@ void arena_cast_r(int owner) {
         h->r_zone_tick_ms = 0;
         h->r_active_ms = ARENA_PAIMON_R_DURATION_MS;
         h->r_cooldown_ms = cast_cooldown(h, ARENA_PAIMON_R_COOLDOWN_MS);
+        break;
+    case ARENA_HERO_NOOR1:
+        /* Do Not Approach: fixed cold zone, damage-only (no ally-heal side --
+           the instruction is one-sided) -- see tick_hero_kit's zone tick below. */
+        h->r_zone_x = h->x;
+        h->r_zone_z = h->z;
+        h->r_zone_tick_ms = 0;
+        h->r_active_ms = ARENA_NOOR1_R_DURATION_MS;
+        h->r_cooldown_ms = cast_cooldown(h, ARENA_NOOR1_R_COOLDOWN_MS);
         break;
     }
 }
@@ -1827,6 +1859,39 @@ static void tick_hero_kit(ArenaHero *h, ArenaHero *foe, ArenaHero *ally, unsigne
             }
         }
         break;
+    case ARENA_HERO_NOOR1:
+        /* About Four Days Behind: always-on passive, same aura-tick idiom as
+           Pizza's/Paimon's -- periodically silences the nearest enemy in
+           range, reading their next move before they've committed to it. */
+        if (h->alive) {
+            h->aura_tick_ms += (int)dt_ms;
+            while (h->aura_tick_ms >= ARENA_NOOR1_PASSIVE_INTERVAL_MS) {
+                h->aura_tick_ms -= ARENA_NOOR1_PASSIVE_INTERVAL_MS;
+                if (foe && hero_is_hittable(foe)) {
+                    float dx = foe->x - h->x, dz = foe->z - h->z;
+                    if (sqrtf(dx * dx + dz * dz) <= ARENA_NOOR1_PASSIVE_AURA_RADIUS) {
+                        foe->silenced_ms = ARENA_NOOR1_PASSIVE_SILENCE_MS;
+                    }
+                }
+            }
+        }
+        /* Do Not Approach: fixed cold zone, damage-only tick -- no ally-heal
+           side, the instruction is one-sided. */
+        if (h->r_active_ms > 0) {
+            h->r_active_ms -= (int)dt_ms;
+            if (h->r_active_ms < 0) h->r_active_ms = 0;
+            h->r_zone_tick_ms += (int)dt_ms;
+            while (h->r_zone_tick_ms >= 1000) {
+                h->r_zone_tick_ms -= 1000;
+                if (foe && hero_is_hittable(foe)) {
+                    float dx = foe->x - h->r_zone_x, dz = foe->z - h->r_zone_z;
+                    if (sqrtf(dx * dx + dz * dz) <= ARENA_NOOR1_R_RADIUS) {
+                        apply_damage(foe, ARENA_NOOR1_R_DPS);
+                    }
+                }
+            }
+        }
+        break;
     default:
         break;
     }
@@ -2021,6 +2086,20 @@ static void bot_cast_kit_if_ready(ArenaHero *bot, ArenaHero *foe) {
         } else if (bot->w_cooldown_ms <= 0 && dist <= ARENA_PAIMON_W_RANGE) {
             arena_toggle_w(bot->owner);
         } else if (bot->r_cooldown_ms <= 0 && dist <= ARENA_PAIMON_R_RADIUS) {
+            arena_cast_r(bot->owner);
+        }
+        break;
+    case ARENA_HERO_NOOR1:
+        /* Q for the ranged root+damage poke when in range, R (the zone)
+           when the foe is close enough for it to matter -- same shape as
+           Paimon above. W is a defensive self-intangibility, not a foe-
+           ranged ability, so it's gated on low HP instead, same panic-
+           button pattern as Loki's/Bacon+Puck's Q. */
+        if (bot->hp < bot->max_hp / 4 && bot->w_cooldown_ms <= 0) {
+            arena_toggle_w(bot->owner);
+        } else if (bot->q_cooldown_ms <= 0 && dist <= ARENA_NOOR1_Q_RANGE) {
+            arena_cast_q(bot->owner);
+        } else if (bot->r_cooldown_ms <= 0 && dist <= ARENA_NOOR1_R_RADIUS) {
             arena_cast_r(bot->owner);
         }
         break;

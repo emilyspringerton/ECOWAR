@@ -86,8 +86,9 @@ typedef enum {
     ARENA_HERO_ADA = 16, /* TYLER multiverse_heroes.md #112, "Ada Lovelace, Pilot" (S170-103) */
     ARENA_HERO_TYLER = 17, /* docs/HEROES_VS0.md's own pre-existing design, never implemented until now (S170-111) */
     ARENA_HERO_PAIMON = 18, /* TYLER multiverse_heroes.md #20, "Paimon, the Court Voice", channeled by the real John Dee (S170-55) */
+    ARENA_HERO_NOOR1 = 19, /* TYLER multiverse_heroes.md #3, "NOOR-1 (Four Days Behind)", in-game form: a snowman (S170-104) */
 } ArenaHeroID;
-#define ARENA_HERO_COUNT 19
+#define ARENA_HERO_COUNT 20
 
 /* The Unicorn — first real hero kit wired in (S170-18). */
 #define ARENA_UNICORN_ARMOR         4    /* passive: Chassis Claim, flat dmg reduction */
@@ -512,6 +513,26 @@ typedef enum {
 #define ARENA_PAIMON_R_DPS                    6
 #define ARENA_PAIMON_R_HEAL_PER_TICK          6
 #define ARENA_PAIMON_R_COOLDOWN_MS         26000
+
+/* NOOR-1 (S170-104, "add NOOR-1 as a snowman"): passive periodic-silence aura (same idiom as
+ * Pizza's/Paimon's), Q a ranged damage+root bolt, W a self-cast intangibility on its own
+ * cooldown (same mechanic as Ghost's Not a Ghost, themed as "sent in clean" -- going quiet and
+ * unreadable herself), R a fixed cold zone dealing periodic damage to enemies, same shape as
+ * Ghost's Recital/Paimon's Two Hundred Legions but with no ally-heal side -- "do not approach"
+ * is a one-sided instruction. */
+#define ARENA_NOOR1_PASSIVE_AURA_RADIUS    3.5f
+#define ARENA_NOOR1_PASSIVE_SILENCE_MS      700
+#define ARENA_NOOR1_PASSIVE_INTERVAL_MS    4000
+#define ARENA_NOOR1_Q_RANGE                  6.0f
+#define ARENA_NOOR1_Q_DAMAGE                 8
+#define ARENA_NOOR1_Q_ROOT_MS              1300
+#define ARENA_NOOR1_Q_COOLDOWN_MS          4500
+#define ARENA_NOOR1_W_INTANGIBLE_MS        1500
+#define ARENA_NOOR1_W_COOLDOWN_MS         10000
+#define ARENA_NOOR1_R_RADIUS                  4.0f
+#define ARENA_NOOR1_R_DURATION_MS          4000
+#define ARENA_NOOR1_R_DPS                     7
+#define ARENA_NOOR1_R_COOLDOWN_MS         24000
 
 /* ARENA_HERO_RESPAWN_MS (S170-121, "controlling a node enables its spawn
  * for your team"): team-mode-only hero respawn timer. Before this, death

@@ -418,6 +418,32 @@ mage whose scrying summons the Court Voice, not a separate identity.
 
 ---
 
+### NOOR-1 ("Four Days Behind", TYLER `multiverse_heroes.md` #3, Jiangshi Syndicate MUNDANE) — **Scout** (S170-104)
+
+Founder: "add NOOR-1 as a snowman." NOOR-1 has a real entry — dispatched with no Tyler history and
+no file access, on explicit instruction "find him, do not approach, file what is actually there,"
+and assessed by her own subject as "about four days behind where they think they are": an operative
+sent to observe, being read by the person she's observing before she's filed a single word on him.
+"As a snowman" reads as an in-game FORM directive, the same convention the original roster already
+uses (a Duck, a Unicorn, a Pizza, a Tree — ordinary objects/figures given a hero identity), not a
+change to her lore. A snowman standing quietly in a scene, unremarkable, watching without being
+seen, is the honest visual match for "sent in clean" and "do not approach" both at once.
+
+- **Passive — About Four Days Behind**: periodically silences the nearest enemy in range without
+  being cast — the same always-on aura-tick pattern as Pizza's Uninvestigated Fire/Paimon's Keeping
+  the Peace, themed as NOOR-1 reading the enemy's next move before they've committed to it, cutting
+  it off before it lands.
+- **Q — File What Is Actually There**: a ranged bolt that damages and roots — the read becomes a
+  report, and the report is binding; same instant-hit-if-in-range shape as Ghost's/Tree's/Paimon's Q.
+- **W — Sent In Clean**: a brief self-cast intangibility on its own cooldown, same mechanic as
+  Ghost's Not a Ghost — she goes quiet and unreadable herself for a moment, an escape or reposition
+  tool, not just a stealth flourish.
+- **R — Do Not Approach**: a fixed cold zone, same shape as Ghost's Recital/Paimon's Two Hundred
+  Legions — enemies standing inside take periodic damage, the literal instruction made into ground
+  nobody can safely stand on.
+
+---
+
 ## Starting Item Roster (VS0)
 
 LoL Season 3 is the explicit stylistic northstar here — not its item *names*, its item *stat-line
