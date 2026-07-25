@@ -1,5 +1,26 @@
 # Changelog
 
+## 2026-07-25 (27)
+
+- feat(arena): charming squish (squash-and-stretch) animations for movement, hits, and spell
+  casts (S170-128). Founder, real-time: "add charming squish animations" → "for movement also
+  spell casts." `draw_hero_box`/`draw_hero_model` now take a `squish` factor that scales the
+  hero's stacked-box silhouette non-uniformly — Y compresses, X/Z inversely expand (clamped to a
+  0.4f floor so it never inverts), keeping the model visually grounded like a classic animation
+  bounce rather than a uniform shrink. Three triggers reuse existing per-frame detection instead
+  of adding new state machines: taking damage (already detected via the S170-122 HP-delta hook),
+  casting a spell (already detected via S170-124's `cast_flash_slot`), and starting to move (new
+  — `h->moving` transitioning false→true, same transition-detection idiom as the HP-delta check
+  in the same loop). `compute_squish()` is a decaying-cosine bounce curve over a 260ms window.
+  Real bug found before it ever shipped: `squish_age_ms[]` zero-initializes with static storage,
+  and 0.0f is `compute_squish`'s "just triggered" value, not its neutral one — every hero would
+  have appeared squashed for a frame at launch with no trigger fired. Fixed with an explicit
+  init loop pushing every slot past the animation window before the render loop starts. Purely
+  client-side (`apps/arena/src/main.c` only) — no protocol/server changes. Verified: clean build
+  (`scripts/build.sh`, `scripts/build_arena.sh`), full headless suite (337 checks) and VS0/VS1
+  10-bot stability both pass unaffected — this feature has no server-testable component, same
+  "verified via clean build + full suite" pattern as S170-69/S170-92/S170-127.
+
 ## 2026-07-25 (26)
 
 - feat(arena): He Xiangu, 24th hero — Support/Sustain (S170-93). Third hero shipped from the

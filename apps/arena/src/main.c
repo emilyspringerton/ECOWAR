@@ -388,6 +388,7 @@ static int net_draft_offset = 0;
 static void spawn_spell_flash(float x, float z, int slot);
 static void play_tone(float freq_hz, float duration_ms, float volume);
 static void play_cast_tone(int slot);
+static void trigger_squish(int owner);
 #define ARENA_AUDIO_HEARING_RADIUS 15.0f /* how far from the local player's own hero a cast/hit sound is still audible */
 
 static void net_poll_snapshots(uint32_t now_ms) {
@@ -435,6 +436,7 @@ static void net_poll_snapshots(uint32_t now_ms) {
                     dst->hero_id = (ArenaHeroID)msg->heroes[i].hero_id;
                     if (msg->heroes[i].cast_flash_slot > 0) {
                         spawn_spell_flash(dst->x, dst->z, msg->heroes[i].cast_flash_slot);
+                        trigger_squish(i);
                         /* Hearing range (S170-92): a real 20-hero match can have several
                            casts landing every second across the whole map -- unfiltered,
                            that's noise, not legibility. Only sound cues for casts within a
@@ -735,11 +737,22 @@ static void draw_mesh(const Mesh *m) {
 /* one box of a hero model, in hero-local space (dx/dy/dz offset from the hero's
    footprint, sx/sy/sz box scale) -- dy is measured from the ground, not from the
    hero's own translate, since hero translate is already y=0.5 (see caller) */
+/* squish (S170-128, "add charming squish animations" -> "for movement also spell casts"):
+ * 1.0 = neutral. <1.0 = squashed (short and wide, feet still on the ground). >1.0 = stretched
+ * (tall and thin). Applied uniformly to every box in a hero's silhouette so the whole model
+ * squishes together, not one accent piece independently of the body. The Y scale AND Y offset
+ * both get multiplied by squish (not just scale) so a squashed hero's boxes compress toward
+ * the ground plane instead of scaling around each box's own center and clipping into the
+ * floor or floating above it. X/Z get the inverse relationship (a squashed hero reads wider,
+ * a stretched one reads thinner) for a cheap volume-preserving cartoon feel, not physically
+ * exact but the "charming" part of squash-and-stretch was never about being exact. */
 static void draw_hero_box(float hero_x, float hero_z, float dx, float dy, float dz,
-                           float sx, float sy, float sz, const Mat4 *vp,
+                           float sx, float sy, float sz, float squish, const Mat4 *vp,
                            GLint loc_mvp, GLint loc_model, const Mesh *cube_mesh) {
-    Mat4 t = mat4_translate(hero_x + dx, dy, hero_z + dz);
-    Mat4 s = mat4_scale(sx, sy, sz);
+    float squish_xz = 2.0f - squish;
+    if (squish_xz < 0.4f) squish_xz = 0.4f;
+    Mat4 t = mat4_translate(hero_x + dx * squish_xz, dy * squish, hero_z + dz * squish_xz);
+    Mat4 s = mat4_scale(sx * squish_xz, sy * squish, sz * squish_xz);
     Mat4 model = mat4_multiply(&t, &s);
     Mat4 mvp = mat4_multiply(vp, &model);
     glUniformMatrix4fv_(loc_mvp, 1, GL_FALSE, mvp.m);
@@ -755,10 +768,10 @@ static void draw_hero_box(float hero_x, float hero_z, float dx, float dy, float 
    (apps/lobby/src/main.c draw_player_skin_*) where a hero overlaps one, expressed
    here as axis-aligned draw_mesh() boxes since this renderer has no mat4_rotate
    and SHANKPIT's immediate-mode glPushMatrix/glRotatef code can't port verbatim. */
-static void draw_hero_model(ArenaHeroID hero_id, float hero_x, float hero_z, const Mat4 *vp,
+static void draw_hero_model(ArenaHeroID hero_id, float hero_x, float hero_z, float squish, const Mat4 *vp,
                              GLint loc_mvp, GLint loc_model, const Mesh *cube_mesh) {
 #define BOX(dx, dy, dz, sx, sy, sz) \
-    draw_hero_box(hero_x, hero_z, dx, dy, dz, sx, sy, sz, vp, loc_mvp, loc_model, cube_mesh)
+    draw_hero_box(hero_x, hero_z, dx, dy, dz, sx, sy, sz, squish, vp, loc_mvp, loc_model, cube_mesh)
     switch (hero_id) {
         case ARENA_HERO_UNICORN: /* SHANKPIT SKIN_UNICORN: body + tapered horn */
             BOX(0.0f, 0.55f, 0.0f, 0.85f, 1.1f, 0.85f);
@@ -1110,6 +1123,37 @@ static void spawn_attack_flash(float x, float z) {
     }
 }
 
+/* ---------------- squish (S170-128, "add charming squish animations" ->
+ * "for movement also spell casts") ---------------- */
+/* One timer per hero slot, not a pooled particle array like the flashes above --
+ * squish is a continuous property of the hero's own model, not a spawned object
+ * at a fixed world position, so it's simplest to key it directly by owner index.
+ * A large/negative age means "not currently animating," read by compute_squish
+ * as neutral (1.0, no visual change at all) without needing a separate active flag. */
+#define SQUISH_ANIM_MS 260.0f
+static float squish_age_ms[ARENA_MAX_HEROES];
+static int prev_hero_moving[ARENA_MAX_HEROES];
+static int prev_hero_moving_valid[ARENA_MAX_HEROES];
+
+static void trigger_squish(int owner) {
+    if (owner < 0 || owner >= ARENA_MAX_HEROES) return;
+    squish_age_ms[owner] = 0.0f;
+}
+
+/* compute_squish: a decaying cosine -- starts squashed (short, wide), bounces past
+ * neutral into a slight stretch, settles back to 1.0. Classic squash-and-stretch
+ * bounce-back, cheap to compute, no physics simulation needed for something this
+ * short-lived and purely cosmetic. */
+static float compute_squish(int owner) {
+    if (owner < 0 || owner >= ARENA_MAX_HEROES) return 1.0f;
+    float t = squish_age_ms[owner];
+    if (t < 0.0f || t >= SQUISH_ANIM_MS) return 1.0f;
+    float amplitude = 0.32f;
+    float decay = expf(-t / (SQUISH_ANIM_MS * 0.35f));
+    float wobble = cosf(t / SQUISH_ANIM_MS * 3.14159265f * 2.4f);
+    return 1.0f - amplitude * decay * wobble;
+}
+
 /* ---------------- spell flashes (S170-124, "add particle effects to
  * spells") ---------------- */
 /* Unlike auto-attacks (S170-122, HP-delta is a decent-enough proxy), a real
@@ -1376,6 +1420,14 @@ int main(int argc, char *argv[]) {
        doc comment). Left in: real randomness for the ticket nonce is still worth having even
        though the offset itself no longer needs it. */
     srand((unsigned int)time(NULL));
+    /* squish_age_ms[] zero-initializes with the rest of static storage, but 0.0f reads as
+       "animation just started" (compute_squish's own neutral sentinel is anything >=
+       SQUISH_ANIM_MS) -- without this every hero would appear squashed for one frame the instant
+       the game launches, before any real trigger fires. Push every slot past the animation
+       window so compute_squish() reads neutral (1.0f) until trigger_squish() actually resets it. */
+    for (int squish_init_i = 0; squish_init_i < ARENA_MAX_HEROES; squish_init_i++) {
+        squish_age_ms[squish_init_i] = SQUISH_ANIM_MS + 1.0f;
+    }
     /* Observer mode (NORTHSTAR §12 Phase C, EMILY/BACKLOG.md S170-30):
      * `red_garden_arena --observe var/matches/arena-<ts>.jsonl` plays back
      * a logged match through this exact same renderer instead of driving
@@ -1636,10 +1688,20 @@ int main(int argc, char *argv[]) {
             ArenaHero *h = &arena_state.heroes[i];
             if (!h->active || !h->alive) {
                 prev_hero_hp_valid[i] = 0;
+                prev_hero_moving_valid[i] = 0;
                 continue;
             }
+            /* Movement-start squish (S170-128, "for movement also spell casts"):
+               same transition-detection idiom as the HP-delta check just below,
+               fired once per departure, not every frame spent moving. */
+            if (prev_hero_moving_valid[i] && !prev_hero_moving[i] && h->moving) {
+                trigger_squish(i);
+            }
+            prev_hero_moving[i] = h->moving;
+            prev_hero_moving_valid[i] = 1;
             if (prev_hero_hp_valid[i] && h->hp < prev_hero_hp[i]) {
                 spawn_attack_flash(h->x, h->z);
+                trigger_squish(i);
                 float hdx = h->x - arena_state.heroes[my_owner].x;
                 float hdz = h->z - arena_state.heroes[my_owner].z;
                 if (hdx * hdx + hdz * hdz <= ARENA_AUDIO_HEARING_RADIUS * ARENA_AUDIO_HEARING_RADIUS) {
@@ -1654,6 +1716,11 @@ int main(int argc, char *argv[]) {
             attack_flashes[i].age_ms += dt;
             if (attack_flashes[i].age_ms >= ATTACK_FLASH_LIFETIME_MS) attack_flashes[i].active = 0;
         }
+        for (int i = 0; i < ARENA_MAX_HEROES; i++) {
+            if (squish_age_ms[i] >= 0.0f && squish_age_ms[i] < SQUISH_ANIM_MS) {
+                squish_age_ms[i] += dt;
+            }
+        }
         /* Local-mode cast_flash_slot drain (S170-124): net_mode already spawns spell
            flashes directly off the wire snapshot inside net_poll_snapshots and never
            writes this field locally, so this loop is a no-op there -- it only ever
@@ -1664,6 +1731,7 @@ int main(int argc, char *argv[]) {
             ArenaHero *h = &arena_state.heroes[i];
             if (h->cast_flash_slot > 0) {
                 spawn_spell_flash(h->x, h->z, h->cast_flash_slot);
+                trigger_squish(i);
                 float sdx = h->x - arena_state.heroes[my_owner].x;
                 float sdz = h->z - arena_state.heroes[my_owner].z;
                 if (sdx * sdx + sdz * sdz <= ARENA_AUDIO_HEARING_RADIUS * ARENA_AUDIO_HEARING_RADIUS) {
@@ -1737,7 +1805,7 @@ int main(int argc, char *argv[]) {
             }
             /* S170-118: per-hero_id silhouette (multi-box), not one generic cube --
                relationship color above still wins for self/team/enemy legibility. */
-            draw_hero_model(h->hero_id, h->x, h->z, &vp, loc_mvp, loc_model, &cube_mesh);
+            draw_hero_model(h->hero_id, h->x, h->z, compute_squish(i), &vp, loc_mvp, loc_model, &cube_mesh);
         }
 
         /* placement rings */
