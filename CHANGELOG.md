@@ -1,5 +1,24 @@
 # Changelog
 
+## 2026-07-25 (28)
+
+- fix(arena): unique skinmodels for all 24 heroes (S170-131). Founder, real-time: "ensure all
+  characters have unique skinmodels." Audit of every `draw_hero_model()` case (all 24 present,
+  none missing) found two real near-duplicate pairs sharing an identical base-body box plus
+  visually-confusable accents: Gary and Abraham both used the same 0.8×1.3×0.8 body with a flat
+  slab accent in the same chest position (clipboard vs. grimoire, indistinguishable as low-poly
+  boxes); Cain and Tyler both used the same 0.75×1.3×0.75 body, with Tyler deliberately bare (per
+  his own lore, "unremarkable plain humanoid") and Cain's mark accent only a 0.14-unit cube on the
+  shoulder — easily lost against Tyler's identical bare silhouette at gameplay camera distance.
+  Fixed: Gary's accent replaced with a long rifle/scope bar held out to the side (fits his
+  marksman kit — "no dash, no gap-closer... watches from where he's standing" — better than a
+  chest slab anyway); Abraham gained a second small floating orb accent above his grimoire
+  (arcane-caster read, no longer just a flat book matching Gary's old shape); Cain's mark moved
+  to the forehead and enlarged (0.14 → 0.22, more Genesis-accurate than a shoulder detail, and
+  now reads clearly against Tyler's bare body). Verified: clean build (`scripts/build.sh`,
+  `scripts/build_arena.sh`), full headless suite (337 checks) unaffected — purely a visual/
+  client-side change, no sim logic touched.
+
 ## 2026-07-25 (27)
 
 - feat(arena): charming squish (squash-and-stretch) animations for movement, hits, and spell

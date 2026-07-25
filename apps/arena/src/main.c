@@ -820,9 +820,11 @@ static void draw_hero_model(ArenaHeroID hero_id, float hero_x, float hero_z, flo
             BOX(0.0f, 0.6f, 0.0f, 0.8f, 1.2f, 0.8f);
             BOX(0.5f, 0.4f, 0.35f, 0.4f, 0.8f, 0.4f);
             break;
-        case ARENA_HERO_GARY: /* off-duty security -- boxy body + flat clipboard accent */
+        case ARENA_HERO_GARY: /* off-duty security, marksman -- boxy body + a long rifle/scope
+                                  bar held out to the side, not a chest-mounted slab (S170-131:
+                                  was near-identical to Abraham's grimoire silhouette) */
             BOX(0.0f, 0.65f, 0.0f, 0.8f, 1.3f, 0.8f);
-            BOX(0.0f, 0.7f, 0.45f, 0.35f, 0.5f, 0.08f);
+            BOX(0.55f, 0.55f, 0.15f, 0.55f, 0.08f, 0.08f);
             break;
         case ARENA_HERO_FLUTE_DEBT: /* thin tall body + horizontal flute accent */
             BOX(0.0f, 0.7f, 0.0f, 0.65f, 1.4f, 0.65f);
@@ -832,9 +834,12 @@ static void draw_hero_model(ArenaHeroID hero_id, float hero_x, float hero_z, flo
             BOX(-0.32f, 0.6f, 0.0f, 0.55f, 1.2f, 0.75f);
             BOX(0.32f, 0.5f, 0.0f, 0.55f, 1.0f, 0.75f);
             break;
-        case ARENA_HERO_ABRAHAM: /* mage -- body + a flat "grimoire" accent */
+        case ARENA_HERO_ABRAHAM: /* mage -- body + a flat "grimoire" accent + a small floating
+                                     arcane orb above it (S170-131: the book alone read almost
+                                     identically to Gary's old clipboard slab at the same spot) */
             BOX(0.0f, 0.65f, 0.0f, 0.8f, 1.3f, 0.8f);
             BOX(0.0f, 0.65f, 0.45f, 0.3f, 0.4f, 0.08f);
+            BOX(0.0f, 1.05f, 0.4f, 0.14f, 0.14f, 0.14f);
             break;
         case ARENA_HERO_ADA: /* mech pilot -- boxy, oversized mech-like frame */
             BOX(0.0f, 0.7f, 0.0f, 1.0f, 1.4f, 1.0f);
@@ -852,9 +857,13 @@ static void draw_hero_model(ArenaHeroID hero_id, float hero_x, float hero_z, flo
             BOX(0.0f, 0.95f, 0.0f, 0.40f, 0.35f, 0.40f);
             BOX(0.0f, 1.40f, 0.0f, 0.28f, 0.28f, 0.28f);
             break;
-        case ARENA_HERO_CAIN: /* weathered wanderer body + a small marked accent on the shoulder (S170-105) */
+        case ARENA_HERO_CAIN: /* weathered wanderer body + the mark itself, front and center on
+                                  the forehead -- Genesis's own imagery, not an incidental
+                                  shoulder detail (S170-105, enlarged+repositioned S170-131: at
+                                  the old size/spot it was nearly lost against Tyler's
+                                  deliberately bare identical-base body) */
             BOX(0.0f, 0.65f, 0.0f, 0.75f, 1.3f, 0.75f);
-            BOX(0.55f, 1.15f, 0.0f, 0.14f, 0.14f, 0.14f);
+            BOX(0.0f, 1.32f, 0.36f, 0.22f, 0.2f, 0.06f);
             break;
         case ARENA_HERO_GUNNR: /* shieldmaiden -- body + a flat shield accent (S170-93) */
             BOX(0.0f, 0.65f, 0.0f, 0.75f, 1.3f, 0.75f);
