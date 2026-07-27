@@ -296,6 +296,14 @@ static void server_broadcast(void) {
         msg.heroes[i].alive = (uint8_t)h->alive;
         msg.heroes[i].hero_id = (uint8_t)h->hero_id;
         msg.heroes[i].cast_flash_slot = (uint8_t)h->cast_flash_slot;
+        /* S170-137: cooldown/mp can both dip transiently negative between
+           ticks (see tick_hero_kit's own `-= dt_ms`, never clamped back to
+           0 until the next `> 0` gate) -- clamp before the signed->unsigned
+           narrowing, same convention as hp's own clamp just above. */
+        msg.heroes[i].q_cooldown_ms = (uint16_t)(h->q_cooldown_ms > 0 ? h->q_cooldown_ms : 0);
+        msg.heroes[i].w_cooldown_ms = (uint16_t)(h->w_cooldown_ms > 0 ? h->w_cooldown_ms : 0);
+        msg.heroes[i].r_cooldown_ms = (uint16_t)(h->r_cooldown_ms > 0 ? h->r_cooldown_ms : 0);
+        msg.heroes[i].mp = (uint8_t)(h->mp > 0 ? h->mp : 0);
         msg.picked[i] = (uint8_t)hero_picked[i];
     }
     msg.winner = (uint8_t)arena_state.winner;
