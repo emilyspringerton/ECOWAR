@@ -1889,16 +1889,34 @@ int main(int argc, char *argv[]) {
         for (int i = 0; i < ARENA_MAX_HEROES; i++) {
             ArenaHero *h = &arena_state.heroes[i];
             if (!h->alive) continue;
+            /* intangible_ms (Ghost's Not a Ghost, Frog's R vanish, Bacon Puck's Q, etc. --
+               any kit that grants the shared can't-be-hit status) reads as the skinmodel
+               going see-through for its duration, same "can't touch this" read a real MOBA
+               gives untargetable heroes, on top of the INTANGIBLE text tag already above
+               the health bar. Alpha blending needs GL_BLEND on and depth writes off for
+               this hero's boxes only -- everyone else stays fully opaque with normal
+               depth writes, same convention as the ring/flash effects below. */
+            int is_intangible = h->intangible_ms > 0;
+            float alpha = is_intangible ? 0.35f : 1.0f;
             if (i == my_owner) {
-                glUniform4f_(loc_color, 0.1f, 0.8f, 0.95f, 1.0f); /* my hero: bright cyan */
+                glUniform4f_(loc_color, 0.1f, 0.8f, 0.95f, alpha); /* my hero: bright cyan */
             } else if (h->team == arena_state.heroes[my_owner].team) {
-                glUniform4f_(loc_color, 0.15f, 0.35f, 0.95f, 1.0f); /* teammate: blue */
+                glUniform4f_(loc_color, 0.15f, 0.35f, 0.95f, alpha); /* teammate: blue */
             } else {
-                glUniform4f_(loc_color, 0.95f, 0.25f, 0.15f, 1.0f); /* enemy: red */
+                glUniform4f_(loc_color, 0.95f, 0.25f, 0.15f, alpha); /* enemy: red */
+            }
+            if (is_intangible) {
+                glEnable(GL_BLEND);
+                glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+                glDepthMask(GL_FALSE);
             }
             /* S170-118: per-hero_id silhouette (multi-box), not one generic cube --
                relationship color above still wins for self/team/enemy legibility. */
             draw_hero_model(h->hero_id, h->x, h->z, compute_squish(i), &vp, loc_mvp, loc_model, &cube_mesh);
+            if (is_intangible) {
+                glDepthMask(GL_TRUE);
+                glDisable(GL_BLEND);
+            }
         }
 
         /* projectiles (S170-136): the first travelling skill-shot in this
