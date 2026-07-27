@@ -1,7 +1,7 @@
 #ifndef ARENA_GAME_H
 #define ARENA_GAME_H
 
-#define ARENA_HALF_EXTENT 20.0f /* S170-119: was 12.0f -- widened for a real Arathi Basin-size spread of 5 nodes */
+#define ARENA_HALF_EXTENT 30.0f /* S170-139: was 20.0f (S170-119's own "Arathi Basin-size" pass) -- founder: "expand the map to true arathi basin size," a further 1.5x bump so the base-to-base travel distance and the S170-138 lane corridor both actually read as a real map, not a small arena with 5 nodes crammed into it */
 #define ARENA_HERO_SPEED 4.0f      /* units/sec */
 #define ARENA_ATTACK_RANGE 1.6f
 #define ARENA_ATTACK_DAMAGE 8
@@ -60,6 +60,22 @@ typedef enum {
  * [1] and leaves the rest zeroed/inactive -- see the `active` field below. */
 #define ARENA_TEAM_SIZE 10
 #define ARENA_MAX_HEROES (ARENA_TEAM_SIZE * 2)
+
+/* ARENA_MAX_CLONE_SLOTS/ARENA_HEROES_ARRAY_SIZE (S170-141, Tyler's puppet
+ * clones): a small pool of extra hero slots APPENDED after the real
+ * per-player range (0..ARENA_MAX_HEROES-1, always exactly claimed by real
+ * connected clients in every lobby size this codebase actually runs --
+ * always either 2 or ARENA_MAX_HEROES, never partial) so a puppet clone
+ * never competes with an actual connecting client for a slot. Real owner
+ * indices (draft picks, PACKET_ARENA_PICK, the wire snapshot) never reach
+ * into this range -- it exists purely for arena_state.heroes[]' own
+ * simulation-side bookkeeping, not networking (ARENA_SNAPSHOT_MAX_HEROES in
+ * protocol.h stays at ARENA_MAX_HEROES, unchanged; clones aren't wire-synced
+ * yet, same "sim-only for now" precedent as jungle/lane creeps). Sized for
+ * up to 4 simultaneous Tyler R casts' worth of clones -- generous headroom,
+ * not a hard design target. */
+#define ARENA_MAX_CLONE_SLOTS 8
+#define ARENA_HEROES_ARRAY_SIZE (ARENA_MAX_HEROES + ARENA_MAX_CLONE_SLOTS)
 
 /* Hero roster (docs/HEROES_VS0.md), NORTHSTAR §12 Phase D. hero_id
  * generalizes kit dispatch away from S170-18's "owner 0 == The Unicorn"
@@ -131,6 +147,13 @@ typedef enum {
 #define ARENA_GHOST_Q_DAMAGE        9
 #define ARENA_GHOST_Q_SILENCE_MS    1500
 #define ARENA_GHOST_Q_COOLDOWN_MS   4500
+/* S170-140: Alien Frequency is explicitly documented as a skillshot
+ * (docs/HEROES_VS0.md) but was still an instant hit-if-in-range check --
+ * the second real travelling projectile in this arena, same convention as
+ * Gary's Q (S170-136). Faster than Gary's shot (a "frequency," not a bullet)
+ * -- reads as a quick zap rather than a slow, dodgeable sniper round. */
+#define ARENA_GHOST_Q_PROJECTILE_SPEED  18.0f
+#define ARENA_GHOST_Q_PROJECTILE_RADIUS 0.5f
 #define ARENA_GHOST_W_INTANGIBLE_MS 1500 /* Not a Ghost */
 #define ARENA_GHOST_W_COOLDOWN_MS   10000
 #define ARENA_GHOST_R_RADIUS        4.0f  /* Recital: zone stays fixed where cast */
@@ -451,6 +474,14 @@ typedef enum {
 #define ARENA_TYLER_Q_BURN_DPS        3
 #define ARENA_TYLER_Q_BURN_MS         3500
 #define ARENA_TYLER_Q_COOLDOWN_MS     4200
+/* S170-140: Earthbind's own original-design wording ("Fires a net at a
+ * target area," docs/HEROES_VS0.md) is a real thrown-object skillshot, not
+ * an instant hit -- the third real travelling projectile in this arena.
+ * Slower than Ghost's zap (a thrown net, not a beam) -- the root+burn payoff
+ * is real counterplay-able, matching the same "dodgeable, not guaranteed"
+ * bar Gary's Q set. */
+#define ARENA_TYLER_Q_PROJECTILE_SPEED  10.0f
+#define ARENA_TYLER_Q_PROJECTILE_RADIUS 0.7f
 #define ARENA_TYLER_W_DAMAGE          12
 #define ARENA_TYLER_W_HIT_RADIUS      1.8f
 #define ARENA_TYLER_W_COOLDOWN_MS     5500
@@ -459,6 +490,16 @@ typedef enum {
 #define ARENA_TYLER_R_VULNERABLE_MS   3500 /* r_active_ms window: Tyler's own armor goes negative for this long */
 #define ARENA_TYLER_R_NEGATIVE_ARMOR  6.0f
 #define ARENA_TYLER_R_COOLDOWN_MS     19000
+/* S170-141: real puppet clones, on top of the existing self-buff -- see
+ * docs/HEROES_VS0.md's Tyler section for the full design/scope note.
+ * ARENA_TYLER_R_CLONE_COUNT is a deliberate simplification of the OG kit's
+ * "up to 5" (Divided We Stand can be cast more than once in the original;
+ * this arena's R is a single-cast-per-cooldown ability like every other R,
+ * so a fixed, modest count per cast reads better than trying to replicate
+ * stacking casts). ARENA_TYLER_CLONE_HP_PCT matches the OG kit's "each with
+ * a percentage of TYLER's stats." */
+#define ARENA_TYLER_R_CLONE_COUNT     2
+#define ARENA_TYLER_CLONE_HP_PCT      0.5f
 
 /* Bacon+Puck, merged (S170-94, TYLER multiverse_heroes.md #5 + #67) -- Bacon's whole
  * character is withholding ("custodian of the one location nobody's allowed to know yet,"
@@ -673,6 +714,54 @@ typedef enum {
 #define ARENA_MNM_R_SURVIVE_FLOOR_MS        6000
 #define ARENA_MNM_R_COOLDOWN_MS            27000
 
+/* Lane creep waves (S170-138). Founder: "add subsystems needed to make
+ * creeps a reality" -- clarified as classic MOBA lane-pushing waves,
+ * distinct from S170-51's jungle creeps (per-node, stationary, aggro-only).
+ * This arena's map has no lanes in the geometric sense (NORTHSTAR §8: "no
+ * single chokepoint deciding the match," the whole point of the Arathi
+ * Basin open-field design) -- rather than inventing a second map layout, the
+ * lane is a straight path along the existing spawn axis: each team's spawn
+ * line (x=-12/+12, matching arena_find_owned_node_for_respawn's home_x --
+ * both bumped from +-8 by S170-139's map-expansion pass, in lockstep) to the
+ * contested center node (0,0, "Blacksmith" in arena_nodes_reset_layout) to
+ * the enemy's spawn line. Waves spawn on a fixed timer per team (no scaling
+ * or catch-up rubber-banding -- the simplest honest MVP), march toward the
+ * enemy spawn, and stop to fight the nearest hittable enemy hero OR
+ * opposing-team lane creep within aggro range instead of marching past a
+ * fight in progress -- the actual "push" mechanic: a wave that wins its
+ * clash keeps advancing, one that loses stops mattering.
+ *
+ * No structure/tower/base-HP system exists in this arena yet (the same gap
+ * Duck's W, "Government Clearance," is already blocked on) -- a wave that
+ * survives all the way to the enemy spawn line currently just despawns
+ * rather than damaging anything, flagged not faked, same as every other
+ * "doesn't fit this engine yet" gap in this roster. Likewise no gold/XP
+ * economy exists to reward a kill -- lane creep kills (by heroes or by each
+ * other) remove a threat and nothing more; wiring them into a future
+ * economy is a natural follow-on once one exists, not invented here as a
+ * standalone reward just for this pass. */
+#define ARENA_LANE_WAYPOINT_COUNT      3
+#define ARENA_LANE_CREEPS_PER_WAVE     3
+#define ARENA_MAX_LANE_CREEPS          (ARENA_LANE_CREEPS_PER_WAVE * 2 * 2) /* both teams, generous headroom for the previous wave still marching when the next spawns */
+#define ARENA_LANE_WAVE_INTERVAL_MS    20000
+#define ARENA_LANE_WAVE_INITIAL_DELAY_MS 5000 /* real MOBA precedent (LoL's own first wave isn't at 0:00 either) -- also gives a match's opening seconds breathing room before waves are on the board, same spirit as a real "minions spawn in..." countdown */
+#define ARENA_LANE_CREEP_HP            60
+#define ARENA_LANE_CREEP_SPEED         2.5f /* units/sec -- slower than ARENA_HERO_SPEED (4.0) so a hero can always outrun or intercept a wave */
+#define ARENA_LANE_CREEP_DAMAGE        7
+#define ARENA_LANE_CREEP_ATTACK_COOLDOWN_MS 1000
+#define ARENA_LANE_CREEP_AGGRO_RADIUS  3.5f /* doubles as attack range, same simplification as ARENA_CREEP_AGGRO_RADIUS */
+#define ARENA_LANE_CREEP_WAYPOINT_EPSILON 0.15f
+
+typedef struct {
+    int active; /* pool slot in use */
+    int alive;
+    int team;   /* which team this creep fights for -- attacks the OTHER team's heroes/lane creeps only */
+    float x, z;
+    int hp, max_hp;
+    int waypoint_index; /* 0..ARENA_LANE_WAYPOINT_COUNT-1: next waypoint this creep is marching toward */
+    int attack_cooldown_ms;
+} ArenaLaneCreep;
+
 /* ARENA_HERO_RESPAWN_MS (S170-121, "controlling a node enables its spawn
  * for your team"): team-mode-only hero respawn timer. Before this, death
  * was permanent within a match (arena_update_teams only checked team-wipe
@@ -801,6 +890,13 @@ typedef struct {
      * the 1v1 local demo, which renders straight off arena_state with no
      * wire hop needed. */
     int cast_flash_slot;
+    /* is_clone/clone_owner (S170-141, Tyler's "true Meepo parity" puppet
+     * clones): is_clone=1 marks this slot as an AI-driven puppet, never
+     * client-owned -- clone_owner is the real owner index (Tyler's own
+     * slot) it's linked to for move-mirroring and the shared-fate death
+     * rule. Unused (0/-1) by every real, client-owned hero slot. */
+    int is_clone;
+    int clone_owner;
 } ArenaHero;
 
 typedef struct {
@@ -829,14 +925,24 @@ typedef struct {
     int last_attacked_by_owner; /* -1 = never hit since spawning, else the owner index of whoever last damaged it -- who gets credit on the kill */
 } ArenaCreep;
 
-/* ArenaProjectile (S170-136): a real travelling skill-shot, not an instant
- * hit -- the first of its kind in this arena. Straight-line, no homing:
+/* ArenaProjectile (S170-136, on-hit status effects generalized S170-140): a
+ * real travelling skill-shot, not an instant hit. Straight-line, no homing:
  * velocity is fixed at spawn from the caster's position toward the target's
  * position AT CAST TIME, so a target that moves after the shot is fired can
  * genuinely dodge it by stepping off the original line. One shared pool
- * serves every projectile-casting hero (currently just Gary's Q); hero_id
- * is carried along so the client can pick the right visual per spell later
- * without needing a second parallel system. */
+ * serves every projectile-casting hero; hero_id is carried along so the
+ * client can pick a distinct visual per spell (not just per Q/W/R slot).
+ *
+ * on_hit_silence_ms/on_hit_root_ms/on_hit_burn_ms/on_hit_burn_dps (S170-140):
+ * generic optional status effects applied to whoever the shot actually hits,
+ * on top of the flat `damage` every projectile already deals -- 0 means "this
+ * shot doesn't apply that effect," same "generic field, not hero-specific
+ * storage" convention as the identically-named fields already on ArenaHero.
+ * Added converting Ghost's Q (Alien Frequency, silence) and Tyler's Q
+ * (Earthbind, root+burn) from instant-hit to real projectiles -- Gary's Q
+ * (plain damage only) leaves all four at their zeroed default via
+ * arena_spawn_projectile. Server-only, same as damage/radius/velocity --
+ * the client only ever needs to draw where the shot currently is. */
 #define ARENA_MAX_PROJECTILES 32
 
 typedef struct {
@@ -850,13 +956,19 @@ typedef struct {
     int damage;
     float max_range;  /* total travel distance before despawning unhit (a whiff) */
     float traveled;
+    int on_hit_silence_ms;
+    int on_hit_root_ms;
+    int on_hit_burn_ms;
+    int on_hit_burn_dps;
 } ArenaProjectile;
 
 typedef struct {
-    ArenaHero heroes[ARENA_MAX_HEROES];
+    ArenaHero heroes[ARENA_HEROES_ARRAY_SIZE]; /* S170-141: real per-player range 0..ARENA_MAX_HEROES-1, puppet-clone range after it -- see ARENA_HEROES_ARRAY_SIZE's own doc comment */
     ArenaNode nodes[ARENA_NODE_COUNT];
     ArenaCreep creeps[ARENA_MAX_CREEPS];
     ArenaProjectile projectiles[ARENA_MAX_PROJECTILES];
+    ArenaLaneCreep lane_creeps[ARENA_MAX_LANE_CREEPS]; /* S170-138 */
+    int lane_wave_timer_ms[2]; /* S170-138: per-team countdown to next wave; starts at 0 (memset), so both teams' first wave spawns on the first tick, matching a real MOBA's 0:00 wave */
     int winner; /* 0 = none yet, 1 = player/team 0, 2 = bot/team 1 */
 } ArenaState;
 
@@ -925,20 +1037,27 @@ void arena_tick_nodes(unsigned int dt_ms);
  * independently. Called from both arena_update() and arena_update_teams(). */
 void arena_tick_creeps(unsigned int dt_ms);
 
-/* arena_spawn_projectile (S170-136): fills the first free slot in
- * arena_state.projectiles with a straight-line shot from (x,z) toward
- * (target_x,target_z) at `speed` units/sec, does nothing if the pool is
- * full (ARENA_MAX_PROJECTILES headroom is generous relative to current
- * cast-rate, so this should never actually happen in practice). */
-void arena_spawn_projectile(int owner, int team, ArenaHeroID hero_id,
+/* arena_spawn_projectile (S170-136, returns a pointer S170-140): fills the
+ * first free slot in arena_state.projectiles with a straight-line shot from
+ * (x,z) toward (target_x,target_z) at `speed` units/sec, and returns a
+ * pointer to it so the caller can optionally set on_hit_silence_ms/
+ * on_hit_root_ms/on_hit_burn_ms/on_hit_burn_dps right after (all default to
+ * 0 -- "no extra effect" -- so a plain-damage caster like Gary's Q can
+ * ignore the return value entirely). Returns NULL if the pool is full
+ * (ARENA_MAX_PROJECTILES headroom is generous relative to current cast-rate,
+ * so this should never actually happen in practice) -- callers that use the
+ * return value must check it first, same NULL-safety convention as
+ * arena_nearest_enemy/arena_nearest_ally. */
+ArenaProjectile *arena_spawn_projectile(int owner, int team, ArenaHeroID hero_id,
                              float x, float z, float target_x, float target_z,
                              float speed, float radius, int damage, float max_range);
 
-/* arena_tick_projectiles (S170-136): advances every active projectile by
- * dt_ms along its fixed velocity, checks collision against every hittable
- * enemy hero within `radius`, applies damage + armor on the first hit and
- * deactivates, and deactivates unhit projectiles once `traveled` reaches
- * `max_range` (a whiff). Called from both arena_update() and
+/* arena_tick_projectiles (S170-136, on-hit status effects S170-140):
+ * advances every active projectile by dt_ms along its fixed velocity, checks
+ * collision against every hittable enemy hero within `radius`, applies
+ * damage + armor plus any nonzero on_hit_* status effect on the first hit,
+ * and deactivates -- and deactivates unhit projectiles once `traveled`
+ * reaches `max_range` (a whiff). Called from both arena_update() and
  * arena_update_teams(), same convention as arena_tick_creeps. */
 void arena_tick_projectiles(unsigned int dt_ms);
 
@@ -951,6 +1070,30 @@ void arena_tick_projectiles(unsigned int dt_ms);
  * arena_update() and arena_update_teams(), after resolve_combat/the melee
  * loop so hero-vs-hero combat is always resolved first each tick. */
 void arena_hero_attack_creeps(unsigned int dt_ms);
+
+/* arena_tick_lane_creeps (S170-138): see the header comment above
+ * ARENA_LANE_WAYPOINT_COUNT for the full design. Advances each team's wave
+ * spawn timer (spawning a fresh ARENA_LANE_CREEPS_PER_WAVE-strong wave at
+ * that team's spawn line when it elapses), then advances every active lane
+ * creep: if a hittable enemy hero or opposing-team lane creep is within
+ * ARENA_LANE_CREEP_AGGRO_RADIUS, stops to fight it instead of advancing;
+ * otherwise marches toward its current waypoint, advancing to the next one
+ * on arrival, or despawning (no reward, no structure to hit) once it reaches
+ * the final waypoint at the enemy's spawn line. Called from both
+ * arena_update() and arena_update_teams(), same convention as
+ * arena_tick_creeps. */
+void arena_tick_lane_creeps(unsigned int dt_ms);
+
+/* arena_hero_attack_lane_creeps (S170-138): mirrors arena_hero_attack_creeps
+ * exactly -- each active, alive hero without a closer enemy HERO in range
+ * instead auto-attacks the nearest OPPOSING-team lane creep within
+ * ARENA_ATTACK_RANGE if one's there. Shares the same attack_cooldown_ms gate
+ * as arena_hero_attack_creeps (called immediately after it in both update
+ * loops), so a hero that already spent this tick's attack on a jungle creep
+ * does not also get a free hit on a lane creep the same tick. No kill
+ * reward (see the ARENA_LANE_WAYPOINT_COUNT header comment on why). Called
+ * from both arena_update() and arena_update_teams(). */
+void arena_hero_attack_lane_creeps(unsigned int dt_ms);
 
 /* Kit casts dispatch on the hero's hero_id, not a hardcoded owner check
  * (S170-31 generalized this from S170-18's Unicorn-only version). No-ops

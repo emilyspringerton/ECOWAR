@@ -385,7 +385,7 @@ static int net_draft_offset = 0;
 /* Defined further down alongside the other particle-effect state
    (spawn_ring/AttackFlash) -- forward-declared here so net_poll_snapshots
    can consume the wire's cast_flash_slot the instant a snapshot arrives. */
-static void spawn_spell_flash(float x, float z, int slot);
+static void spawn_spell_flash(float x, float z, int slot, int hero_id);
 static void play_tone(float freq_hz, float duration_ms, float volume);
 static void play_cast_tone(int slot);
 static void trigger_squish(int owner);
@@ -435,7 +435,7 @@ static void net_poll_snapshots(uint32_t now_ms) {
                     dst->team = (i < msg->count / 2) ? 0 : 1;
                     dst->hero_id = (ArenaHeroID)msg->heroes[i].hero_id;
                     if (msg->heroes[i].cast_flash_slot > 0) {
-                        spawn_spell_flash(dst->x, dst->z, msg->heroes[i].cast_flash_slot);
+                        spawn_spell_flash(dst->x, dst->z, msg->heroes[i].cast_flash_slot, dst->hero_id);
                         trigger_squish(i);
                         /* Hearing range (S170-92): a real 20-hero match can have several
                            casts landing every second across the whole map -- unfiltered,
@@ -1234,16 +1234,45 @@ static float compute_squish(int owner) {
  * (bigger, brighter effect for the ultimate). */
 #define MAX_SPELL_FLASHES (ARENA_MAX_HEROES * 2)
 #define SPELL_FLASH_LIFETIME_MS 260.0f
-typedef struct { float x, z, age_ms; int slot; int active; } SpellFlash;
+typedef struct { float x, z, age_ms; int slot; int hero_id; int active; } SpellFlash;
 static SpellFlash spell_flashes[MAX_SPELL_FLASHES];
 
-static void spawn_spell_flash(float x, float z, int slot) {
+/* hero_flash_color (founder: "ensure each spell is unique show different
+ * color cast circles"): before this, every cast's color came purely from
+ * its Q/W/R slot (cyan/violet/gold, S170-124) -- correct for "which tier of
+ * ability" but every hero's Q looked identical to every other hero's Q,
+ * with 26 heroes now on the roster that's not "unique" at all. Golden-angle
+ * HSV hue rotation (hue = hero_id * 137.508 deg mod 360, the same
+ * technique used for generating N maximally-distinct sequential colors
+ * without hand-picking each one) gives every hero_id its own real, distinct
+ * hue -- deterministic, needs no per-hero table to maintain as the roster
+ * keeps growing. Slot still controls SIZE in the render loop below (Q
+ * small, W bigger, R biggest) -- that "which tier" legibility stays, this
+ * only replaces what controlled color. */
+static void hero_flash_color(int hero_id, float *r, float *g, float *b) {
+    float hue = fmodf((float)hero_id * 137.508f, 360.0f);
+    float s = 0.75f, v = 1.0f;
+    float c = v * s;
+    float x = c * (1.0f - fabsf(fmodf(hue / 60.0f, 2.0f) - 1.0f));
+    float m = v - c;
+    float rr, gg, bb;
+    if (hue < 60)       { rr = c; gg = x; bb = 0; }
+    else if (hue < 120)  { rr = x; gg = c; bb = 0; }
+    else if (hue < 180)  { rr = 0; gg = c; bb = x; }
+    else if (hue < 240)  { rr = 0; gg = x; bb = c; }
+    else if (hue < 300)  { rr = x; gg = 0; bb = c; }
+    else                 { rr = c; gg = 0; bb = x; }
+    *r = rr + m; *g = gg + m; *b = bb + m;
+}
+
+static void spawn_spell_flash(float x, float z, int slot, int hero_id) {
     for (int i = 0; i < MAX_SPELL_FLASHES; i++) {
         if (!spell_flashes[i].active) {
             spell_flashes[i].active = 1;
             spell_flashes[i].x = x;
             spell_flashes[i].z = z;
             spell_flashes[i].slot = slot;
+            spell_flashes[i].hero_id = hero_id;
             spell_flashes[i].age_ms = 0;
             return;
         }
@@ -1797,7 +1826,7 @@ int main(int argc, char *argv[]) {
         for (int i = 0; i < ARENA_MAX_HEROES; i++) {
             ArenaHero *h = &arena_state.heroes[i];
             if (h->cast_flash_slot > 0) {
-                spawn_spell_flash(h->x, h->z, h->cast_flash_slot);
+                spawn_spell_flash(h->x, h->z, h->cast_flash_slot, h->hero_id);
                 trigger_squish(i);
                 float sdx = h->x - arena_state.heroes[my_owner].x;
                 float sdz = h->z - arena_state.heroes[my_owner].z;
@@ -1833,6 +1862,40 @@ int main(int argc, char *argv[]) {
             glUniformMatrix4fv_(loc_model, 1, GL_FALSE, model.m);
             glUniform4f_(loc_color, 0.08f, 0.18f, 0.10f, 1.0f);
             draw_mesh(&plane_mesh);
+        }
+
+        /* Decorative jungle trees (S170-139, founder: "expand the map to true
+           arathi basin size adding some trees and stuff so there are lanes
+           between the bases"). Purely cosmetic dressing flanking the
+           S170-138 lane corridor (the z=0 spawn-to-spawn path along x) so it
+           actually reads as a lane cut through forest, matching real Arathi
+           Basin's own forest-and-road geography, rather than an unmarked
+           strip of the same open ground the rest of the map already is.
+           Static, client-only, no gameplay state -- this engine has no
+           collision/pathing system at all (heroes and creeps already move in
+           straight lines with zero obstacle avoidance), so trees do not
+           block movement; real blocking terrain would need a navmesh/
+           avoidance system that doesn't exist here, flagged not faked, same
+           as every other "doesn't fit this engine yet" gap in this
+           codebase. Two rows per side (offset in z, both signs) between each
+           spawn line and the center node, mirrored east/west. */
+        {
+            static const float tree_pos[][2] = {
+                { -22.0f,  6.0f }, { -18.0f,  8.5f }, { -14.0f,  6.5f }, { -10.0f,  8.0f }, { -6.0f,  6.5f }, { -3.0f,  5.5f },
+                { -22.0f, -6.0f }, { -18.0f, -8.5f }, { -14.0f, -6.5f }, { -10.0f, -8.0f }, { -6.0f, -6.5f }, { -3.0f, -5.5f },
+                {  22.0f,  6.0f }, {  18.0f,  8.5f }, {  14.0f,  6.5f }, {  10.0f,  8.0f }, {  6.0f,  6.5f }, {  3.0f,  5.5f },
+                {  22.0f, -6.0f }, {  18.0f, -8.5f }, {  14.0f, -6.5f }, {  10.0f, -8.0f }, {  6.0f, -6.5f }, {  3.0f, -5.5f },
+            };
+            glUniform4f_(loc_color, 0.05f, 0.28f, 0.09f, 1.0f);
+            for (size_t i = 0; i < sizeof(tree_pos) / sizeof(tree_pos[0]); i++) {
+                Mat4 t = mat4_translate(tree_pos[i][0], 1.1f, tree_pos[i][1]);
+                Mat4 s = mat4_scale(0.9f, 2.2f, 0.9f);
+                Mat4 model = mat4_multiply(&t, &s);
+                Mat4 mvp = mat4_multiply(&vp, &model);
+                glUniformMatrix4fv_(loc_mvp, 1, GL_FALSE, mvp.m);
+                glUniformMatrix4fv_(loc_model, 1, GL_FALSE, model.m);
+                draw_mesh(&cube_mesh);
+            }
         }
 
         /* nodes -- colored by owner (S170-87 cont'd, now that ownership
@@ -1873,6 +1936,33 @@ int main(int argc, char *argv[]) {
             /* S170-118: per-hero_id silhouette (multi-box), not one generic cube --
                relationship color above still wins for self/team/enemy legibility. */
             draw_hero_model(h->hero_id, h->x, h->z, compute_squish(i), &vp, loc_mvp, loc_model, &cube_mesh);
+        }
+
+        /* Lane creeps (S170-138): only ever populated client-side in the
+           local 1v1 demo, which simulates arena_update() directly -- not
+           synced over the wire yet (same not-yet-networked gap jungle
+           creeps already have; net_mode's arena_state.lane_creeps simply
+           stays all-zeroed/inactive, so this loop harmlessly draws nothing
+           there). Small flat-topped boxes (distinct silhouette from the
+           taller hero models) in the same self/team/enemy-adjacent
+           blue/red team-color convention as nodes and heroes above, so a
+           wave reads as "which side" at a glance without being mistaken
+           for a hero. */
+        for (int i = 0; i < ARENA_MAX_LANE_CREEPS; i++) {
+            ArenaLaneCreep *lc = &arena_state.lane_creeps[i];
+            if (!lc->active || !lc->alive) continue;
+            if (lc->team == arena_state.heroes[my_owner].team) {
+                glUniform4f_(loc_color, 0.15f, 0.35f, 0.95f, 1.0f); /* friendly wave: blue */
+            } else {
+                glUniform4f_(loc_color, 0.95f, 0.25f, 0.15f, 1.0f); /* enemy wave: red */
+            }
+            Mat4 t = mat4_translate(lc->x, 0.35f, lc->z);
+            Mat4 s = mat4_scale(0.55f, 0.55f, 0.55f);
+            Mat4 model = mat4_multiply(&t, &s);
+            Mat4 mvp = mat4_multiply(&vp, &model);
+            glUniformMatrix4fv_(loc_mvp, 1, GL_FALSE, mvp.m);
+            glUniformMatrix4fv_(loc_model, 1, GL_FALSE, model.m);
+            draw_mesh(&cube_mesh);
         }
 
         /* projectiles (S170-136): the first travelling skill-shot in this
@@ -1941,21 +2031,25 @@ int main(int argc, char *argv[]) {
             glUniform4f_(loc_color, 1.0f, 0.75f, 0.15f, alpha);
             draw_mesh(&ring_mesh);
         }
-        /* spell flashes (S170-124): one look per ability tier, same
-           low-basic to high-ultimate color/size ramp any real MOBA uses --
-           Q small and cyan-arcane, W a bit bigger and violet, R the
-           biggest and gold, so which slot someone just cast reads at a
-           glance even in a crowded team fight. */
+        /* spell flashes (S170-124, per-hero color S170-142): SIZE still
+           ramps by ability tier (Q small, W bigger, R biggest, same
+           low-basic to high-ultimate shape any real MOBA uses), but COLOR
+           now comes from hero_flash_color(hero_id) instead of the slot --
+           26 heroes' worth of Q casts no longer all look like the same
+           identical cyan circle; each hero's cast reads as genuinely its
+           own spell, "which slot" is now legible size, "whose spell" is
+           legible color. */
         for (int i = 0; i < MAX_SPELL_FLASHES; i++) {
             if (!spell_flashes[i].active) continue;
             float t01 = spell_flashes[i].age_ms / SPELL_FLASH_LIFETIME_MS;
             float alpha = 1.0f - t01;
             float base_scale, rr, gg, bb;
             switch (spell_flashes[i].slot) {
-                case 1: base_scale = 0.6f; rr = 0.3f; gg = 0.7f; bb = 1.0f; break;  /* Q: cyan-arcane */
-                case 2: base_scale = 0.8f; rr = 0.7f; gg = 0.3f; bb = 1.0f; break;  /* W: violet */
-                default: base_scale = 1.1f; rr = 1.0f; gg = 0.85f; bb = 0.2f; break; /* R: gold, biggest */
+                case 1: base_scale = 0.6f; break;  /* Q: smallest */
+                case 2: base_scale = 0.8f; break;  /* W: bigger */
+                default: base_scale = 1.1f; break; /* R: biggest */
             }
+            hero_flash_color(spell_flashes[i].hero_id, &rr, &gg, &bb);
             float scale = base_scale + t01 * 0.6f;
             Mat4 tr = mat4_translate(spell_flashes[i].x, 0.08f, spell_flashes[i].z);
             Mat4 sc = mat4_scale(scale, 1.0f, scale);
@@ -2023,7 +2117,19 @@ int main(int argc, char *argv[]) {
                table. draw_string's own size param is roughly the glyph
                height in pixels; centered by eye against the bar width,
                not measured -- good enough for a short lowercase token. */
+            /* Rooted name-label color override (founder: "when the hero is rooted change the
+               color of their name label to green"): wins over the usual self/ally/enemy
+               relationship color for this one draw call only -- rootedness is a battlefield-wide
+               readable state (matches the existing status-effect label a few lines below, which
+               already surfaces "ROOTED" as text), so a glance at the name color alone should say
+               it too, without needing to read the smaller status line above it. */
+            if (h->rooted_ms > 0) glColor3f(0.25f, 0.95f, 0.35f);
             draw_string(arena_hero_name(h->hero_id), sx - bw / 2, sy + bh + 2.0f, 10);
+            if (h->rooted_ms > 0) {
+                if (i == my_owner) glColor3f(0.1f, 0.8f, 0.95f);
+                else if (h->team == arena_state.heroes[my_owner].team) glColor3f(0.15f, 0.55f, 0.95f);
+                else glColor3f(0.9f, 0.25f, 0.15f);
+            }
 
             /* Status-effect label (S170-133): a further line above the name, only drawn when
                something's actually active -- most heroes most ticks have nothing to show, and an

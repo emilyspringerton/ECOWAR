@@ -16,6 +16,13 @@ static int failures = 0;
     else { printf("PASS: %s\n", msg); } \
 } while (0)
 
+static ArenaProjectile *find_active_projectile(void) {
+    for (int i = 0; i < ARENA_MAX_PROJECTILES; i++) {
+        if (arena_state.projectiles[i].active) return &arena_state.projectiles[i];
+    }
+    return NULL;
+}
+
 static void test_movement_reaches_target(void) {
     arena_init();
     /* Hero0 starts at (-6,0); target is close (~4.2 units away, ~1s at
@@ -323,34 +330,80 @@ static void test_hero_dispatch_is_by_hero_not_owner_slot(void) {
 
 /* --- The Ghost's kit (docs/HEROES_VS0.md, EMILY/BACKLOG.md S170-32) --- */
 
-static void test_ghost_q_damages_and_silences_in_range(void) {
-    arena_init_with_heroes(ARENA_HERO_UNICORN, ARENA_HERO_GHOST);
-    ArenaHero *ghost = &arena_state.heroes[1];
-    ArenaHero *foe = &arena_state.heroes[0];
-    foe->x = ghost->x + 4.0f; /* within ARENA_GHOST_Q_RANGE */
-    foe->z = ghost->z;
-    int foe_hp_before = foe->hp;
+/* S170-140: Ghost's Q (Alien Frequency) converted from an instant hit to a
+ * real projectile -- same test shape as Gary's Q (test_gary_q_*), plus one
+ * extra check that its on-hit silence actually lands via the generic
+ * on_hit_silence_ms field. */
+static void test_ghost_q_cast_spawns_projectile_no_instant_effect(void) {
+    arena_init_teams();
+    for (int i = 2; i < ARENA_MAX_HEROES; i++) arena_state.heroes[i].active = 0;
+    arena_state.heroes[ARENA_TEAM_SIZE].active = 1;
+    arena_state.heroes[0].hero_id = ARENA_HERO_GHOST;
+    arena_state.heroes[0].x = 0; arena_state.heroes[0].z = 0;
+    arena_state.heroes[ARENA_TEAM_SIZE].x = ARENA_GHOST_Q_RANGE - 1.0f;
+    arena_state.heroes[ARENA_TEAM_SIZE].z = 0;
+    int foe_hp_before = arena_state.heroes[ARENA_TEAM_SIZE].hp;
 
-    arena_cast_q(1);
+    arena_cast_q(0);
 
-    CHECK(foe->hp < foe_hp_before, "Q damages the foe when in range");
-    CHECK(foe->silenced_ms == ARENA_GHOST_Q_SILENCE_MS, "Q silences the foe on a landed hit");
-    CHECK(ghost->q_cooldown_ms == ARENA_GHOST_Q_COOLDOWN_MS, "Q starts on cooldown after a landed hit");
+    CHECK(arena_state.heroes[ARENA_TEAM_SIZE].hp == foe_hp_before,
+          "casting Q does not deal instant damage -- it fires a projectile instead");
+    CHECK(arena_state.heroes[ARENA_TEAM_SIZE].silenced_ms == 0, "no instant silence either -- it lands on hit, not on cast");
+    ArenaProjectile *p = find_active_projectile();
+    CHECK(p != NULL, "a projectile is actually spawned on cast");
+    CHECK(arena_state.heroes[0].q_cooldown_ms == ARENA_GHOST_Q_COOLDOWN_MS,
+          "cooldown is spent on cast, regardless of the shot's eventual outcome");
 }
 
-static void test_ghost_q_out_of_range_whiffs(void) {
-    arena_init_with_heroes(ARENA_HERO_UNICORN, ARENA_HERO_GHOST);
-    ArenaHero *ghost = &arena_state.heroes[1];
-    ArenaHero *foe = &arena_state.heroes[0];
-    foe->x = ghost->x + ARENA_GHOST_Q_RANGE + 5.0f;
-    foe->z = ghost->z;
-    int foe_hp_before = foe->hp;
+static void test_ghost_q_out_of_range_whiffs_no_projectile(void) {
+    arena_init_teams();
+    for (int i = 2; i < ARENA_MAX_HEROES; i++) arena_state.heroes[i].active = 0;
+    arena_state.heroes[ARENA_TEAM_SIZE].active = 1;
+    arena_state.heroes[0].hero_id = ARENA_HERO_GHOST;
+    arena_state.heroes[0].x = 0; arena_state.heroes[0].z = 0;
+    arena_state.heroes[ARENA_TEAM_SIZE].x = ARENA_GHOST_Q_RANGE + 5.0f;
+    arena_state.heroes[ARENA_TEAM_SIZE].z = 0;
 
-    arena_cast_q(1);
+    arena_cast_q(0);
 
-    CHECK(foe->hp == foe_hp_before, "Q out of range does no damage");
-    CHECK(foe->silenced_ms == 0, "Q out of range does not silence");
-    CHECK(ghost->q_cooldown_ms == 0, "Q out of range does not consume its cooldown");
+    CHECK(find_active_projectile() == NULL, "no projectile spawns when no foe is in range at cast time");
+    CHECK(arena_state.heroes[0].q_cooldown_ms == 0, "an out-of-range whiff doesn't consume the cooldown");
+}
+
+static void test_ghost_q_projectile_damages_and_silences_on_hit(void) {
+    arena_init_teams();
+    for (int i = 2; i < ARENA_MAX_HEROES; i++) arena_state.heroes[i].active = 0;
+    arena_state.heroes[ARENA_TEAM_SIZE].active = 1;
+    arena_state.heroes[0].hero_id = ARENA_HERO_GHOST;
+    arena_state.heroes[0].x = 0; arena_state.heroes[0].z = 0;
+    arena_state.heroes[ARENA_TEAM_SIZE].x = ARENA_GHOST_Q_RANGE - 1.0f;
+    arena_state.heroes[ARENA_TEAM_SIZE].z = 0;
+    int foe_hp_before = arena_state.heroes[ARENA_TEAM_SIZE].hp;
+
+    arena_cast_q(0);
+    for (int i = 0; i < 100; i++) arena_tick_projectiles(16);
+
+    CHECK(arena_state.heroes[ARENA_TEAM_SIZE].hp < foe_hp_before, "a stationary target is hit once the projectile travels far enough to reach it");
+    CHECK(arena_state.heroes[ARENA_TEAM_SIZE].silenced_ms == ARENA_GHOST_Q_SILENCE_MS, "Q silences the foe on a landed hit, carried by the projectile's on_hit_silence_ms");
+    CHECK(find_active_projectile() == NULL, "the projectile deactivates on hit, doesn't linger");
+}
+
+static void test_ghost_q_projectile_misses_and_no_silence_if_target_steps_off_line(void) {
+    arena_init_teams();
+    for (int i = 2; i < ARENA_MAX_HEROES; i++) arena_state.heroes[i].active = 0;
+    arena_state.heroes[ARENA_TEAM_SIZE].active = 1;
+    arena_state.heroes[0].hero_id = ARENA_HERO_GHOST;
+    arena_state.heroes[0].x = 0; arena_state.heroes[0].z = 0;
+    arena_state.heroes[ARENA_TEAM_SIZE].x = ARENA_GHOST_Q_RANGE - 1.0f;
+    arena_state.heroes[ARENA_TEAM_SIZE].z = 0;
+    int foe_hp_before = arena_state.heroes[ARENA_TEAM_SIZE].hp;
+
+    arena_cast_q(0);
+    arena_state.heroes[ARENA_TEAM_SIZE].z = 10.0f; /* real dodge -- steps off the firing line */
+    for (int i = 0; i < 100; i++) arena_tick_projectiles(16);
+
+    CHECK(arena_state.heroes[ARENA_TEAM_SIZE].hp == foe_hp_before, "a target that dodges takes no damage");
+    CHECK(arena_state.heroes[ARENA_TEAM_SIZE].silenced_ms == 0, "...and isn't silenced either -- the whole effect rides the hit, not the cast");
 }
 
 static void test_silenced_hero_cannot_cast(void) {
@@ -1641,6 +1694,208 @@ static void test_team_creep_kill_by_enemy_team_helps_flip_the_node(void) {
           "farming the enemy's own jungle creep while channeling their node grants the deny capture bonus");
 }
 
+/* S170-138: lane creep waves. */
+
+static void test_lane_creep_wave_spawns_for_both_teams_after_initial_delay(void) {
+    /* arena_init_teams() arms both teams' wave timer at
+       ARENA_LANE_WAVE_INITIAL_DELAY_MS (a short real-MOBA-style grace
+       period, not an instant 0:00 spawn) -- confirmed both that nothing
+       spawns before it elapses and that a full wave spawns for both teams
+       the instant it does. */
+    arena_init_teams();
+    for (int i = 0; i < ARENA_MAX_HEROES; i++) arena_state.heroes[i].active = 0;
+
+    arena_tick_lane_creeps(16);
+    int any_active_before_delay = 0;
+    for (int i = 0; i < ARENA_MAX_LANE_CREEPS; i++) {
+        if (arena_state.lane_creeps[i].active) any_active_before_delay = 1;
+    }
+    CHECK(!any_active_before_delay, "no lane creep wave spawns before the initial delay elapses");
+
+    arena_tick_lane_creeps(ARENA_LANE_WAVE_INITIAL_DELAY_MS);
+
+    int team0_count = 0, team1_count = 0;
+    for (int i = 0; i < ARENA_MAX_LANE_CREEPS; i++) {
+        ArenaLaneCreep *c = &arena_state.lane_creeps[i];
+        if (!c->active) continue;
+        if (c->team == 0) team0_count++;
+        else team1_count++;
+    }
+    CHECK(team0_count == ARENA_LANE_CREEPS_PER_WAVE, "team 0's first wave spawns a full wave once the initial delay elapses");
+    CHECK(team1_count == ARENA_LANE_CREEPS_PER_WAVE, "team 1's first wave spawns a full wave once the initial delay elapses, same timer start as team 0");
+}
+
+static void test_lane_creep_marches_toward_center_when_no_target(void) {
+    /* Isolated single creep, real wave timers suppressed -- avoids the real
+       opposing wave's own march/clash behavior clouding this specific
+       "no target in range, just advance along the path" assertion. */
+    arena_init_teams();
+    for (int i = 0; i < ARENA_MAX_HEROES; i++) arena_state.heroes[i].active = 0;
+    arena_state.lane_wave_timer_ms[0] = 999999;
+    arena_state.lane_wave_timer_ms[1] = 999999;
+
+    ArenaLaneCreep *creep = &arena_state.lane_creeps[0];
+    creep->active = 1;
+    creep->alive = 1;
+    creep->team = 0;
+    creep->waypoint_index = 0;
+    creep->hp = creep->max_hp = ARENA_LANE_CREEP_HP;
+    creep->x = -12.0f; /* team 0's spawn line, S170-139 */
+    creep->z = 0.0f;
+
+    for (int t = 0; t < 50; t++) arena_tick_lane_creeps(16); /* 0.8s of marching, well short of reaching the center waypoint */
+
+    CHECK(creep->x > -12.0f, "a lane creep with no target in range marches toward the enemy spawn line (team 0 marches +x)");
+}
+
+static void test_lane_creep_attacks_nearby_enemy_hero_and_does_not_advance(void) {
+    arena_init_teams();
+    for (int i = 1; i < ARENA_MAX_HEROES; i++) arena_state.heroes[i].active = 0;
+    arena_state.lane_wave_timer_ms[0] = 999999;
+    arena_state.lane_wave_timer_ms[1] = 999999;
+
+    ArenaLaneCreep *creep = &arena_state.lane_creeps[0];
+    creep->active = 1;
+    creep->alive = 1;
+    creep->team = 1; /* enemy of hero 0 (team 0) */
+    creep->waypoint_index = 0;
+    creep->hp = creep->max_hp = ARENA_LANE_CREEP_HP;
+    creep->x = 0.0f;
+    creep->z = 0.0f;
+
+    arena_state.heroes[0].x = 1.0f; /* within ARENA_LANE_CREEP_AGGRO_RADIUS */
+    arena_state.heroes[0].z = 0.0f;
+    arena_state.heroes[0].hp = arena_state.heroes[0].max_hp = 100;
+
+    arena_tick_lane_creeps(16);
+
+    CHECK(arena_state.heroes[0].hp == 100 - ARENA_LANE_CREEP_DAMAGE,
+          "a lane creep auto-attacks a hittable enemy hero within its aggro radius");
+    CHECK(creep->x == 0.0f, "a lane creep that stops to fight does not advance along its waypoint path this tick");
+}
+
+static void test_lane_creeps_fight_each_other_when_opposing_teams_meet(void) {
+    arena_init_teams();
+    for (int i = 0; i < ARENA_MAX_HEROES; i++) arena_state.heroes[i].active = 0;
+    arena_state.lane_wave_timer_ms[0] = 999999;
+    arena_state.lane_wave_timer_ms[1] = 999999;
+
+    ArenaLaneCreep *a = &arena_state.lane_creeps[0];
+    a->active = 1; a->alive = 1; a->team = 0; a->waypoint_index = 1;
+    a->hp = a->max_hp = ARENA_LANE_CREEP_HP; a->x = -1.0f; a->z = 0.0f;
+
+    ArenaLaneCreep *b = &arena_state.lane_creeps[1];
+    b->active = 1; b->alive = 1; b->team = 1; b->waypoint_index = 1;
+    b->hp = b->max_hp = ARENA_LANE_CREEP_HP; b->x = 1.0f; b->z = 0.0f;
+
+    arena_tick_lane_creeps(16);
+
+    CHECK(a->hp == ARENA_LANE_CREEP_HP - ARENA_LANE_CREEP_DAMAGE, "an opposing-team lane creep in aggro range takes damage from the other wave");
+    CHECK(b->hp == ARENA_LANE_CREEP_HP - ARENA_LANE_CREEP_DAMAGE, "both sides of a wave clash damage each other the same tick -- the actual push mechanic");
+}
+
+static void test_hero_kills_lane_creep_in_range(void) {
+    arena_init_teams();
+    for (int i = 1; i < ARENA_MAX_HEROES; i++) arena_state.heroes[i].active = 0;
+    arena_state.lane_wave_timer_ms[0] = 999999;
+    arena_state.lane_wave_timer_ms[1] = 999999;
+
+    arena_state.heroes[0].x = 0.0f;
+    arena_state.heroes[0].z = 0.0f;
+    arena_state.heroes[0].attack_cooldown_ms = 0;
+
+    ArenaLaneCreep *creep = &arena_state.lane_creeps[0];
+    creep->active = 1; creep->alive = 1; creep->team = 1; /* enemy of hero 0 */
+    creep->hp = ARENA_ATTACK_DAMAGE; creep->max_hp = ARENA_LANE_CREEP_HP;
+    creep->x = 0.0f; creep->z = 0.0f;
+
+    arena_hero_attack_lane_creeps(16);
+
+    CHECK(!creep->alive, "a hero kills a lane creep within attack range");
+    CHECK(!creep->active, "a dead lane creep frees its pool slot immediately, unlike jungle creeps' delayed respawn");
+}
+
+static void test_hero_does_not_attack_own_team_lane_creep(void) {
+    arena_init_teams();
+    for (int i = 1; i < ARENA_MAX_HEROES; i++) arena_state.heroes[i].active = 0;
+    arena_state.lane_wave_timer_ms[0] = 999999;
+    arena_state.lane_wave_timer_ms[1] = 999999;
+
+    arena_state.heroes[0].x = 0.0f;
+    arena_state.heroes[0].z = 0.0f;
+    arena_state.heroes[0].attack_cooldown_ms = 0;
+
+    ArenaLaneCreep *creep = &arena_state.lane_creeps[0];
+    creep->active = 1; creep->alive = 1; creep->team = 0; /* SAME team as hero 0 */
+    creep->hp = creep->max_hp = ARENA_LANE_CREEP_HP;
+    creep->x = 0.0f; creep->z = 0.0f;
+
+    arena_hero_attack_lane_creeps(16);
+
+    CHECK(creep->hp == ARENA_LANE_CREEP_HP, "a hero never attacks its own team's lane creep");
+}
+
+static void test_hero_does_not_attack_lane_creep_while_enemy_hero_in_range(void) {
+    arena_init_teams();
+    for (int i = 2; i < ARENA_MAX_HEROES; i++) arena_state.heroes[i].active = 0;
+    arena_state.lane_wave_timer_ms[0] = 999999;
+    arena_state.lane_wave_timer_ms[1] = 999999;
+    arena_state.heroes[ARENA_TEAM_SIZE].active = 1;
+    arena_state.heroes[ARENA_TEAM_SIZE].alive = 1;
+    arena_state.heroes[1].active = 0;
+
+    arena_state.heroes[0].x = 0.0f;
+    arena_state.heroes[0].z = 0.0f;
+    arena_state.heroes[0].attack_cooldown_ms = 0;
+    arena_state.heroes[ARENA_TEAM_SIZE].x = 1.0f; /* within ARENA_ATTACK_RANGE */
+    arena_state.heroes[ARENA_TEAM_SIZE].z = 0.0f;
+
+    ArenaLaneCreep *creep = &arena_state.lane_creeps[0];
+    creep->active = 1; creep->alive = 1; creep->team = 1;
+    creep->hp = creep->max_hp = ARENA_LANE_CREEP_HP;
+    creep->x = 0.3f; creep->z = 0.0f; /* also within ARENA_ATTACK_RANGE */
+
+    arena_hero_attack_lane_creeps(16);
+
+    CHECK(creep->hp == ARENA_LANE_CREEP_HP,
+          "a hero with an enemy hero already in range does not also attack a nearby lane creep this tick");
+}
+
+static void test_lane_creep_despawns_at_final_waypoint_with_no_reward(void) {
+    arena_init_teams();
+    for (int i = 0; i < ARENA_MAX_HEROES; i++) arena_state.heroes[i].active = 0;
+    arena_state.lane_wave_timer_ms[0] = 999999;
+    arena_state.lane_wave_timer_ms[1] = 999999;
+
+    ArenaLaneCreep *creep = &arena_state.lane_creeps[0];
+    creep->active = 1; creep->alive = 1; creep->team = 0; creep->waypoint_index = ARENA_LANE_WAYPOINT_COUNT - 1;
+    creep->hp = creep->max_hp = ARENA_LANE_CREEP_HP;
+    creep->x = 12.0f; creep->z = 0.0f; /* team 0's final waypoint -- the enemy's spawn line, S170-139 */
+
+    arena_tick_lane_creeps(16);
+
+    CHECK(!creep->active, "a lane creep that reaches the final waypoint despawns -- no structure exists yet to push against");
+}
+
+static void test_lane_creep_wave_respawns_after_the_interval(void) {
+    arena_init_teams();
+    for (int i = 0; i < ARENA_MAX_HEROES; i++) arena_state.heroes[i].active = 0;
+    /* Skip past the initial delay -- this test is about the steady-state
+       respawn interval, not the match-opening grace period (already covered
+       by test_lane_creep_wave_spawns_for_both_teams_after_initial_delay). */
+    arena_state.lane_wave_timer_ms[0] = 0;
+    arena_state.lane_wave_timer_ms[1] = 0;
+
+    arena_tick_lane_creeps(16); /* first wave, both teams */
+    for (int i = 0; i < ARENA_MAX_LANE_CREEPS; i++) arena_state.lane_creeps[i].active = 0; /* as if the wave was wiped */
+
+    arena_tick_lane_creeps(ARENA_LANE_WAVE_INTERVAL_MS); /* advance the timer past a full interval in one tick */
+
+    int active_count = 0;
+    for (int i = 0; i < ARENA_MAX_LANE_CREEPS; i++) if (arena_state.lane_creeps[i].active) active_count++;
+    CHECK(active_count == ARENA_LANE_CREEPS_PER_WAVE * 2, "a fresh wave spawns for both teams once the wave timer elapses again");
+}
+
 static void test_stealthed_hero_captures_undetected_through_a_crowd_of_visible_enemies(void) {
     /* The archetypal WoW Arathi Basin moment, brought forward on purpose:
        a stealthed capper (Frog's R, which the doc itself describes as
@@ -2532,13 +2787,6 @@ static void test_mnm_r_survive_floor_actually_blocks_lethal_damage(void) {
  * dodges it, and an unhit shot despawns cleanly once it exceeds its range
  * rather than lingering forever. */
 
-static ArenaProjectile *find_active_projectile(void) {
-    for (int i = 0; i < ARENA_MAX_PROJECTILES; i++) {
-        if (arena_state.projectiles[i].active) return &arena_state.projectiles[i];
-    }
-    return NULL;
-}
-
 static void test_gary_q_cast_spawns_projectile_no_instant_damage(void) {
     arena_init_teams();
     for (int i = 2; i < ARENA_MAX_HEROES; i++) arena_state.heroes[i].active = 0;
@@ -2636,6 +2884,183 @@ static void test_gary_q_projectile_despawns_after_max_range_unhit(void) {
     CHECK(find_active_projectile() == NULL, "an unhit projectile despawns once it exceeds its max range, doesn't travel forever");
 }
 
+/* S170-140: Tyler's Q (Earthbind) converted from an instant hit to a real
+ * projectile, carrying both root and burn as on-hit effects. */
+static void test_tyler_q_cast_spawns_projectile_no_instant_effect(void) {
+    arena_init_teams();
+    for (int i = 2; i < ARENA_MAX_HEROES; i++) arena_state.heroes[i].active = 0;
+    arena_state.heroes[ARENA_TEAM_SIZE].active = 1;
+    arena_state.heroes[0].hero_id = ARENA_HERO_TYLER;
+    arena_state.heroes[0].x = 0; arena_state.heroes[0].z = 0;
+    arena_state.heroes[ARENA_TEAM_SIZE].x = ARENA_TYLER_Q_RANGE - 1.0f;
+    arena_state.heroes[ARENA_TEAM_SIZE].z = 0;
+    int foe_hp_before = arena_state.heroes[ARENA_TEAM_SIZE].hp;
+
+    arena_cast_q(0);
+
+    CHECK(arena_state.heroes[ARENA_TEAM_SIZE].hp == foe_hp_before, "casting Q does not deal instant damage -- it fires a projectile instead");
+    CHECK(arena_state.heroes[ARENA_TEAM_SIZE].rooted_ms == 0, "no instant root either");
+    CHECK(arena_state.heroes[ARENA_TEAM_SIZE].burning_ms == 0, "no instant burn either");
+    CHECK(find_active_projectile() != NULL, "a projectile is actually spawned on cast");
+    CHECK(arena_state.heroes[0].q_cooldown_ms == ARENA_TYLER_Q_COOLDOWN_MS, "cooldown is spent on cast");
+}
+
+static void test_tyler_q_projectile_roots_and_burns_on_hit(void) {
+    arena_init_teams();
+    for (int i = 2; i < ARENA_MAX_HEROES; i++) arena_state.heroes[i].active = 0;
+    arena_state.heroes[ARENA_TEAM_SIZE].active = 1;
+    arena_state.heroes[0].hero_id = ARENA_HERO_TYLER;
+    arena_state.heroes[0].x = 0; arena_state.heroes[0].z = 0;
+    arena_state.heroes[ARENA_TEAM_SIZE].x = ARENA_TYLER_Q_RANGE - 1.0f;
+    arena_state.heroes[ARENA_TEAM_SIZE].z = 0;
+    int foe_hp_before = arena_state.heroes[ARENA_TEAM_SIZE].hp;
+
+    arena_cast_q(0);
+    for (int i = 0; i < 100; i++) arena_tick_projectiles(16);
+
+    CHECK(arena_state.heroes[ARENA_TEAM_SIZE].hp < foe_hp_before, "a stationary target is hit once the net reaches it");
+    CHECK(arena_state.heroes[ARENA_TEAM_SIZE].rooted_ms == ARENA_TYLER_Q_ROOT_MS, "Earthbind roots the foe on a landed hit");
+    CHECK(arena_state.heroes[ARENA_TEAM_SIZE].burning_ms == ARENA_TYLER_Q_BURN_MS, "...and applies the burn DoT too, both carried by the same projectile");
+    CHECK(arena_state.heroes[ARENA_TEAM_SIZE].burn_dps == ARENA_TYLER_Q_BURN_DPS, "burn DoT rate matches Tyler's own Q burn rate");
+}
+
+static void test_tyler_q_projectile_misses_if_target_steps_off_line(void) {
+    arena_init_teams();
+    for (int i = 2; i < ARENA_MAX_HEROES; i++) arena_state.heroes[i].active = 0;
+    arena_state.heroes[ARENA_TEAM_SIZE].active = 1;
+    arena_state.heroes[0].hero_id = ARENA_HERO_TYLER;
+    arena_state.heroes[0].x = 0; arena_state.heroes[0].z = 0;
+    arena_state.heroes[ARENA_TEAM_SIZE].x = ARENA_TYLER_Q_RANGE - 1.0f;
+    arena_state.heroes[ARENA_TEAM_SIZE].z = 0;
+    int foe_hp_before = arena_state.heroes[ARENA_TEAM_SIZE].hp;
+
+    arena_cast_q(0);
+    arena_state.heroes[ARENA_TEAM_SIZE].z = 10.0f;
+    for (int i = 0; i < 100; i++) arena_tick_projectiles(16);
+
+    CHECK(arena_state.heroes[ARENA_TEAM_SIZE].hp == foe_hp_before, "a target that steps off the net's line takes no damage");
+    CHECK(arena_state.heroes[ARENA_TEAM_SIZE].rooted_ms == 0, "...and isn't rooted");
+    CHECK(arena_state.heroes[ARENA_TEAM_SIZE].burning_ms == 0, "...or burned -- a real dodge, not homing");
+}
+
+/* S170-141: Tyler's puppet clones ("true Meepo parity"). See
+ * docs/HEROES_VS0.md's Tyler section for the full design/scope note. */
+static void test_tyler_r_spawns_clones_linked_to_caster(void) {
+    arena_init_teams();
+    for (int i = 1; i < ARENA_MAX_HEROES; i++) arena_state.heroes[i].active = 0;
+    arena_state.heroes[0].hero_id = ARENA_HERO_TYLER;
+    arena_state.heroes[0].x = 5.0f; arena_state.heroes[0].z = 2.0f;
+
+    arena_cast_r(0);
+
+    int clone_count = 0;
+    for (int i = ARENA_MAX_HEROES; i < ARENA_HEROES_ARRAY_SIZE; i++) {
+        ArenaHero *c = &arena_state.heroes[i];
+        if (!c->active) continue;
+        clone_count++;
+        CHECK(c->is_clone == 1, "each spawned puppet is marked is_clone");
+        CHECK(c->clone_owner == 0, "each spawned puppet links back to Tyler's own owner slot");
+        CHECK(c->team == arena_state.heroes[0].team, "a clone shares Tyler's team");
+        CHECK(c->hp == (int)(arena_state.heroes[0].max_hp * ARENA_TYLER_CLONE_HP_PCT),
+              "a clone spawns with the documented fraction of Tyler's max HP");
+    }
+    CHECK(clone_count == ARENA_TYLER_R_CLONE_COUNT, "R spawns the documented number of clones");
+}
+
+static void test_tyler_clones_mirror_move_target_and_fight(void) {
+    arena_init_teams();
+    for (int i = 1; i < ARENA_MAX_HEROES; i++) arena_state.heroes[i].active = 0;
+    arena_state.heroes[ARENA_TEAM_SIZE].active = 1;
+    arena_state.heroes[ARENA_TEAM_SIZE].alive = 1;
+    arena_state.heroes[0].hero_id = ARENA_HERO_TYLER;
+    arena_state.heroes[0].x = 0; arena_state.heroes[0].z = 0;
+
+    arena_cast_r(0);
+    arena_set_move_target(0, 20.0f, 0.0f);
+
+    /* Place a lone enemy exactly where the clone army is marching through,
+       far from Tyler himself, so only a clone (not the real Tyler) can be
+       the one that actually lands the hit -- proves clones fight through
+       the same generic combat loop, not a special-cased one. */
+    arena_state.heroes[ARENA_TEAM_SIZE].x = 1.0f;
+    arena_state.heroes[ARENA_TEAM_SIZE].z = 0.5f;
+    int foe_hp_before = arena_state.heroes[ARENA_TEAM_SIZE].hp;
+
+    for (int i = 0; i < 30; i++) arena_update_teams(16);
+
+    int any_clone_moved = 0;
+    for (int i = ARENA_MAX_HEROES; i < ARENA_HEROES_ARRAY_SIZE; i++) {
+        ArenaHero *c = &arena_state.heroes[i];
+        if (c->active && c->x > 0.5f) any_clone_moved = 1;
+    }
+    CHECK(any_clone_moved, "clones mirror Tyler's own move-click and actually advance");
+    CHECK(arena_state.heroes[ARENA_TEAM_SIZE].hp < foe_hp_before,
+          "an enemy near the marching clone army takes real damage -- clones fight through the generic melee loop");
+}
+
+/* apply_damage/arena_tick_respawns are static to arena_game.c -- the three
+ * tests below drive real kills entirely through the public arena_update_teams
+ * loop (a lone, heavily-buffed enemy hero parked in melee range), the same
+ * "run real ticks until it happens" style already used elsewhere in this
+ * suite (e.g. test_dead_hero_respawns_at_owned_node_once_timer_expires). */
+
+static void test_tyler_shared_fate_clone_death_kills_tyler_and_siblings(void) {
+    arena_init_teams();
+    for (int i = 2; i < ARENA_MAX_HEROES; i++) arena_state.heroes[i].active = 0;
+    arena_state.heroes[ARENA_TEAM_SIZE].active = 1;
+    arena_state.heroes[ARENA_TEAM_SIZE].alive = 1;
+    arena_state.heroes[ARENA_TEAM_SIZE].hp = arena_state.heroes[ARENA_TEAM_SIZE].max_hp = 500; /* outlasts the clone's own counter-attacks */
+    arena_state.heroes[0].hero_id = ARENA_HERO_TYLER;
+    arena_state.heroes[0].x = 0; arena_state.heroes[0].z = 0;
+
+    arena_cast_r(0);
+    ArenaHero *clone = &arena_state.heroes[ARENA_MAX_HEROES];
+    CHECK(clone->active && clone->alive, "sanity: the first clone slot is alive before combat");
+    ArenaHero *sibling = &arena_state.heroes[ARENA_MAX_HEROES + 1];
+    /* Separate the clone from Tyler and park the sibling clone far out of
+       reach, so the lone enemy below can only ever fight the ONE clone --
+       isolates this to "a clone's own death cascades," not a mixed brawl. */
+    clone->x = 5.0f; clone->z = 0.0f;
+    sibling->x = -50.0f; sibling->z = -50.0f;
+    arena_state.heroes[ARENA_TEAM_SIZE].x = 5.0f;
+    arena_state.heroes[ARENA_TEAM_SIZE].z = 0.0f;
+
+    for (int i = 0; i < 500 && arena_state.heroes[0].alive; i++) arena_update_teams(16);
+
+    CHECK(!clone->alive, "the clone that was actually hit dies");
+    CHECK(!arena_state.heroes[0].alive, "the real Tyler dies too -- literal OG shared fate, no exceptions");
+    CHECK(!sibling->alive, "every other linked clone dies in the same cascade");
+    CHECK(!sibling->active, "a dead clone's slot frees immediately, no respawn queue");
+}
+
+static void test_tyler_death_kills_his_clones_too(void) {
+    arena_init_teams();
+    for (int i = 2; i < ARENA_MAX_HEROES; i++) arena_state.heroes[i].active = 0;
+    arena_state.heroes[ARENA_TEAM_SIZE].active = 1;
+    arena_state.heroes[ARENA_TEAM_SIZE].alive = 1;
+    arena_state.heroes[ARENA_TEAM_SIZE].hp = arena_state.heroes[ARENA_TEAM_SIZE].max_hp = 500;
+    arena_state.heroes[0].hero_id = ARENA_HERO_TYLER;
+    arena_state.heroes[0].max_hp = arena_state.heroes[0].hp = 40; /* converges quickly under real combat */
+    arena_state.heroes[0].x = 0; arena_state.heroes[0].z = 0;
+
+    arena_cast_r(0);
+    /* Park both clones far away -- isolates this to Tyler's OWN death
+       triggering the cascade, not a clone dying alongside him in the same
+       fight. */
+    for (int i = ARENA_MAX_HEROES; i < ARENA_HEROES_ARRAY_SIZE; i++) {
+        arena_state.heroes[i].x = -50.0f;
+        arena_state.heroes[i].z = -50.0f;
+    }
+    arena_state.heroes[ARENA_TEAM_SIZE].x = 0.0f;
+    arena_state.heroes[ARENA_TEAM_SIZE].z = 0.0f;
+
+    for (int i = 0; i < 500 && arena_state.heroes[0].alive; i++) arena_update_teams(16);
+
+    CHECK(!arena_state.heroes[0].alive, "Tyler himself dies from real combat");
+    ArenaHero *clone = &arena_state.heroes[ARENA_MAX_HEROES];
+    CHECK(!clone->alive && !clone->active, "Tyler dying kills his clones too, same shared-fate link in the other direction");
+}
+
 int main(void) {
     printf("RED GARDEN arena_game headless smoke test\n\n");
     test_movement_reaches_target();
@@ -2660,8 +3085,10 @@ int main(void) {
     test_duck_r_bigger_pull_and_damage_than_q();
     test_duck_has_no_w();
     test_hero_dispatch_is_by_hero_not_owner_slot();
-    test_ghost_q_damages_and_silences_in_range();
-    test_ghost_q_out_of_range_whiffs();
+    test_ghost_q_cast_spawns_projectile_no_instant_effect();
+    test_ghost_q_out_of_range_whiffs_no_projectile();
+    test_ghost_q_projectile_damages_and_silences_on_hit();
+    test_ghost_q_projectile_misses_and_no_silence_if_target_steps_off_line();
     test_silenced_hero_cannot_cast();
     test_ghost_w_grants_intangibility_and_expires();
     test_intangible_hero_cannot_be_hit();
@@ -2734,6 +3161,15 @@ int main(void) {
     test_neutral_creep_kill_grants_capture_bonus_only_while_channeling();
     test_team_creep_kill_by_owning_team_heals();
     test_team_creep_kill_by_enemy_team_helps_flip_the_node();
+    test_lane_creep_wave_spawns_for_both_teams_after_initial_delay();
+    test_lane_creep_marches_toward_center_when_no_target();
+    test_lane_creep_attacks_nearby_enemy_hero_and_does_not_advance();
+    test_lane_creeps_fight_each_other_when_opposing_teams_meet();
+    test_hero_kills_lane_creep_in_range();
+    test_hero_does_not_attack_own_team_lane_creep();
+    test_hero_does_not_attack_lane_creep_while_enemy_hero_in_range();
+    test_lane_creep_despawns_at_final_waypoint_with_no_reward();
+    test_lane_creep_wave_respawns_after_the_interval();
     test_stealthed_hero_captures_undetected_through_a_crowd_of_visible_enemies();
     test_two_visible_teams_still_interrupt_normally_even_near_a_stealthed_ally();
     test_starting_a_channel_breaks_the_capturer_stealth();
@@ -2795,6 +3231,13 @@ int main(void) {
     test_gary_q_projectile_lands_after_travel_time();
     test_gary_q_projectile_misses_if_target_steps_off_line();
     test_gary_q_projectile_despawns_after_max_range_unhit();
+    test_tyler_q_cast_spawns_projectile_no_instant_effect();
+    test_tyler_q_projectile_roots_and_burns_on_hit();
+    test_tyler_q_projectile_misses_if_target_steps_off_line();
+    test_tyler_r_spawns_clones_linked_to_caster();
+    test_tyler_clones_mirror_move_target_and_fight();
+    test_tyler_shared_fate_clone_death_kills_tyler_and_siblings();
+    test_tyler_death_kills_his_clones_too();
     printf("\n%s\n", failures == 0 ? "ALL PASS" : "SOME FAILED");
     return failures == 0 ? 0 : 1;
 }
