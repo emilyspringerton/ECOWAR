@@ -326,7 +326,11 @@ someone always has to be watching the bridge. The one hero in this roster with n
 teleport, no gap-closer of any kind: Gary doesn't chase, he watches from where he's standing.
 
 - **Q — The Property**: a stationary long-range precision shot at the nearest enemy — no movement
-  at all, range-gated instead of a hit-radius-after-a-dash like most of the roster's Qs.
+  at all, range-gated instead of a hit-radius-after-a-dash like most of the roster's Qs. Fired as a
+  real travelling projectile (S170-136, the arena's first) rather than an instant hit: it takes real
+  flight time to cross the distance, so a foe that steps off the firing line before it arrives
+  genuinely dodges it — no homing. The range check still gates the cast itself (Gary needs a shot
+  lined up to fire at all), but landing the hit is no longer guaranteed.
 - **W — Watching the Bridge**: a free toggle (no cooldown) that extends Q's own range while
   active, rather than granting a stat bonus like every other toggle in this roster.
 - **R — "Slow Down, This Isn't a Track Meet"**: a fixed-duration root on the nearest enemy — the

@@ -2525,6 +2525,117 @@ static void test_mnm_r_survive_floor_actually_blocks_lethal_damage(void) {
     CHECK(arena_state.heroes[0].alive, "MnM survives a hit that would kill anyone else on the roster outright");
 }
 
+/* S170-136: Gary's Q is now a real travelling projectile, not an instant
+ * hit -- these tests exercise the whole shape: cast spawns a projectile
+ * (no immediate damage), the projectile travels and lands after enough
+ * ticks, a target that steps off the line before it arrives genuinely
+ * dodges it, and an unhit shot despawns cleanly once it exceeds its range
+ * rather than lingering forever. */
+
+static ArenaProjectile *find_active_projectile(void) {
+    for (int i = 0; i < ARENA_MAX_PROJECTILES; i++) {
+        if (arena_state.projectiles[i].active) return &arena_state.projectiles[i];
+    }
+    return NULL;
+}
+
+static void test_gary_q_cast_spawns_projectile_no_instant_damage(void) {
+    arena_init_teams();
+    for (int i = 2; i < ARENA_MAX_HEROES; i++) arena_state.heroes[i].active = 0;
+    arena_state.heroes[ARENA_TEAM_SIZE].active = 1;
+    arena_state.heroes[0].hero_id = ARENA_HERO_GARY;
+    arena_state.heroes[0].x = 0; arena_state.heroes[0].z = 0;
+    arena_state.heroes[ARENA_TEAM_SIZE].x = ARENA_GARY_Q_RANGE - 1.0f;
+    arena_state.heroes[ARENA_TEAM_SIZE].z = 0;
+    int foe_hp_before = arena_state.heroes[ARENA_TEAM_SIZE].hp;
+
+    arena_cast_q(0);
+
+    CHECK(arena_state.heroes[ARENA_TEAM_SIZE].hp == foe_hp_before,
+          "casting Q does not deal instant damage -- it fires a projectile instead");
+    ArenaProjectile *p = find_active_projectile();
+    CHECK(p != NULL, "a projectile is actually spawned on cast");
+    CHECK(arena_state.heroes[0].q_cooldown_ms == ARENA_GARY_Q_COOLDOWN_MS,
+          "cooldown is spent on cast, same as every other ability, regardless of the shot's eventual outcome");
+}
+
+static void test_gary_q_out_of_range_whiffs_no_projectile(void) {
+    arena_init_teams();
+    for (int i = 2; i < ARENA_MAX_HEROES; i++) arena_state.heroes[i].active = 0;
+    arena_state.heroes[ARENA_TEAM_SIZE].active = 1;
+    arena_state.heroes[0].hero_id = ARENA_HERO_GARY;
+    arena_state.heroes[0].x = 0; arena_state.heroes[0].z = 0;
+    arena_state.heroes[ARENA_TEAM_SIZE].x = ARENA_GARY_Q_RANGE + 5.0f;
+    arena_state.heroes[ARENA_TEAM_SIZE].z = 0;
+
+    arena_cast_q(0);
+
+    CHECK(find_active_projectile() == NULL, "no projectile spawns when no foe is in range at cast time");
+    CHECK(arena_state.heroes[0].q_cooldown_ms == 0, "an out-of-range whiff doesn't consume the cooldown, same convention as every other Q");
+}
+
+static void test_gary_q_projectile_lands_after_travel_time(void) {
+    arena_init_teams();
+    for (int i = 2; i < ARENA_MAX_HEROES; i++) arena_state.heroes[i].active = 0;
+    arena_state.heroes[ARENA_TEAM_SIZE].active = 1;
+    arena_state.heroes[0].hero_id = ARENA_HERO_GARY;
+    arena_state.heroes[0].x = 0; arena_state.heroes[0].z = 0;
+    arena_state.heroes[ARENA_TEAM_SIZE].x = ARENA_GARY_Q_RANGE - 1.0f;
+    arena_state.heroes[ARENA_TEAM_SIZE].z = 0;
+    int foe_hp_before = arena_state.heroes[ARENA_TEAM_SIZE].hp;
+
+    arena_cast_q(0);
+    CHECK(arena_state.heroes[ARENA_TEAM_SIZE].hp == foe_hp_before, "no damage the instant the shot is fired");
+
+    /* Foe stays put -- the shot should reach it well within one full second
+       of flight given ARENA_GARY_Q_PROJECTILE_SPEED. */
+    for (int i = 0; i < 100; i++) arena_tick_projectiles(16);
+
+    CHECK(arena_state.heroes[ARENA_TEAM_SIZE].hp < foe_hp_before, "a stationary target is hit once the projectile travels far enough to reach it");
+    CHECK(find_active_projectile() == NULL, "the projectile deactivates on hit, doesn't linger");
+}
+
+static void test_gary_q_projectile_misses_if_target_steps_off_line(void) {
+    arena_init_teams();
+    for (int i = 2; i < ARENA_MAX_HEROES; i++) arena_state.heroes[i].active = 0;
+    arena_state.heroes[ARENA_TEAM_SIZE].active = 1;
+    arena_state.heroes[0].hero_id = ARENA_HERO_GARY;
+    arena_state.heroes[0].x = 0; arena_state.heroes[0].z = 0;
+    arena_state.heroes[ARENA_TEAM_SIZE].x = ARENA_GARY_Q_RANGE - 1.0f;
+    arena_state.heroes[ARENA_TEAM_SIZE].z = 0;
+    int foe_hp_before = arena_state.heroes[ARENA_TEAM_SIZE].hp;
+
+    arena_cast_q(0);
+    ArenaProjectile *p = find_active_projectile();
+    CHECK(p != NULL, "projectile spawned");
+
+    /* Real dodge: step far off the original firing line before the shot
+       arrives, well clear of the projectile's hit radius. */
+    arena_state.heroes[ARENA_TEAM_SIZE].z = 10.0f;
+    for (int i = 0; i < 100; i++) arena_tick_projectiles(16);
+
+    CHECK(arena_state.heroes[ARENA_TEAM_SIZE].hp == foe_hp_before,
+          "a target that steps off the firing line before the shot arrives takes no damage -- a real dodge, not homing");
+}
+
+static void test_gary_q_projectile_despawns_after_max_range_unhit(void) {
+    arena_init_teams();
+    for (int i = 2; i < ARENA_MAX_HEROES; i++) arena_state.heroes[i].active = 0;
+    arena_state.heroes[ARENA_TEAM_SIZE].active = 1;
+    arena_state.heroes[0].hero_id = ARENA_HERO_GARY;
+    arena_state.heroes[0].x = 0; arena_state.heroes[0].z = 0;
+    arena_state.heroes[ARENA_TEAM_SIZE].x = ARENA_GARY_Q_RANGE - 1.0f;
+    arena_state.heroes[ARENA_TEAM_SIZE].z = 0;
+
+    arena_cast_q(0);
+    /* Move the foe out of the way immediately, then run well past the time
+       the shot would need to exceed its own max_range. */
+    arena_state.heroes[ARENA_TEAM_SIZE].z = 10.0f;
+    for (int i = 0; i < 200; i++) arena_tick_projectiles(16);
+
+    CHECK(find_active_projectile() == NULL, "an unhit projectile despawns once it exceeds its max range, doesn't travel forever");
+}
+
 int main(void) {
     printf("RED GARDEN arena_game headless smoke test\n\n");
     test_movement_reaches_target();
@@ -2679,6 +2790,11 @@ int main(void) {
     test_mnm_q_damages_and_roots_in_melee_range();
     test_mnm_r_roots_self_and_grants_survive_floor();
     test_mnm_r_survive_floor_actually_blocks_lethal_damage();
+    test_gary_q_cast_spawns_projectile_no_instant_damage();
+    test_gary_q_out_of_range_whiffs_no_projectile();
+    test_gary_q_projectile_lands_after_travel_time();
+    test_gary_q_projectile_misses_if_target_steps_off_line();
+    test_gary_q_projectile_despawns_after_max_range_unhit();
     printf("\n%s\n", failures == 0 ? "ALL PASS" : "SOME FAILED");
     return failures == 0 ? 0 : 1;
 }

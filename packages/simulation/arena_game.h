@@ -399,6 +399,16 @@ typedef enum {
 #define ARENA_GARY_Q_RANGE_WATCHING 9.0f /* Q's range while W is toggled on */
 #define ARENA_GARY_Q_DAMAGE         11
 #define ARENA_GARY_Q_COOLDOWN_MS    3500
+/* S170-136: Q is now a real travelling projectile (first one in the game),
+ * not an instant hit -- fired straight at the foe's position at cast time,
+ * no homing, so a foe that moves off the line after the shot is fired
+ * genuinely dodges it. Speed is fast enough to still read as "precision
+ * shot" but slow enough (relative to ARENA_HERO_SPEED) that sidestepping is
+ * a real, learnable counterplay: at 14 u/s over up to 9 units of range, the
+ * shot is in the air for up to ~0.64s, in which a hero moving at 4 u/s can
+ * shift ~2.5 units off the original line. */
+#define ARENA_GARY_Q_PROJECTILE_SPEED  14.0f
+#define ARENA_GARY_Q_PROJECTILE_RADIUS 0.6f
 #define ARENA_GARY_R_RANGE          6.0f
 #define ARENA_GARY_R_ROOT_MS        2000
 #define ARENA_GARY_R_COOLDOWN_MS    16000
@@ -819,10 +829,34 @@ typedef struct {
     int last_attacked_by_owner; /* -1 = never hit since spawning, else the owner index of whoever last damaged it -- who gets credit on the kill */
 } ArenaCreep;
 
+/* ArenaProjectile (S170-136): a real travelling skill-shot, not an instant
+ * hit -- the first of its kind in this arena. Straight-line, no homing:
+ * velocity is fixed at spawn from the caster's position toward the target's
+ * position AT CAST TIME, so a target that moves after the shot is fired can
+ * genuinely dodge it by stepping off the original line. One shared pool
+ * serves every projectile-casting hero (currently just Gary's Q); hero_id
+ * is carried along so the client can pick the right visual per spell later
+ * without needing a second parallel system. */
+#define ARENA_MAX_PROJECTILES 32
+
+typedef struct {
+    int active;
+    int owner;   /* hero slot that fired it -- for the client's self/team/enemy color convention */
+    int team;    /* cached at spawn: which team it damages the OPPOSITE of, even if the caster dies/respawns mid-flight */
+    ArenaHeroID hero_id; /* which spell this is, for client-side visual style */
+    float x, z;
+    float vx, vz;     /* units/sec */
+    float radius;
+    int damage;
+    float max_range;  /* total travel distance before despawning unhit (a whiff) */
+    float traveled;
+} ArenaProjectile;
+
 typedef struct {
     ArenaHero heroes[ARENA_MAX_HEROES];
     ArenaNode nodes[ARENA_NODE_COUNT];
     ArenaCreep creeps[ARENA_MAX_CREEPS];
+    ArenaProjectile projectiles[ARENA_MAX_PROJECTILES];
     int winner; /* 0 = none yet, 1 = player/team 0, 2 = bot/team 1 */
 } ArenaState;
 
@@ -890,6 +924,23 @@ void arena_tick_nodes(unsigned int dt_ms);
  * separately so both halves of creep combat can be reasoned about
  * independently. Called from both arena_update() and arena_update_teams(). */
 void arena_tick_creeps(unsigned int dt_ms);
+
+/* arena_spawn_projectile (S170-136): fills the first free slot in
+ * arena_state.projectiles with a straight-line shot from (x,z) toward
+ * (target_x,target_z) at `speed` units/sec, does nothing if the pool is
+ * full (ARENA_MAX_PROJECTILES headroom is generous relative to current
+ * cast-rate, so this should never actually happen in practice). */
+void arena_spawn_projectile(int owner, int team, ArenaHeroID hero_id,
+                             float x, float z, float target_x, float target_z,
+                             float speed, float radius, int damage, float max_range);
+
+/* arena_tick_projectiles (S170-136): advances every active projectile by
+ * dt_ms along its fixed velocity, checks collision against every hittable
+ * enemy hero within `radius`, applies damage + armor on the first hit and
+ * deactivates, and deactivates unhit projectiles once `traveled` reaches
+ * `max_range` (a whiff). Called from both arena_update() and
+ * arena_update_teams(), same convention as arena_tick_creeps. */
+void arena_tick_projectiles(unsigned int dt_ms);
 
 /* arena_hero_attack_creeps (S170-51): each active, alive hero without a
  * closer enemy HERO in range instead auto-attacks a living creep within

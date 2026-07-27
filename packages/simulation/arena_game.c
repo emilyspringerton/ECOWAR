@@ -506,6 +506,63 @@ static int hero_is_hittable(const ArenaHero *h) {
     return h && h->alive && h->intangible_ms <= 0;
 }
 
+/* arena_spawn_projectile (S170-136): see header doc comment. */
+void arena_spawn_projectile(int owner, int team, ArenaHeroID hero_id,
+                             float x, float z, float target_x, float target_z,
+                             float speed, float radius, int damage, float max_range) {
+    ArenaProjectile *p = NULL;
+    for (int i = 0; i < ARENA_MAX_PROJECTILES; i++) {
+        if (!arena_state.projectiles[i].active) { p = &arena_state.projectiles[i]; break; }
+    }
+    if (!p) return; /* pool exhausted -- generous headroom, should not happen in practice */
+
+    float dx = target_x - x, dz = target_z - z;
+    float dist = sqrtf(dx * dx + dz * dz);
+    if (dist < 0.0001f) { dx = 1.0f; dz = 0.0f; dist = 1.0f; } /* degenerate same-position cast: pick an arbitrary direction rather than a NaN velocity */
+
+    p->active = 1;
+    p->owner = owner;
+    p->team = team;
+    p->hero_id = hero_id;
+    p->x = x;
+    p->z = z;
+    p->vx = (dx / dist) * speed;
+    p->vz = (dz / dist) * speed;
+    p->radius = radius;
+    p->damage = damage;
+    p->max_range = max_range;
+    p->traveled = 0.0f;
+}
+
+/* arena_tick_projectiles (S170-136): see header doc comment. Enemy-ness is
+ * determined by `team` (cached at spawn), not by looking the owner hero back
+ * up -- correct even if the caster died or respawned into a different state
+ * while the shot was still in flight. */
+void arena_tick_projectiles(unsigned int dt_ms) {
+    float dt_sec = (float)dt_ms / 1000.0f;
+    for (int i = 0; i < ARENA_MAX_PROJECTILES; i++) {
+        ArenaProjectile *p = &arena_state.projectiles[i];
+        if (!p->active) continue;
+
+        float step = sqrtf(p->vx * p->vx + p->vz * p->vz) * dt_sec;
+        p->x += p->vx * dt_sec;
+        p->z += p->vz * dt_sec;
+        p->traveled += step;
+
+        for (int h = 0; h < ARENA_MAX_HEROES; h++) {
+            ArenaHero *foe = &arena_state.heroes[h];
+            if (!foe->active || foe->team == p->team) continue;
+            if (!hero_is_hittable(foe)) continue;
+            float dx = foe->x - p->x, dz = foe->z - p->z;
+            if (sqrtf(dx * dx + dz * dz) > p->radius) continue;
+            apply_damage(foe, apply_armor(p->damage, arena_hero_armor(foe)));
+            p->active = 0;
+            break;
+        }
+        if (p->active && p->traveled >= p->max_range) p->active = 0; /* whiffed */
+    }
+}
+
 /* creep_spawn: (re)rolls flavor/HP from the creep's own node's CURRENT
  * owner and places it at the node's position -- the "jungle reacts to who
  * controls the ground under it" half of S170-51's design. */
@@ -1018,13 +1075,25 @@ static void loki_cast_r(ArenaHero *loki) {
  * No dash, no movement at all (unlike every other Q in this file) -- Gary doesn't chase, he
  * watches from where he's standing. Range is longer while W (Watching the Bridge) is toggled
  * on. Returns 1 if a living enemy was in range, 0 on a whiff (range gates this one, not a
- * hit-radius after a dash, since there's no dash to begin with). */
+ * hit-radius after a dash, since there's no dash to begin with).
+ *
+ * S170-136: no longer an instant hit -- fires a real projectile straight at
+ * the foe's position at cast time (see arena_spawn_projectile). The cast
+ * still requires a hittable foe within range at the MOMENT of casting (Gary
+ * has to actually have a shot lined up to fire at all -- he's not spraying
+ * blind), but landing the hit is no longer guaranteed: the foe can step off
+ * the line before the shot arrives. Cooldown is spent on cast either way,
+ * same as a real skill-shot -- you don't get it back just because you
+ * missed. */
 static int gary_cast_q(ArenaHero *gary, ArenaHero *foe) {
     if (!hero_is_hittable(foe)) return 0;
     float range = gary->w_active ? ARENA_GARY_Q_RANGE_WATCHING : ARENA_GARY_Q_RANGE;
     float dx = foe->x - gary->x, dz = foe->z - gary->z;
     if (sqrtf(dx * dx + dz * dz) > range) return 0;
-    apply_damage(foe, apply_armor(ARENA_GARY_Q_DAMAGE, arena_hero_armor(foe)));
+    arena_spawn_projectile(gary->owner, gary->team, ARENA_HERO_GARY,
+                           gary->x, gary->z, foe->x, foe->z,
+                           ARENA_GARY_Q_PROJECTILE_SPEED, ARENA_GARY_Q_PROJECTILE_RADIUS,
+                           ARENA_GARY_Q_DAMAGE, range);
     return 1;
 }
 
@@ -2673,11 +2742,12 @@ void arena_update(unsigned int dt_ms) {
        wasn't gated -- Duck's Q was yanking it every time it came off
        cooldown. */
     if (arena_bot_enabled) bot_cast_kit_if_ready(&arena_state.heroes[1], &arena_state.heroes[0]);
+    arena_tick_projectiles(dt_ms);
     /* Runs last (S170-51 cont'd): a capture channel is interrupted by
        damage taken this same tick (real Arathi Basin's own rule), so node
-       state needs to see everything above -- creeps, melee, kit ticks, and
-       the bot's own casts -- before deciding whether anyone's channel
-       survives this tick. */
+       state needs to see everything above -- creeps, melee, kit ticks,
+       projectile hits, and the bot's own casts -- before deciding whether
+       anyone's channel survives this tick. */
     arena_tick_nodes(dt_ms);
 
     if (!arena_state.heroes[0].alive) arena_state.winner = 2;
@@ -2841,9 +2911,11 @@ void arena_update_teams(unsigned int dt_ms) {
         if (!h->active) continue;
         tick_hero_kit(h, arena_nearest_enemy(i), arena_nearest_ally(i), dt_ms);
     }
+    arena_tick_projectiles(dt_ms);
     /* Runs last, same reasoning as arena_update()'s own call site: a
        capture channel needs to see this whole tick's damage (creeps,
-       melee, kit ticks) before deciding whether it's interrupted. */
+       melee, kit ticks, projectile hits) before deciding whether it's
+       interrupted. */
     arena_tick_nodes(dt_ms);
 
     /* S170-121: a team-wipe (0 alive) is no longer instantly final on its

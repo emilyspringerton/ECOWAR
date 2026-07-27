@@ -459,6 +459,26 @@ static void net_poll_snapshots(uint32_t now_ms) {
                     dst->capturing_team = msg->nodes[i].capturing_team;
                     dst->capture_progress_ms = msg->nodes[i].capture_progress_ms;
                 }
+                /* S170-136: projectiles are sparse (only some slots active),
+                   so mirror the wire message's own "active count" directly
+                   rather than reusing arena_state.projectiles[]' own active
+                   flags -- the render loop below just walks 0..count. */
+                {
+                    int pcount = msg->projectile_count;
+                    if (pcount > ARENA_SNAPSHOT_MAX_PROJECTILES) pcount = ARENA_SNAPSHOT_MAX_PROJECTILES;
+                    if (pcount > ARENA_MAX_PROJECTILES) pcount = ARENA_MAX_PROJECTILES;
+                    for (int i = 0; i < pcount; i++) {
+                        ArenaProjectile *dst = &arena_state.projectiles[i];
+                        dst->active = 1;
+                        dst->x = msg->projectiles[i].x;
+                        dst->z = msg->projectiles[i].z;
+                        dst->owner = msg->projectiles[i].owner;
+                        dst->hero_id = (ArenaHeroID)msg->projectiles[i].hero_id;
+                    }
+                    for (int i = pcount; i < ARENA_MAX_PROJECTILES; i++) {
+                        arena_state.projectiles[i].active = 0;
+                    }
+                }
             }
         }
         len = recvfrom(net_sock, rbuf, sizeof(rbuf), 0, (struct sockaddr *)&sender, &slen);
@@ -1853,6 +1873,36 @@ int main(int argc, char *argv[]) {
             /* S170-118: per-hero_id silhouette (multi-box), not one generic cube --
                relationship color above still wins for self/team/enemy legibility. */
             draw_hero_model(h->hero_id, h->x, h->z, compute_squish(i), &vp, loc_mvp, loc_model, &cube_mesh);
+        }
+
+        /* projectiles (S170-136): the first travelling skill-shot in this
+           arena. Small, bright, and shape-distinct from every hero
+           silhouette on purpose -- this needs to read as "an incoming shot"
+           at a glance, not blend into the hero-model system above. Same
+           self/team/enemy color convention as heroes so a player can tell
+           at a glance whether an in-flight shot is a threat (enemy, red)
+           before it arrives -- the actual dodge affordance this ability was
+           built for. */
+        for (int i = 0; i < ARENA_MAX_PROJECTILES; i++) {
+            ArenaProjectile *p = &arena_state.projectiles[i];
+            if (!p->active) continue;
+            /* p->team isn't synced over the wire (owner is enough -- the
+               firer's team is already known client-side via the heroes
+               array, no need for a second field carrying the same fact). */
+            if (p->owner == my_owner) {
+                glUniform4f_(loc_color, 0.1f, 0.95f, 1.0f, 1.0f); /* my own shot: bright cyan-white */
+            } else if (arena_state.heroes[p->owner].team == arena_state.heroes[my_owner].team) {
+                glUniform4f_(loc_color, 0.4f, 0.6f, 1.0f, 1.0f); /* ally's shot: light blue */
+            } else {
+                glUniform4f_(loc_color, 1.0f, 0.85f, 0.15f, 1.0f); /* enemy shot: hot yellow -- the thing you need to dodge */
+            }
+            Mat4 pt = mat4_translate(p->x, 0.8f, p->z);
+            Mat4 ps = mat4_scale(0.35f, 0.35f, 0.35f);
+            Mat4 pmodel = mat4_multiply(&pt, &ps);
+            Mat4 pmvp = mat4_multiply(&vp, &pmodel);
+            glUniformMatrix4fv_(loc_mvp, 1, GL_FALSE, pmvp.m);
+            glUniformMatrix4fv_(loc_model, 1, GL_FALSE, pmodel.m);
+            draw_mesh(&cube_mesh);
         }
 
         /* placement rings */

@@ -1,5 +1,28 @@
 # Changelog
 
+## 2026-07-27
+
+- feat(arena): first real projectile skill-shot -- Gary's Q (S170-136). Founder, real-time: "we
+  need to add spell animations and projectiles for some of the spells - some of the spells
+  obviously should be projectile skill shots instead of instant cast - find one such spell - start
+  with gary q" -> "it should be a projectile skill shot with animations and affordances that allow
+  dodging as counterplay." New `ArenaProjectile` pool (`packages/simulation/arena_game.h`/`.c`,
+  `arena_spawn_projectile`/`arena_tick_projectiles`) -- straight-line, no homing: velocity is fixed
+  at cast time toward the foe's position then, so a foe that moves off the line before the shot
+  arrives genuinely dodges it. Wired into both `arena_update()` and `arena_update_teams()`, same
+  convention as `arena_tick_creeps`. Gary's Q ("The Property") rewritten to spawn a projectile
+  instead of instant-hitting; cooldown still spent on cast regardless of outcome, matching every
+  other ability. New `ArenaProjectileSnapshot` in `packages/common/protocol.h`, broadcast by
+  `apps/arena_server`, rendered client-side in `apps/arena` as a small bright cube (color-coded
+  self/ally/enemy same as heroes, so an incoming enemy shot reads as an immediate visual threat --
+  the actual dodge affordance this was built for). 5 new tests (cast spawns a projectile with no
+  instant damage, out-of-range cast whiffs with no projectile and no cooldown spent, a stationary
+  target is hit after real travel time, a target that steps off the line takes no damage, an unhit
+  shot despawns cleanly past its max range). Verified: `scripts/build.sh`, `scripts/build_arena.sh`,
+  `scripts/test_arena.sh`, `scripts/test_10_bots.sh` all pass; local mingw cross-compile (all 4
+  source files) links clean. **Not yet deployed to the live services** -- the founder's own match
+  was in progress when this was built; redeploying now would kill it. Deploy after their match ends.
+
 ## 2026-07-25 (33)
 
 - feat(arena): MnM, the Shapeshifting Crab, 26th hero — Tank (S170-134). Founder, real-time: "add

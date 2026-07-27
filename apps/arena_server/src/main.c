@@ -308,6 +308,19 @@ static void server_broadcast(void) {
         msg.nodes[i].capturing_team = (int8_t)node->capturing_team;
         msg.nodes[i].capture_progress_ms = (uint16_t)(node->capture_progress_ms > 0 ? node->capture_progress_ms : 0);
     }
+    /* S170-136: projectiles are a sparse pool (most slots inactive at any
+       given tick), unlike heroes/nodes which are always fully populated --
+       pack only the active ones, front-to-back, same "count + fixed array"
+       convention as everything else in this message. */
+    for (int i = 0; i < ARENA_MAX_PROJECTILES && msg.projectile_count < ARENA_SNAPSHOT_MAX_PROJECTILES; i++) {
+        ArenaProjectile *p = &arena_state.projectiles[i];
+        if (!p->active) continue;
+        int slot = msg.projectile_count++;
+        msg.projectiles[slot].x = p->x;
+        msg.projectiles[slot].z = p->z;
+        msg.projectiles[slot].owner = (uint8_t)p->owner;
+        msg.projectiles[slot].hero_id = (uint8_t)p->hero_id;
+    }
 
     memcpy(buffer, &head, sizeof(NetHeader));
     memcpy(buffer + sizeof(NetHeader), &msg, sizeof(ArenaSnapshotMsg));

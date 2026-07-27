@@ -147,6 +147,23 @@ typedef struct {
 // ARENA_NODE_COUNT, same duplication reasoning as ARENA_SNAPSHOT_MAX_HEROES.
 #define ARENA_SNAPSHOT_NODE_COUNT 5 /* S170-119: was 2, mirrors arena_game.h's ARENA_NODE_COUNT */
 
+// Per-projectile state broadcast in PACKET_ARENA_SNAPSHOT (S170-136): the
+// first travelling skill-shot in this arena (Gary's Q). Only what a client
+// needs to render and react to a shot in flight -- position + which spell
+// it is (for visual style) + which owner fired it (for the client's
+// existing self/team/enemy color convention, same as ArenaHeroSnapshot).
+// Damage/radius/velocity stay server-only; the client only ever needs to
+// draw where it currently is.
+typedef struct {
+    float x, z;
+    uint8_t owner;
+    uint8_t hero_id;
+} ArenaProjectileSnapshot;
+
+// ARENA_SNAPSHOT_MAX_PROJECTILES must match packages/simulation/arena_game.h's
+// ARENA_MAX_PROJECTILES, same duplication reasoning as the others above.
+#define ARENA_SNAPSHOT_MAX_PROJECTILES 32
+
 // PACKET_ARENA_SNAPSHOT payload: up to ARENA_SNAPSHOT_MAX_HEROES hero
 // slots, in owner order -- `count` says how many are actually meaningful
 // (2 for a 1v1 match, up to 20 for a full 10v10 lobby), same "count +
@@ -163,6 +180,8 @@ typedef struct {
     uint8_t phase;  /* ARENA_PHASE_WAITING/DRAFT/LIVE */
     uint8_t picked[ARENA_SNAPSHOT_MAX_HEROES]; /* 1 once that slot has locked in a hero this draft */
     ArenaNodeSnapshot nodes[ARENA_SNAPSHOT_NODE_COUNT]; /* S170-87 */
+    uint8_t projectile_count; /* S170-136 */
+    ArenaProjectileSnapshot projectiles[ARENA_SNAPSHOT_MAX_PROJECTILES];
 } ArenaSnapshotMsg;
 
 #endif
