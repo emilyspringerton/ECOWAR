@@ -337,6 +337,31 @@ static int apply_armor(int raw_damage, float armor) {
     return dmg < 1 ? 1 : dmg;
 }
 
+/* tyler_clone_cascade_kill (S170-141): the literal OG "one dies, all die"
+ * rule -- force-kills every hero entry sharing `link_owner`'s clone link
+ * (link_owner itself, plus every is_clone entry whose clone_owner points at
+ * it), no exceptions, even bypassing a linked entity's own survive_floor_ms
+ * (that mechanic protects against a hit landing on IT, not against this
+ * separate shared-fate rule). Clone slots free immediately on death (same
+ * "no respawn queue" idiom lane creeps use); the real Tyler, if he's not
+ * already the one who triggered this, still gets the normal
+ * ARENA_HERO_RESPAWN_MS queued like any other hero death. */
+static void tyler_clone_cascade_kill(int link_owner) {
+    for (int i = 0; i < ARENA_HEROES_ARRAY_SIZE; i++) {
+        ArenaHero *h = &arena_state.heroes[i];
+        if (!h->active || !h->alive) continue;
+        int is_linked = (i == link_owner) || (h->is_clone && h->clone_owner == link_owner);
+        if (!is_linked) continue;
+        h->hp = 0;
+        h->alive = 0;
+        if (h->is_clone) {
+            h->active = 0;
+        } else {
+            h->respawn_ms_remaining = ARENA_HERO_RESPAWN_MS;
+        }
+    }
+}
+
 /* apply_damage (S170-46): centralizes "subtract HP, clamp at 0, mark dead"
  * across every damage call site, so Pizza's R (a real damage floor, not a
  * simplified-away shield like Doc Wheel's) only needs one place to check
@@ -356,6 +381,16 @@ static void apply_damage(ArenaHero *target, int amount) {
             target->hp = 0;
             target->alive = 0;
             target->respawn_ms_remaining = ARENA_HERO_RESPAWN_MS;
+            /* S170-141: Tyler's real shared-fate death. Only pay the extra
+               scan when the hero that just died is actually clone-linked
+               (a clone itself, or a real Tyler who may have active clones
+               out) -- every other hero's ordinary death in this 26-hero
+               roster skips this entirely. */
+            if (target->is_clone || target->hero_id == ARENA_HERO_TYLER) {
+                int dead_index = (int)(target - arena_state.heroes);
+                int link_owner = target->is_clone ? target->clone_owner : dead_index;
+                tyler_clone_cascade_kill(link_owner);
+            }
         }
     }
 }
@@ -366,14 +401,23 @@ static void apply_damage(ArenaHero *target, int amount) {
  * demo (where it trivially resolves to the one other hero) and team mode
  * (where it picks a real target out of up to 19 others). Returns NULL if
  * owner is out of range or nobody qualifies (e.g. owner's whole team is the
- * only one left, or owner itself isn't active). */
+ * only one left, or owner itself isn't active).
+ *
+ * S170-141: bound widened from ARENA_MAX_HEROES to ARENA_HEROES_ARRAY_SIZE
+ * so this ALSO sees Tyler's puppet clones -- both directions: a real enemy
+ * hero can find and target a clone through this exact same lookup (no
+ * separate clone-targeting path needed), and a clone itself (called with
+ * its own puppet-range index as `owner`) can find an enemy to fight. This
+ * is the one shared lookup every kit cast and the team-mode melee loop
+ * already goes through, so widening it here is what makes clones "just
+ * fight like a real hero" rather than needing a parallel combat system. */
 ArenaHero *arena_nearest_enemy(int owner) {
-    if (owner < 0 || owner >= ARENA_MAX_HEROES) return NULL;
+    if (owner < 0 || owner >= ARENA_HEROES_ARRAY_SIZE) return NULL;
     ArenaHero *self = &arena_state.heroes[owner];
     if (!self->active) return NULL;
     ArenaHero *best = NULL;
     float best_dist = 0.0f;
-    for (int i = 0; i < ARENA_MAX_HEROES; i++) {
+    for (int i = 0; i < ARENA_HEROES_ARRAY_SIZE; i++) {
         ArenaHero *cand = &arena_state.heroes[i];
         if (!cand->active || !cand->alive) continue;
         if (cand->team == self->team) continue;
@@ -582,15 +626,15 @@ static int hero_is_hittable(const ArenaHero *h) {
     return h && h->alive && h->intangible_ms <= 0;
 }
 
-/* arena_spawn_projectile (S170-136): see header doc comment. */
-void arena_spawn_projectile(int owner, int team, ArenaHeroID hero_id,
+/* arena_spawn_projectile (S170-136, returns a pointer S170-140): see header doc comment. */
+ArenaProjectile *arena_spawn_projectile(int owner, int team, ArenaHeroID hero_id,
                              float x, float z, float target_x, float target_z,
                              float speed, float radius, int damage, float max_range) {
     ArenaProjectile *p = NULL;
     for (int i = 0; i < ARENA_MAX_PROJECTILES; i++) {
         if (!arena_state.projectiles[i].active) { p = &arena_state.projectiles[i]; break; }
     }
-    if (!p) return; /* pool exhausted -- generous headroom, should not happen in practice */
+    if (!p) return NULL; /* pool exhausted -- generous headroom, should not happen in practice */
 
     float dx = target_x - x, dz = target_z - z;
     float dist = sqrtf(dx * dx + dz * dz);
@@ -608,6 +652,15 @@ void arena_spawn_projectile(int owner, int team, ArenaHeroID hero_id,
     p->damage = damage;
     p->max_range = max_range;
     p->traveled = 0.0f;
+    /* S170-140: reset every reused pool slot's on-hit effects -- a stale
+       value left over from a PREVIOUS shot (e.g. Tyler's root+burn) must
+       never leak onto a fresh plain-damage shot (e.g. Gary's Q) that just
+       happened to land in the same recycled slot. */
+    p->on_hit_silence_ms = 0;
+    p->on_hit_root_ms = 0;
+    p->on_hit_burn_ms = 0;
+    p->on_hit_burn_dps = 0;
+    return p;
 }
 
 /* arena_tick_projectiles (S170-136): see header doc comment. Enemy-ness is
@@ -620,18 +673,51 @@ void arena_tick_projectiles(unsigned int dt_ms) {
         ArenaProjectile *p = &arena_state.projectiles[i];
         if (!p->active) continue;
 
+        float old_x = p->x, old_z = p->z;
         float step = sqrtf(p->vx * p->vx + p->vz * p->vz) * dt_sec;
         p->x += p->vx * dt_sec;
         p->z += p->vz * dt_sec;
         p->traveled += step;
 
+        /* S170-140 bugfix: collision is checked against the SEGMENT this
+           tick's move traced out (old_x,old_z)->(p->x,p->z), not just the
+           end-of-tick position. A large dt_ms (this codebase's own test
+           helpers routinely call *_update(1000) for "one full second" test
+           steps, and a real frame hitch would do the same) can otherwise
+           let a fast shot's position jump clean past a foe standing in its
+           path without ever registering a hit -- a real tunneling bug,
+           found via test_ghost_r_zone_damages_foe_over_time going from
+           reliably-passing to failing the instant Ghost's Q became a
+           projectile fired inside a dt_ms=1000 arena_update() call. Reduces
+           to the old end-position check when the segment is ~0 length
+           (small dt_ms, the common real-frame case), so this is a strict
+           correctness fix, not a behavior change for the normal case. */
+        float seg_dx = p->x - old_x, seg_dz = p->z - old_z;
+        float seg_len_sq = seg_dx * seg_dx + seg_dz * seg_dz;
+
         for (int h = 0; h < ARENA_MAX_HEROES; h++) {
             ArenaHero *foe = &arena_state.heroes[h];
             if (!foe->active || foe->team == p->team) continue;
             if (!hero_is_hittable(foe)) continue;
-            float dx = foe->x - p->x, dz = foe->z - p->z;
+
+            float t = 0.0f;
+            if (seg_len_sq > 0.0001f) {
+                t = ((foe->x - old_x) * seg_dx + (foe->z - old_z) * seg_dz) / seg_len_sq;
+                if (t < 0.0f) t = 0.0f;
+                if (t > 1.0f) t = 1.0f;
+            }
+            float closest_x = old_x + seg_dx * t;
+            float closest_z = old_z + seg_dz * t;
+            float dx = foe->x - closest_x, dz = foe->z - closest_z;
             if (sqrtf(dx * dx + dz * dz) > p->radius) continue;
+
             apply_damage(foe, apply_armor(p->damage, arena_hero_armor(foe)));
+            if (p->on_hit_silence_ms > 0) foe->silenced_ms = p->on_hit_silence_ms;
+            if (p->on_hit_root_ms > 0) foe->rooted_ms = p->on_hit_root_ms;
+            if (p->on_hit_burn_ms > 0) {
+                foe->burning_ms = p->on_hit_burn_ms;
+                foe->burn_dps = p->on_hit_burn_dps;
+            }
             p->active = 0;
             break;
         }
@@ -754,6 +840,167 @@ void arena_hero_attack_creeps(unsigned int dt_ms) {
     }
 }
 
+/* lane_creep_waypoint (S170-139): see the ARENA_LANE_WAYPOINT_COUNT header
+ * comment in arena_game.h -- a straight 3-point path along the existing
+ * spawn axis, each team's own spawn line to the contested center node to the
+ * enemy's spawn line. team 0 and team 1 walk the same three points in
+ * opposite order. Clamps out-of-range indices defensively rather than
+ * reading past the static array. */
+static void lane_creep_waypoint(int team, int index, float *out_x, float *out_z) {
+    static const float path_team0[ARENA_LANE_WAYPOINT_COUNT][2] = { { -8.0f, 0.0f }, { 0.0f, 0.0f }, { 8.0f, 0.0f } };
+    static const float path_team1[ARENA_LANE_WAYPOINT_COUNT][2] = { { 8.0f, 0.0f }, { 0.0f, 0.0f }, { -8.0f, 0.0f } };
+    if (index < 0) index = 0;
+    if (index >= ARENA_LANE_WAYPOINT_COUNT) index = ARENA_LANE_WAYPOINT_COUNT - 1;
+    const float (*path)[2] = (team == 0) ? path_team0 : path_team1;
+    *out_x = path[index][0];
+    *out_z = path[index][1];
+}
+
+/* lane_creep_spawn_wave: fills up to ARENA_LANE_CREEPS_PER_WAVE free pool
+ * slots with fresh creeps at `team`'s spawn line (waypoint 0), spread along z
+ * so a wave doesn't spawn perfectly stacked on one point. If fewer free
+ * slots exist than a full wave (a previous wave hasn't fully cleared out),
+ * spawns as many as fit rather than blocking the whole wave on pool space --
+ * ARENA_MAX_LANE_CREEPS' 4x-a-single-wave headroom should make that rare in
+ * practice, not something worth a harder failure mode for. */
+static void lane_creep_spawn_wave(int team) {
+    int spawned = 0;
+    float wx, wz;
+    lane_creep_waypoint(team, 0, &wx, &wz);
+    for (int i = 0; i < ARENA_MAX_LANE_CREEPS && spawned < ARENA_LANE_CREEPS_PER_WAVE; i++) {
+        ArenaLaneCreep *creep = &arena_state.lane_creeps[i];
+        if (creep->active) continue;
+        creep->active = 1;
+        creep->alive = 1;
+        creep->team = team;
+        creep->waypoint_index = 0;
+        creep->hp = creep->max_hp = ARENA_LANE_CREEP_HP;
+        creep->x = wx;
+        creep->z = wz + (spawned - (ARENA_LANE_CREEPS_PER_WAVE - 1) / 2.0f) * 1.0f;
+        creep->attack_cooldown_ms = 0;
+        spawned++;
+    }
+}
+
+/* arena_tick_lane_creeps (S170-139): see the header declaration's doc
+ * comment. */
+void arena_tick_lane_creeps(unsigned int dt_ms) {
+    float dt_sec = (float)dt_ms / 1000.0f;
+
+    for (int t = 0; t < 2; t++) {
+        arena_state.lane_wave_timer_ms[t] -= (int)dt_ms;
+        if (arena_state.lane_wave_timer_ms[t] > 0) continue;
+        arena_state.lane_wave_timer_ms[t] = ARENA_LANE_WAVE_INTERVAL_MS;
+        lane_creep_spawn_wave(t);
+    }
+
+    for (int i = 0; i < ARENA_MAX_LANE_CREEPS; i++) {
+        ArenaLaneCreep *creep = &arena_state.lane_creeps[i];
+        if (!creep->active || !creep->alive) continue;
+
+        if (creep->attack_cooldown_ms > 0) creep->attack_cooldown_ms -= (int)dt_ms;
+
+        /* Aggro: nearest hittable enemy hero, or nearest opposing-team lane
+           creep if that's closer -- a wave clash is the actual "push" this
+           subsystem exists for, not just a hero-harassment tool. Stops to
+           fight instead of marching past, same "passive-until-approached
+           becomes active-once-engaged" idiom as jungle creeps (S170-51),
+           just with a real opposing target instead of only heroes. */
+        ArenaHero *nearest_hero = NULL;
+        float hero_dist = 0.0f;
+        for (int h = 0; h < ARENA_MAX_HEROES; h++) {
+            ArenaHero *cand = &arena_state.heroes[h];
+            if (!cand->active || cand->team == creep->team || !hero_is_hittable(cand)) continue;
+            float dx = cand->x - creep->x, dz = cand->z - creep->z;
+            float dist = sqrtf(dx * dx + dz * dz);
+            if (dist > ARENA_LANE_CREEP_AGGRO_RADIUS) continue;
+            if (!nearest_hero || dist < hero_dist) { nearest_hero = cand; hero_dist = dist; }
+        }
+
+        ArenaLaneCreep *nearest_creep = NULL;
+        float creep_dist = 0.0f;
+        for (int c = 0; c < ARENA_MAX_LANE_CREEPS; c++) {
+            if (c == i) continue;
+            ArenaLaneCreep *cand = &arena_state.lane_creeps[c];
+            if (!cand->active || !cand->alive || cand->team == creep->team) continue;
+            float dx = cand->x - creep->x, dz = cand->z - creep->z;
+            float dist = sqrtf(dx * dx + dz * dz);
+            if (dist > ARENA_LANE_CREEP_AGGRO_RADIUS) continue;
+            if (!nearest_creep || dist < creep_dist) { nearest_creep = cand; creep_dist = dist; }
+        }
+
+        ArenaHero *atk_hero = NULL;
+        ArenaLaneCreep *atk_creep = NULL;
+        if (nearest_hero && (!nearest_creep || hero_dist <= creep_dist)) atk_hero = nearest_hero;
+        else if (nearest_creep) atk_creep = nearest_creep;
+
+        if ((atk_hero || atk_creep) && creep->attack_cooldown_ms <= 0) {
+            if (atk_hero) {
+                apply_damage(atk_hero, ARENA_LANE_CREEP_DAMAGE); /* no armor stat on lane-creep attacks, same as jungle creeps */
+            } else {
+                atk_creep->hp -= ARENA_LANE_CREEP_DAMAGE;
+                if (atk_creep->hp <= 0) { atk_creep->hp = 0; atk_creep->alive = 0; atk_creep->active = 0; }
+            }
+            creep->attack_cooldown_ms = ARENA_LANE_CREEP_ATTACK_COOLDOWN_MS;
+            continue; /* stopped to fight -- no movement this tick */
+        }
+        if (atk_hero || atk_creep) continue; /* mid-swing (cooldown not ready yet) -- holds position, still doesn't march */
+
+        float wx, wz;
+        lane_creep_waypoint(creep->team, creep->waypoint_index, &wx, &wz);
+        float dx = wx - creep->x, dz = wz - creep->z;
+        float dist = sqrtf(dx * dx + dz * dz);
+        if (dist < ARENA_LANE_CREEP_WAYPOINT_EPSILON) {
+            if (creep->waypoint_index >= ARENA_LANE_WAYPOINT_COUNT - 1) {
+                /* Reached the enemy spawn line with nothing left to fight --
+                   no structure/tower exists yet for the wave to actually
+                   push against (see the header comment), so it despawns
+                   here rather than damaging anything, flagged not faked. */
+                creep->alive = 0;
+                creep->active = 0;
+            } else {
+                creep->waypoint_index++;
+            }
+        } else {
+            float step = ARENA_LANE_CREEP_SPEED * dt_sec;
+            if (step >= dist) { creep->x = wx; creep->z = wz; }
+            else { creep->x += dx / dist * step; creep->z += dz / dist * step; }
+        }
+    }
+}
+
+/* arena_hero_attack_lane_creeps (S170-139): see the header declaration's doc
+ * comment. */
+void arena_hero_attack_lane_creeps(unsigned int dt_ms) {
+    (void)dt_ms; /* attack_cooldown_ms is ticked in tick_hero_kit/resolve_combat already; this only spends it, same idiom as arena_hero_attack_creeps */
+    for (int i = 0; i < ARENA_MAX_HEROES; i++) {
+        ArenaHero *h = &arena_state.heroes[i];
+        if (!h->active || !h->alive || h->attack_cooldown_ms > 0) continue;
+
+        ArenaHero *foe = arena_nearest_enemy(i);
+        if (foe && hero_is_hittable(foe)) {
+            float dx = foe->x - h->x, dz = foe->z - h->z;
+            if (sqrtf(dx * dx + dz * dz) <= ARENA_ATTACK_RANGE) continue; /* already busy with an enemy hero this tick */
+        }
+
+        for (int c = 0; c < ARENA_MAX_LANE_CREEPS; c++) {
+            ArenaLaneCreep *creep = &arena_state.lane_creeps[c];
+            if (!creep->active || !creep->alive || creep->team == h->team) continue;
+            float dx = creep->x - h->x, dz = creep->z - h->z;
+            if (sqrtf(dx * dx + dz * dz) > ARENA_ATTACK_RANGE) continue;
+
+            creep->hp -= ARENA_ATTACK_DAMAGE; /* no armor stat on lane creeps, same as jungle creeps */
+            h->attack_cooldown_ms = ARENA_ATTACK_COOLDOWN_MS;
+            if (creep->hp <= 0) {
+                creep->hp = 0;
+                creep->alive = 0;
+                creep->active = 0;
+            }
+            break; /* one creep target per hero per attack, same as jungle creeps/hero-vs-hero */
+        }
+    }
+}
+
 static void resolve_combat(unsigned int dt_ms) {
     ArenaHero *a = &arena_state.heroes[0];
     ArenaHero *b = &arena_state.heroes[1];
@@ -845,18 +1092,22 @@ static int duck_pull_foe(ArenaHero *duck, ArenaHero *foe, float pull_dist, int d
     return 1;
 }
 
-/* ghost_cast_q: Alien Frequency, simplified to an instant hit-if-in-range
- * check rather than a simulated travelling projectile -- same "instant,
- * not animated" simplification precedent as Duck's pull abilities. Damages
- * and silences the foe if it's hittable and within range. Returns 1 if it
- * landed (cooldown only consumed on a real hit, same convention as
- * duck_pull_foe), 0 on a whiff. */
+/* ghost_cast_q: Alien Frequency. S170-140: converted from an instant
+ * hit-if-in-range check to a real travelling projectile (docs/HEROES_VS0.md
+ * already calls this a "skillshot" -- it just wasn't implemented as one
+ * until now), same "requires a real shot lined up at cast time, but landing
+ * it is no longer guaranteed" convention as Gary's Q (S170-136). Returns 1
+ * once the shot is fired (cooldown spent either way, same as any real
+ * skill-shot), 0 if there was no hittable foe in range to fire at at all. */
 static int ghost_cast_q(ArenaHero *ghost, ArenaHero *foe) {
     if (!hero_is_hittable(foe)) return 0;
     float dx = foe->x - ghost->x, dz = foe->z - ghost->z;
     if (sqrtf(dx * dx + dz * dz) > ARENA_GHOST_Q_RANGE) return 0;
-    apply_damage(foe, apply_armor(ARENA_GHOST_Q_DAMAGE, arena_hero_armor(foe)));
-    foe->silenced_ms = ARENA_GHOST_Q_SILENCE_MS;
+    ArenaProjectile *p = arena_spawn_projectile(ghost->owner, ghost->team, ARENA_HERO_GHOST,
+                             ghost->x, ghost->z, foe->x, foe->z,
+                             ARENA_GHOST_Q_PROJECTILE_SPEED, ARENA_GHOST_Q_PROJECTILE_RADIUS,
+                             ARENA_GHOST_Q_DAMAGE, ARENA_GHOST_Q_RANGE);
+    if (p) p->on_hit_silence_ms = ARENA_GHOST_Q_SILENCE_MS;
     return 1;
 }
 
@@ -1282,10 +1533,15 @@ static int tyler_cast_q(ArenaHero *tyler, ArenaHero *foe) {
     if (!hero_is_hittable(foe)) return 0;
     float dx = foe->x - tyler->x, dz = foe->z - tyler->z;
     if (sqrtf(dx * dx + dz * dz) > ARENA_TYLER_Q_RANGE) return 0;
-    apply_damage(foe, apply_armor(ARENA_TYLER_Q_DAMAGE, arena_hero_armor(foe)));
-    foe->rooted_ms = ARENA_TYLER_Q_ROOT_MS;
-    foe->burning_ms = ARENA_TYLER_Q_BURN_MS;
-    foe->burn_dps = ARENA_TYLER_Q_BURN_DPS;
+    ArenaProjectile *p = arena_spawn_projectile(tyler->owner, tyler->team, ARENA_HERO_TYLER,
+                             tyler->x, tyler->z, foe->x, foe->z,
+                             ARENA_TYLER_Q_PROJECTILE_SPEED, ARENA_TYLER_Q_PROJECTILE_RADIUS,
+                             ARENA_TYLER_Q_DAMAGE, ARENA_TYLER_Q_RANGE);
+    if (p) {
+        p->on_hit_root_ms = ARENA_TYLER_Q_ROOT_MS;
+        p->on_hit_burn_ms = ARENA_TYLER_Q_BURN_MS;
+        p->on_hit_burn_dps = ARENA_TYLER_Q_BURN_DPS;
+    }
     return 1;
 }
 
@@ -1304,10 +1560,43 @@ static int tyler_cast_w(ArenaHero *tyler, ArenaHero *foe) {
     return 1;
 }
 
-/* tyler_cast_r: Divided We Stand -- the actual point of the OG kit kept honest without literal
- * clones: hits hard right now, and stays more fragile (own armor goes negative -- see
- * arena_hero_armor()) for the window after, the real risk/reward "shared fate" was always
- * standing in for. Always "lands" the self-buff even on a whiff against the foe check. */
+/* tyler_spawn_clones (S170-141): claims up to ARENA_TYLER_R_CLONE_COUNT free
+ * slots from the dedicated puppet-clone range (ARENA_MAX_HEROES..
+ * ARENA_HEROES_ARRAY_SIZE-1 -- never a real client's slot, see that
+ * constant's own doc comment) and spawns each as a real, fightable
+ * ArenaHero at Tyler's own position, sharing his team and hero_id (so it
+ * renders identically to Tyler client-side, no new visual needed). Spawns
+ * fewer than the full count if the pool is short on free slots rather than
+ * refusing the whole cast -- same "generous headroom, graceful if it's ever
+ * tight" tone as arena_spawn_projectile's own pool-exhaustion handling. */
+static void tyler_spawn_clones(ArenaHero *tyler) {
+    int tyler_owner = (int)(tyler - arena_state.heroes);
+    int spawned = 0;
+    for (int i = ARENA_MAX_HEROES; i < ARENA_HEROES_ARRAY_SIZE && spawned < ARENA_TYLER_R_CLONE_COUNT; i++) {
+        ArenaHero *clone = &arena_state.heroes[i];
+        if (clone->active) continue;
+        memset(clone, 0, sizeof(*clone));
+        clone->active = 1;
+        clone->alive = 1;
+        clone->is_clone = 1;
+        clone->clone_owner = tyler_owner;
+        clone->team = tyler->team;
+        clone->hero_id = ARENA_HERO_TYLER;
+        clone->owner = i;
+        clone->x = clone->target_x = tyler->x;
+        clone->z = clone->target_z = tyler->z;
+        clone->max_hp = (int)(tyler->max_hp * ARENA_TYLER_CLONE_HP_PCT);
+        clone->hp = clone->max_hp;
+        spawned++;
+    }
+}
+
+/* tyler_cast_r: Divided We Stand. S170-141: real puppet clones on top of the
+ * existing self-buff (see docs/HEROES_VS0.md's Tyler section for the full
+ * design/scope note) -- hits hard right now, stays more fragile (own armor
+ * goes negative -- see arena_hero_armor()) for the window after, AND
+ * spawns the clone army. Always "lands" (self-buff + clones) even on a
+ * whiff against the foe check, same convention as before. */
 static void tyler_cast_r(ArenaHero *tyler, ArenaHero *foe) {
     if (hero_is_hittable(foe)) {
         float dx = foe->x - tyler->x, dz = foe->z - tyler->z;
@@ -1316,6 +1605,7 @@ static void tyler_cast_r(ArenaHero *tyler, ArenaHero *foe) {
         }
     }
     tyler->r_active_ms = ARENA_TYLER_R_VULNERABLE_MS;
+    tyler_spawn_clones(tyler);
 }
 
 /* paimon_cast_q: Teaches All Arts -- a ranged bolt that damages and roots, same instant-hit-if-
@@ -2803,6 +3093,12 @@ void arena_update(unsigned int dt_ms) {
     update_hero_motion(&arena_state.heroes[1], dt_sec);
     arena_tick_creeps(dt_ms);
     arena_hero_attack_creeps(dt_ms);
+    /* Lane creep waves (S170-139) are team-mode only, unlike jungle creeps --
+       "pushing toward the enemy spawn" isn't a meaningful concept in this
+       1v1 practice demo (no team-wide push objective exists here at all),
+       and running them here would just be an unrequested third-party
+       combatant intruding on solo practice matches/tests. See
+       arena_update_teams() for the real integration. */
     resolve_combat(dt_ms);
     /* No ally in the 1v1 local path (S170-45: arena_nearest_ally only
        exists for team mode) -- NULL is the correct value, same NULL-safety
@@ -2862,6 +3158,12 @@ void arena_init_teams(void) {
     arena_nodes_reset_layout();
     arena_obstacles_reset_layout();
     arena_creeps_reset();
+    /* S170-139: lane creep waves get a short grace period before the first
+       wave, same real-MOBA precedent as ARENA_LANE_WAVE_INITIAL_DELAY_MS's
+       own doc comment -- memset already zeroed this to 0 (instant spawn),
+       overridden here explicitly. */
+    arena_state.lane_wave_timer_ms[0] = ARENA_LANE_WAVE_INITIAL_DELAY_MS;
+    arena_state.lane_wave_timer_ms[1] = ARENA_LANE_WAVE_INITIAL_DELAY_MS;
     arena_state.winner = 0;
 }
 
@@ -2955,21 +3257,42 @@ void arena_update_teams(unsigned int dt_ms) {
 
     arena_tick_respawns(dt_ms);
 
-    for (int i = 0; i < ARENA_MAX_HEROES; i++) {
+    /* S170-141: Tyler's puppet clones mirror his own move-target every tick
+       before motion runs -- click once, the whole clone army goes with him.
+       A small per-clone offset (index-based, deterministic) keeps a clone
+       army from stacking exactly on top of Tyler and each other. */
+    for (int i = ARENA_MAX_HEROES; i < ARENA_HEROES_ARRAY_SIZE; i++) {
+        ArenaHero *clone = &arena_state.heroes[i];
+        if (!clone->active || !clone->alive) continue;
+        ArenaHero *tyler = &arena_state.heroes[clone->clone_owner];
+        float offset = (float)(i - ARENA_MAX_HEROES + 1) * 0.9f;
+        clone->target_x = tyler->target_x + offset;
+        clone->target_z = tyler->target_z + offset;
+        clone->moving = tyler->moving;
+    }
+
+    for (int i = 0; i < ARENA_HEROES_ARRAY_SIZE; i++) {
         ArenaHero *h = &arena_state.heroes[i];
         if (!h->active) continue;
         update_hero_motion(h, dt_sec);
     }
     arena_tick_creeps(dt_ms);
     arena_hero_attack_creeps(dt_ms);
+    arena_tick_lane_creeps(dt_ms);
+    arena_hero_attack_lane_creeps(dt_ms);
 
     /* Melee combat: each active, alive hero independently attacks its own
        nearest enemy if one is in range and its cooldown is ready -- this is
        the N-hero generalization of the 1v1 resolve_combat's hardcoded pair,
        and multiple heroes on one side can converge on the same target
        (a real team-fight dynamic the 1v1 pairwise version never had to
-       handle). */
-    for (int i = 0; i < ARENA_MAX_HEROES; i++) {
+       handle). S170-141: bound widened to ARENA_HEROES_ARRAY_SIZE so
+       Tyler's puppet clones fight through this exact same generic loop --
+       both as attackers and (via arena_nearest_enemy, also widened) as
+       valid targets for real enemy heroes. Clones deal/take the same flat
+       ARENA_ATTACK_DAMAGE as any hero's plain auto-attack; they don't cast
+       Q/W/R (see the tick_hero_kit loop below, deliberately not widened). */
+    for (int i = 0; i < ARENA_HEROES_ARRAY_SIZE; i++) {
         ArenaHero *h = &arena_state.heroes[i];
         if (!h->active) continue;
         if (h->attack_cooldown_ms > 0) h->attack_cooldown_ms -= (int)dt_ms;
@@ -2983,6 +3306,13 @@ void arena_update_teams(unsigned int dt_ms) {
         h->attack_cooldown_ms = ARENA_ATTACK_COOLDOWN_MS;
     }
 
+    /* Deliberately NOT widened to ARENA_HEROES_ARRAY_SIZE (S170-141): Tyler's
+       puppet clones are melee-only auto-fighters, not independent casters --
+       only the real, client-owned hero at clone_owner ever gets a genuine
+       PACKET_ARENA_CAST/bot-AI cast decision, so ticking kits for the puppet
+       range would just be dead weight (no cooldowns to advance, no aura to
+       apply -- flagged in docs/HEROES_VS0.md's Tyler section as the one
+       piece of "every clone shares TYLER's cooldowns" not built this pass). */
     for (int i = 0; i < ARENA_MAX_HEROES; i++) {
         ArenaHero *h = &arena_state.heroes[i];
         if (!h->active) continue;

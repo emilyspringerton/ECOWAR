@@ -181,13 +181,46 @@ unforgiving) "OG" clone-death rule, reskinned as TYLER rather than renamed into 
 Written here well before code existed for it (docs before software) — implemented for real in
 S170-111, simplified from the literal multi-clone design below, documented honestly rather than
 silently narrowed: this engine's `ArenaHero` slots are one-per-connected-client, not
-multi-entity-per-player, so true clones sharing one HP pool aren't buildable without touching the
+multi-entity-per-player, so true clones sharing one HP pool weren't buildable without touching the
 draft/pick/connection model the whole roster depends on. What shipped: **Q — Earthbind** roots +
 a DoT (folds in Geostrike's poison, since there's no generic per-melee-attack passive hook to hang
-a separate armor-shred off). **W — Poof** is a real instant blink-strike to the nearest enemy —
-one body, one blink, not "every clone." **R — Divided We Stand** keeps the actual point of the OG
-rule — real risk/reward — as a self-buff that hits hard on cast and leaves Tyler's own armor
-negative (more fragile, not literally shared-fate-with-clones) for the window after.
+a separate armor-shred off; S170-140: now a real travelling net-projectile, not an instant hit, per
+its own "fires a net at a target area" wording above). **W — Poof** is a real instant blink-strike
+to the nearest enemy — one body, one blink, not "every clone" (still true, see S170-141 below).
+**R — Divided We Stand** keeps the actual point of the OG rule — real risk/reward — as a self-buff
+that hits hard on cast and leaves Tyler's own armor negative for the window after.
+
+**S170-141, "add tyler true meepo parity" (founder, real-time) — real puppet clones, team mode
+only.** The blocker above was specifically about *player-controlled* clones (a second human/bot
+independently piloting a body) needing draft/connection changes -- Meepo's actual identity doesn't
+require that: the clones are the same one player's extension, not a second player. Built as AI-
+driven puppets, not client-owned slots: R now claims up to `ARENA_TYLER_R_CLONE_COUNT` (2) free
+slots from a small dedicated puppet pool (`ARENA_MAX_CLONE_SLOTS`, appended after the real
+per-player range so it never competes with an actual connecting client for a slot), spawns each as
+a real `ArenaHero` entry (`is_clone=1`, `clone_owner`=Tyler's own owner index) at Tyler's position
+with half his max HP, on top of the existing self-buff. Puppets mirror Tyler's own move-target every
+tick (click once, the whole clone army goes) and fight through the same generic nearest-enemy/melee
+loop every real hero already uses -- extended to see the puppet range -- so enemy heroes can find
+and kill a clone exactly like a real hero, no special-cased combat path. **Real shared fate, for the
+first time**: `apply_damage`'s death branch, on killing Tyler or any clone linked via
+`clone_owner`, kills every linked entity outright in the same tick -- the literal OG rule, not the
+armor-debuff stand-in alone (which stays, on top). Clones are excluded from
+`arena_team_alive_count` (a lone surviving clone doesn't keep a wiped team's match alive) and from
+`arena_tick_respawns` (they don't respawn independently -- Tyler has to recast R after his own
+respawn to rebuild the clone army).
+
+**What's still simplified, flagged not faked:** clones are melee-only -- they don't independently
+cast Q/W/R (only Tyler's own real input drives ability casts), so "every melee attack from TYLER or
+any clone" applies Geostrike's DoT for Tyler's own hits only, not the clones'. W (Poof) still moves
+only Tyler's own body, not the whole clone army teleporting together -- a real next step, not
+attempted this pass. Clones aren't targetable by jungle/lane creeps or projectiles (only real
+hero-vs-hero melee sees them) and don't participate in node-capture presence -- narrower blast
+radius on purpose, so this pass didn't need to touch the creep/projectile/capture systems' own
+loops (and their existing test coverage) to ship the core "real bodies, shared fate, move and fight
+together" identity. Simulated in team mode only (`arena_update_teams`) -- the 1v1 local practice
+demo's own tick functions are hardcoded to exactly two heroes and don't loop over the puppet range
+at all, so casting R there still grants the self-buff but any claimed clone slot sits inert,
+unmoved and non-combatant, until a real team match runs it.
 
 - **Q — Earthbind** *(original design)*: Fires a net at a target area; any enemy hit is rooted and
   treated as a bigger hitbox for a few seconds (classic setup for the blink-strike below).
