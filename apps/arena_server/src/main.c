@@ -329,6 +329,30 @@ static void server_broadcast(void) {
         msg.projectiles[slot].owner = (uint8_t)p->owner;
         msg.projectiles[slot].hero_id = (uint8_t)p->hero_id;
     }
+    /* S170-146: jungle creeps are always fully populated (one per node,
+       dead ones just sit at alive=0), same convention as heroes/nodes --
+       fixed-size array, not sparse-packed. */
+    for (int i = 0; i < ARENA_SNAPSHOT_CREEP_COUNT; i++) {
+        ArenaCreep *cr = &arena_state.creeps[i];
+        msg.creeps[i].x = cr->x;
+        msg.creeps[i].z = cr->z;
+        msg.creeps[i].hp = (uint16_t)(cr->hp > 0 ? cr->hp : 0);
+        msg.creeps[i].max_hp = (uint16_t)cr->max_hp;
+        msg.creeps[i].alive = (uint8_t)cr->alive;
+        msg.creeps[i].flavor = (uint8_t)cr->flavor;
+    }
+    /* S170-146: lane creeps are a sparse pool, same pack-only-active
+       convention as projectiles above. */
+    for (int i = 0; i < ARENA_MAX_LANE_CREEPS && msg.lane_creep_count < ARENA_SNAPSHOT_MAX_LANE_CREEPS; i++) {
+        ArenaLaneCreep *lc = &arena_state.lane_creeps[i];
+        if (!lc->active || !lc->alive) continue;
+        int slot = msg.lane_creep_count++;
+        msg.lane_creeps[slot].x = lc->x;
+        msg.lane_creeps[slot].z = lc->z;
+        msg.lane_creeps[slot].hp = (uint16_t)(lc->hp > 0 ? lc->hp : 0);
+        msg.lane_creeps[slot].max_hp = (uint16_t)lc->max_hp;
+        msg.lane_creeps[slot].team = (uint8_t)lc->team;
+    }
 
     memcpy(buffer, &head, sizeof(NetHeader));
     memcpy(buffer + sizeof(NetHeader), &msg, sizeof(ArenaSnapshotMsg));

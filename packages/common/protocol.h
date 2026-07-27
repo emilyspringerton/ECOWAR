@@ -191,6 +191,39 @@ typedef struct {
 // ARENA_MAX_PROJECTILES, same duplication reasoning as the others above.
 #define ARENA_SNAPSHOT_MAX_PROJECTILES 32
 
+// Per-jungle-creep state (S170-146, "wire-sync jungle/lane creeps -- the
+// single biggest 'looks unfinished in a live match' gap"). Always exactly
+// ARENA_SNAPSHOT_CREEP_COUNT entries, index-matched to nodes[] (one creep
+// per node, same convention arena_game.h's ArenaCreep already uses) -- a
+// fixed-size array like ArenaHeroSnapshot/ArenaNodeSnapshot, not a sparse
+// count+array like projectiles, since jungle creeps are always fully
+// populated (dead ones still occupy their slot, just alive=0).
+typedef struct {
+    float x, z;
+    uint16_t hp;
+    uint16_t max_hp;
+    uint8_t alive;
+    uint8_t flavor; /* 0=neutral, 1=team0, 2=team1 -- matches ArenaCreepFlavor exactly */
+} ArenaCreepSnapshot;
+
+// ARENA_SNAPSHOT_CREEP_COUNT must match packages/simulation/arena_game.h's
+// ARENA_MAX_CREEPS, same duplication reasoning as the others above.
+#define ARENA_SNAPSHOT_CREEP_COUNT 5
+
+// Per-lane-creep state (S170-146). Sparse pool (most slots inactive at any
+// given tick, waves come and go), same "count + fixed array" convention as
+// projectiles.
+typedef struct {
+    float x, z;
+    uint16_t hp;
+    uint16_t max_hp;
+    uint8_t team;
+} ArenaLaneCreepSnapshot;
+
+// ARENA_SNAPSHOT_MAX_LANE_CREEPS must match packages/simulation/arena_game.h's
+// ARENA_MAX_LANE_CREEPS, same duplication reasoning as the others above.
+#define ARENA_SNAPSHOT_MAX_LANE_CREEPS 12
+
 // PACKET_ARENA_SNAPSHOT payload: up to ARENA_SNAPSHOT_MAX_HEROES hero
 // slots, in owner order -- `count` says how many are actually meaningful
 // (2 for a 1v1 match, up to 20 for a full 10v10 lobby), same "count +
@@ -209,6 +242,9 @@ typedef struct {
     ArenaNodeSnapshot nodes[ARENA_SNAPSHOT_NODE_COUNT]; /* S170-87 */
     uint8_t projectile_count; /* S170-136 */
     ArenaProjectileSnapshot projectiles[ARENA_SNAPSHOT_MAX_PROJECTILES];
+    ArenaCreepSnapshot creeps[ARENA_SNAPSHOT_CREEP_COUNT]; /* S170-146 */
+    uint8_t lane_creep_count; /* S170-146 */
+    ArenaLaneCreepSnapshot lane_creeps[ARENA_SNAPSHOT_MAX_LANE_CREEPS];
 } ArenaSnapshotMsg;
 
 #endif

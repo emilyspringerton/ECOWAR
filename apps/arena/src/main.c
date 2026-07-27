@@ -498,6 +498,43 @@ static void net_poll_snapshots(uint32_t now_ms) {
                         arena_state.projectiles[i].active = 0;
                     }
                 }
+                /* S170-146: jungle creeps -- always fully populated, same
+                   convention as heroes/nodes above (not sparse-packed like
+                   projectiles/lane creeps below). */
+                {
+                    int ccount = ARENA_SNAPSHOT_CREEP_COUNT;
+                    if (ccount > ARENA_MAX_CREEPS) ccount = ARENA_MAX_CREEPS;
+                    for (int i = 0; i < ccount; i++) {
+                        ArenaCreep *dst = &arena_state.creeps[i];
+                        dst->x = msg->creeps[i].x;
+                        dst->z = msg->creeps[i].z;
+                        dst->hp = msg->creeps[i].hp;
+                        dst->max_hp = msg->creeps[i].max_hp;
+                        dst->alive = msg->creeps[i].alive;
+                        dst->flavor = (ArenaCreepFlavor)msg->creeps[i].flavor;
+                    }
+                }
+                /* S170-146: lane creeps -- sparse pool, same "mirror the wire
+                   message's own active count" convention as projectiles above. */
+                {
+                    int lcount = msg->lane_creep_count;
+                    if (lcount > ARENA_SNAPSHOT_MAX_LANE_CREEPS) lcount = ARENA_SNAPSHOT_MAX_LANE_CREEPS;
+                    if (lcount > ARENA_MAX_LANE_CREEPS) lcount = ARENA_MAX_LANE_CREEPS;
+                    for (int i = 0; i < lcount; i++) {
+                        ArenaLaneCreep *dst = &arena_state.lane_creeps[i];
+                        dst->active = 1;
+                        dst->alive = 1;
+                        dst->x = msg->lane_creeps[i].x;
+                        dst->z = msg->lane_creeps[i].z;
+                        dst->hp = msg->lane_creeps[i].hp;
+                        dst->max_hp = msg->lane_creeps[i].max_hp;
+                        dst->team = msg->lane_creeps[i].team;
+                    }
+                    for (int i = lcount; i < ARENA_MAX_LANE_CREEPS; i++) {
+                        arena_state.lane_creeps[i].active = 0;
+                        arena_state.lane_creeps[i].alive = 0;
+                    }
+                }
             }
         }
         len = recvfrom(net_sock, rbuf, sizeof(rbuf), 0, (struct sockaddr *)&sender, &slen);

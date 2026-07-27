@@ -2,6 +2,26 @@
 
 ## 2026-07-27 (continued)
 
+- feat(arena): jungle and lane creeps wire-synced to the network for the first time (S170-146).
+  Continuing this session's own sprint plan ("wire-sync jungle creeps, lane creeps, and Tyler's
+  clones... the single biggest 'looks unfinished in a live match' gap left by this session's own
+  new work"). Before this, `ArenaSnapshotMsg` carried heroes/nodes/projectiles but neither creep
+  pool -- a real networked match (the actual product, per NORTHSTAR §13) simply never showed
+  either kind of creep at all, only the local 1v1 practice demo did. New `ArenaCreepSnapshot`
+  (fixed 5-slot array, index-matched to nodes, mirroring `ArenaHeroSnapshot`'s always-populated
+  convention) and `ArenaLaneCreepSnapshot` (sparse count+array, mirroring projectiles' own
+  pack-only-active convention) in `packages/common/protocol.h`. `apps/arena_server`'s
+  `server_broadcast()` populates both every tick; `apps/arena`'s `net_poll_snapshots()` consumes
+  them into the same `arena_state.creeps[]`/`lane_creeps[]` this session's own S170-145 rendering
+  code already reads generically -- no client rendering changes needed at all, that code was
+  already mode-agnostic. New packet size: 1244 bytes (was 968), comfortably under both the
+  client's 2048-byte recv buffer and typical UDP MTU. **Verified live, not just built clean**: a
+  real `arena_server` + `arena_bot` + the actual SDL client (connected via `--connect`, running
+  under Xvfb) played a full networked 1v1 match; a real Xvfb screenshot confirms a jungle creep
+  (correctly gold/neutral-colored) rendering client-side over the live wire connection, not just
+  in the local demo. Full headless suite unaffected (450 checks, protocol/broadcast/consume-only
+  change, no sim logic touched).
+
 - feat(arena): auto-attack hit flashes now fire on creeps too, and jungle creeps are
   rendered for the first time (S170-145). Founder, real-time: "when auto attacks hit a creep
   or a hero it should show visual indication of such." The hero-side hit flash already
