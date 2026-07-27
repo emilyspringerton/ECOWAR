@@ -3221,6 +3221,77 @@ static void test_doc_wheel_q_heals_hover_target_over_nearest_ally(void) {
     CHECK(arena_state.heroes[1].hp == 50, "...not the nearer, un-hovered ally -- the whole point of hover casting");
 }
 
+/* S170-147: healing fountains, 2 corners, neutral (heals any team). */
+
+static void test_fountain_heals_hero_in_radius(void) {
+    arena_init_teams();
+    for (int i = 1; i < ARENA_MAX_HEROES; i++) arena_state.heroes[i].active = 0;
+    float fx, fz;
+    arena_fountain_position(0, &fx, &fz);
+    arena_state.heroes[0].x = fx; arena_state.heroes[0].z = fz;
+    arena_state.heroes[0].max_hp = 100; arena_state.heroes[0].hp = 50;
+
+    arena_tick_fountains(1000); /* one full heal tick */
+
+    CHECK(arena_state.heroes[0].hp == 50 + ARENA_FOUNTAIN_HEAL_PER_SEC,
+          "a hero standing at a fountain's position heals for one tick's worth");
+}
+
+static void test_fountain_does_not_heal_hero_outside_radius(void) {
+    arena_init_teams();
+    for (int i = 1; i < ARENA_MAX_HEROES; i++) arena_state.heroes[i].active = 0;
+    float fx, fz;
+    arena_fountain_position(0, &fx, &fz);
+    arena_state.heroes[0].x = fx + ARENA_FOUNTAIN_RADIUS + 5.0f; arena_state.heroes[0].z = fz;
+    arena_state.heroes[0].max_hp = 100; arena_state.heroes[0].hp = 50;
+
+    arena_tick_fountains(1000);
+
+    CHECK(arena_state.heroes[0].hp == 50, "a hero well outside the fountain's radius is not healed");
+}
+
+static void test_fountain_heals_either_team_neutral(void) {
+    arena_init_teams();
+    for (int i = 1; i < ARENA_MAX_HEROES; i++) arena_state.heroes[i].active = 0;
+    arena_state.heroes[0].team = 1; /* team 1 hero at team 0's own default index -- fountains don't care */
+    float fx, fz;
+    arena_fountain_position(1, &fx, &fz); /* the OTHER fountain, still neutral */
+    arena_state.heroes[0].x = fx; arena_state.heroes[0].z = fz;
+    arena_state.heroes[0].max_hp = 100; arena_state.heroes[0].hp = 50;
+
+    arena_tick_fountains(1000);
+
+    CHECK(arena_state.heroes[0].hp == 50 + ARENA_FOUNTAIN_HEAL_PER_SEC,
+          "fountains heal any team, a genuinely neutral contestable resource");
+}
+
+static void test_fountain_caps_healing_at_max_hp(void) {
+    arena_init_teams();
+    for (int i = 1; i < ARENA_MAX_HEROES; i++) arena_state.heroes[i].active = 0;
+    float fx, fz;
+    arena_fountain_position(0, &fx, &fz);
+    arena_state.heroes[0].x = fx; arena_state.heroes[0].z = fz;
+    arena_state.heroes[0].max_hp = 100; arena_state.heroes[0].hp = 100 - 1;
+
+    arena_tick_fountains(1000);
+
+    CHECK(arena_state.heroes[0].hp == 100, "fountain healing caps at max_hp, doesn't overheal");
+}
+
+static void test_fountain_does_not_heal_dead_hero(void) {
+    arena_init_teams();
+    for (int i = 1; i < ARENA_MAX_HEROES; i++) arena_state.heroes[i].active = 0;
+    float fx, fz;
+    arena_fountain_position(0, &fx, &fz);
+    arena_state.heroes[0].x = fx; arena_state.heroes[0].z = fz;
+    arena_state.heroes[0].max_hp = 100; arena_state.heroes[0].hp = 0;
+    arena_state.heroes[0].alive = 0;
+
+    arena_tick_fountains(1000);
+
+    CHECK(arena_state.heroes[0].hp == 0, "a dead hero standing at a fountain's position is not healed");
+}
+
 int main(void) {
     printf("RED GARDEN arena_game headless smoke test\n\n");
     test_movement_reaches_target();
@@ -3408,6 +3479,11 @@ int main(void) {
     test_hover_ally_or_nearest_falls_back_for_dead_target();
     test_set_hover_target_out_of_range_owner_is_a_safe_noop();
     test_doc_wheel_q_heals_hover_target_over_nearest_ally();
+    test_fountain_heals_hero_in_radius();
+    test_fountain_does_not_heal_hero_outside_radius();
+    test_fountain_heals_either_team_neutral();
+    test_fountain_caps_healing_at_max_hp();
+    test_fountain_does_not_heal_dead_hero();
     printf("\n%s\n", failures == 0 ? "ALL PASS" : "SOME FAILED");
     return failures == 0 ? 0 : 1;
 }

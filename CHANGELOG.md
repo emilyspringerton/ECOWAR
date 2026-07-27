@@ -2,6 +2,27 @@
 
 ## 2026-07-27 (continued)
 
+- feat(arena): healing fountains at 2 opposite map corners (S170-147). Founder, real-time:
+  "add healing fountains at 2 corners of the map across from each other." New
+  `arena_fountain_position()` (shared source of truth for both the sim tick and the client
+  renderer -- same "static, deterministic layout, no wire sync needed" precedent as jungle
+  obstacles) places two fountains at diagonally-opposite corners `(-24,-24)`/`(24,24)`, clear
+  of every jungle obstacle and within the hero movement clamp. `arena_tick_fountains()` heals
+  any active, alive hero within `ARENA_FOUNTAIN_RADIUS` (3.0) for `ARENA_FOUNTAIN_HEAL_PER_SEC`
+  (15) per second, fixed-interval tick same idiom as every other heal/DPS zone in this file,
+  capped at max_hp. **Deliberately neutral, not team-exclusive** -- the founder's own wording
+  ("2 corners... across from each other") described map geography, not "one per team's base"
+  (which real MOBA fountains usually are); read as a genuinely contestable resource matching
+  this map's existing neutral-structure pattern (nodes, jungle creeps), flagged as a real
+  design choice in the code rather than silently assumed, easy to flip to team-exclusive later
+  if that's what's actually wanted. Rendered client-side as a base+pillar silhouette in bright
+  cyan (distinct from every other shape/color already on the map) -- reuses the heal-flash
+  system from S170-143 automatically (fires on ANY HP increase, any source), so fountain
+  healing already shows visual feedback with zero extra work. Wired into both `arena_update()`
+  and `arena_update_teams()`. 5 new headless tests. Verified live with a real Xvfb screenshot
+  of the local demo showing a fountain rendering correctly. Full suite green (455 checks, up
+  from 450).
+
 - feat(arena): jungle and lane creeps wire-synced to the network for the first time (S170-146).
   Continuing this session's own sprint plan ("wire-sync jungle creeps, lane creeps, and Tyler's
   clones... the single biggest 'looks unfinished in a live match' gap left by this session's own

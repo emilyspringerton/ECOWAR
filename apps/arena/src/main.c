@@ -2077,6 +2077,26 @@ int main(int argc, char *argv[]) {
             }
         }
 
+        /* Healing fountains (S170-147, "add healing fountains at 2 corners
+           of the map across from each other"): a base + pillar silhouette,
+           distinct from every tree/rock/hero/node/creep shape already on
+           this map, in a bright cyan-white that reads as "healing" the same
+           way the heal-flash (S170-143) already does. Position comes from
+           arena_fountain_position() -- the same sim-side source of truth
+           the server's own arena_tick_fountains() ticks against, so the
+           client never needs this synced over the wire (same "static,
+           deterministic layout" precedent as jungle obstacles). A faint
+           ring at the actual heal radius (ARENA_FOUNTAIN_RADIUS) makes the
+           "how close do I need to be" affordance visible, not just implied. */
+        for (int i = 0; i < ARENA_FOUNTAIN_COUNT; i++) {
+            float fx, fz;
+            arena_fountain_position(i, &fx, &fz);
+            glUniform4f_(loc_color, 0.15f, 0.55f, 0.9f, 1.0f); /* base: deep cyan-blue */
+            draw_hero_box(fx, fz, 0.0f, 0.15f, 0.0f, 1.6f, 0.15f, 1.6f, 1.0f, &vp, loc_mvp, loc_model, &cube_mesh);
+            glUniform4f_(loc_color, 0.4f, 0.95f, 1.0f, 1.0f); /* pillar: bright cyan-white */
+            draw_hero_box(fx, fz, 0.0f, 1.3f, 0.0f, 0.4f, 1.1f, 0.4f, 1.0f, &vp, loc_mvp, loc_model, &cube_mesh);
+        }
+
         /* heroes -- ARENA_MAX_HEROES so team-mode matches (up to 10v10)
            render every real hero; local/1v1 heroes[2..] are simply never
            alive, so this loop is a no-op regression risk for that mode. */

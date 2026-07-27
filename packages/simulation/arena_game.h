@@ -32,6 +32,29 @@ typedef enum {
 #define ARENA_OBSTACLE_COUNT 22
 #define ARENA_HERO_COLLISION_RADIUS 0.6f /* how close a hero's own footprint can get to an obstacle's edge before being pushed back out */
 
+/* Healing fountains (S170-147). Founder: "add healing fountains at 2
+ * corners of the map across from each other." Two static, fixed-position
+ * healing zones at diagonally-opposite map corners -- a real MOBA fountain
+ * ("go here to top off") rather than a passive regen tick. Deliberately
+ * NEUTRAL, not team-exclusive: the founder's own wording asked for "2
+ * corners... across from each other" (a real map-geography placement), not
+ * "one per team's base" (which real MOBA fountains usually are) -- read as
+ * a genuinely contestable resource, matching this map's existing "structures
+ * are neutral/contestable" pattern (nodes, jungle creeps) rather than
+ * guessing which team owns which corner. Flagged here as a real design
+ * choice, not silently assumed, in case the founder actually meant
+ * team-exclusive home-base fountains -- easy to flip later (gate the heal
+ * on `hero->team == fountain_owner_team` instead of healing anyone) if so.
+ * Positions are deterministic and computed identically client- and
+ * server-side (same "no wire sync needed for a static layout" precedent
+ * jungle obstacles already established) -- only the resulting HP change
+ * needs to reach the client, and it already does via the existing hero HP
+ * sync + S170-143's generic heal-flash (fires on ANY HP increase, any
+ * source). */
+#define ARENA_FOUNTAIN_COUNT 2
+#define ARENA_FOUNTAIN_RADIUS 3.0f
+#define ARENA_FOUNTAIN_HEAL_PER_SEC 15 /* strong, deliberate -- "go here to top off," not a passive trickle */
+
 /* Territorial dynamic jungle creeps (S170-51). Founder direction: territory
  * is the macro/economy layer, objectives (the team-wipe win condition) are
  * how the game is actually won, and gameplay should let territory control
@@ -1004,6 +1027,7 @@ typedef struct {
     ArenaObstacle obstacles[ARENA_OBSTACLE_COUNT];
     ArenaLaneCreep lane_creeps[ARENA_MAX_LANE_CREEPS]; /* S170-139 */
     int lane_wave_timer_ms[2]; /* S170-139: per-team countdown to next wave; starts at 0 (memset), so both teams' first wave spawns on the first tick, matching a real MOBA's 0:00 wave */
+    int fountain_tick_ms; /* S170-147: fixed-interval (1000ms) accumulator for the fountain heal tick, same idiom as every other DPS/heal zone's own r_zone_tick_ms -- global, not per-hero, since a fountain heals whoever's nearby, not a single caster's target */
     /* hover_target (S170-143, "hover casting like in wow macros"): per-owner,
      * real per-player range only (clones never cast independently, see
      * S170-141) -- which hero slot owner[i] was hovering the instant they
@@ -1090,6 +1114,23 @@ ArenaHero *arena_hover_ally_or_nearest(int owner);
  * positioned) and arena_update_teams(), same "generalizes cleanly, no
  * special-casing" precedent as arena_nearest_ally/arena_nearest_enemy. */
 void arena_tick_nodes(unsigned int dt_ms);
+
+/* arena_fountain_position (S170-147): fills (x,z) with the deterministic,
+ * fixed position of fountain `index` (0..ARENA_FOUNTAIN_COUNT-1). Shared by
+ * both the sim's own tick (below) and the client's renderer
+ * (apps/arena/src/main.c), so the two never drift out of sync -- the same
+ * "one source of truth" reasoning arena_obstacles_reset_layout's static
+ * table already follows for jungle obstacles. Clamps out-of-range index
+ * defensively rather than reading past the internal table. */
+void arena_fountain_position(int index, float *x, float *z);
+
+/* arena_tick_fountains (S170-147): heals every active, alive, hittable hero
+ * within ARENA_FOUNTAIN_RADIUS of either fountain by ARENA_FOUNTAIN_HEAL_PER_SEC
+ * per second (fixed-interval tick, same 1000ms-accumulator idiom as every
+ * other DPS/heal zone in this file), capped at max_hp. Neutral -- heals any
+ * team, see the header comment above ARENA_FOUNTAIN_COUNT for why. Called
+ * from both arena_update() and arena_update_teams(). */
+void arena_tick_fountains(unsigned int dt_ms);
 
 /* arena_tick_creeps (S170-51): advances every jungle creep by dt_ms --
  * respawns a dead creep once its timer elapses (re-rolling flavor/HP from

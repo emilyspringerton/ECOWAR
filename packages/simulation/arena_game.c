@@ -631,6 +631,46 @@ void arena_tick_nodes(unsigned int dt_ms) {
     }
 }
 
+/* arena_fountain_position (S170-147): see header doc comment. Diagonally
+ * opposite corners, well clear of every jungle obstacle's own outer-edge
+ * dressing (arena_obstacles_reset_layout's furthest pieces sit around
+ * |x|<=23, |z|<=17) and within the hero movement clamp (ARENA_HALF_EXTENT
+ * 28), so a fountain is always reachable, never buried in terrain. */
+void arena_fountain_position(int index, float *x, float *z) {
+    static const float layout[ARENA_FOUNTAIN_COUNT][2] = {
+        { -24.0f, -24.0f },
+        {  24.0f,  24.0f },
+    };
+    if (index < 0) index = 0;
+    if (index >= ARENA_FOUNTAIN_COUNT) index = ARENA_FOUNTAIN_COUNT - 1;
+    *x = layout[index][0];
+    *z = layout[index][1];
+}
+
+/* arena_tick_fountains (S170-147): see header declaration's doc comment. */
+void arena_tick_fountains(unsigned int dt_ms) {
+    arena_state.fountain_tick_ms += (int)dt_ms;
+    while (arena_state.fountain_tick_ms >= 1000) {
+        arena_state.fountain_tick_ms -= 1000;
+        for (int f = 0; f < ARENA_FOUNTAIN_COUNT; f++) {
+            float fx, fz;
+            arena_fountain_position(f, &fx, &fz);
+            for (int i = 0; i < ARENA_MAX_HEROES; i++) {
+                ArenaHero *h = &arena_state.heroes[i];
+                /* alive, not hero_is_hittable -- a heal check, not a damage
+                   check. Intangibility (Ghost's Not a Ghost, Frog's vanish)
+                   blocks being HIT, not being healed -- same "alive" gate
+                   Ghost's/Paimon's own ally-heal zone ticks already use. */
+                if (!h->active || !h->alive) continue;
+                float dx = h->x - fx, dz = h->z - fz;
+                if (sqrtf(dx * dx + dz * dz) > ARENA_FOUNTAIN_RADIUS) continue;
+                h->hp += ARENA_FOUNTAIN_HEAL_PER_SEC;
+                if (h->hp > h->max_hp) h->hp = h->max_hp;
+            }
+        }
+    }
+}
+
 /* cast_cooldown: applies the generic next_cast_refund buff (S170-45,
  * Frog's Borrowed Time) -- returns 0 and consumes the buff if it's set on
  * h, else returns normal_ms unchanged. Every Q/W/R cooldown-assignment
@@ -3198,6 +3238,7 @@ void arena_update(unsigned int dt_ms) {
        cooldown. */
     if (arena_bot_enabled) bot_cast_kit_if_ready(&arena_state.heroes[1], &arena_state.heroes[0]);
     arena_tick_projectiles(dt_ms);
+    arena_tick_fountains(dt_ms);
     /* Runs last (S170-51 cont'd): a capture channel is interrupted by
        damage taken this same tick (real Arathi Basin's own rule), so node
        state needs to see everything above -- creeps, melee, kit ticks,
@@ -3402,6 +3443,7 @@ void arena_update_teams(unsigned int dt_ms) {
         tick_hero_kit(h, arena_nearest_enemy(i), arena_nearest_ally(i), dt_ms);
     }
     arena_tick_projectiles(dt_ms);
+    arena_tick_fountains(dt_ms);
     /* Runs last, same reasoning as arena_update()'s own call site: a
        capture channel needs to see this whole tick's damage (creeps,
        melee, kit ticks, projectile hits) before deciding whether it's
