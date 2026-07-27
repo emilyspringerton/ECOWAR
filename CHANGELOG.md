@@ -1,6 +1,61 @@
 # Changelog
 
-## 2026-07-27
+## 2026-07-27 (continued)
+
+- feat(arena): lane creep waves (S170-139), Ghost's Q + Tyler's Q converted to real
+  projectiles (S170-140), Tyler's puppet clones ("true Meepo parity," S170-141), per-hero
+  cast-flash colors (S170-142), rooted name-label color, and a merge of four parallel
+  worktree branches into one coherent mainline. Founder, real-time, several requests in
+  sequence across a long session:
+  - **Lane creep waves** ("add subsystems needed to make creeps a reality" -> clarified as
+    classic MOBA lane-pushing waves, distinct from S170-51's jungle creeps): new
+    `ArenaLaneCreep` pool, a per-team wave spawn timer (with a real short grace period before
+    the first wave, matching real MOBA precedent), waypoint marching along the existing
+    spawn-to-center-to-spawn axis, hero-vs-lane-creep and lane-creep-vs-lane-creep combat
+    through the same generic combat primitives every other system already uses. Team mode
+    only -- no real "push" objective exists in the 1v1 practice demo. 9 new headless tests.
+  - **More projectile conversions** ("convert more spells to projectiles... ensure each
+    spell is unique show different color cast circles... ensure spell projectiles are shown
+    on all player clients"): Ghost's Q (Alien Frequency, already documented as a "skillshot"
+    but never built as one) and Tyler's Q (Earthbind, "fires a net at a target area") both
+    converted from instant-hit to real `ArenaProjectile` casts, carrying on-hit status
+    effects (silence / root+burn) via new generic `on_hit_silence_ms`/`on_hit_root_ms`/
+    `on_hit_burn_ms`/`on_hit_burn_dps` fields and `arena_spawn_projectile` now returning a
+    pointer so callers can set them. Found and fixed a real tunneling bug in
+    `arena_tick_projectiles` along the way: a position-only collision check let a fast shot
+    skip clean past a target during a single large-`dt_ms` tick (exposed by
+    `test_ghost_r_zone_damages_foe_over_time`'s own `arena_update(1000)` call) -- replaced
+    with a proper swept segment-vs-point check. Cast-flash particles now colored per-hero
+    (golden-angle HSV hue rotation, deterministic, no table to maintain as the roster grows)
+    instead of just per-slot, so 26 heroes' worth of casts read as genuinely distinct spells
+    -- already broadcast to and rendered by every connected client with zero additional wire
+    work needed (confirmed by reading the existing pipeline, not assumed). 7 new headless
+    tests (Ghost + Tyler Q projectile behavior).
+  - **"when the hero is rooted change the color of their name label to green"**: small,
+    isolated HUD tweak in `apps/arena/src/main.c`.
+  - **"add tyler true meepo parity" -> "do that work"**: real AI-driven puppet clones, not
+    faked. `ARENA_MAX_CLONE_SLOTS`, a small pool of hero slots appended after the real
+    per-player range so a clone never competes with an actual connecting client for a slot.
+    Clones mirror Tyler's own move-target every tick and fight through the exact same
+    generalized `arena_nearest_enemy`/melee loop every hero already uses (widened to see the
+    puppet range) -- no parallel combat system needed. Real shared-fate death for the first
+    time: `apply_damage`'s death branch cascades the kill through every `clone_owner`-linked
+    entry, the literal OG "one dies, all die" rule, no exceptions. Team mode only; clones are
+    melee-only (no independent kit casts) and don't count toward team-alive/respawn checks.
+    Full design/scope note (including what's still simplified) in `docs/HEROES_VS0.md`'s
+    Tyler section. 7 new headless tests.
+  - **Merge reconciliation**: this session's work landed in its own worktree branch in
+    parallel with three sibling sessions' branches (S170-138 jungle obstacles/map expansion,
+    the QWER-ready-indicator net_mode fix, and translucent-while-intangible rendering) that
+    had all been sitting unmerged. Founder: "you did some work in branches that all needs to
+    be folded into mainline i dont work in branches currently." All four merged into `main`
+    directly (no PRs) in dependency order; the only real conflicts were this session's own
+    map-expansion pass (`ARENA_HALF_EXTENT` 20->30, decorative non-colliding trees) against
+    the sibling jungle-obstacles branch's more complete version (20->28, real collision) --
+    resolved by dropping this session's redundant map/tree work entirely and reconciling
+    lane creep waypoints against the (unchanged) +-8 team spawn line their branch left in
+    place. Full headless suite (439 checks across all 4 test binaries) green after
+    reconciliation; `scripts/test_10_bots.sh` (unrelated card-RTS path) unaffected.
 
 - feat(arena): jungle obstacles -- rocks/trees carve the map into lanes (S170-138). Founder,
   real-time: "expand the map and add rocks and trees etc so we start to get a bit of a jungle vibe
