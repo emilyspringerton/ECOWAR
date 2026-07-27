@@ -165,7 +165,21 @@ being the correct ally to have nearby.
 - **Passive — Extremely Good At Medicine**: Doc Wheel's heals scale up the lower the target's
   current HP% is (best-in-class emergency healer, worst-in-class throughput healer on full-HP
   targets).
-- **Q — Bedside Manner**: Single-target heal + cleanses one debuff.
+- **Q — Bedside Manner**: Single-target heal + cleanses one debuff. **S170-143, "add hover
+  casting like in wow macros for healing, start with doc wheel":** now targets a real WoW-style
+  mouseover -- whoever the caster's mouse is over at the moment of casting, falling back to the
+  existing nearest-ally targeting when nothing's hovered or the hover target isn't a valid ally
+  (an enemy, a corpse, nobody at all). Implemented as `arena_hover_ally_or_nearest()`, a drop-in
+  swap for the plain `arena_nearest_ally()` every other ally-targeted ability still uses --
+  picked as the first hover-aware ability specifically because it's the roster's clearest
+  "you want to choose exactly who this lands on" case (a healer's whole kit is picking the right
+  target), not because the mechanism is Doc-Wheel-specific. The cast itself carries the hover
+  target over the wire (`ArenaCastCmd.hover_target`, -1 = none) rather than the client resolving
+  targeting locally, matching the real WoW-macro shape of "the macro decides what unit=mouseover
+  means, the server still owns whether the cast actually lands." Visual feedback lands on both
+  ends: `cast_flash_slot` already covered the caster's own position; a new generic heal-flash
+  (any HP increase, any source, not Doc-Wheel-specific) now fires at the TARGET's position too --
+  the actual gap a mouseover heal exposed, since the target can be standing far from the caster.
 - **W — House Call**: Move to an ally's location instantly, on a long cooldown ("always shows up").
 - **RED GARDEN passive (map interaction)**: Whenever Doc Wheel heals a unit standing on a
   `CORRUPTED` cell, that cell's corruption pressure decays slightly faster — thematically, good

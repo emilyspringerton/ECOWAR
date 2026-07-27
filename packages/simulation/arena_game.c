@@ -14,6 +14,15 @@ static void arena_creeps_reset(void) {
     for (int i = 0; i < ARENA_MAX_CREEPS; i++) {
         arena_state.creeps[i].last_attacked_by_owner = -1;
     }
+    /* S170-143: hover_target's own sentinel-after-memset reset, same idiom
+       as last_attacked_by_owner above -- 0 would wrongly mean "owner slot
+       0," not "no hover target." Piggybacks on this existing shared reset
+       helper (already called from both arena_init_with_heroes and
+       arena_init_teams) rather than adding a third near-duplicate call
+       site. */
+    for (int i = 0; i < ARENA_MAX_HEROES; i++) {
+        arena_state.hover_target[i] = -1;
+    }
 }
 
 /* ---- Tiny hand-authored feed-forward "brain" for the bot hero ----
@@ -448,6 +457,26 @@ ArenaHero *arena_nearest_ally(int owner) {
         if (!best || dist < best_dist) { best = cand; best_dist = dist; }
     }
     return best;
+}
+
+/* arena_set_hover_target (S170-143): see header doc comment. */
+void arena_set_hover_target(int owner, int target) {
+    if (owner < 0 || owner >= ARENA_MAX_HEROES) return;
+    arena_state.hover_target[owner] = target;
+}
+
+/* arena_hover_ally_or_nearest (S170-143): see header doc comment. */
+ArenaHero *arena_hover_ally_or_nearest(int owner) {
+    if (owner < 0 || owner >= ARENA_MAX_HEROES) return arena_nearest_ally(owner);
+    int target = arena_state.hover_target[owner];
+    if (target >= 0 && target < ARENA_HEROES_ARRAY_SIZE && target != owner) {
+        ArenaHero *cand = &arena_state.heroes[target];
+        ArenaHero *self = &arena_state.heroes[owner];
+        if (cand->active && cand->alive && self->active && cand->team == self->team) {
+            return cand;
+        }
+    }
+    return arena_nearest_ally(owner);
 }
 
 /* arena_tick_nodes (S170-46, capture mechanic redesigned S170-50): advances
@@ -1774,11 +1803,18 @@ void arena_cast_q(int owner) {
         h->mp -= ARENA_MP_COST_Q;
         break;
     case ARENA_HERO_DOC_WHEEL: {
-        /* Bedside Manner: single-target heal + cleanse, on the nearest
-           ally. No ally (1v1, or ally already dead) -- no-op, cooldown not
-           consumed, same "whiff doesn't cost you the cooldown" convention
-           as Duck/Ghost's Q. */
-        ArenaHero *ally = arena_nearest_ally(owner);
+        /* Bedside Manner: single-target heal + cleanse. S170-143 ("add
+           hover casting like in wow macros for healing start with doc
+           wheel"): now prefers whoever the caster was hovering at cast time
+           (a real WoW-macro mouseover heal) over the old always-nearest-
+           ally default -- arena_hover_ally_or_nearest falls back to the
+           exact same arena_nearest_ally() behavior when nothing's hovered
+           or the hover target isn't a valid ally, so this is additive, not
+           a behavior change for anyone not using the new targeting. No
+           ally (1v1, or ally already dead) -- no-op, cooldown not consumed,
+           same "whiff doesn't cost you the cooldown" convention as
+           Duck/Ghost's Q. */
+        ArenaHero *ally = arena_hover_ally_or_nearest(owner);
         if (ally && ally->alive) {
             doc_wheel_heal_and_cleanse(ally, doc_wheel_heal_amount(ally));
             h->q_cooldown_ms = cast_cooldown(h, ARENA_DOC_WHEEL_Q_COOLDOWN_MS);

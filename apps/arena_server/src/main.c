@@ -434,6 +434,11 @@ static void server_handle_packet(struct sockaddr_in *sender, char *buffer, int s
     } else if (head->type == PACKET_ARENA_CAST) {
         if (size < (int)(sizeof(NetHeader) + sizeof(ArenaCastCmd))) return;
         ArenaCastCmd *cmd = (ArenaCastCmd *)(buffer + sizeof(NetHeader));
+        /* S170-143: record the hover target BEFORE dispatching -- generic
+           on the server side (any slot could consult it), the individual
+           cast function decides whether it actually cares (only Doc
+           Wheel's Q does today, via arena_hover_ally_or_nearest). */
+        arena_set_hover_target(client_id, cmd->hover_target);
         if (cmd->slot == 0) arena_cast_q(client_id);
         else if (cmd->slot == 1) arena_toggle_w(client_id);
         else if (cmd->slot == 2) arena_cast_r(client_id);

@@ -2,6 +2,29 @@
 
 ## 2026-07-27 (continued)
 
+- feat(arena): WoW-style hover casting, starting with Doc Wheel's Q (S170-143). Founder,
+  real-time: "add hover casting like in wow macros for healing start with doc wheel abilities
+  that make sense for that ensuring we show cast animation on the target and the self so its
+  legible to all heroes on the battlefield with visibility of that interaction." New
+  `arena_hover_ally_or_nearest()` (`packages/simulation/arena_game.h`/`.c`): a drop-in
+  fallback-chain replacement for `arena_nearest_ally()` -- prefers whoever the caster's
+  `ArenaState.hover_target[owner]` names, if it's a valid living same-team hero other than the
+  caster, else behaves identically to the old always-nearest-ally targeting. `ArenaCastCmd`
+  (`packages/common/protocol.h`) gained a signed `hover_target` byte, set by
+  `apps/arena_server`'s cast handler via the new generic `arena_set_hover_target()` (any slot
+  could consult it; only Doc Wheel's Q does today) and by the local 1v1 demo's own direct
+  keybind path for parity. Client-side: `apps/arena/src/main.c`'s existing S170-69 per-hero
+  hover hit-test now publishes its result into a persistent `g_hover_target` each frame, read
+  by the QWE keybind handler when a cast actually fires (~1 frame of latency, imperceptible).
+  "Show cast animation on the target and the self": the caster's own flash already existed
+  (`cast_flash_slot`, S170-124); added a new generic heal-flash (any HP increase, any source,
+  reusing the exact same frame-to-frame-HP-delta idiom S170-122's attack-flash already
+  established for damage) that fires at wherever the HP increase actually landed -- the real
+  gap a mouseover heal exposes, since the target can be standing far from the caster. 6 new
+  headless tests (fallback with nothing hovered, hover wins over nearer un-hovered ally, hover
+  of an enemy/dead hero safely falls back, out-of-range owner is a no-op, full Doc Wheel Q
+  integration). Full suite green (446 checks across 4 binaries, up from 439).
+
 - feat(arena): lane creep waves (S170-139), Ghost's Q + Tyler's Q converted to real
   projectiles (S170-140), Tyler's puppet clones ("true Meepo parity," S170-141), per-hero
   cast-flash colors (S170-142), rooted name-label color, and a merge of four parallel

@@ -92,8 +92,17 @@ typedef struct {
 } ArenaMoveCmd;
 
 // PACKET_ARENA_CAST payload: which ability slot (0=Q, 1=W, 2=R) to cast.
+// hover_target (S170-143, "hover casting like in wow macros"): which hero slot
+// the caster's mouse was over at the moment of casting, -1 (encoded as -1,
+// int8_t so it round-trips over the wire unlike uint8_t) if nothing was
+// hovered. Consulted by hover-aware abilities (Doc Wheel's Q so far) via
+// arena_hover_ally_or_nearest() as a preferred target, falling back to the
+// existing nearest-ally targeting when nothing's hovered -- the "macro"
+// itself is client-side (only WHICH target rides the packet), matching the
+// real WoW mouseover-macro pattern of "cast on unit=mouseover, or default."
 typedef struct {
     uint8_t slot;
+    int8_t hover_target;
 } ArenaCastCmd;
 
 // PACKET_ARENA_PICK payload: which hero (ArenaHeroID) the sending client

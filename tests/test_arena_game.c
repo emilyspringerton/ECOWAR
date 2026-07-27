@@ -3061,6 +3061,86 @@ static void test_tyler_death_kills_his_clones_too(void) {
     CHECK(!clone->alive && !clone->active, "Tyler dying kills his clones too, same shared-fate link in the other direction");
 }
 
+/* S170-143: hover casting (WoW-macro-style mouseover targeting), starting with Doc Wheel. */
+
+static void test_hover_ally_or_nearest_falls_back_when_nothing_hovered(void) {
+    arena_init_teams();
+    for (int i = 3; i < ARENA_MAX_HEROES; i++) arena_state.heroes[i].active = 0;
+    arena_state.heroes[0].x = 0; arena_state.heroes[0].z = 0;
+    arena_state.heroes[1].x = 1; arena_state.heroes[1].z = 0; /* nearest ally */
+    arena_state.heroes[2].x = 10; arena_state.heroes[2].z = 0; /* farther ally */
+
+    ArenaHero *result = arena_hover_ally_or_nearest(0);
+
+    CHECK(result == &arena_state.heroes[1], "with no hover target set (-1 default after init), falls back to the nearest ally exactly as before");
+}
+
+static void test_hover_ally_or_nearest_prefers_hover_target_over_nearest(void) {
+    arena_init_teams();
+    for (int i = 3; i < ARENA_MAX_HEROES; i++) arena_state.heroes[i].active = 0;
+    arena_state.heroes[0].x = 0; arena_state.heroes[0].z = 0;
+    arena_state.heroes[1].x = 1; arena_state.heroes[1].z = 0; /* nearest ally -- should be skipped */
+    arena_state.heroes[2].x = 10; arena_state.heroes[2].z = 0; /* the hovered, farther ally */
+
+    arena_set_hover_target(0, 2);
+    ArenaHero *result = arena_hover_ally_or_nearest(0);
+
+    CHECK(result == &arena_state.heroes[2], "a real WoW-macro mouseover target wins over nearest-ally targeting, even when farther away");
+}
+
+static void test_hover_ally_or_nearest_falls_back_for_enemy_target(void) {
+    arena_init_teams();
+    for (int i = 3; i < ARENA_MAX_HEROES; i++) arena_state.heroes[i].active = 0;
+    arena_state.heroes[ARENA_TEAM_SIZE].active = 1;
+    arena_state.heroes[ARENA_TEAM_SIZE].alive = 1;
+    arena_state.heroes[0].x = 0; arena_state.heroes[0].z = 0;
+    arena_state.heroes[1].x = 1; arena_state.heroes[1].z = 0; /* nearest ally */
+    arena_state.heroes[ARENA_TEAM_SIZE].x = 0.5f; arena_state.heroes[ARENA_TEAM_SIZE].z = 0; /* hovered, but an ENEMY */
+
+    arena_set_hover_target(0, ARENA_TEAM_SIZE);
+    ArenaHero *result = arena_hover_ally_or_nearest(0);
+
+    CHECK(result == &arena_state.heroes[1], "hovering an enemy hero never redirects an ally-heal onto them -- falls back to nearest ally");
+}
+
+static void test_hover_ally_or_nearest_falls_back_for_dead_target(void) {
+    arena_init_teams();
+    for (int i = 3; i < ARENA_MAX_HEROES; i++) arena_state.heroes[i].active = 0;
+    arena_state.heroes[0].x = 0; arena_state.heroes[0].z = 0;
+    arena_state.heroes[1].x = 1; arena_state.heroes[1].z = 0; /* nearest, living ally */
+    arena_state.heroes[2].x = 2; arena_state.heroes[2].z = 0;
+    arena_state.heroes[2].alive = 0; /* hovered, but dead */
+
+    arena_set_hover_target(0, 2);
+    ArenaHero *result = arena_hover_ally_or_nearest(0);
+
+    CHECK(result == &arena_state.heroes[1], "hovering a dead ally falls back to nearest ally rather than returning the corpse");
+}
+
+static void test_set_hover_target_out_of_range_owner_is_a_safe_noop(void) {
+    arena_init_teams();
+    arena_set_hover_target(-1, 0); /* must not crash or write out of bounds */
+    arena_set_hover_target(ARENA_MAX_HEROES, 0);
+    CHECK(1, "arena_set_hover_target with an out-of-range owner does not crash");
+}
+
+static void test_doc_wheel_q_heals_hover_target_over_nearest_ally(void) {
+    arena_init_teams();
+    for (int i = 3; i < ARENA_MAX_HEROES; i++) arena_state.heroes[i].active = 0;
+    arena_state.heroes[0].hero_id = ARENA_HERO_DOC_WHEEL;
+    arena_state.heroes[0].x = 0; arena_state.heroes[0].z = 0;
+    arena_state.heroes[1].x = 1; arena_state.heroes[1].z = 0; /* nearest ally -- should NOT be healed */
+    arena_state.heroes[1].max_hp = 100; arena_state.heroes[1].hp = 50;
+    arena_state.heroes[2].x = 10; arena_state.heroes[2].z = 0; /* the mouseover-hovered ally */
+    arena_state.heroes[2].max_hp = 100; arena_state.heroes[2].hp = 50;
+
+    arena_set_hover_target(0, 2);
+    arena_cast_q(0);
+
+    CHECK(arena_state.heroes[2].hp > 50, "Bedside Manner heals the hovered ally, a real WoW-style mouseover heal");
+    CHECK(arena_state.heroes[1].hp == 50, "...not the nearer, un-hovered ally -- the whole point of hover casting");
+}
+
 int main(void) {
     printf("RED GARDEN arena_game headless smoke test\n\n");
     test_movement_reaches_target();
@@ -3238,6 +3318,12 @@ int main(void) {
     test_tyler_clones_mirror_move_target_and_fight();
     test_tyler_shared_fate_clone_death_kills_tyler_and_siblings();
     test_tyler_death_kills_his_clones_too();
+    test_hover_ally_or_nearest_falls_back_when_nothing_hovered();
+    test_hover_ally_or_nearest_prefers_hover_target_over_nearest();
+    test_hover_ally_or_nearest_falls_back_for_enemy_target();
+    test_hover_ally_or_nearest_falls_back_for_dead_target();
+    test_set_hover_target_out_of_range_owner_is_a_safe_noop();
+    test_doc_wheel_q_heals_hover_target_over_nearest_ally();
     printf("\n%s\n", failures == 0 ? "ALL PASS" : "SOME FAILED");
     return failures == 0 ? 0 : 1;
 }

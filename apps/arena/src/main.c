@@ -350,13 +350,25 @@ static void net_send_move(float x, float z) {
     sendto(net_sock, buf, sizeof(buf), 0, (struct sockaddr *)&net_server_addr, sizeof(net_server_addr));
 }
 
-static void net_send_cast(int slot) {
+/* g_hover_target (S170-143, "hover casting like in wow macros"): which
+ * hero slot the mouse is currently over, updated once per frame by the
+ * health-bar hover pass below (S170-69's own hit-test, reused rather than
+ * duplicated) and read by the QWE keybind handler when a cast fires. Up to
+ * one frame stale relative to the mouse's exact current position (the
+ * keybind handler runs earlier in the same frame's event loop than the
+ * hover pass that updates this) -- imperceptible at any real frame rate,
+ * same latency class as any other "read last frame's computed HUD state"
+ * value in this file. */
+static int g_hover_target = -1;
+
+static void net_send_cast(int slot, int hover_target) {
     char buf[sizeof(NetHeader) + sizeof(ArenaCastCmd)];
     NetHeader *h = (NetHeader *)buf;
     memset(h, 0, sizeof(NetHeader));
     h->type = PACKET_ARENA_CAST;
     ArenaCastCmd *cmd = (ArenaCastCmd *)(buf + sizeof(NetHeader));
     cmd->slot = (uint8_t)slot;
+    cmd->hover_target = (int8_t)hover_target;
     sendto(net_sock, buf, sizeof(buf), 0, (struct sockaddr *)&net_server_addr, sizeof(net_server_addr));
 }
 
@@ -1185,6 +1197,35 @@ static AttackFlash attack_flashes[MAX_ATTACK_FLASHES];
 static int prev_hero_hp[ARENA_MAX_HEROES];
 static int prev_hero_hp_valid[ARENA_MAX_HEROES];
 
+/* HealFlash (S170-143, "ensure we show cast animation on the target and the
+ * self so its legible to all heroes on the battlefield"): AttackFlash's own
+ * "reconstruct the event from a frame-to-frame HP delta" idiom, mirrored for
+ * the increase direction instead of the decrease one. Generic (any heal,
+ * from any source -- not Doc Wheel-specific), same reasoning as
+ * AttackFlash's own doc comment: correctly-scoped without a wire-protocol
+ * change to carry a real heal event. Warm green, visually distinct from the
+ * attack flash's orange-white and every spell-cast ring color, so a heal
+ * landing on a hero reads as a heal at a glance, on the TARGET's own
+ * position -- which may be far from the caster, the actual gap this closes
+ * (cast_flash_slot already covers "the caster's own position," this covers
+ * the other half). */
+#define MAX_HEAL_FLASHES ARENA_MAX_HEROES
+#define HEAL_FLASH_LIFETIME_MS 260.0f
+typedef struct { float x, z, age_ms; int active; } HealFlash;
+static HealFlash heal_flashes[MAX_HEAL_FLASHES];
+
+static void spawn_heal_flash(float x, float z) {
+    for (int i = 0; i < MAX_HEAL_FLASHES; i++) {
+        if (!heal_flashes[i].active) {
+            heal_flashes[i].active = 1;
+            heal_flashes[i].x = x;
+            heal_flashes[i].z = z;
+            heal_flashes[i].age_ms = 0;
+            return;
+        }
+    }
+}
+
 static void spawn_attack_flash(float x, float z) {
     for (int i = 0; i < MAX_ATTACK_FLASHES; i++) {
         if (!attack_flashes[i].active) {
@@ -1768,10 +1809,15 @@ int main(int argc, char *argv[]) {
                     apm_record_action(now);
                 }
                 if (net_mode) {
-                    if (e.key.keysym.sym == SDLK_q) net_send_cast(0);
-                    if (e.key.keysym.sym == SDLK_w) net_send_cast(1);
-                    if (e.key.keysym.sym == SDLK_e) net_send_cast(2);
+                    if (e.key.keysym.sym == SDLK_q) net_send_cast(0, g_hover_target);
+                    if (e.key.keysym.sym == SDLK_w) net_send_cast(1, g_hover_target);
+                    if (e.key.keysym.sym == SDLK_e) net_send_cast(2, g_hover_target);
                 } else {
+                    /* S170-143: local 1v1 demo casts directly (no wire hop), so the
+                       hover target has to be set on the sim explicitly here -- the
+                       networked path's equivalent is apps/arena_server's own
+                       arena_set_hover_target() call in server_handle_packet(). */
+                    arena_set_hover_target(my_owner, g_hover_target);
                     if (e.key.keysym.sym == SDLK_q) { arena_cast_q(my_owner); arena_log_ability("Q"); }
                     if (e.key.keysym.sym == SDLK_w) { arena_toggle_w(my_owner); arena_log_ability("W"); }
                     if (e.key.keysym.sym == SDLK_e) { arena_cast_r(my_owner); arena_log_ability("R"); }
@@ -1829,6 +1875,18 @@ int main(int argc, char *argv[]) {
                 if (hdx * hdx + hdz * hdz <= ARENA_AUDIO_HEARING_RADIUS * ARENA_AUDIO_HEARING_RADIUS) {
                     play_tone(220.0f, 60.0f, 0.35f); /* short low thud, distinct from the higher/longer cast tones */
                 }
+            } else if (prev_hero_hp_valid[i] && h->hp > prev_hero_hp[i]) {
+                /* S170-143: the target's half of "show cast animation on the target and
+                   the self" -- a heal-flash fires wherever the HP increase actually
+                   happened, which for Doc Wheel's hover-cast Q may be a hero standing
+                   far from the caster. */
+                spawn_heal_flash(h->x, h->z);
+                trigger_squish(i);
+                float hdx = h->x - arena_state.heroes[my_owner].x;
+                float hdz = h->z - arena_state.heroes[my_owner].z;
+                if (hdx * hdx + hdz * hdz <= ARENA_AUDIO_HEARING_RADIUS * ARENA_AUDIO_HEARING_RADIUS) {
+                    play_tone(660.0f, 90.0f, 0.3f); /* brighter, higher tone -- distinct from the attack thud */
+                }
             }
             prev_hero_hp[i] = h->hp;
             prev_hero_hp_valid[i] = 1;
@@ -1837,6 +1895,11 @@ int main(int argc, char *argv[]) {
             if (!attack_flashes[i].active) continue;
             attack_flashes[i].age_ms += dt;
             if (attack_flashes[i].age_ms >= ATTACK_FLASH_LIFETIME_MS) attack_flashes[i].active = 0;
+        }
+        for (int i = 0; i < MAX_HEAL_FLASHES; i++) {
+            if (!heal_flashes[i].active) continue;
+            heal_flashes[i].age_ms += dt;
+            if (heal_flashes[i].age_ms >= HEAL_FLASH_LIFETIME_MS) heal_flashes[i].active = 0;
         }
         for (int i = 0; i < ARENA_MAX_HEROES; i++) {
             if (squish_age_ms[i] >= 0.0f && squish_age_ms[i] < SQUISH_ANIM_MS) {
@@ -2069,6 +2132,25 @@ int main(int argc, char *argv[]) {
             glUniform4f_(loc_color, 1.0f, 0.75f, 0.15f, alpha);
             draw_mesh(&ring_mesh);
         }
+        /* heal flashes (S170-143): quick, warm-green burst on whoever's HP
+           just went up -- the target's own visual, distinct from the
+           attack flash's orange-white, the placement ring's cooler green,
+           and every spell-cast color, so a heal reads as a heal at a
+           glance, wherever it landed. */
+        for (int i = 0; i < MAX_HEAL_FLASHES; i++) {
+            if (!heal_flashes[i].active) continue;
+            float t01 = heal_flashes[i].age_ms / HEAL_FLASH_LIFETIME_MS;
+            float scale = 0.5f + t01 * 0.5f;
+            float alpha = 1.0f - t01;
+            Mat4 tr = mat4_translate(heal_flashes[i].x, 0.05f, heal_flashes[i].z);
+            Mat4 sc = mat4_scale(scale, 1.0f, scale);
+            Mat4 model = mat4_multiply(&tr, &sc);
+            Mat4 mvp = mat4_multiply(&vp, &model);
+            glUniformMatrix4fv_(loc_mvp, 1, GL_FALSE, mvp.m);
+            glUniformMatrix4fv_(loc_model, 1, GL_FALSE, model.m);
+            glUniform4f_(loc_color, 0.35f, 1.0f, 0.45f, alpha);
+            draw_mesh(&ring_mesh);
+        }
         /* spell flashes (S170-124, per-hero color S170-142): SIZE still
            ramps by ability tier (Q small, W bigger, R biggest, same
            low-basic to high-ultimate shape any real MOBA uses), but COLOR
@@ -2190,6 +2272,7 @@ int main(int argc, char *argv[]) {
                 hovered_sy = sy;
             }
         }
+        g_hover_target = hovered_i; /* S170-143: publish this frame's hover result for the QWE keybind handler to read next frame */
         if (hovered_i >= 0) {
             ArenaHero *hh = &arena_state.heroes[hovered_i];
             float bw = 40.0f, bh = 5.0f;

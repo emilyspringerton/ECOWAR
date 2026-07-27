@@ -1004,6 +1004,17 @@ typedef struct {
     ArenaObstacle obstacles[ARENA_OBSTACLE_COUNT];
     ArenaLaneCreep lane_creeps[ARENA_MAX_LANE_CREEPS]; /* S170-139 */
     int lane_wave_timer_ms[2]; /* S170-139: per-team countdown to next wave; starts at 0 (memset), so both teams' first wave spawns on the first tick, matching a real MOBA's 0:00 wave */
+    /* hover_target (S170-143, "hover casting like in wow macros"): per-owner,
+     * real per-player range only (clones never cast independently, see
+     * S170-141) -- which hero slot owner[i] was hovering the instant they
+     * last cast, -1 = none. Set by arena_set_hover_target() right before
+     * dispatching a cast (both the networked path via apps/arena_server and
+     * the local 1v1 demo's own direct keybind handler), consulted by
+     * arena_hover_ally_or_nearest(). Explicitly reset to -1 after every
+     * memset (0 would wrongly mean "owner slot 0", not "no hover target" --
+     * same sentinel-after-memset idiom as ArenaCreep's
+     * last_attacked_by_owner). */
+    int hover_target[ARENA_MAX_HEROES];
     int winner; /* 0 = none yet, 1 = player/team 0, 2 = bot/team 1 */
 } ArenaState;
 
@@ -1047,6 +1058,25 @@ ArenaHero *arena_nearest_enemy(int owner);
  * teammate exists) or if owner has no living ally right now -- callers
  * must already be NULL-safe the same way they are for arena_nearest_enemy. */
 ArenaHero *arena_nearest_ally(int owner);
+
+/* arena_set_hover_target (S170-143): records which hero slot `owner` was
+ * hovering at the moment of a cast, -1 for none. Called right before
+ * dispatching a cast from both apps/arena_server's PACKET_ARENA_CAST
+ * handler and the local 1v1 demo's own direct keybind handler -- generic on
+ * purpose (not Doc-Wheel-specific storage), so any future hover-aware
+ * ability reuses the same field, same "generic, not hero-specific" idiom as
+ * the status-effect fields on ArenaHero. No-op if owner is out of the real
+ * per-player range. */
+void arena_set_hover_target(int owner, int target);
+
+/* arena_hover_ally_or_nearest (S170-143): the real WoW-macro fallback chain
+ * -- "cast on unit=mouseover, or default" -- for ally-targeted abilities.
+ * Returns the hovered hero if `owner` has a hover_target recorded AND it's
+ * a valid, active, alive, SAME-TEAM hero other than owner itself; otherwise
+ * falls back to arena_nearest_ally(owner) exactly as before this existed.
+ * Same NULL-safety as arena_nearest_ally (returns NULL if neither
+ * resolves). */
+ArenaHero *arena_hover_ally_or_nearest(int owner);
 
 /* arena_tick_nodes (S170-46, capture mechanic redesigned S170-50): advances
  * the Arathi Basin-style channel capture for every ArenaNode by dt_ms --
