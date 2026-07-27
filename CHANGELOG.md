@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-07-27 (34)
+
+- feat(arena): heroes render translucent (35% alpha) for the duration of the shared
+  `intangible_ms` untargetable status (Ghost's Not a Ghost, Frog's R vanish, Bacon Puck's Q),
+  on top of the existing INTANGIBLE text tag above the health bar. Blends only the affected
+  hero's boxes (GL_BLEND on, depth writes off) for that draw, same convention already used for
+  the ring/flash effects; every other hero stays fully opaque with normal depth writes.
+
 ## 2026-07-25 (33)
 
 - feat(arena): MnM, the Shapeshifting Crab, 26th hero — Tank (S170-134). Founder, real-time: "add
