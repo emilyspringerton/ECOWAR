@@ -74,17 +74,67 @@ static void bot_brain_forward(const float in[4], float out[2]) {
  * along this arena's existing spawn axis instead of Arathi's own geography. */
 static void arena_nodes_reset_layout(void) {
     static const float layout[ARENA_NODE_COUNT][2] = {
-        { -13.0f,  8.0f }, /* Stables */
-        { -13.0f, -8.0f }, /* Farm */
-        {   0.0f,  0.0f }, /* Blacksmith (center, contested) */
-        {  13.0f,  8.0f }, /* Lumber Mill */
-        {  13.0f, -8.0f }, /* Gold Mine */
+        { -18.0f,  11.0f }, /* Stables -- rescaled with the S170-138 map expansion, same 1.4x spread as ARENA_HALF_EXTENT's own 20->28 widening */
+        { -18.0f, -11.0f }, /* Farm */
+        {   0.0f,   0.0f }, /* Blacksmith (center, contested) */
+        {  18.0f,  11.0f }, /* Lumber Mill */
+        {  18.0f, -11.0f }, /* Gold Mine */
     };
     for (int n = 0; n < ARENA_NODE_COUNT; n++) {
         arena_state.nodes[n].x = layout[n][0];
         arena_state.nodes[n].z = layout[n][1];
         arena_state.nodes[n].marked_by_team = -1;
         arena_state.nodes[n].capturing_team = -1;
+    }
+}
+
+/* arena_obstacles_reset_layout (S170-138, "add rocks and trees so we
+ * naturally start to create some lanes"): two mirrored jungle walls, one
+ * between each team's spawn column (x=+-8) and that side's flank nodes
+ * (x=+-18, see the layout above). Each wall spans roughly z=-5.5..5.5 --
+ * wide enough that a hero can't draw a straight line through it to a
+ * flank node, forcing a detour around the top (z>6) or the bottom (z<-6),
+ * which is the actual "lanes" the founder asked for: two routes either
+ * side of terrain you can't walk through, rather than one open field.
+ * Deliberately never reaches the x=0 mid lane (nearest obstacle is at
+ * |x|=10.5) or the 1v1 local demo's own spawn points/movement-test
+ * coordinates (all of which stay within |x|<7) -- the jungle is additive
+ * scenery + flank routing, not a change to how the existing 1v1 demo or
+ * its test suite already move heroes. */
+static void arena_obstacles_reset_layout(void) {
+    static const struct { float x, z, radius; ArenaObstacleKind kind; } layout[ARENA_OBSTACLE_COUNT] = {
+        /* left wall (between team 0's spawn and Stables/Farm) */
+        { -11.5f,  5.5f, 1.0f, ARENA_OBSTACLE_TREE },
+        { -13.0f,  4.0f, 0.9f, ARENA_OBSTACLE_ROCK },
+        { -10.5f,  2.5f, 1.0f, ARENA_OBSTACLE_TREE },
+        { -12.5f,  1.0f, 0.9f, ARENA_OBSTACLE_ROCK },
+        { -11.0f, -1.0f, 1.0f, ARENA_OBSTACLE_TREE },
+        { -13.5f, -2.5f, 0.9f, ARENA_OBSTACLE_ROCK },
+        { -10.5f, -4.0f, 1.0f, ARENA_OBSTACLE_TREE },
+        { -12.0f, -5.5f, 0.9f, ARENA_OBSTACLE_ROCK },
+        /* right wall (mirrored, between team 1's spawn and Lumber Mill/Gold Mine) */
+        {  11.5f,  5.5f, 1.0f, ARENA_OBSTACLE_TREE },
+        {  13.0f,  4.0f, 0.9f, ARENA_OBSTACLE_ROCK },
+        {  10.5f,  2.5f, 1.0f, ARENA_OBSTACLE_TREE },
+        {  12.5f,  1.0f, 0.9f, ARENA_OBSTACLE_ROCK },
+        {  11.0f, -1.0f, 1.0f, ARENA_OBSTACLE_TREE },
+        {  13.5f, -2.5f, 0.9f, ARENA_OBSTACLE_ROCK },
+        {  10.5f, -4.0f, 1.0f, ARENA_OBSTACLE_TREE },
+        {  12.0f, -5.5f, 0.9f, ARENA_OBSTACLE_ROCK },
+        /* scattered outer-edge dressing, purely for jungle vibe -- past every
+           node and lane, never in the way of anything */
+        { -23.0f,   6.0f, 1.1f, ARENA_OBSTACLE_TREE },
+        {  23.0f,  -6.0f, 1.1f, ARENA_OBSTACLE_TREE },
+        {  -6.0f,  17.0f, 0.9f, ARENA_OBSTACLE_ROCK },
+        {   6.0f, -17.0f, 0.9f, ARENA_OBSTACLE_ROCK },
+        { -20.0f, -15.0f, 1.0f, ARENA_OBSTACLE_TREE },
+        {  20.0f,  15.0f, 1.0f, ARENA_OBSTACLE_TREE },
+    };
+    for (int i = 0; i < ARENA_OBSTACLE_COUNT; i++) {
+        arena_state.obstacles[i].x = layout[i].x;
+        arena_state.obstacles[i].z = layout[i].z;
+        arena_state.obstacles[i].radius = layout[i].radius;
+        arena_state.obstacles[i].kind = layout[i].kind;
     }
 }
 
@@ -116,6 +166,7 @@ void arena_init_with_heroes(ArenaHeroID player_hero, ArenaHeroID bot_hero) {
     arena_state.heroes[1].hero_id = bot_hero;
 
     arena_nodes_reset_layout();
+    arena_obstacles_reset_layout();
     arena_creeps_reset();
 
     arena_state.winner = 0;
@@ -164,6 +215,30 @@ void arena_bot_tick(unsigned int dt_ms) {
     arena_set_move_target(1, bot->x + out[0] * step, bot->z + out[1] * step);
 }
 
+/* resolve_hero_obstacle_collision (S170-138): plain circle-vs-circle push-out,
+ * same "cheap and good enough" spirit as the rest of this sim's collision-free
+ * approach -- no physics engine, just shove the hero back to the obstacle's
+ * edge along the line between their centers. Only ever called right after a
+ * hero actually advances under update_hero_motion below, so a hero standing
+ * still (or rooted) is never forcibly relocated -- and a few hero abilities
+ * that teleport/dash by setting x/z directly (Doc Wheel's W, Morrigan's W,
+ * Courier's W/R, ...) bypass this on purpose, same "first pass, not full
+ * physics" scope as the rest of S170-138. */
+static void resolve_hero_obstacle_collision(ArenaHero *h) {
+    for (int i = 0; i < ARENA_OBSTACLE_COUNT; i++) {
+        const ArenaObstacle *o = &arena_state.obstacles[i];
+        float dx = h->x - o->x;
+        float dz = h->z - o->z;
+        float min_dist = o->radius + ARENA_HERO_COLLISION_RADIUS;
+        float dist = sqrtf(dx * dx + dz * dz);
+        if (dist >= min_dist) continue;
+        if (dist < 0.0001f) { dx = 1.0f; dz = 0.0f; dist = 0.0001f; }
+        float push = min_dist - dist;
+        h->x += dx / dist * push;
+        h->z += dz / dist * push;
+    }
+}
+
 static void update_hero_motion(ArenaHero *h, float dt_sec) {
     /* rooted_ms (S170-46): a queued move command is preserved (not
        cancelled) but doesn't advance while rooted -- matches how silence
@@ -185,6 +260,7 @@ static void update_hero_motion(ArenaHero *h, float dt_sec) {
         h->x += dx / dist * step;
         h->z += dz / dist * step;
     }
+    resolve_hero_obstacle_collision(h);
 }
 
 /* arena_hero_armor: effective armor including Full Disclosure's temporary
@@ -2784,6 +2860,7 @@ void arena_init_teams(void) {
         h->hero_id = ARENA_HERO_UNICORN; /* placeholder until the real client's draft pick overrides it */
     }
     arena_nodes_reset_layout();
+    arena_obstacles_reset_layout();
     arena_creeps_reset();
     arena_state.winner = 0;
 }
