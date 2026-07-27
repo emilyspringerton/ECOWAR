@@ -1857,6 +1857,34 @@ int main(int argc, char *argv[]) {
             draw_mesh(&cube_mesh);
         }
 
+        /* jungle obstacles (S170-138, "add rocks and trees so we naturally
+           start to create some lanes"): boxes only, same "boxes for now"
+           silhouette approach as the hero models below -- trunk+canopy for a
+           tree (mirrors ARENA_HERO_TREE's own two-box shape), one squat box
+           for a rock. Purely a draw of where the sim's own obstacles[] array
+           already is (packages/simulation/arena_game.c's
+           arena_obstacles_reset_layout) -- the collision that actually
+           carves the map into lanes happens sim-side in
+           resolve_hero_obstacle_collision, this is just rendering it. */
+        for (int i = 0; i < ARENA_OBSTACLE_COUNT; i++) {
+            const ArenaObstacle *o = &arena_state.obstacles[i];
+            if (o->kind == ARENA_OBSTACLE_TREE) {
+                glUniform4f_(loc_color, 0.32f, 0.22f, 0.12f, 1.0f); /* trunk: brown */
+                draw_hero_box(o->x, o->z, 0.0f, o->radius * 0.7f, 0.0f,
+                              o->radius * 0.35f, o->radius * 1.4f, o->radius * 0.35f,
+                              1.0f, &vp, loc_mvp, loc_model, &cube_mesh);
+                glUniform4f_(loc_color, 0.15f, 0.45f, 0.18f, 1.0f); /* canopy: green */
+                draw_hero_box(o->x, o->z, 0.0f, o->radius * 1.7f, 0.0f,
+                              o->radius, o->radius * 0.9f, o->radius,
+                              1.0f, &vp, loc_mvp, loc_model, &cube_mesh);
+            } else {
+                glUniform4f_(loc_color, 0.45f, 0.44f, 0.42f, 1.0f); /* rock: grey */
+                draw_hero_box(o->x, o->z, 0.0f, o->radius * 0.55f, 0.0f,
+                              o->radius, o->radius * 0.55f, o->radius * 0.9f,
+                              1.0f, &vp, loc_mvp, loc_model, &cube_mesh);
+            }
+        }
+
         /* heroes -- ARENA_MAX_HEROES so team-mode matches (up to 10v10)
            render every real hero; local/1v1 heroes[2..] are simply never
            alive, so this loop is a no-op regression risk for that mode. */

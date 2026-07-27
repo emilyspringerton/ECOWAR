@@ -1,12 +1,36 @@
 #ifndef ARENA_GAME_H
 #define ARENA_GAME_H
 
-#define ARENA_HALF_EXTENT 20.0f /* S170-119: was 12.0f -- widened for a real Arathi Basin-size spread of 5 nodes */
+#define ARENA_HALF_EXTENT 28.0f /* NORTHSTAR §8 jungle pass: was 20.0f -- more room for jungle terrain between spawn and the flank nodes without cramming it against the 1v1 mid-lane */
 #define ARENA_HERO_SPEED 4.0f      /* units/sec */
 #define ARENA_ATTACK_RANGE 1.6f
 #define ARENA_ATTACK_DAMAGE 8
 #define ARENA_ATTACK_COOLDOWN_MS 700
 #define ARENA_NODE_COUNT 5 /* S170-119: was 2 -- real Arathi Basin has 5 (Stables/Farm/Blacksmith/Lumber Mill/Gold Mine) */
+
+/* Static jungle terrain (NORTHSTAR §8, "add rocks and trees so we naturally
+ * start to create some lanes"): rock/tree boxes -- same "boxes for now"
+ * silhouette approach as the hero models below, not sculpted geometry.
+ * Fixed layout, never mutated at runtime (no owner/HP/state), so unlike
+ * nodes/creeps there's no wire sync -- apps/arena and apps/arena_server
+ * both call arena_obstacles_reset_layout() from the same init path and end
+ * up with identical local copies, one less thing for ArenaSnapshotMsg to
+ * carry. Placed in two flank walls between each team's spawn column
+ * (x=+-8) and the flank nodes (x=+-18, see arena_nodes_reset_layout),
+ * spanning roughly z=-5.5..5.5 -- wide enough to block a straight line to
+ * a flank node, but never touching the mid lane (heroes going straight to
+ * the x=0 center node never cross x=+-9) or the 1v1 local demo's own
+ * movement-test coordinates (spawn (-6,0)/(6,0), all test paths stay
+ * within |x|<7). The result: reaching a flank node means routing around
+ * the top or the bottom of the wall -- a top/bottom lane either side of a
+ * jungle you can't walk through, same shape as the real MOBA reference
+ * this map is already modeled on (NORTHSTAR §8's Arathi Basin comparison). */
+typedef enum {
+    ARENA_OBSTACLE_ROCK = 0,
+    ARENA_OBSTACLE_TREE = 1,
+} ArenaObstacleKind;
+#define ARENA_OBSTACLE_COUNT 22
+#define ARENA_HERO_COLLISION_RADIUS 0.6f /* how close a hero's own footprint can get to an obstacle's edge before being pushed back out */
 
 /* Territorial dynamic jungle creeps (S170-51). Founder direction: territory
  * is the macro/economy layer, objectives (the team-wipe win condition) are
@@ -852,11 +876,23 @@ typedef struct {
     float traveled;
 } ArenaProjectile;
 
+/* ArenaObstacle: static jungle terrain, see the ARENA_OBSTACLE_COUNT
+ * comment above for placement rationale. `radius` is the collision/visual
+ * footprint (a circle -- the client draws it as one or two boxes, see
+ * draw_obstacle in apps/arena, but collision itself stays circle-vs-circle
+ * for the same cheap-and-good-enough reason hero-vs-hero would be). */
+typedef struct {
+    float x, z;
+    float radius;
+    ArenaObstacleKind kind;
+} ArenaObstacle;
+
 typedef struct {
     ArenaHero heroes[ARENA_MAX_HEROES];
     ArenaNode nodes[ARENA_NODE_COUNT];
     ArenaCreep creeps[ARENA_MAX_CREEPS];
     ArenaProjectile projectiles[ARENA_MAX_PROJECTILES];
+    ArenaObstacle obstacles[ARENA_OBSTACLE_COUNT];
     int winner; /* 0 = none yet, 1 = player/team 0, 2 = bot/team 1 */
 } ArenaState;
 

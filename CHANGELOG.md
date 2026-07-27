@@ -2,6 +2,27 @@
 
 ## 2026-07-27
 
+- feat(arena): jungle obstacles -- rocks/trees carve the map into lanes (S170-138). Founder,
+  real-time: "expand the map and add rocks and trees etc so we start to get a bit of a jungle vibe
+  - just use boxes for now like in shankpit so we naturally start to create some lanes." Widened
+  `ARENA_HALF_EXTENT` 20->28 and rescaled the 5-node layout (Stables/Farm/Lumber Mill/Gold Mine now
+  at x=+-18, z=+-11) to give the jungle room without cramming it against the 1v1 mid lane. New
+  `ArenaObstacle` type (`packages/simulation/arena_game.h`/`.c`): 22 static rock/tree boxes in two
+  mirrored walls between each team's spawn column and that side's flank nodes, spanning roughly
+  z=-5.5..5.5 -- wide enough that reaching a flank node means routing around the top or the bottom,
+  the actual "lanes" asked for, plus a handful of decorative pieces scattered past the nodes for
+  jungle-vibe dressing. Real collision, not just decoration: `resolve_hero_obstacle_collision`
+  (simple circle-vs-circle push-out) is called from the same shared `update_hero_motion()` both
+  `arena_update()` (1v1) and `arena_update_teams()` (team mode) already use, so both the local demo
+  and `apps/arena_server`'s networked matches get identical, consistent terrain with no wire sync
+  needed (the layout is static and deterministic, built the same way client- and server-side).
+  Client-side (`apps/arena/src/main.c`) renders trees as a trunk+canopy box pair (same silhouette
+  idiom as the `ARENA_HERO_TREE` hero model) and rocks as a single squat grey box. Obstacle
+  placement deliberately never crosses the x=0 mid lane or the 1v1 local demo's own movement-test
+  coordinates, so the full `test_arena.sh` suite (390 assertions) passes unchanged. Verified with a
+  live Xvfb screenshot of `red_garden_arena` showing both jungle walls rendering correctly around
+  the mid-lane fight.
+
 - feat(arena): first real projectile skill-shot -- Gary's Q (S170-136). Founder, real-time: "we
   need to add spell animations and projectiles for some of the spells - some of the spells
   obviously should be projectile skill shots instead of instant cast - find one such spell - start
