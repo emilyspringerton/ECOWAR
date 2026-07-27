@@ -2,6 +2,22 @@
 
 ## 2026-07-27 (continued)
 
+- feat(arena): auto-attack hit flashes now fire on creeps too, and jungle creeps are
+  rendered for the first time (S170-145). Founder, real-time: "when auto attacks hit a creep
+  or a hero it should show visual indication of such." The hero-side hit flash already
+  existed (S170-122, HP-delta detection); creeps had none at all. Added the same frame-to-
+  frame HP-delta tracking for both jungle (`ArenaCreep`) and lane (`ArenaLaneCreep`) pools in
+  `apps/arena/src/main.c`, reusing the existing `attack_flashes` visual (a hit is a hit).
+  Along the way, found jungle creeps were never rendered client-side AT ALL (a real,
+  previously-unfixed gap -- a hit-flash on an invisible creep would have been useless) --
+  added real rendering for the first time: a flavor-colored box (gold/neutral, blue/red team,
+  matching the node-ownership color convention exactly, not team-relative like heroes/lane
+  creeps -- a jungle creep's color is about whose territory it's tied to). Verified with a
+  real Xvfb screenshot of `red_garden_arena`'s local demo: a gold neutral jungle creep
+  rendering correctly alongside the jungle-obstacle trees/rocks and a hero. Local-mode/1v1-
+  demo only, same not-yet-networked scope jungle/lane creeps already carry. Full suite
+  unaffected (450 checks, client-only change).
+
 - feat(arena): AoE damage spells now hit creeps too, not just heroes (S170-144). Founder,
   real-time: "ensure aoe damage spells hit creeps." Before this, every zone/aura damage tick
   (Ghost's Recital, Pizza's always-on burn aura, Beleth's Detonation burst, Paimon's Two

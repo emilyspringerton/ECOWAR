@@ -1196,6 +1196,15 @@ typedef struct { float x, z, age_ms; int active; } AttackFlash;
 static AttackFlash attack_flashes[MAX_ATTACK_FLASHES];
 static int prev_hero_hp[ARENA_MAX_HEROES];
 static int prev_hero_hp_valid[ARENA_MAX_HEROES];
+/* S170-145 ("when auto attacks hit a creep or a hero it should show visual
+ * indication of such"): the hero-side HP-delta flash already existed
+ * (S170-122); creeps had none at all -- same idiom, mirrored for both
+ * jungle and lane creep pools. Local-mode/1v1-demo only, same scope as
+ * jungle/lane creeps' own sim-only (not wire-synced) status. */
+static int prev_creep_hp[ARENA_MAX_CREEPS];
+static int prev_creep_hp_valid[ARENA_MAX_CREEPS];
+static int prev_lane_creep_hp[ARENA_MAX_LANE_CREEPS];
+static int prev_lane_creep_hp_valid[ARENA_MAX_LANE_CREEPS];
 
 /* HealFlash (S170-143, "ensure we show cast animation on the target and the
  * self so its legible to all heroes on the battlefield"): AttackFlash's own
@@ -1891,6 +1900,34 @@ int main(int argc, char *argv[]) {
             prev_hero_hp[i] = h->hp;
             prev_hero_hp_valid[i] = 1;
         }
+        /* S170-145: creep-side half of "auto attacks hit a creep or a hero should
+           show visual indication" -- same HP-delta idiom as heroes above, both
+           creep pools, reusing the exact same attack_flashes visual (a hit is a
+           hit, no need for a creep-specific look). */
+        for (int i = 0; i < ARENA_MAX_CREEPS; i++) {
+            ArenaCreep *cr = &arena_state.creeps[i];
+            if (!cr->alive) {
+                prev_creep_hp_valid[i] = 0;
+                continue;
+            }
+            if (prev_creep_hp_valid[i] && cr->hp < prev_creep_hp[i]) {
+                spawn_attack_flash(cr->x, cr->z);
+            }
+            prev_creep_hp[i] = cr->hp;
+            prev_creep_hp_valid[i] = 1;
+        }
+        for (int i = 0; i < ARENA_MAX_LANE_CREEPS; i++) {
+            ArenaLaneCreep *lc = &arena_state.lane_creeps[i];
+            if (!lc->active || !lc->alive) {
+                prev_lane_creep_hp_valid[i] = 0;
+                continue;
+            }
+            if (prev_lane_creep_hp_valid[i] && lc->hp < prev_lane_creep_hp[i]) {
+                spawn_attack_flash(lc->x, lc->z);
+            }
+            prev_lane_creep_hp[i] = lc->hp;
+            prev_lane_creep_hp_valid[i] = 1;
+        }
         for (int i = 0; i < MAX_ATTACK_FLASHES; i++) {
             if (!attack_flashes[i].active) continue;
             attack_flashes[i].age_ms += dt;
@@ -2037,6 +2074,36 @@ int main(int argc, char *argv[]) {
                 glDepthMask(GL_TRUE);
                 glDisable(GL_BLEND);
             }
+        }
+
+        /* Jungle creeps (S170-51, rendered for the first time S170-145 --
+           "when auto attacks hit a creep... show visual indication," which
+           is moot on a creep nobody can see). Local-mode/1v1-demo only,
+           same not-yet-networked scope as lane creeps below. A small
+           diamond-oriented box (45-degree Y rotation via two half-scale
+           overlapping boxes would need mat4_rotate this renderer doesn't
+           have -- kept as an axis-aligned box, distinguished from a lane
+           creep instead by SIZE (bigger -- jungle creeps are the tougher,
+           standalone objective) and by flavor-color matching the node
+           ownership convention exactly (gold = neutral/contested, same
+           blue/red team colors otherwise), not team-relative like heroes/
+           lane creeps -- a jungle creep's color tells you whose territory
+           it's tied to, the actual thing that matters about it. */
+        for (int i = 0; i < ARENA_MAX_CREEPS; i++) {
+            ArenaCreep *cr = &arena_state.creeps[i];
+            if (!cr->alive) continue;
+            switch (cr->flavor) {
+                case ARENA_CREEP_TEAM0: glUniform4f_(loc_color, 0.15f, 0.35f, 0.95f, 1.0f); break;
+                case ARENA_CREEP_TEAM1: glUniform4f_(loc_color, 0.95f, 0.25f, 0.15f, 1.0f); break;
+                default: glUniform4f_(loc_color, 0.85f, 0.7f, 0.1f, 1.0f); break; /* neutral -- matches node coloring */
+            }
+            Mat4 t = mat4_translate(cr->x, 0.45f, cr->z);
+            Mat4 s = mat4_scale(0.75f, 0.75f, 0.75f);
+            Mat4 model = mat4_multiply(&t, &s);
+            Mat4 mvp = mat4_multiply(&vp, &model);
+            glUniformMatrix4fv_(loc_mvp, 1, GL_FALSE, mvp.m);
+            glUniformMatrix4fv_(loc_model, 1, GL_FALSE, model.m);
+            draw_mesh(&cube_mesh);
         }
 
         /* Lane creeps (S170-138): only ever populated client-side in the
