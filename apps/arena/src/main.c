@@ -434,6 +434,13 @@ static void net_poll_snapshots(uint32_t now_ms) {
                     dst->active = 1;
                     dst->team = (i < msg->count / 2) ? 0 : 1;
                     dst->hero_id = (ArenaHeroID)msg->heroes[i].hero_id;
+                    /* S170-137: ability-tile readiness needs real cooldown/mana state, not the
+                       zeroed default net_mode left them at forever (see the field's own doc
+                       comment in protocol.h). */
+                    dst->q_cooldown_ms = msg->heroes[i].q_cooldown_ms;
+                    dst->w_cooldown_ms = msg->heroes[i].w_cooldown_ms;
+                    dst->r_cooldown_ms = msg->heroes[i].r_cooldown_ms;
+                    dst->mp = msg->heroes[i].mp;
                     if (msg->heroes[i].cast_flash_slot > 0) {
                         spawn_spell_flash(dst->x, dst->z, msg->heroes[i].cast_flash_slot);
                         trigger_squish(i);
@@ -1251,9 +1258,21 @@ static float r_cooldown_peak_ms = 0.0f;
  * tile a bright toggle-green regardless of cooldown state, matching the
  * existing "W is ON" HUD convention this replaces. `peak_ms` is the
  * caller's own persistent float -- updated here, not reset by this
- * function, so it survives across frames. */
+ * function, so it survives across frames.
+ *
+ * S170-137: `mana_blocked` (mp below this slot's flat cost) is a second,
+ * independent way a ready-looking (cooldown_ms == 0) ability can still be
+ * uncastable -- the mana layer (S170-132) already lets a cast whiff for
+ * lack of mp with the cooldown untouched, so a tile that only ever read
+ * cooldown_ms would keep telling the player an ability is ready right up
+ * until they try it and nothing happens. Shares the same dimmed
+ * background/border treatment as on_cooldown (one "not actually castable"
+ * visual language), but skips the radial wipe and countdown number --
+ * there's no fixed timer to animate, just "wait for regen" -- printing
+ * "MP" in their place instead so the reason reads differently from a real
+ * cooldown. */
 static void draw_ability_tile(float x, float y, float size, int cooldown_ms, float *peak_ms,
-                               int active, const char *keybind, const char *ability_name,
+                               int active, int mana_blocked, const char *keybind, const char *ability_name,
                                float base_r, float base_g, float base_b) {
     if (cooldown_ms > 0) {
         if ((float)cooldown_ms > *peak_ms) *peak_ms = (float)cooldown_ms;
@@ -1261,19 +1280,21 @@ static void draw_ability_tile(float x, float y, float size, int cooldown_ms, flo
         *peak_ms = 0.0f;
     }
     int on_cooldown = cooldown_ms > 0;
+    int not_ready = on_cooldown || mana_blocked;
     float frac_remaining = (on_cooldown && *peak_ms > 0.0f) ? (float)cooldown_ms / *peak_ms : 0.0f;
     if (frac_remaining > 1.0f) frac_remaining = 1.0f;
 
-    float bg_r = active ? 0.15f : (on_cooldown ? 0.10f : 0.08f);
-    float bg_g = active ? 0.45f : (on_cooldown ? 0.10f : 0.08f);
-    float bg_b = active ? 0.20f : (on_cooldown ? 0.12f : 0.10f);
+    float bg_r = active ? 0.15f : (not_ready ? 0.10f : 0.08f);
+    float bg_g = active ? 0.45f : (not_ready ? 0.10f : 0.08f);
+    float bg_b = active ? 0.20f : (not_ready ? 0.12f : 0.10f);
     glColor4f(bg_r, bg_g, bg_b, 0.85f);
     glRectf(x, y, x + size, y + size);
 
     /* Border: the ability's own base color at full brightness when ready
-       or active, dimmed to near-gray while on cooldown -- same "ready
-       pops, cooldown recedes" legibility Overwatch's own icon border uses. */
-    float border_scale = (on_cooldown && !active) ? 0.35f : 1.0f;
+       or active, dimmed to near-gray while on cooldown or mana-blocked --
+       same "ready pops, cooldown recedes" legibility Overwatch's own icon
+       border uses. */
+    float border_scale = (not_ready && !active) ? 0.35f : 1.0f;
     glColor4f(base_r * border_scale + (1.0f - border_scale) * 0.3f,
               base_g * border_scale + (1.0f - border_scale) * 0.3f,
               base_b * border_scale + (1.0f - border_scale) * 0.3f, 0.95f);
@@ -1314,6 +1335,11 @@ static void draw_ability_tile(float x, float y, float size, int cooldown_ms, flo
         float approx_w = (float)strlen(buf) * text_size * 3.8f;
         glColor3f(1.0f, 0.95f, 0.95f);
         draw_string(buf, x + (size - approx_w) / 2.0f, y + size * 0.4f, text_size);
+    } else if (mana_blocked) {
+        float text_size = size * 0.05f;
+        float approx_w = 2.0f * text_size * 3.8f; /* "MP" is always 2 chars */
+        glColor3f(0.55f, 0.75f, 1.0f);
+        draw_string("MP", x + (size - approx_w) / 2.0f, y + size * 0.4f, text_size);
     }
 
     glColor3f(0.92f, 0.96f, 1.0f);
@@ -2082,14 +2108,19 @@ int main(int argc, char *argv[]) {
                against, so it's tracked locally instead: remember the highest cooldown_ms value
                seen since it last hit 0 (arms the instant a cast starts it counting down from
                its real peak) and wipe the fraction of that peak still remaining -- self-
-               correcting per-hero-per-slot with no new wire data needed. */
+               correcting per-hero-per-slot with no new wire data needed.
+
+               S170-137: readiness is no longer cooldown-only. `mp` reaches the client now
+               (net_poll_snapshots, protocol.h's ArenaHeroSnapshot) instead of sitting zeroed
+               forever in net_mode, so each tile can flag "off cooldown but can't actually
+               afford it" against this slot's own flat ARENA_MP_COST_*. */
             ArenaHero *h = &arena_state.heroes[my_owner];
             draw_ability_tile(20.0f, win_h - 168.0f, 56.0f, h->q_cooldown_ms, &q_cooldown_peak_ms,
-                               0, "Q", arena_ability_name(h->hero_id, 0), 0.3f, 0.7f, 1.0f);
+                               0, h->mp < ARENA_MP_COST_Q, "Q", arena_ability_name(h->hero_id, 0), 0.3f, 0.7f, 1.0f);
             draw_ability_tile(86.0f, win_h - 168.0f, 56.0f, h->w_cooldown_ms, &w_cooldown_peak_ms,
-                               h->w_active, "W", arena_ability_name(h->hero_id, 1), 0.7f, 0.3f, 1.0f);
+                               h->w_active, (!h->w_active && h->mp < ARENA_MP_COST_W), "W", arena_ability_name(h->hero_id, 1), 0.7f, 0.3f, 1.0f);
             draw_ability_tile(152.0f, win_h - 168.0f, 56.0f, h->r_cooldown_ms, &r_cooldown_peak_ms,
-                               h->r_active_ms > 0, "E", arena_ability_name(h->hero_id, 2), 1.0f, 0.85f, 0.2f);
+                               h->r_active_ms > 0, h->mp < ARENA_MP_COST_R, "E", arena_ability_name(h->hero_id, 2), 1.0f, 0.85f, 0.2f);
         }
 
         if (show_apm) {

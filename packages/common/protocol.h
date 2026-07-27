@@ -102,11 +102,11 @@ typedef struct {
     uint8_t hero_id;
 } ArenaPickCmd;
 
-// Per-hero state broadcast in PACKET_ARENA_SNAPSHOT. Deliberately minimal
-// for the first networked pass (position/HP/alive/hero_id only, no
-// ability-state sync yet) -- enough for a human to see and fight a real
-// remote hero; full status-effect sync (silence/intangible/etc.) is a
-// later slice once 1v1 human PvP itself is confirmed fun (NORTHSTAR §13).
+// Per-hero state broadcast in PACKET_ARENA_SNAPSHOT. Originally minimal
+// (position/HP/alive/hero_id only, no ability-state sync) -- enough for a
+// human to see and fight a real remote hero; full status-effect sync
+// (silence/intangible/etc.) is a later slice once 1v1 human PvP itself is
+// confirmed fun (NORTHSTAR §13).
 typedef struct {
     float x, z;
     uint16_t hp;
@@ -121,6 +121,24 @@ typedef struct {
     // own copy right after broadcasting it, so this is only ever nonzero in
     // the single snapshot immediately following the cast.
     uint8_t cast_flash_slot;
+    // Ability-readiness fields (S170-137, "QWER animation frames need to
+    // indicate visually if an ability is ready to cast or not"): net_mode
+    // never calls arena_update() locally -- apps/arena_server is
+    // authoritative and the client only ever reads what's broadcast here
+    // (see this struct's own history, e.g. the S170-87 node-sync fix) -- so
+    // before this, a networked client's own q/w/r_cooldown_ms and mp just
+    // sat at zero forever and the HUD's ability tiles rendered every
+    // ability as permanently ready, cooldown and mana state notwithstanding,
+    // in the one mode (real PvP) where the answer actually matters. Synced
+    // per-slot for every hero, not just the local player's, since the
+    // struct's already per-slot and singling one out would need its own
+    // wire path for one field. max_mp isn't included: it's flat and
+    // roster-wide (ARENA_MP_MAX in arena_game.h), so the client already
+    // knows it without a wire round-trip.
+    uint16_t q_cooldown_ms;
+    uint16_t w_cooldown_ms;
+    uint16_t r_cooldown_ms;
+    uint8_t mp;
 } ArenaHeroSnapshot;
 
 // ARENA_SNAPSHOT_MAX_HEROES must match packages/simulation/arena_game.h's

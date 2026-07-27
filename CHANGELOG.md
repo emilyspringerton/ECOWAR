@@ -1,5 +1,26 @@
 # Changelog
 
+## 2026-07-27 (34)
+
+- fix(arena): Q/W/E ability tiles now reflect real readiness in networked play (S170-137).
+  Founder, real-time: "QWER animation frames need to indicate visually if an ability is ready to
+  cast or not." Root cause: the ability-tile HUD (S170-127) already dims/wipes/counts down
+  correctly, but `ArenaSnapshotMsg` (`packages/common/protocol.h`) never carried cooldown or mana
+  state — in net_mode the client never runs `arena_update()` locally (the server owns the sim),
+  so `q/w/r_cooldown_ms` and `mp` for the local player's own hero sat zeroed forever and every
+  ability rendered permanently "ready" regardless of actual server-side state, in the one mode
+  (real online play) where the tiles' answer matters most. Added the four missing fields to
+  `ArenaHeroSnapshot`, populated them in `arena_server`'s `server_broadcast()`, and consumed them
+  in `net_poll_snapshots()`. Also closed a second, independent readiness gap from the mana layer
+  (S170-132): an ability can be off cooldown and still unaffordable, which previously still read
+  as fully "ready." `draw_ability_tile()` now takes a `mana_blocked` flag (checked against this
+  slot's flat `ARENA_MP_COST_Q/W/R`) and dims the tile the same as a real cooldown, but shows "MP"
+  instead of a countdown number since there's no fixed timer to animate. Verified: `build.sh` and
+  `build_arena.sh` clean, full headless suite (`test_arena.sh`) all-pass, and a live
+  server+2-bot match over the actual network path completed end to end with the new, larger
+  snapshot struct (580 bytes/packet, well under both the 2048-byte recv buffer and typical UDP
+  MTU).
+
 ## 2026-07-25 (33)
 
 - feat(arena): MnM, the Shapeshifting Crab, 26th hero — Tank (S170-134). Founder, real-time: "add
