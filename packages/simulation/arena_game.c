@@ -1030,6 +1030,48 @@ void arena_hero_attack_lane_creeps(unsigned int dt_ms) {
     }
 }
 
+/* arena_zone_damage_creeps (S170-144, "ensure aoe damage spells hit
+ * creeps"): applies `dps` flat damage to every living jungle creep AND lane
+ * creep within `radius` of (x,z) -- AoE zone/aura ticks (Ghost's Recital,
+ * Pizza's aura, Beleth's Detonation, Paimon's/NOOR-1's own R zones)
+ * previously only ever checked the single nearest-enemy-HERO parameter
+ * tick_hero_kit threads through, an existing, already-flagged limitation
+ * (see Pizza's own aura comment) -- this closes the "does it hit creeps
+ * too" half specifically, not the "hits every hero in radius" half (still
+ * out of scope, unchanged). Flat damage, no armor (same convention every
+ * other creep-damage site in this file already uses). A team-flavored
+ * jungle creep is only a valid target for the OPPOSING team's zone, same as
+ * melee (arena_hero_attack_creeps); a neutral one is fair game for anyone.
+ * Lane creeps: only the opposing team's wave is ever a valid target, same
+ * as melee (arena_hero_attack_lane_creeps). Zone kills grant no kill-credit
+ * reward (jungle creeps' capture-bonus/heal, same as every other "not every
+ * damage source needs full reward wiring" simplification already accepted
+ * elsewhere in this file) -- flagged, not faked. */
+static void arena_zone_damage_creeps(float x, float z, float radius, int caster_team, int dps) {
+    for (int c = 0; c < ARENA_MAX_CREEPS; c++) {
+        ArenaCreep *creep = &arena_state.creeps[c];
+        if (!creep->alive) continue;
+        if (creep->flavor != ARENA_CREEP_NEUTRAL && ((int)creep->flavor - 1) == caster_team) continue;
+        float dx = creep->x - x, dz = creep->z - z;
+        if (sqrtf(dx * dx + dz * dz) > radius) continue;
+        creep->hp -= dps;
+        creep->last_attacked_by_owner = -1; /* zone damage has no single attributable hero slot -- no reward on a zone kill, see doc comment above */
+        if (creep->hp <= 0) {
+            creep->hp = 0;
+            creep_die(creep, &arena_state.nodes[c]);
+        }
+    }
+    for (int i = 0; i < ARENA_MAX_LANE_CREEPS; i++) {
+        ArenaLaneCreep *lc = &arena_state.lane_creeps[i];
+        if (!lc->active || !lc->alive) continue;
+        if (lc->team == caster_team) continue;
+        float dx = lc->x - x, dz = lc->z - z;
+        if (sqrtf(dx * dx + dz * dz) > radius) continue;
+        lc->hp -= dps;
+        if (lc->hp <= 0) { lc->hp = 0; lc->alive = 0; lc->active = 0; }
+    }
+}
+
 static void resolve_combat(unsigned int dt_ms) {
     ArenaHero *a = &arena_state.heroes[0];
     ArenaHero *b = &arena_state.heroes[1];
@@ -2539,6 +2581,7 @@ static void tick_hero_kit(ArenaHero *h, ArenaHero *foe, ArenaHero *ally, unsigne
                         apply_damage(foe, apply_armor(ARENA_GHOST_R_DPS, arena_hero_armor(foe)));
                     }
                 }
+                arena_zone_damage_creeps(h->r_zone_x, h->r_zone_z, ARENA_GHOST_R_RADIUS, h->team, ARENA_GHOST_R_DPS);
                 /* Ally-heal side (S170-45): "same zone, opposite effect
                    depending on team" -- the nearest living ally standing in
                    the zone heals for the same rate the foe takes damage. */
@@ -2579,6 +2622,7 @@ static void tick_hero_kit(ArenaHero *h, ArenaHero *foe, ArenaHero *ally, unsigne
                         apply_damage(foe, ARENA_PIZZA_AURA_DPS);
                     }
                 }
+                arena_zone_damage_creeps(h->x, h->z, ARENA_PIZZA_AURA_RADIUS, h->team, ARENA_PIZZA_AURA_DPS);
             }
         }
         break;
@@ -2728,6 +2772,7 @@ static void tick_hero_kit(ArenaHero *h, ArenaHero *foe, ArenaHero *ally, unsigne
                         apply_damage(foe, apply_armor(ARENA_BELETH_R_DAMAGE, arena_hero_armor(foe)));
                     }
                 }
+                arena_zone_damage_creeps(h->r_zone_x, h->r_zone_z, ARENA_BELETH_R_RADIUS, h->team, ARENA_BELETH_R_DAMAGE);
             }
         }
         break;
@@ -2772,6 +2817,7 @@ static void tick_hero_kit(ArenaHero *h, ArenaHero *foe, ArenaHero *ally, unsigne
                         apply_damage(foe, ARENA_PAIMON_R_DPS);
                     }
                 }
+                arena_zone_damage_creeps(h->r_zone_x, h->r_zone_z, ARENA_PAIMON_R_RADIUS, h->team, ARENA_PAIMON_R_DPS);
                 if (ally && ally->alive) {
                     float adx = ally->x - h->r_zone_x, adz = ally->z - h->r_zone_z;
                     if (sqrtf(adx * adx + adz * adz) <= ARENA_PAIMON_R_RADIUS) {
@@ -2812,6 +2858,7 @@ static void tick_hero_kit(ArenaHero *h, ArenaHero *foe, ArenaHero *ally, unsigne
                         apply_damage(foe, ARENA_NOOR1_R_DPS);
                     }
                 }
+                arena_zone_damage_creeps(h->r_zone_x, h->r_zone_z, ARENA_NOOR1_R_RADIUS, h->team, ARENA_NOOR1_R_DPS);
             }
         }
         break;

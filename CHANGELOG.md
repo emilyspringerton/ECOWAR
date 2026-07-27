@@ -2,6 +2,38 @@
 
 ## 2026-07-27 (continued)
 
+- feat(arena): AoE damage spells now hit creeps too, not just heroes (S170-144). Founder,
+  real-time: "ensure aoe damage spells hit creeps." Before this, every zone/aura damage tick
+  (Ghost's Recital, Pizza's always-on burn aura, Beleth's Detonation burst, Paimon's Two
+  Hundred Legions, NOOR-1's Do Not Approach) only ever checked the single nearest-enemy-HERO
+  parameter `tick_hero_kit` threads through -- an existing, already-flagged limitation (see
+  Pizza's own aura comment) that also meant a zone dropped squarely on a jungle or lane creep
+  did nothing to it. New shared `arena_zone_damage_creeps()`
+  (`packages/simulation/arena_game.c`) applies flat damage to every living jungle creep AND
+  lane creep within radius, called from all five damage-dealing zone/aura sites. Same
+  team-exclusivity rules as melee (a team-flavored jungle creep or a lane creep is only a
+  valid target for the OPPOSING team's zone; a neutral jungle creep is fair game for anyone).
+  Zone kills grant no jungle-creep kill-credit reward (capture-bonus/heal) -- no single
+  attributable hero slot in this simplified model, flagged not faked, same "not every damage
+  source needs full reward wiring" precedent already accepted elsewhere in this file. 4 new
+  headless tests, each deliberately positioned within zone radius but outside melee attack
+  range to isolate the new zone-damage path from the existing, separate melee-vs-creep
+  mechanics. Full suite green (450 checks, up from 446).
+- **Live bot-mode verification, this session's whole batch (S170-139 through S170-144).**
+  Founder: "verify it with bot mode." Ran a real `apps/arena_server --lobby-size 20` +
+  20 `apps/arena_bot` match on freshly built binaries (fresh ports, isolated from the
+  already-running persistent bot pool discovered earlier this session -- confirmed untouched
+  before and after). Confirmed: all 20 bots connected and drafted distinct heroes cleanly
+  (roster of 26 intact), a real 10v10 team split, and genuine sustained combat over 55+
+  seconds with no crash -- 15 of 20 heroes actually died with real, varied HP values on the
+  5 survivors (not a static/frozen snapshot). First attempt used `--lobby-size 6`, which
+  surfaced a real (pre-existing, not caused by this session) operational gotcha worth noting:
+  `arena_init_teams()` splits by `i < ARENA_TEAM_SIZE` (10), so any lobby smaller than 20 that
+  isn't exactly 2 puts every player on team 0 with nobody on team 1 -- no combat is possible.
+  Not a bug in code touched this session (confirmed unrelated to any of S170-139 through
+  144), flagged here since it's a real trap for the next person who reaches for a "small
+  team test" lobby size.
+
 - feat(arena): WoW-style hover casting, starting with Doc Wheel's Q (S170-143). Founder,
   real-time: "add hover casting like in wow macros for healing start with doc wheel abilities
   that make sense for that ensuring we show cast animation on the target and the self so its

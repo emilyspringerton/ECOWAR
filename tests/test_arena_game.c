@@ -445,6 +445,86 @@ static void test_intangible_hero_cannot_be_hit(void) {
     CHECK(ghost->hp == ghost_hp_before, "an intangible hero takes no auto-attack damage");
 }
 
+/* S170-144: "ensure aoe damage spells hit creeps" -- AoE zone/aura ticks now hit jungle and
+ * lane creeps too, not just heroes. */
+static void test_ghost_r_zone_damages_enemy_jungle_creep(void) {
+    arena_init_teams();
+    for (int i = 1; i < ARENA_MAX_HEROES; i++) arena_state.heroes[i].active = 0;
+    arena_state.heroes[0].hero_id = ARENA_HERO_GHOST;
+    arena_state.nodes[0].owner = 2; /* team 1's own jungle creep -- a valid target for team 0's zone */
+    arena_tick_creeps(16); /* spawn */
+    /* Within zone radius but outside melee attack range -- isolates this to
+       the zone-damage path, distinct from the existing, separate
+       arena_hero_attack_creeps melee mechanic (see the sibling
+       "does not damage own team" test's own comment for why this matters). */
+    arena_state.heroes[0].x = arena_state.nodes[0].x + 3.0f;
+    arena_state.heroes[0].z = arena_state.nodes[0].z;
+    int hp_before = arena_state.creeps[0].hp;
+
+    arena_cast_r(0);
+    arena_update_teams(1000); /* one full zone tick */
+
+    CHECK(arena_state.creeps[0].hp < hp_before, "Ghost's R zone damages an enemy team-flavored jungle creep standing in it");
+}
+
+static void test_ghost_r_zone_does_not_damage_own_team_jungle_creep(void) {
+    arena_init_teams();
+    for (int i = 1; i < ARENA_MAX_HEROES; i++) arena_state.heroes[i].active = 0;
+    arena_state.heroes[0].hero_id = ARENA_HERO_GHOST;
+    arena_state.nodes[0].owner = 1; /* team 0's OWN jungle creep -- not a valid target */
+    arena_tick_creeps(16);
+    /* Positioned within the zone radius (ARENA_GHOST_R_RADIUS) but OUTSIDE
+       melee attack range (ARENA_ATTACK_RANGE) of the creep -- isolates this
+       to the zone-damage path specifically, since a hero standing directly
+       on top of a jungle creep would also melee-auto-attack it via the
+       existing, separate arena_hero_attack_creeps mechanic (which lets any
+       hero attack any creep regardless of flavor; only the reward differs). */
+    arena_state.heroes[0].x = arena_state.nodes[0].x + 3.0f;
+    arena_state.heroes[0].z = arena_state.nodes[0].z;
+    int hp_before = arena_state.creeps[0].hp;
+
+    arena_cast_r(0);
+    arena_update_teams(1000);
+
+    CHECK(arena_state.creeps[0].hp == hp_before, "Ghost's R zone does not damage the caster's own team's jungle creep");
+}
+
+static void test_ghost_r_zone_damages_enemy_lane_creep(void) {
+    arena_init_teams();
+    for (int i = 1; i < ARENA_MAX_HEROES; i++) arena_state.heroes[i].active = 0;
+    arena_state.heroes[0].hero_id = ARENA_HERO_GHOST;
+    arena_state.heroes[0].x = 0; arena_state.heroes[0].z = 0;
+    ArenaLaneCreep *lc = &arena_state.lane_creeps[0];
+    lc->active = 1; lc->alive = 1; lc->team = 1; /* enemy lane creep */
+    lc->hp = lc->max_hp = ARENA_LANE_CREEP_HP;
+    /* Within zone radius but outside melee attack range -- isolates this to
+       the zone-damage path, distinct from arena_hero_attack_lane_creeps. */
+    lc->x = 3.0f; lc->z = 0;
+
+    arena_cast_r(0);
+    arena_update_teams(1000);
+
+    CHECK(lc->hp < ARENA_LANE_CREEP_HP, "Ghost's R zone damages an enemy lane creep standing in it");
+}
+
+static void test_pizza_aura_damages_enemy_jungle_creep(void) {
+    arena_init_teams();
+    for (int i = 1; i < ARENA_MAX_HEROES; i++) arena_state.heroes[i].active = 0;
+    arena_state.heroes[0].hero_id = ARENA_HERO_PIZZA;
+    arena_state.nodes[0].owner = 2;
+    arena_tick_creeps(16);
+    /* Within the aura radius (ARENA_PIZZA_AURA_RADIUS) but outside melee
+       attack range -- isolates this to the aura-damage path, distinct from
+       arena_hero_attack_creeps. */
+    arena_state.heroes[0].x = arena_state.nodes[0].x + 3.0f;
+    arena_state.heroes[0].z = arena_state.nodes[0].z;
+    int hp_before = arena_state.creeps[0].hp;
+
+    arena_update_teams(1000); /* Pizza's aura is always-on, no cast needed */
+
+    CHECK(arena_state.creeps[0].hp < hp_before, "Pizza's always-on burn aura damages a nearby enemy jungle creep, not just heroes");
+}
+
 static void test_ghost_r_zone_damages_foe_over_time(void) {
     arena_init_with_heroes(ARENA_HERO_UNICORN, ARENA_HERO_GHOST);
     ArenaHero *ghost = &arena_state.heroes[1];
@@ -3172,6 +3252,10 @@ int main(void) {
     test_silenced_hero_cannot_cast();
     test_ghost_w_grants_intangibility_and_expires();
     test_intangible_hero_cannot_be_hit();
+    test_ghost_r_zone_damages_enemy_jungle_creep();
+    test_ghost_r_zone_does_not_damage_own_team_jungle_creep();
+    test_ghost_r_zone_damages_enemy_lane_creep();
+    test_pizza_aura_damages_enemy_jungle_creep();
     test_ghost_r_zone_damages_foe_over_time();
     test_ghost_r_zone_stays_fixed_when_foe_moves_away();
     test_frog_q_rewinds_position_and_hp();
