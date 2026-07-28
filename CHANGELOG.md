@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-07-28 (continued 5)
+
+- docs(arena): item stats table + suggested heroes for new players (S170-199). Founder: "i need
+  you to put the stats of the items in the readme and suggested heroes." The full 24-item
+  `ARENA_ITEMS` catalog as a real table (slot, cost, AD/HP/MP/Armor/Move Speed) — previously only
+  described in prose, no actual numbers anywhere outside the source. 4 suggested-hero picks
+  spanning Tank/Fighter/Marksman/Support, chosen for kit simplicity (no clone management, no
+  blink mind-games, no stealth timing): MnM, Duck, Gary, He Xiangu. Docs-only, no code changed.
+
 ## 2026-07-28 (continued 4)
 
 - fix(arena): remove fog of war -- client-side-only visibility isn't real (S170-198). Founder,
