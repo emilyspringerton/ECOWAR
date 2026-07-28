@@ -2,6 +2,17 @@
 
 ## 2026-07-28 (continued)
 
+- feat(arena): bot AI shop interaction, Sprint 5 of S170-175. Closes the last explicitly-deferred
+  gap from the shop/economy pass. Simple first pass: when no enemy is within a safety radius and
+  the bot can afford the next item in catalog order, it detours to its own team's shop and buys —
+  `arena_shop_buy`'s own server-side validation does the real work, the bot just decides when to
+  go and which item's next. New `send_shop_buy()` mirrors `send_attack`'s packet shape; item
+  costs duplicated locally as `ARENA_BOT_ITEM_COSTS` (same "kept in sync by hand" idiom this file
+  already uses, since it deliberately doesn't link the sim package). Build clean, full suite
+  green. Verified live: an isolated 4-bot match ran cleanly 24s with no crashes; the match log's
+  snapshot schema doesn't carry flow/equipped_item so an actual purchase isn't directly visible
+  in it — flagged, not faked.
+
 - revert(arena): move team size back to 10v10 (S170-183). Founder, real-time, mid a live-pool
   queueing investigation: "ok move back to 10 v 10." Symmetric revert of S170-178's 7v7 change —
   `ARENA_TEAM_SIZE` 7 → 10, `ARENA_SNAPSHOT_MAX_HEROES` 14 → 20, both pool-launch
