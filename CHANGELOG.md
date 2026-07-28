@@ -1,5 +1,32 @@
 # Changelog
 
+## 2026-07-28 (continued 9)
+
+- feat(arena): auto-attack windup/backswing, NORTHSTAR §17 LoL parity (S170-204). Picked as the
+  next spec-only NORTHSTAR section to build (over §16 Weatherman/Donkey and §19.5 structures).
+  Real audit finding before writing any code: §17.3's own "gap analysis" was already stale --
+  S170-162/163 had already shipped the distinct attack command, the persistent attack-target
+  lock with pure-pursuit chase, and Gary's real homing ranged basic attack, three of §17.4's five
+  target-design bullets, just never reflected back into the doc. What was still genuinely
+  unbuilt, and the actual core of the founder's original question ("does the champion stop when
+  auto-attacking?"), was the windup/backswing state machine itself. New
+  `attack_windup_ms_remaining` on `ArenaHero`, applied to both the flat melee loop and Gary's
+  ranged attack: a fresh attack begins a real windup (25% of the existing cooldown, NORTHSTAR
+  §17.5's own suggested ratio) instead of dealing damage instantly; movement freezes during
+  windup; a genuinely new move command or a stun cancels it outright (no damage, no cooldown
+  spent); a completed windup re-validates the target and fires. Real risk found and handled:
+  `apps/arena_bot`'s own ~100ms decision loop re-sends a move command constantly even while
+  already in range -- naively canceling on ANY move command would have silently broken melee
+  damage for every bot-controlled hero. Fixed by comparing the new target against the hero's
+  CURRENT position (not the previous target) gated by its own attack range, so a real reposition
+  cancels but the bot's own noisy re-affirmation doesn't. `§17` updated with a status block
+  correcting the stale gap analysis and a checklist of what's shipped vs. still open (roster-wide
+  ranged split beyond Gary, attack-move). 11 new/updated tests, build clean, full suite green
+  (630/630). Live-verified: an isolated 10v10 match ran 45s with zero crashes and real HP changes
+  across 18/20 heroes including a death -- melee combat works correctly with real bot AI, not
+  just unit tests. Deliberately out of scope: the 1v1 practice demo and hero-vs-creep combat both
+  keep their existing flat instant-damage model -- windup/kiting is a PvP mechanic.
+
 ## 2026-07-28 (continued 8)
 
 - feat(arena): Gary W -> Aimed Shot, a real cast-time ability (S170-203). Founder: "switch gary w
