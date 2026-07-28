@@ -3333,17 +3333,62 @@ static void test_mana_regenerates_out_of_combat(void) {
     CHECK(arena_state.heroes[0].mp > 0, "mana regenerates normally once combat_timer_ms has expired");
 }
 
-static void test_mana_does_not_regenerate_in_combat(void) {
+static void test_mana_regenerates_slowly_in_combat(void) {
     arena_init_teams();
     for (int i = 1; i < ARENA_MAX_HEROES; i++) arena_state.heroes[i].active = 0;
     arena_state.heroes[0].max_mp = ARENA_MP_MAX;
     arena_state.heroes[0].mp = 0;
     arena_state.heroes[0].combat_timer_ms = ARENA_COMBAT_TIMEOUT_MS; /* just took damage */
 
+    arena_update_teams(1000); /* combat_timer_ms ticks down but stays > 0 the whole second */
+
+    CHECK(arena_state.heroes[0].mp == ARENA_MP_REGEN_IN_COMBAT_PER_SEC,
+          "founder: 'have mana tic up slowly 1 per second always' -- a slow trickle even mid-fight, not a dead stop");
+}
+
+static void test_mana_regenerates_faster_out_of_combat_than_in_combat(void) {
+    arena_init_teams();
+    for (int i = 2; i < ARENA_MAX_HEROES; i++) arena_state.heroes[i].active = 0;
+    arena_state.heroes[0].max_mp = ARENA_MP_MAX;
+    arena_state.heroes[0].mp = 0;
+    arena_state.heroes[0].combat_timer_ms = ARENA_COMBAT_TIMEOUT_MS;
+    arena_state.heroes[1].max_mp = ARENA_MP_MAX;
+    arena_state.heroes[1].mp = 0;
+    arena_state.heroes[1].combat_timer_ms = 0;
+
     arena_update_teams(1000);
 
-    CHECK(arena_state.heroes[0].mp == 0,
-          "founder: 'mana should slowly regenerate when not in combat' -- paused while the combat timer is still counting down");
+    CHECK(arena_state.heroes[0].mp == ARENA_MP_REGEN_IN_COMBAT_PER_SEC, "in-combat hero regens at the slow trickle rate");
+    CHECK(arena_state.heroes[1].mp == ARENA_MP_REGEN_PER_SEC, "out-of-combat hero regens at the full rate");
+    CHECK(arena_state.heroes[1].mp > arena_state.heroes[0].mp, "out-of-combat regen is genuinely faster than the in-combat trickle");
+}
+
+static void test_mana_regen_accumulates_correctly_across_many_small_ticks(void) {
+    /* S170-150 bugfix: this is the actual production tick shape
+       (arena_server always calls with dt_ms=16) -- (int)(6 * 16 / 1000.0)
+       truncates to 0 on every single call without a persistent fractional
+       accumulator, so a naive per-tick cast would silently never regen
+       mana at all in real gameplay. 63 ticks of 16ms = 1008ms, just over a
+       full second. */
+    arena_init_teams();
+    for (int i = 2; i < ARENA_MAX_HEROES; i++) arena_state.heroes[i].active = 0;
+    /* Keep one living hero on team 1 (deactivating ALL of it would instantly
+       trigger a real team-wipe win condition on the first tick -- team 1
+       alive-count 0 and owning no node -- which then freezes every
+       subsequent arena_update_teams() call in the loop below for the rest
+       of the test, a real gotcha this session already hit once before in
+       bot-mode testing with an undersized lobby). */
+    arena_state.heroes[ARENA_TEAM_SIZE].active = 1;
+    arena_state.heroes[ARENA_TEAM_SIZE].alive = 1;
+    arena_state.heroes[ARENA_TEAM_SIZE].x = 1000.0f; /* far away -- not a combat participant, just present */
+    arena_state.heroes[0].max_mp = ARENA_MP_MAX;
+    arena_state.heroes[0].mp = 0;
+    arena_state.heroes[0].combat_timer_ms = 0;
+
+    for (int i = 0; i < 63; i++) arena_update_teams(16);
+
+    CHECK(arena_state.heroes[0].mp >= ARENA_MP_REGEN_PER_SEC,
+          "mana actually regenerates over many real-sized (16ms) ticks, not just in single large-dt_ms test steps");
 }
 
 static void test_taking_damage_rearms_the_combat_timer(void) {
@@ -3566,7 +3611,9 @@ int main(void) {
     test_fountain_restores_mana();
     test_fountain_mana_restore_caps_at_max();
     test_mana_regenerates_out_of_combat();
-    test_mana_does_not_regenerate_in_combat();
+    test_mana_regenerates_slowly_in_combat();
+    test_mana_regenerates_faster_out_of_combat_than_in_combat();
+    test_mana_regen_accumulates_correctly_across_many_small_ticks();
     test_taking_damage_rearms_the_combat_timer();
     test_combat_timer_counts_down_to_zero();
     printf("\n%s\n", failures == 0 ? "ALL PASS" : "SOME FAILED");

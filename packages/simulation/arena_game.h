@@ -829,6 +829,7 @@ typedef struct {
  * bar) once it's actually gated to only run outside combat, the real fix the ask needed. */
 #define ARENA_MP_MAX             100
 #define ARENA_MP_REGEN_PER_SEC     6
+#define ARENA_MP_REGEN_IN_COMBAT_PER_SEC 1 /* S170-150, founder: "have mana tic up slowly 1 per second always" -- a slow trickle that runs even mid-fight, distinct from the faster out-of-combat rate above */
 #define ARENA_COMBAT_TIMEOUT_MS 4000 /* WoW-adjacent -- long enough that a brief lull mid-fight doesn't falsely read as "out of combat" */
 #define ARENA_MP_COST_Q            20
 #define ARENA_MP_COST_W            20
@@ -925,6 +926,20 @@ typedef struct {
      * recently" already covers the vast majority of "am I actually
      * fighting" correctly. */
     int combat_timer_ms;
+    /* mp_regen_accum (S170-150 bugfix): mana regen used to compute
+     * `(int)(rate * dt_ms / 1000.0f)` fresh every call with no persistence
+     * across ticks -- at this codebase's own real production tick rate
+     * (arena_server always calls arena_update()/arena_update_teams() with
+     * dt_ms=16), that's `(int)(6 * 16 / 1000.0) == (int)0.096 == 0`, EVERY
+     * single tick, for every regen rate this file has ever used. Mana
+     * regen had silently never actually worked in real gameplay -- only in
+     * tests, which happen to call with large dt_ms=1000 "one full tick"
+     * steps that mask the truncation. A persistent float accumulator fixes
+     * this the same way a real game's resource regen has to: fractional
+     * progress carries over between ticks instead of being discarded each
+     * time, and a whole point is applied (and subtracted back out of the
+     * accumulator) once enough of it has built up. */
+    float mp_regen_accum;
     /* next_cast_refund: generic ally-buff flag (S170-45, Frog's Borrowed
      * Time places this on an ally, not itself) -- the next successful Q/W/R
      * cast by whoever carries this flag has its cooldown refunded to 0

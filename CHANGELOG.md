@@ -1,5 +1,24 @@
 # Changelog
 
+## 2026-07-28 (continued)
+
+- fix(arena): mana always trickles 1/sec even in combat, and a real latent bug fixed where
+  mana regen had silently never worked in actual gameplay (S170-150). Founder, real-time:
+  "have mana tic up slowly 1 per second always." New `ARENA_MP_REGEN_IN_COMBAT_PER_SEC` (1) --
+  regen is no longer a hard on/off gate (S170-148's combat pause); it's now two rates, a slow
+  trickle that runs even mid-fight and the faster out-of-combat rate once
+  `combat_timer_ms` expires. **Real bug found while implementing this, not the literal ask**:
+  the regen math was `h->mp += (int)(rate * dt_ms / 1000.0f)` computed fresh every call with
+  no persistence across ticks -- at this codebase's own real production tick rate
+  (`apps/arena_server` always calls `arena_update()`/`arena_update_teams()` with `dt_ms=16`),
+  that's `(int)(6 * 16 / 1000.0) == (int)0.096 == 0`, EVERY single tick, for every rate this
+  file has ever used. Mana regen had silently never actually worked in real gameplay -- only
+  in tests, which happened to call with large `dt_ms=1000` "one full tick" steps that mask
+  the truncation. Fixed with a persistent `mp_regen_accum` float on `ArenaHero`: fractional
+  progress now carries over between ticks instead of being discarded each time. 3 new
+  headless tests, including one that runs 63 real 16ms ticks specifically to catch this class
+  of bug rather than a single large-dt_ms step. Full suite green (465 checks).
+
 ## 2026-07-28
 
 - fix(arena): "wrong team wins" and "node flips wrong color" -- two real, high-impact

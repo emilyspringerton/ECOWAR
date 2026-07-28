@@ -2562,15 +2562,24 @@ static void tick_hero_kit(ArenaHero *h, ArenaHero *foe, ArenaHero *ally, unsigne
         h->combat_timer_ms -= (int)dt_ms;
         if (h->combat_timer_ms < 0) h->combat_timer_ms = 0;
     }
-    /* Mana regen (S170-132, combat-gated S170-148: "mana should slowly
-       regenerate when not in combat"). Real WoW-style out-of-combat regen --
-       paused entirely while combat_timer_ms is still counting down, so
-       taking or landing hits in a fight can't be quietly offset by regen
-       ticking the whole time. */
-    if (h->alive && h->mp < h->max_mp && h->combat_timer_ms <= 0) {
-        float regen = ARENA_MP_REGEN_PER_SEC * ((float)dt_ms / 1000.0f);
-        h->mp += (int)regen;
-        if (h->mp > h->max_mp) h->mp = h->max_mp;
+    /* Mana regen (S170-132, combat-gated S170-148, always-trickles S170-150:
+       "have mana tic up slowly 1 per second always"). Two rates, not a hard
+       on/off gate anymore: a slow ARENA_MP_REGEN_IN_COMBAT_PER_SEC trickle
+       runs unconditionally, even mid-fight; the full ARENA_MP_REGEN_PER_SEC
+       rate only kicks in once combat_timer_ms has actually expired -- real
+       WoW-style out-of-combat regen, just no longer a dead stop at 0 while
+       fighting. */
+    if (h->alive && h->mp < h->max_mp) {
+        float rate = (h->combat_timer_ms > 0) ? ARENA_MP_REGEN_IN_COMBAT_PER_SEC : ARENA_MP_REGEN_PER_SEC;
+        h->mp_regen_accum += rate * ((float)dt_ms / 1000.0f);
+        int whole = (int)h->mp_regen_accum;
+        if (whole > 0) {
+            h->mp += whole;
+            h->mp_regen_accum -= (float)whole;
+            if (h->mp > h->max_mp) { h->mp = h->max_mp; h->mp_regen_accum = 0.0f; }
+        }
+    } else {
+        h->mp_regen_accum = 0.0f; /* dead or already full -- don't let fractional progress silently bank while it can't apply */
     }
     if (h->silenced_ms > 0) {
         h->silenced_ms -= (int)dt_ms;
