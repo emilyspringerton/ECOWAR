@@ -1795,6 +1795,15 @@ static void draw_ability_tile(float x, float y, float size, int cooldown_ms, flo
 
 /* ---------------- camera ---------------- */
 static float cam_yaw = 45.0f, cam_pitch = 40.0f, cam_dist = 16.0f;
+/* cam_locked (NORTHSTAR §15.1, founder: "specdd unlockable and lockable camera and fog of
+ * war"): the orbit pivot already hard-follows arena_state.heroes[my_owner] every frame
+ * unconditionally (focus_x/focus_z below), so "locked" only ever meant freezing the
+ * yaw/pitch orbit angle itself -- the one way a player can currently look away from their
+ * own hero. Zoom (cam_dist, mouse wheel) stays free even while locked, per §15.1's own
+ * resolved open question ("most real MOBAs lock rotation/pan but leave zoom free"). Starts
+ * unlocked (today's behavior, unchanged) -- no settings-persistence layer exists to
+ * remember a preference across matches. */
+static int cam_locked = 0;
 
 static void camera_basis(float focus_x, float focus_z,
                           float *eye_x, float *eye_y, float *eye_z,
@@ -2084,15 +2093,23 @@ int main(int argc, char *argv[]) {
             if (e.type == SDL_MOUSEMOTION && dragging_cam) {
                 int dx = e.motion.x - last_mx, dy = e.motion.y - last_my;
                 last_mx = e.motion.x; last_my = e.motion.y;
-                cam_yaw += dx * 0.3f;
-                cam_pitch += dy * 0.3f;
-                if (cam_pitch < 10.0f) cam_pitch = 10.0f;
-                if (cam_pitch > 80.0f) cam_pitch = 80.0f;
+                /* S170-193-adjacent, NORTHSTAR §15.1: locked mode makes right-drag rotation a
+                   no-op (mouse deltas still consumed above so drag tracking doesn't jump the
+                   instant unlock happens) -- zoom below stays ungated regardless of lock state. */
+                if (!cam_locked) {
+                    cam_yaw += dx * 0.3f;
+                    cam_pitch += dy * 0.3f;
+                    if (cam_pitch < 10.0f) cam_pitch = 10.0f;
+                    if (cam_pitch > 80.0f) cam_pitch = 80.0f;
+                }
             }
             if (e.type == SDL_MOUSEWHEEL) {
                 cam_dist -= e.wheel.y * 1.0f;
                 if (cam_dist < 4.0f) cam_dist = 4.0f;
                 if (cam_dist > 30.0f) cam_dist = 30.0f;
+            }
+            if (e.type == SDL_KEYDOWN && e.key.keysym.sym == SDLK_c) {
+                cam_locked = !cam_locked; /* NORTHSTAR §15.1, same "works in any mode" precedent as F11/H/B below */
             }
             if (e.type == SDL_KEYDOWN && e.key.keysym.sym == SDLK_F11) {
                 show_apm = !show_apm; /* S170-71: works in any mode, not gated on net_mode/observing */
@@ -2612,6 +2629,19 @@ int main(int argc, char *argv[]) {
         for (int i = 0; i < ARENA_MAX_HEROES; i++) {
             ArenaHero *h = &arena_state.heroes[i];
             if (!h->alive) continue;
+            /* Fog of war (NORTHSTAR §15.2, client-side-visual-only first pass, explicitly not
+               real server-side vision culling -- a modified client could still see everything,
+               named and accepted in the spec, not hidden). Allies (including self) are always
+               visible, matching every real MOBA's "you always see your own team" convention --
+               only an enemy beyond ARENA_VISION_RADIUS of my_owner's own hero gets skipped, and
+               skipped ENTIRELY (no model, no health bar, no name, below) rather than dimmed --
+               this map has no terrain/occlusion geometry to justify a soft fade, so a hard
+               cutoff is the honest match for what the data actually supports. */
+            if (i != my_owner && h->team != arena_state.heroes[my_owner].team) {
+                float vdx = h->x - arena_state.heroes[my_owner].x;
+                float vdz = h->z - arena_state.heroes[my_owner].z;
+                if (vdx * vdx + vdz * vdz > ARENA_VISION_RADIUS * ARENA_VISION_RADIUS) continue;
+            }
             /* intangible_ms (Ghost's Not a Ghost, Frog's R vanish, Bacon Puck's Q, etc. --
                any kit that grants the shared can't-be-hit status) reads as the skinmodel
                going see-through for its duration, same "can't touch this" read a real MOBA
@@ -2855,6 +2885,16 @@ int main(int argc, char *argv[]) {
         for (int i = 0; i < ARENA_MAX_HEROES; i++) {
             ArenaHero *h = &arena_state.heroes[i];
             if (!h->alive) continue;
+            /* Fog of war (NORTHSTAR §15.2) -- same rule and radius as the 3D model pass above:
+               an out-of-vision enemy's health bar/name/status label/hover-tooltip are all part
+               of "seeing" them, so they're skipped here too, not just their 3D model. Skipping
+               before the hover-distance check below also means an out-of-vision enemy can't be
+               hovered/targeted at all, the correct behavior for something the player can't see. */
+            if (i != my_owner && h->team != arena_state.heroes[my_owner].team) {
+                float vdx = h->x - arena_state.heroes[my_owner].x;
+                float vdz = h->z - arena_state.heroes[my_owner].z;
+                if (vdx * vdx + vdz * vdz > ARENA_VISION_RADIUS * ARENA_VISION_RADIUS) continue;
+            }
             float sx, sy;
             if (!world_to_screen(&vp, h->x, 1.6f, h->z, win_w, win_h, &sx, &sy)) continue;
             if (sx < -40 || sx > win_w + 40 || sy < -20 || sy > win_h + 20) continue;
@@ -3359,6 +3399,14 @@ int main(int argc, char *argv[]) {
             snprintf(apmbuf, sizeof(apmbuf), "APM %d", apm_compute(now));
             glColor3f(0.9f, 0.9f, 0.3f);
             draw_string(apmbuf, win_w - 140.0f, win_h - 30.0f, 14);
+        }
+
+        if (cam_locked) {
+            /* NORTHSTAR §15.1: the only on-screen sign the C toggle did anything -- nothing
+               else in the frame changes shape when locked (the pivot already always follows
+               my_owner), so without this a player could easily forget which mode they're in. */
+            glColor3f(0.5f, 0.85f, 1.0f);
+            draw_string("CAM LOCKED (C)", win_w - 140.0f, win_h - 50.0f, 12);
         }
 
         if (arena_state.winner != 0) {

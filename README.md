@@ -13,8 +13,9 @@ comments in `apps/arena/src/main.c` and left implicit across every hero entry in
 | **B** | Toggle the shop panel (S170-175). Buy any of the 24 items with a click or, for the first 9 in the list, the matching `1`-`9` key — either way it's a single action, no confirm step. Click an occupied slot in the loadout column to sell it back for half price. Only resolves for real within `ARENA_SHOP_RADIUS` of your own team's shop. |
 | **Held TAB** | Scoreboard: every hero's kills/deaths/Flow/XP, plus a team-aggregate row, both teams side by side. |
 | **H** | Toggle an ability-description overlay for your own hero's Q/W/E. |
-| **Right click + drag** | Rotate the camera around your hero. |
-| **Mouse wheel** | Zoom the camera in/out. |
+| **Right click + drag** | Rotate the camera around your hero. No-op while camera lock (`C`) is on. |
+| **Mouse wheel** | Zoom the camera in/out. Always works, even while camera lock is on. |
+| **C** | Toggle camera lock (NORTHSTAR §15.1). The camera already always follows your hero's position — locking freezes the rotation angle too, so you can't look away from them. Shows "CAM LOCKED" on screen while on. Starts unlocked every match. |
 | **F11** | Toggle the APM (actions-per-minute) overlay. Works in any mode. |
 | **R** | Restart the match. Local practice mode only (against the built-in bot) — disabled entirely once you're in a real networked match, since a real match has other players in it. |
 | **Click "OK"** | After a match ends (win or loss), requeues you for another one. Networked mode only. |
@@ -23,6 +24,15 @@ Draft is automatic right now — no pick UI yet, you're assigned a hero based on
 lobby (`docs/HEROES_VS0.md` documents every hero's kit if you want to know what you're about to
 play before the match starts). Team matches are **10v10** (`ARENA_TEAM_SIZE`, S170-183 —
 briefly 7v7 under S170-178, reverted).
+
+### Fog of war (NORTHSTAR §15.2)
+
+Enemy heroes outside a fixed radius of your own hero simply don't render — no model, no health
+bar, no name, and you can't hover or click-target them. Allies and jungle creeps are always
+visible. This is a **client-side visual pass only**, not real server-side vision culling — the
+server still sends every hero's position to every client every tick, this only changes what the
+stock client chooses to draw. There's no minimap, so fog only ever hides/reveals the main 3D
+view.
 
 ### Flow, XP, and the item shop (S170-175)
 

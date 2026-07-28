@@ -9,6 +9,19 @@
  * (fountains, node layout, jungle obstacles, powerups) was re-derived or re-scaled alongside
  * this -- see each of their own S170-191 doc comments. */
 #define ARENA_HALF_EXTENT (32.0f * 1.618034f) /* ~51.78 */
+/* ARENA_VISION_RADIUS (NORTHSTAR §15.2, S170-193-adjacent "camera lock + fog of war" spec,
+ * founder: "specdd unlockable and lockable camera and fog of war"): client-side-only fog first
+ * pass -- an enemy hero (never an ally, never a jungle creep) beyond this distance from the
+ * local player's own hero is skipped entirely, not dimmed (no terrain/occlusion geometry exists
+ * to justify a soft fade). §15.2 asked for "a sense of scale" from existing gameplay radii
+ * (ARENA_NODE_CAPTURE_RADIUS 5.0/ARENA_CREEP_AGGRO_RADIUS 4.0) -- those predate the S170-191
+ * golden-ratio map expansion and were never themselves rescaled, so reusing them verbatim would
+ * make fog nearly meaningless on the current, much larger map. Picked instead as a real fraction
+ * of the actual node spacing (arena_nodes_reset_layout's own Blacksmith-to-flank distance is
+ * ~34 units post-S170-191) scaled by the same phi factor everything else map-sized uses, so it
+ * grows if the map ever grows again instead of silently drifting stale like the fountain
+ * position bug S170-191 found and fixed. */
+#define ARENA_VISION_RADIUS (16.0f * 1.618034f) /* ~25.89 */
 #define ARENA_HERO_SPEED 4.0f      /* units/sec */
 #define ARENA_ATTACK_RANGE 1.6f
 #define ARENA_ATTACK_DAMAGE 8
