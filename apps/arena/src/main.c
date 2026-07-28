@@ -529,6 +529,8 @@ static void net_poll_snapshots(uint32_t now_ms) {
                     dst->stunned_ms = msg->heroes[i].stunned_ms;
                     dst->slowed_ms = msg->heroes[i].slowed_ms;
                     dst->slow_pct = (float)msg->heroes[i].slow_pct_x100 / 100.0f;
+                    dst->berserker_ms = msg->heroes[i].berserker_ms; /* S170-190 */
+                    dst->regen_ms = msg->heroes[i].regen_ms;
                     if (msg->heroes[i].cast_flash_slot > 0) {
                         spawn_spell_flash(dst->x, dst->z, msg->heroes[i].cast_flash_slot, dst->hero_id);
                         trigger_squish(i);
@@ -588,6 +590,19 @@ static void net_poll_snapshots(uint32_t now_ms) {
                         dst->max_hp = msg->creeps[i].max_hp;
                         dst->alive = msg->creeps[i].alive;
                         dst->flavor = (ArenaCreepFlavor)msg->creeps[i].flavor;
+                    }
+                }
+                /* S170-190: powerups -- always fully populated, same convention as jungle
+                   creeps just above. */
+                {
+                    int pcount2 = ARENA_SNAPSHOT_POWERUP_COUNT;
+                    if (pcount2 > ARENA_POWERUP_COUNT) pcount2 = ARENA_POWERUP_COUNT;
+                    for (int i = 0; i < pcount2; i++) {
+                        ArenaPowerup *dst = &arena_state.powerups[i];
+                        dst->x = msg->powerups[i].x;
+                        dst->z = msg->powerups[i].z;
+                        dst->kind = (ArenaPowerupKind)msg->powerups[i].kind;
+                        dst->active = msg->powerups[i].active;
                     }
                 }
                 /* S170-146: lane creeps -- sparse pool, same "mirror the wire
@@ -1327,6 +1342,8 @@ static int hero_status_label(const ArenaHero *h, char *buf, size_t bufsize) {
     if (h->survive_floor_ms > 0) APPEND_TAG("UNKILLABLE");
     if (h->stunned_ms > 0) APPEND_TAG("STUNNED");
     if (h->slowed_ms > 0) APPEND_TAG("SLOWED");
+    if (h->berserker_ms > 0) APPEND_TAG("BERSERKER");
+    if (h->regen_ms > 0) APPEND_TAG("REGEN");
 #undef APPEND_TAG
     return used > 0;
 }
@@ -2535,6 +2552,26 @@ int main(int argc, char *argv[]) {
             draw_hero_box(fx, fz, 0.0f, 0.15f, 0.0f, 1.6f, 0.15f, 1.6f, 1.0f, &vp, loc_mvp, loc_model, &cube_mesh);
             glUniform4f_(loc_color, 0.4f, 0.95f, 1.0f, 1.0f); /* pillar: bright cyan-white */
             draw_hero_box(fx, fz, 0.0f, 1.3f, 0.0f, 0.4f, 1.1f, 0.4f, 1.0f, &vp, loc_mvp, loc_model, &cube_mesh);
+        }
+
+        /* Warsong Gulch-style powerups (S170-190, founder: "add berserker and health regen
+           powerups like from warsong gulch in between the nodes"): a small floating orb,
+           distinct from the fountains' own taller pillar shape -- Berserker in fiery
+           orange-red (damage, aggression), Regen in a healing green (same color family the
+           heal-flash and status label already use for "good things happening to your HP").
+           Position + active state come over the wire (unlike fountains, powerups have real
+           dynamic state a static client-side layout can't represent) -- simply not drawn at
+           all while inactive (just grabbed, on cooldown), the same "gone until it respawns"
+           read a real WSG pickup gives. */
+        for (int i = 0; i < ARENA_SNAPSHOT_POWERUP_COUNT; i++) {
+            ArenaPowerup *pu = &arena_state.powerups[i];
+            if (!pu->active) continue;
+            if (pu->kind == ARENA_POWERUP_BERSERKER) {
+                glUniform4f_(loc_color, 0.9f, 0.25f, 0.1f, 1.0f);
+            } else {
+                glUniform4f_(loc_color, 0.2f, 0.9f, 0.3f, 1.0f);
+            }
+            draw_hero_box(pu->x, pu->z, 0.0f, 0.7f, 0.0f, 0.6f, 0.6f, 0.6f, 1.0f, &vp, loc_mvp, loc_model, &cube_mesh);
         }
 
         /* Shop structures (S170-175, "have there be 2 shops in the other 2

@@ -4229,6 +4229,95 @@ static void test_fountain_mana_restore_caps_at_max(void) {
     CHECK(arena_state.heroes[0].mp == ARENA_MP_MAX, "fountain mana restore caps at max_mp, doesn't overfill");
 }
 
+/* S170-190, founder: "add berserker and health regen powerups like from warsong gulch in
+ * between the nodes." */
+
+static void test_powerup_pickup_grants_buff_and_deactivates(void) {
+    arena_init_teams();
+    for (int i = 1; i < ARENA_MAX_HEROES; i++) arena_state.heroes[i].active = 0;
+    ArenaPowerup *berserker = &arena_state.powerups[ARENA_POWERUP_BERSERKER];
+    arena_state.heroes[0].x = berserker->x; arena_state.heroes[0].z = berserker->z;
+    CHECK(berserker->active, "sanity: the powerup starts active on layout reset");
+
+    arena_tick_powerups(16);
+
+    CHECK(arena_state.heroes[0].berserker_ms == ARENA_POWERUP_BUFF_MS, "walking onto the Berserker powerup grants its full buff duration");
+    CHECK(!berserker->active, "the powerup deactivates once grabbed");
+    CHECK(berserker->respawn_ms_remaining == ARENA_POWERUP_RESPAWN_MS, "and starts its respawn countdown");
+}
+
+static void test_powerup_out_of_radius_grants_nothing(void) {
+    arena_init_teams();
+    for (int i = 1; i < ARENA_MAX_HEROES; i++) arena_state.heroes[i].active = 0;
+    ArenaPowerup *berserker = &arena_state.powerups[ARENA_POWERUP_BERSERKER];
+    arena_state.heroes[0].x = berserker->x + ARENA_POWERUP_PICKUP_RADIUS + 5.0f;
+    arena_state.heroes[0].z = berserker->z;
+
+    arena_tick_powerups(16);
+
+    CHECK(arena_state.heroes[0].berserker_ms == 0, "well outside the pickup radius grants nothing");
+    CHECK(berserker->active, "and the powerup stays on the map");
+}
+
+static void test_powerup_respawns_after_cooldown(void) {
+    arena_init_teams();
+    for (int i = 1; i < ARENA_MAX_HEROES; i++) arena_state.heroes[i].active = 0;
+    ArenaPowerup *regen = &arena_state.powerups[ARENA_POWERUP_REGEN];
+    arena_state.heroes[0].x = regen->x; arena_state.heroes[0].z = regen->z;
+    arena_tick_powerups(16);
+    CHECK(!regen->active, "sanity: grabbed and now inactive");
+
+    arena_state.heroes[0].x = -999.0f; /* well away, so it can't just get re-grabbed the instant it respawns */
+    for (int i = 0; i < ARENA_POWERUP_RESPAWN_MS / 16 + 2; i++) arena_tick_powerups(16);
+
+    CHECK(regen->active, "the powerup respawns once its full cooldown elapses");
+}
+
+static void test_berserker_buff_adds_bonus_damage(void) {
+    arena_init_teams();
+    for (int i = 2; i < ARENA_MAX_HEROES; i++) arena_state.heroes[i].active = 0;
+    arena_state.heroes[ARENA_TEAM_SIZE].active = 1;
+    arena_state.heroes[ARENA_TEAM_SIZE].alive = 1;
+    arena_state.heroes[ARENA_TEAM_SIZE].hero_id = ARENA_HERO_GHOST; /* 0 base armor -- exact hit-damage math */
+    arena_state.heroes[ARENA_TEAM_SIZE].hp = arena_state.heroes[ARENA_TEAM_SIZE].max_hp = 1000;
+    arena_state.heroes[0].x = arena_state.heroes[ARENA_TEAM_SIZE].x;
+    arena_state.heroes[0].z = arena_state.heroes[ARENA_TEAM_SIZE].z;
+    arena_state.heroes[0].berserker_ms = ARENA_POWERUP_BUFF_MS;
+
+    arena_update_teams(16); /* one real melee tick */
+
+    int expected_dmg = ARENA_ATTACK_DAMAGE + ARENA_BERSERKER_BONUS_AD;
+    CHECK(arena_state.heroes[ARENA_TEAM_SIZE].hp == 1000 - expected_dmg,
+          "an active Berserker buff adds its flat bonus on top of the normal auto-attack damage");
+}
+
+static void test_regen_buff_heals_over_time(void) {
+    arena_init_teams();
+    for (int i = 1; i < ARENA_MAX_HEROES; i++) arena_state.heroes[i].active = 0;
+    arena_state.heroes[0].max_hp = 100;
+    arena_state.heroes[0].hp = 50;
+    arena_state.heroes[0].regen_ms = ARENA_POWERUP_BUFF_MS;
+
+    arena_update_teams(1000); /* one full second */
+
+    CHECK(arena_state.heroes[0].hp == 50 + ARENA_POWERUP_REGEN_HP_PER_SEC, "an active Regen buff heals at its documented per-second rate");
+}
+
+static void test_powerup_buffs_tick_down_and_expire(void) {
+    arena_init_teams();
+    for (int i = 1; i < ARENA_MAX_HEROES; i++) arena_state.heroes[i].active = 0;
+    arena_state.heroes[0].berserker_ms = 500;
+    arena_state.heroes[0].regen_ms = 500;
+
+    arena_update_teams(400);
+    CHECK(arena_state.heroes[0].berserker_ms == 100, "Berserker ticks down like every other timed effect");
+    CHECK(arena_state.heroes[0].regen_ms == 100, "Regen ticks down the same way");
+
+    arena_update_teams(200);
+    CHECK(arena_state.heroes[0].berserker_ms == 0, "Berserker expires (clamped at 0) once its duration elapses");
+    CHECK(arena_state.heroes[0].regen_ms == 0, "Regen expires the same way");
+}
+
 /* S170-148: mana visibility + combat-gated regen. */
 
 static void test_mana_regenerates_out_of_combat(void) {
@@ -4633,6 +4722,12 @@ int main(void) {
     test_fountain_does_not_heal_dead_hero();
     test_fountain_restores_mana();
     test_fountain_mana_restore_caps_at_max();
+    test_powerup_pickup_grants_buff_and_deactivates();
+    test_powerup_out_of_radius_grants_nothing();
+    test_powerup_respawns_after_cooldown();
+    test_berserker_buff_adds_bonus_damage();
+    test_regen_buff_heals_over_time();
+    test_powerup_buffs_tick_down_and_expire();
     test_mana_regenerates_out_of_combat();
     test_mana_regenerates_slowly_in_combat();
     test_mana_regenerates_faster_out_of_combat_than_in_combat();

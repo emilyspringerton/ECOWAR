@@ -236,6 +236,8 @@ typedef struct {
     uint16_t stunned_ms;   // S170-184: new generic hard-CC field, see ArenaHero's own doc comment
     uint16_t slowed_ms;    // S170-184: new generic move-speed debuff
     uint8_t slow_pct_x100; // 0-100, slow_pct*100 -- quantized same "lossy is fine" precedent as mp (uint8_t)
+    uint16_t berserker_ms; // S170-190: Warsong Gulch-style powerup buff, damage bonus
+    uint16_t regen_ms;     // S170-190: Warsong Gulch-style powerup buff, HP regen
 } ArenaHeroSnapshot;
 
 // ARENA_SNAPSHOT_MAX_HEROES must match packages/simulation/arena_game.h's
@@ -299,6 +301,24 @@ typedef struct {
 // ARENA_MAX_CREEPS, same duplication reasoning as the others above.
 #define ARENA_SNAPSHOT_CREEP_COUNT 5
 
+// Per-powerup state (S170-190, Warsong Gulch-style Berserker/Regen pickups). Unlike fountains
+// (static/deterministic, never synced -- see arena_fountain_position's own doc comment),
+// powerups have real dynamic state (grabbed or not) that changes from real gameplay events, so
+// the client genuinely needs this over the wire. Always exactly ARENA_SNAPSHOT_POWERUP_COUNT
+// entries, same "always fully populated" convention as creeps above (an inactive/just-grabbed
+// powerup still occupies its slot, just active=0) -- position synced too rather than requiring
+// the client to duplicate arena_powerups_reset_layout's own hardcoded midpoint math.
+typedef struct {
+    float x, z;
+    uint8_t kind;   /* 0=Berserker, 1=Regen -- matches ArenaPowerupKind exactly */
+    uint8_t active; /* 1 = sitting on the map, ready to be picked up */
+} ArenaPowerupSnapshot;
+
+// ARENA_SNAPSHOT_POWERUP_COUNT must match packages/simulation/arena_game.h's
+// ARENA_POWERUP_COUNT, same duplication reasoning as every other ARENA_SNAPSHOT_* size
+// constant.
+#define ARENA_SNAPSHOT_POWERUP_COUNT 2
+
 // Per-lane-creep state (S170-146). Sparse pool (most slots inactive at any
 // given tick, waves come and go), same "count + fixed array" convention as
 // projectiles.
@@ -332,6 +352,7 @@ typedef struct {
     uint8_t projectile_count; /* S170-136 */
     ArenaProjectileSnapshot projectiles[ARENA_SNAPSHOT_MAX_PROJECTILES];
     ArenaCreepSnapshot creeps[ARENA_SNAPSHOT_CREEP_COUNT]; /* S170-146 */
+    ArenaPowerupSnapshot powerups[ARENA_SNAPSHOT_POWERUP_COUNT]; /* S170-190 */
     uint8_t lane_creep_count; /* S170-146 */
     ArenaLaneCreepSnapshot lane_creeps[ARENA_SNAPSHOT_MAX_LANE_CREEPS];
     uint16_t resources[2]; /* S170-153: team resource race, capped at ARENA_RESOURCE_CAP */

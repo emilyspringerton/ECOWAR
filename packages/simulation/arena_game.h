@@ -70,6 +70,35 @@ typedef enum {
 #define ARENA_FOUNTAIN_HEAL_PER_SEC 15 /* strong, deliberate -- "go here to top off," not a passive trickle */
 #define ARENA_FOUNTAIN_MANA_PER_SEC 15 /* S170-148, founder: "fountains should also restore mana" -- same rate as the heal, one consistent "resource top-off" spot */
 
+/* Warsong Gulch-style powerups (S170-190, founder: "add berserker and health regen powerups
+ * like from warsong gulch in between the nodes"). Real WoW WSG mechanic: two neutral map
+ * pickups (Berserker = damage buff, Restoration = health-regen buff), grabbed by walking near
+ * them, granting a timed buff on pickup; the pickup itself goes inactive and respawns after a
+ * cooldown. Positioned between the node clusters (ArenaPowerupKind's own doc comment on
+ * arena_powerup_position has the exact layout reasoning) -- neutral, contestable ground,
+ * equidistant from both teams, same fairness principle the fountains/graveyards already
+ * follow. Hero-only, same "narrower blast radius on purpose" scoping Tyler's clones are
+ * already excluded from (fountains, node capture, creep targeting) -- one more system that
+ * doesn't need touching to ship the core mechanic. */
+typedef enum {
+    ARENA_POWERUP_BERSERKER = 0,
+    ARENA_POWERUP_REGEN = 1,
+    ARENA_POWERUP_COUNT
+} ArenaPowerupKind;
+
+typedef struct {
+    float x, z;
+    ArenaPowerupKind kind;
+    int active;                /* 1 = sitting on the map, ready to be picked up */
+    int respawn_ms_remaining;  /* counts down while inactive; irrelevant while active */
+} ArenaPowerup;
+
+#define ARENA_POWERUP_PICKUP_RADIUS 2.0f
+#define ARENA_POWERUP_RESPAWN_MS   60000 /* 60s -- real WSG's own ~90-120s scaled down for this game's faster match pace */
+#define ARENA_POWERUP_BUFF_MS      20000 /* 20s -- same scaling reasoning */
+#define ARENA_BERSERKER_BONUS_AD      15 /* flat, on top of item_bonus_ad -- same "flat bonus, not a multiplier" shape items already use */
+#define ARENA_POWERUP_REGEN_HP_PER_SEC 8 /* faster than fountain healing (15/sec) is close-range, deliberate -- this is a portable, weaker version you carry with you */
+
 /* Territorial dynamic jungle creeps (S170-51). Founder direction: territory
  * is the macro/economy layer, objectives (the team-wipe win condition) are
  * how the game is actually won, and gameplay should let territory control
@@ -1141,6 +1170,17 @@ typedef struct {
      * time, and a whole point is applied (and subtracted back out of the
      * accumulator) once enough of it has built up. */
     float mp_regen_accum;
+    /* berserker_ms (S170-190, founder: "add berserker and health regen powerups like from
+     * warsong gulch"): > 0 while the Berserker powerup buff is active, adding
+     * ARENA_BERSERKER_BONUS_AD on top of item_bonus_ad at the same damage call sites items
+     * already flow through (melee, jungle/lane creeps, Gary's homing shot) -- same "flat bonus,
+     * not a new damage model" shape as items. regen_ms/regen_accum: the Restoration powerup's
+     * HP-per-second buff, same fractional-accumulator idiom as mp_regen_accum just above (a
+     * flat per-tick add would truncate to 0 at this game's real 16ms tick rate, same reasoning
+     * that field's own doc comment already gives). */
+    int berserker_ms;
+    int regen_ms;
+    float regen_accum;
     /* w_drain_accum (S170-181, founder: "instead of initial mana cost toggle spells should
      * drain mana over time"): same fractional-accumulator idiom as mp_regen_accum right above,
      * for the same reason -- ARENA_MP_DRAIN_W_PER_SEC * dt_ms/1000 truncates to 0 almost every
@@ -1374,6 +1414,7 @@ typedef struct {
     ArenaCreep creeps[ARENA_MAX_CREEPS];
     ArenaProjectile projectiles[ARENA_MAX_PROJECTILES];
     ArenaObstacle obstacles[ARENA_OBSTACLE_COUNT];
+    ArenaPowerup powerups[ARENA_POWERUP_COUNT]; /* S170-190 */
     ArenaLaneCreep lane_creeps[ARENA_MAX_LANE_CREEPS]; /* S170-139 */
     int lane_wave_timer_ms[2]; /* S170-139: per-team countdown to next wave; starts at 0 (memset), so both teams' first wave spawns on the first tick, matching a real MOBA's 0:00 wave */
     int fountain_tick_ms; /* S170-147: fixed-interval (1000ms) accumulator for the fountain heal tick, same idiom as every other DPS/heal zone's own r_zone_tick_ms -- global, not per-hero, since a fountain heals whoever's nearby, not a single caster's target */
@@ -1526,6 +1567,24 @@ void arena_tick_nodes(unsigned int dt_ms);
  * table already follows for jungle obstacles. Clamps out-of-range index
  * defensively rather than reading past the internal table. */
 void arena_fountain_position(int index, float *x, float *z);
+
+/* arena_powerups_reset_layout (S170-190): fills arena_state.powerups[] with the two Warsong
+ * Gulch-style pickups (Berserker, Regen), positioned between the node clusters -- midway
+ * between the two "top" nodes (Stables/Lumber Mill) for Berserker, midway between the two
+ * "bottom" nodes (Farm/Gold Mine) for Regen, both offset from the center node so they read as
+ * distinct contestable ground rather than stacking on Blacksmith. Both start active (ready to
+ * grab) on layout reset, same "spawn ready, not on a delay" convention creeps/nodes already
+ * follow. Called from both arena_init_with_heroes and arena_init_teams, same "this system works
+ * in both modes" precedent fountains/nodes already established. */
+void arena_powerups_reset_layout(void);
+
+/* arena_tick_powerups (S170-190): counts down inactive (already-grabbed) powerups toward
+ * respawn, and checks every active powerup against every real hero (not clones, same "narrower
+ * blast radius on purpose" scoping fountains/node-capture/creep-targeting already exclude
+ * clones from) for a pickup within ARENA_POWERUP_PICKUP_RADIUS -- grants the matching timed
+ * buff (berserker_ms or regen_ms) and deactivates the powerup. Called from both arena_update
+ * and arena_update_teams, same "works in both modes" precedent as arena_tick_fountains. */
+void arena_tick_powerups(unsigned int dt_ms);
 
 /* arena_obstacles_reset_layout (S170-138, made public S170-148): fills
  * arena_state.obstacles[] with the static, deterministic jungle terrain

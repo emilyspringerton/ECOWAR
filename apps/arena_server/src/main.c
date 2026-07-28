@@ -326,6 +326,8 @@ static void server_broadcast(void) {
         msg.heroes[i].stunned_ms = (uint16_t)(h->stunned_ms > 0 ? h->stunned_ms : 0);
         msg.heroes[i].slowed_ms = (uint16_t)(h->slowed_ms > 0 ? h->slowed_ms : 0);
         msg.heroes[i].slow_pct_x100 = (uint8_t)(h->slow_pct * 100.0f);
+        msg.heroes[i].berserker_ms = (uint16_t)(h->berserker_ms > 0 ? h->berserker_ms : 0); /* S170-190 */
+        msg.heroes[i].regen_ms = (uint16_t)(h->regen_ms > 0 ? h->regen_ms : 0);
         msg.picked[i] = (uint8_t)hero_picked[i];
     }
     msg.winner = (uint8_t)arena_state.winner;
@@ -362,6 +364,15 @@ static void server_broadcast(void) {
         msg.creeps[i].max_hp = (uint16_t)cr->max_hp;
         msg.creeps[i].alive = (uint8_t)cr->alive;
         msg.creeps[i].flavor = (uint8_t)cr->flavor;
+    }
+    /* S170-190: powerups are always fully populated (fixed at ARENA_POWERUP_COUNT), same
+       "not sparse-packed" convention as jungle creeps just above. */
+    for (int i = 0; i < ARENA_SNAPSHOT_POWERUP_COUNT; i++) {
+        ArenaPowerup *pu = &arena_state.powerups[i];
+        msg.powerups[i].x = pu->x;
+        msg.powerups[i].z = pu->z;
+        msg.powerups[i].kind = (uint8_t)pu->kind;
+        msg.powerups[i].active = (uint8_t)pu->active;
     }
     /* S170-146: lane creeps are a sparse pool, same pack-only-active
        convention as projectiles above. */

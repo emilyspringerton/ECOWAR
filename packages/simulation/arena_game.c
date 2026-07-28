@@ -265,6 +265,7 @@ void arena_init_with_heroes(ArenaHeroID player_hero, ArenaHeroID bot_hero) {
     arena_state.heroes[1].hero_id = bot_hero;
 
     arena_nodes_reset_layout();
+    arena_powerups_reset_layout(); /* S170-190 */
     arena_obstacles_reset_layout();
     arena_creeps_reset();
 
@@ -481,6 +482,14 @@ static float arena_hero_base_armor(const ArenaHero *h) {
  * just above for why this split exists. */
 float arena_hero_armor(const ArenaHero *h) {
     return arena_hero_base_armor(h) + (float)h->item_bonus_armor;
+}
+
+/* arena_hero_bonus_ad (S170-190): item_bonus_ad's own "add this at every damage call site"
+ * shape, extended with the Berserker powerup's flat bonus -- same reasoning arena_hero_armor
+ * splits base-vs-item, here it's item-vs-powerup, both additive on top of the same flat
+ * ARENA_ATTACK_DAMAGE/ARENA_GARY_ATTACK_DAMAGE base every call site already uses. */
+static int arena_hero_bonus_ad(const ArenaHero *h) {
+    return h->item_bonus_ad + (h->berserker_ms > 0 ? ARENA_BERSERKER_BONUS_AD : 0);
 }
 
 static int apply_armor(int raw_damage, float armor) {
@@ -869,6 +878,23 @@ void arena_fountain_position(int index, float *x, float *z) {
     *z = layout[index][1];
 }
 
+/* arena_powerups_reset_layout (S170-190): see header declaration's doc comment. Positions
+ * derived directly from arena_nodes_reset_layout's own layout table (Stables (-18,11), Farm
+ * (-18,-11), Lumber Mill (18,11), Gold Mine (18,-11)) -- Berserker sits at the midpoint of the
+ * two "top" nodes (0,11), Regen at the midpoint of the two "bottom" nodes (0,-11), both offset
+ * from the center Blacksmith node (0,0) so they read as their own distinct ground. */
+void arena_powerups_reset_layout(void) {
+    arena_state.powerups[ARENA_POWERUP_BERSERKER].x = 0.0f;
+    arena_state.powerups[ARENA_POWERUP_BERSERKER].z = 11.0f;
+    arena_state.powerups[ARENA_POWERUP_REGEN].x = 0.0f;
+    arena_state.powerups[ARENA_POWERUP_REGEN].z = -11.0f;
+    for (int p = 0; p < ARENA_POWERUP_COUNT; p++) {
+        arena_state.powerups[p].kind = (ArenaPowerupKind)p;
+        arena_state.powerups[p].active = 1;
+        arena_state.powerups[p].respawn_ms_remaining = 0;
+    }
+}
+
 /* arena_graveyard_position (S170-153, corner placement S170-156): founder,
  * real-time: "the graveyards ... [should be] behind 2 of the corners not
  * in the middle of the map." The original placement sat each team's
@@ -1018,6 +1044,29 @@ void arena_tick_fountains(unsigned int dt_ms) {
     }
 }
 
+/* arena_tick_powerups (S170-190): see header declaration's doc comment. */
+void arena_tick_powerups(unsigned int dt_ms) {
+    for (int p = 0; p < ARENA_POWERUP_COUNT; p++) {
+        ArenaPowerup *pu = &arena_state.powerups[p];
+        if (!pu->active) {
+            pu->respawn_ms_remaining -= (int)dt_ms;
+            if (pu->respawn_ms_remaining <= 0) pu->active = 1;
+            continue;
+        }
+        for (int i = 0; i < ARENA_MAX_HEROES; i++) {
+            ArenaHero *h = &arena_state.heroes[i];
+            if (!h->active || !h->alive) continue;
+            float dx = h->x - pu->x, dz = h->z - pu->z;
+            if (sqrtf(dx * dx + dz * dz) > ARENA_POWERUP_PICKUP_RADIUS) continue;
+            if (pu->kind == ARENA_POWERUP_BERSERKER) h->berserker_ms = ARENA_POWERUP_BUFF_MS;
+            else h->regen_ms = ARENA_POWERUP_BUFF_MS;
+            pu->active = 0;
+            pu->respawn_ms_remaining = ARENA_POWERUP_RESPAWN_MS;
+            break; /* one hero claims it -- first found in owner order, same simple "first past the post" idiom every other pickup/target-selection loop in this file already uses */
+        }
+    }
+}
+
 /* cast_cooldown: applies the generic next_cast_refund buff (S170-45,
  * Frog's Borrowed Time) -- returns 0 and consumes the buff if it's set on
  * h, else returns normal_ms unchanged. Every Q/W/R cooldown-assignment
@@ -1086,7 +1135,7 @@ void arena_tick_attack_targets(unsigned int dt_ms) {
             if (h->attack_cooldown_ms <= 0 && h->stunned_ms <= 0) { /* S170-184 */
                 ArenaProjectile *shot = arena_spawn_projectile(i, h->team, ARENA_HERO_GARY,
                     h->x, h->z, foe->x, foe->z, ARENA_GARY_ATTACK_SPEED, 0.6f,
-                    ARENA_GARY_ATTACK_DAMAGE + h->item_bonus_ad, ARENA_GARY_ATTACK_RANGE * 3.0f);
+                    ARENA_GARY_ATTACK_DAMAGE + arena_hero_bonus_ad(h), ARENA_GARY_ATTACK_RANGE * 3.0f); /* S170-190 */
                 if (shot) shot->homing_target = target;
                 h->attack_cooldown_ms = ARENA_GARY_ATTACK_COOLDOWN_MS;
             }
@@ -1414,7 +1463,7 @@ void arena_hero_attack_creeps(unsigned int dt_ms) {
             if (sqrtf(dx * dx + dz * dz) > ARENA_ATTACK_RANGE) continue;
 
             /* Creeps have no armor stat -- flat damage, no apply_armor call needed. */
-            creep->hp -= ARENA_ATTACK_DAMAGE + h->item_bonus_ad;
+            creep->hp -= ARENA_ATTACK_DAMAGE + arena_hero_bonus_ad(h); /* S170-190 */
             creep->last_attacked_by_owner = i;
             h->attack_cooldown_ms = ARENA_ATTACK_COOLDOWN_MS;
             if (creep->hp <= 0) {
@@ -1578,7 +1627,7 @@ void arena_hero_attack_lane_creeps(unsigned int dt_ms) {
             float dx = creep->x - h->x, dz = creep->z - h->z;
             if (sqrtf(dx * dx + dz * dz) > ARENA_ATTACK_RANGE) continue;
 
-            creep->hp -= ARENA_ATTACK_DAMAGE + h->item_bonus_ad; /* no armor stat on lane creeps, same as jungle creeps */
+            creep->hp -= ARENA_ATTACK_DAMAGE + arena_hero_bonus_ad(h); /* no armor stat on lane creeps, same as jungle creeps; S170-190 */
             h->attack_cooldown_ms = ARENA_ATTACK_COOLDOWN_MS;
             if (creep->hp <= 0) {
                 creep->hp = 0;
@@ -3098,6 +3147,29 @@ static void tick_hero_kit(ArenaHero *h, ArenaHero *foe, ArenaHero *ally, unsigne
     } else {
         h->mp_regen_accum = 0.0f; /* dead or already full -- don't let fractional progress silently bank while it can't apply */
     }
+    /* Regen powerup (S170-190, "warsong gulch"-style pickup): same fractional-accumulator idiom
+       as mana regen just above, HP instead of MP, active for regen_ms after pickup regardless
+       of combat state (a carried buff, not a location -- unlike the fountain's own always-on
+       tick, this one only runs while the timed buff from a real pickup is active). */
+    if (h->alive && h->regen_ms > 0 && h->hp < h->max_hp) {
+        h->regen_accum += (float)ARENA_POWERUP_REGEN_HP_PER_SEC * ((float)dt_ms / 1000.0f);
+        int regen_whole = (int)h->regen_accum;
+        if (regen_whole > 0) {
+            h->hp += regen_whole;
+            h->regen_accum -= (float)regen_whole;
+            if (h->hp > h->max_hp) { h->hp = h->max_hp; h->regen_accum = 0.0f; }
+        }
+    } else if (!h->alive || h->regen_ms <= 0) {
+        h->regen_accum = 0.0f;
+    }
+    if (h->berserker_ms > 0) {
+        h->berserker_ms -= (int)dt_ms;
+        if (h->berserker_ms < 0) h->berserker_ms = 0;
+    }
+    if (h->regen_ms > 0) {
+        h->regen_ms -= (int)dt_ms;
+        if (h->regen_ms < 0) h->regen_ms = 0;
+    }
     /* Toggle-W mana drain (S170-181): generic across every TRUE toggle hero (see
        ArenaHero.w_drain_accum's own doc comment for the exact case list) -- arena_toggle_w
        itself no longer charges a flat activation cost for these, it only gates on mp > 0 to
@@ -3842,6 +3914,7 @@ void arena_update(unsigned int dt_ms) {
     if (arena_bot_enabled) bot_cast_kit_if_ready(&arena_state.heroes[1], &arena_state.heroes[0]);
     arena_tick_projectiles(dt_ms);
     arena_tick_fountains(dt_ms);
+    arena_tick_powerups(dt_ms); /* S170-190 */
     /* Runs last (S170-51 cont'd): a capture channel is interrupted by
        damage taken this same tick (real Arathi Basin's own rule), so node
        state needs to see everything above -- creeps, melee, kit ticks,
@@ -3883,6 +3956,7 @@ void arena_init_teams(void) {
         h->hero_id = ARENA_HERO_UNICORN; /* placeholder until the real client's draft pick overrides it */
     }
     arena_nodes_reset_layout();
+    arena_powerups_reset_layout(); /* S170-190 */
     arena_obstacles_reset_layout();
     arena_creeps_reset();
     /* S170-139: lane creep waves get a short grace period before the first
@@ -4111,7 +4185,7 @@ void arena_update_teams(unsigned int dt_ms) {
             int reward_owner = arena_reward_owner(i);
             foe->last_attacked_by_owner = reward_owner;
             record_assist_damage(foe, reward_owner); /* S170-187 */
-            apply_damage(foe, apply_armor(ARENA_ATTACK_DAMAGE + h->item_bonus_ad, arena_hero_armor(foe)));
+            apply_damage(foe, apply_armor(ARENA_ATTACK_DAMAGE + arena_hero_bonus_ad(h), arena_hero_armor(foe))); /* S170-190 */
         }
         h->attack_cooldown_ms = ARENA_ATTACK_COOLDOWN_MS;
     }
@@ -4136,6 +4210,7 @@ void arena_update_teams(unsigned int dt_ms) {
     }
     arena_tick_projectiles(dt_ms);
     arena_tick_fountains(dt_ms);
+    arena_tick_powerups(dt_ms); /* S170-190 */
     /* Runs last, same reasoning as arena_update()'s own call site: a
        capture channel needs to see this whole tick's damage (creeps,
        melee, kit ticks, projectile hits) before deciding whether it's
