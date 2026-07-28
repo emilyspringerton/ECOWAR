@@ -513,6 +513,23 @@ static void tyler_clone_cascade_kill(int link_owner) {
     }
 }
 
+/* arena_reward_owner (S170-188, real bug found while auditing Tyler's clone-kill attribution):
+ * Tyler's puppet clones fight through the same generic melee loop any real hero uses (S170-141)
+ * -- when a CLONE lands the killing blow, the raw owner index handed to last_attacked_by_owner/
+ * record_assist_damage would be the clone's own slot, and apply_damage's reward payout would
+ * credit Flow/XP/kills to that clone's own disposable ArenaHero fields, lost the moment the
+ * slot gets reused on Tyler's next R cast -- never actually reaching Tyler, the real player
+ * whose army secured the kill. Resolves a raw owner index to who should ACTUALLY get credit:
+ * Tyler himself for any of his clones, unchanged for everyone else. Applied at the point damage
+ * attribution is RECORDED (both last_attacked_by_owner and record_assist_damage's own callers),
+ * not at reward-payout time, so every downstream reward path just works with zero clone-
+ * awareness of its own. */
+static int arena_reward_owner(int owner_index) {
+    if (owner_index < 0 || owner_index >= ARENA_HEROES_ARRAY_SIZE) return owner_index;
+    ArenaHero *h = &arena_state.heroes[owner_index];
+    return h->is_clone ? h->clone_owner : owner_index;
+}
+
 /* record_assist_damage (S170-187, founder: "assists should gen flow"): tracks up to
  * ARENA_MAX_ASSIST_TRACK distinct recent attackers on `victim`, called from the exact same
  * melee/homing-shot damage sites last_attacked_by_owner already is. Refreshes an already-
@@ -4085,9 +4102,15 @@ void arena_update_teams(unsigned int dt_ms) {
         if (hero_is_hittable(foe)) {
             /* S170-175: kill attribution, set before the damage that might
                actually land the kill -- apply_damage's own death branch
-               reads this. */
-            foe->last_attacked_by_owner = i;
-            record_assist_damage(foe, i); /* S170-187 */
+               reads this. S170-188: routed through arena_reward_owner so a
+               Tyler clone landing the hit credits Tyler himself, not the
+               clone's own disposable slot -- this is the ONE call site a
+               clone can ever reach (arena_tick_attack_targets, Gary's own
+               homing-shot path, is bounded to ARENA_MAX_HEROES and never
+               sees clones at all). */
+            int reward_owner = arena_reward_owner(i);
+            foe->last_attacked_by_owner = reward_owner;
+            record_assist_damage(foe, reward_owner); /* S170-187 */
             apply_damage(foe, apply_armor(ARENA_ATTACK_DAMAGE + h->item_bonus_ad, arena_hero_armor(foe)));
         }
         h->attack_cooldown_ms = ARENA_ATTACK_COOLDOWN_MS;

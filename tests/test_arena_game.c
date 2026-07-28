@@ -4021,6 +4021,36 @@ static void test_tyler_death_kills_his_clones_too(void) {
     CHECK(!clone->alive && !clone->active, "Tyler dying kills his clones too, same shared-fate link in the other direction");
 }
 
+/* S170-188, real bug found while auditing S170-141's own clone-fights-through-the-generic-
+ * melee-loop design: a clone landing the actual killing blow used to credit Flow/XP/kills to
+ * the clone's own disposable ArenaHero slot -- lost the instant that slot gets reused on
+ * Tyler's next R, never reaching Tyler, the real player whose army earned the kill. */
+static void test_clone_kill_credits_tyler_not_the_clone(void) {
+    arena_init_teams();
+    for (int i = 2; i < ARENA_MAX_HEROES; i++) arena_state.heroes[i].active = 0;
+    arena_state.heroes[ARENA_TEAM_SIZE].active = 1;
+    arena_state.heroes[ARENA_TEAM_SIZE].alive = 1;
+    arena_state.heroes[ARENA_TEAM_SIZE].hero_id = ARENA_HERO_GHOST; /* 0 base armor -- exact hit-damage math */
+    arena_state.heroes[ARENA_TEAM_SIZE].hp = 1; /* any landed hit finishes it */
+    arena_state.heroes[0].hero_id = ARENA_HERO_TYLER;
+    arena_state.heroes[0].x = -50.0f; arena_state.heroes[0].z = -50.0f; /* far away -- only the clone can ever reach the target */
+
+    arena_cast_r(0);
+    ArenaHero *clone = &arena_state.heroes[ARENA_MAX_HEROES];
+    CHECK(clone->active && clone->alive, "sanity: the first clone slot is alive before combat");
+    ArenaHero *sibling = &arena_state.heroes[ARENA_MAX_HEROES + 1];
+    sibling->x = -50.0f; sibling->z = -50.0f; /* parked with Tyler, out of the fight entirely */
+    clone->x = arena_state.heroes[ARENA_TEAM_SIZE].x;
+    clone->z = arena_state.heroes[ARENA_TEAM_SIZE].z;
+
+    for (int i = 0; i < 500 && arena_state.heroes[ARENA_TEAM_SIZE].alive; i++) arena_update_teams(16);
+
+    CHECK(!arena_state.heroes[ARENA_TEAM_SIZE].alive, "sanity: the clone actually landed the kill");
+    CHECK(arena_state.heroes[0].flow == ARENA_HERO_KILL_FLOW, "the real Tyler gets the full kill bounty for his clone's kill");
+    CHECK(arena_state.heroes[0].kills == 1, "and the kill count, credited to Tyler, not the clone");
+    CHECK(clone->active && clone->flow == 0 && clone->kills == 0, "the clone's own (disposable) slot gets nothing -- this is exactly the bug: crediting here would be lost the moment the slot is reused");
+}
+
 /* S170-143: hover casting (WoW-macro-style mouseover targeting), starting with Doc Wheel. */
 
 static void test_hover_ally_or_nearest_falls_back_when_nothing_hovered(void) {
@@ -4589,6 +4619,7 @@ int main(void) {
     test_tyler_clones_mirror_move_target_and_fight();
     test_tyler_shared_fate_clone_death_kills_tyler_and_siblings();
     test_tyler_death_kills_his_clones_too();
+    test_clone_kill_credits_tyler_not_the_clone();
     test_hover_ally_or_nearest_falls_back_when_nothing_hovered();
     test_hover_ally_or_nearest_prefers_hover_target_over_nearest();
     test_hover_ally_or_nearest_falls_back_for_enemy_target();
