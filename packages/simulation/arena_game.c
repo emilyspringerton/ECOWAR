@@ -94,6 +94,11 @@ static void arena_creeps_reset(void) {
         for (int s = 0; s < ARENA_ITEM_SLOT_COUNT; s++) {
             arena_state.heroes[i].equipped_item[s] = -1;
         }
+        /* assist_owner (S170-187): same sentinel-after-memset idiom -- 0 would wrongly mean
+           "owner slot 0 gets assist credit," not "empty tracking slot." */
+        for (int a = 0; a < ARENA_MAX_ASSIST_TRACK; a++) {
+            arena_state.heroes[i].assist_owner[a] = -1;
+        }
     }
 }
 
@@ -508,6 +513,34 @@ static void tyler_clone_cascade_kill(int link_owner) {
     }
 }
 
+/* record_assist_damage (S170-187, founder: "assists should gen flow"): tracks up to
+ * ARENA_MAX_ASSIST_TRACK distinct recent attackers on `victim`, called from the exact same
+ * melee/homing-shot damage sites last_attacked_by_owner already is. Refreshes an already-
+ * tracked attacker's timer back to the full window on a repeat hit (real "still actively
+ * fighting" credit, not a one-shot memory); LRU-evicts the attacker closest to expiring if a
+ * new one lands while all slots are full. */
+static void record_assist_damage(ArenaHero *victim, int attacker_owner) {
+    for (int i = 0; i < ARENA_MAX_ASSIST_TRACK; i++) {
+        if (victim->assist_owner[i] == attacker_owner) {
+            victim->assist_ms[i] = ARENA_ASSIST_WINDOW_MS;
+            return;
+        }
+    }
+    for (int i = 0; i < ARENA_MAX_ASSIST_TRACK; i++) {
+        if (victim->assist_owner[i] < 0) {
+            victim->assist_owner[i] = attacker_owner;
+            victim->assist_ms[i] = ARENA_ASSIST_WINDOW_MS;
+            return;
+        }
+    }
+    int evict = 0;
+    for (int i = 1; i < ARENA_MAX_ASSIST_TRACK; i++) {
+        if (victim->assist_ms[i] < victim->assist_ms[evict]) evict = i;
+    }
+    victim->assist_owner[evict] = attacker_owner;
+    victim->assist_ms[evict] = ARENA_ASSIST_WINDOW_MS;
+}
+
 /* apply_damage (S170-46): centralizes "subtract HP, clamp at 0, mark dead"
  * across every damage call site, so Pizza's R (a real damage floor, not a
  * simplified-away shield like Doc Wheel's) only needs one place to check
@@ -546,6 +579,21 @@ static void apply_damage(ArenaHero *target, int amount) {
                     killer->xp += ARENA_HERO_KILL_XP;
                     killer->kills++;
                 }
+            }
+            /* S170-187: assists -- anyone else who damaged this hero within the recent
+               tracking window also gets a smaller bounty, same real-MOBA "team fight, not
+               just last-hit" reward. Excludes whoever already got the full kill bounty above
+               (last_attacked_by_owner) so the killer doesn't double-dip on their own kill. */
+            for (int a = 0; a < ARENA_MAX_ASSIST_TRACK; a++) {
+                int assister_owner = target->assist_owner[a];
+                if (assister_owner < 0 || assister_owner >= ARENA_HEROES_ARRAY_SIZE) continue;
+                if (target->assist_ms[a] <= 0) continue;
+                if (assister_owner == target->last_attacked_by_owner) continue;
+                ArenaHero *assister = &arena_state.heroes[assister_owner];
+                if (!assister->active || assister == target) continue;
+                assister->flow += ARENA_HERO_ASSIST_FLOW;
+                assister->flow_earned += ARENA_HERO_ASSIST_FLOW;
+                assister->xp += ARENA_HERO_ASSIST_XP;
             }
             /* S170-141: Tyler's real shared-fate death. Only pay the extra
                scan when the hero that just died is actually clone-linked
@@ -1146,7 +1194,7 @@ void arena_tick_projectiles(unsigned int dt_ms) {
                but deliberately does NOT grant Flow/XP/kill credit, same
                "ability kills grant nothing this pass" scope this file's
                other reward sites already hold to. */
-            if (p->homing_target >= 0) foe->last_attacked_by_owner = p->owner;
+            if (p->homing_target >= 0) { foe->last_attacked_by_owner = p->owner; record_assist_damage(foe, p->owner); } /* S170-187 */
             apply_damage(foe, apply_armor(p->damage, arena_hero_armor(foe)));
             if (p->on_hit_silence_ms > 0) foe->silenced_ms = p->on_hit_silence_ms;
             if (p->on_hit_root_ms > 0) foe->rooted_ms = p->on_hit_root_ms;
@@ -3087,6 +3135,15 @@ static void tick_hero_kit(ArenaHero *h, ArenaHero *foe, ArenaHero *ally, unsigne
         h->slowed_ms -= (int)dt_ms;
         if (h->slowed_ms < 0) h->slowed_ms = 0;
     }
+    /* assist_ms (S170-187): same generic tick-down idiom as every status-effect field above --
+       an expired (ms<=0) slot is simply skipped by the assist-reward loop in apply_damage,
+       same "0 means inert" convention slow_pct's own doc comment already relies on. */
+    for (int a = 0; a < ARENA_MAX_ASSIST_TRACK; a++) {
+        if (h->assist_ms[a] > 0) {
+            h->assist_ms[a] -= (int)dt_ms;
+            if (h->assist_ms[a] < 0) h->assist_ms[a] = 0;
+        }
+    }
     /* burning_ms/burn_dps (S170-46, Pizza's Q): fixed-interval DoT tick,
        same 1000ms-accumulator pattern as Ghost's R zone. burn_tick_ms
        resets when the burn ends so a later re-application starts clean. */
@@ -3911,6 +3968,12 @@ static void arena_respawn_hero(ArenaHero *h, int slot_index) {
        sentinel convention as everywhere else this field is initialized. */
     h->attack_target = -1;
     h->last_attacked_by_owner = -1;
+    /* assist_owner (S170-187): same sentinel-after-memset fix as attack_target/
+       last_attacked_by_owner just above -- a fresh respawn shouldn't remember who was
+       attacking it before it died. assist_ms doesn't need a matching reset: it's already 0
+       from the memset, and 0 already means "expired/inert," same convention this array's own
+       tick-down already relies on. */
+    for (int a = 0; a < ARENA_MAX_ASSIST_TRACK; a++) h->assist_owner[a] = -1;
     arena_recompute_item_stats(h);
 }
 
@@ -4024,6 +4087,7 @@ void arena_update_teams(unsigned int dt_ms) {
                actually land the kill -- apply_damage's own death branch
                reads this. */
             foe->last_attacked_by_owner = i;
+            record_assist_damage(foe, i); /* S170-187 */
             apply_damage(foe, apply_armor(ARENA_ATTACK_DAMAGE + h->item_bonus_ad, arena_hero_armor(foe)));
         }
         h->attack_cooldown_ms = ARENA_ATTACK_COOLDOWN_MS;

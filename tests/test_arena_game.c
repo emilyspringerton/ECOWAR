@@ -3822,6 +3822,76 @@ static void test_hero_kill_grants_flow_xp_kills_and_deaths(void) {
     CHECK(arena_state.heroes[ARENA_TEAM_SIZE].deaths == 1, "the victim's death count increments");
 }
 
+/* S170-187, founder: "assists should gen flow" -- anyone who damaged the victim within the
+ * recent tracking window shares in a smaller bounty, not just whoever lands the killing blow.
+ * Driven entirely through real arena_update_teams ticks (record_assist_damage is static),
+ * same "run real ticks until it happens" convention the tests above already use. */
+static void test_hero_kill_awards_assist_to_recent_damager(void) {
+    arena_init_teams();
+    for (int i = 2; i < ARENA_MAX_HEROES; i++) arena_state.heroes[i].active = 0;
+    arena_state.heroes[1].active = 1;
+    arena_state.heroes[1].alive = 1;
+    arena_state.heroes[ARENA_TEAM_SIZE].active = 1;
+    arena_state.heroes[ARENA_TEAM_SIZE].alive = 1;
+    arena_state.heroes[ARENA_TEAM_SIZE].hero_id = ARENA_HERO_GHOST; /* 0 base armor -- keeps the hit-damage math exact (ARENA_ATTACK_DAMAGE per hit) */
+    arena_state.heroes[ARENA_TEAM_SIZE].hp = ARENA_ATTACK_DAMAGE * 3; /* needs 3 total hits */
+    arena_state.heroes[0].x = arena_state.heroes[1].x = arena_state.heroes[ARENA_TEAM_SIZE].x;
+    arena_state.heroes[0].z = arena_state.heroes[1].z = arena_state.heroes[ARENA_TEAM_SIZE].z;
+
+    /* Both owner 0 and owner 1 are in melee range from tick 1 -- each lands one hit this same
+       tick (the victim survives owner 0's hit, so owner 1's own attack still finds it as a
+       valid target in the same pass), leaving 1 hit's worth of HP and both attackers on
+       cooldown. Both are now real, ticked-in recent damagers. */
+    arena_update_teams(16);
+    CHECK(arena_state.heroes[ARENA_TEAM_SIZE].hp == ARENA_ATTACK_DAMAGE, "sanity: both landed exactly one hit this tick");
+    CHECK(arena_state.heroes[ARENA_TEAM_SIZE].alive, "sanity: the victim survived that first exchange");
+
+    /* Move owner 1 far away -- it played a real part in the fight but won't land the actual
+       kill, the whole point of testing assist credit specifically. */
+    arena_state.heroes[1].x += 100.0f;
+
+    for (int i = 0; i < 500 && arena_state.heroes[ARENA_TEAM_SIZE].alive; i++) arena_update_teams(16);
+
+    CHECK(!arena_state.heroes[ARENA_TEAM_SIZE].alive, "sanity: the victim eventually died to owner 0's own follow-up hit");
+    CHECK(arena_state.heroes[0].kills == 1, "owner 0 landed the actual kill");
+    CHECK(arena_state.heroes[0].flow == ARENA_HERO_KILL_FLOW, "the killer gets the full kill bounty, not an assist-sized one");
+    CHECK(arena_state.heroes[1].flow == ARENA_HERO_ASSIST_FLOW, "owner 1 gets the smaller assist bounty for its earlier real hit");
+    CHECK(arena_state.heroes[1].xp == ARENA_HERO_ASSIST_XP, "and the matching assist XP");
+    CHECK(arena_state.heroes[1].kills == 0, "an assist is not counted as a kill");
+}
+
+static void test_assist_expires_outside_the_tracking_window(void) {
+    arena_init_teams();
+    for (int i = 2; i < ARENA_MAX_HEROES; i++) arena_state.heroes[i].active = 0;
+    arena_state.heroes[1].active = 1;
+    arena_state.heroes[1].alive = 1;
+    arena_state.heroes[ARENA_TEAM_SIZE].active = 1;
+    arena_state.heroes[ARENA_TEAM_SIZE].alive = 1;
+    arena_state.heroes[ARENA_TEAM_SIZE].hero_id = ARENA_HERO_GHOST;
+    arena_state.heroes[ARENA_TEAM_SIZE].hp = ARENA_ATTACK_DAMAGE * 3;
+    arena_state.heroes[0].x = arena_state.heroes[1].x = arena_state.heroes[ARENA_TEAM_SIZE].x;
+    arena_state.heroes[0].z = arena_state.heroes[1].z = arena_state.heroes[ARENA_TEAM_SIZE].z;
+
+    arena_update_teams(16); /* owner 1's one real hit, same setup as above */
+    arena_state.heroes[1].x += 100.0f;
+
+    /* Let the assist window fully lapse (ARENA_ASSIST_WINDOW_MS) before owner 0 ever lands
+       the finishing blow -- simulated here by directly aging the tracked timer out, since
+       waiting out a real 10s of 16ms ticks would be thousands of iterations for no different
+       coverage than exercising the same tick_hero_kit decrement path the stun/slow tests
+       above already verify works correctly. */
+    for (int a = 0; a < ARENA_MAX_ASSIST_TRACK; a++) {
+        if (arena_state.heroes[ARENA_TEAM_SIZE].assist_owner[a] == 1) {
+            arena_state.heroes[ARENA_TEAM_SIZE].assist_ms[a] = 0;
+        }
+    }
+
+    for (int i = 0; i < 500 && arena_state.heroes[ARENA_TEAM_SIZE].alive; i++) arena_update_teams(16);
+
+    CHECK(!arena_state.heroes[ARENA_TEAM_SIZE].alive, "sanity: the victim still died to owner 0");
+    CHECK(arena_state.heroes[1].flow == 0, "an assist window that's fully expired grants no bounty");
+}
+
 static void test_ability_kill_grants_no_flow(void) {
     /* Same "not every damage source needs full reward wiring, flagged not
        faked" precedent arena_zone_damage_creeps' own doc comment already
@@ -4511,6 +4581,8 @@ int main(void) {
     test_jungle_creep_kill_grants_flow_and_xp();
     test_lane_creep_kill_grants_flow_and_xp();
     test_hero_kill_grants_flow_xp_kills_and_deaths();
+    test_hero_kill_awards_assist_to_recent_damager();
+    test_assist_expires_outside_the_tracking_window();
     test_ability_kill_grants_no_flow();
     test_flow_earned_does_not_decrease_on_purchase();
     test_respawn_preserves_economy_and_equipped_items();

@@ -1000,6 +1000,17 @@ extern const ArenaItemDef ARENA_ITEMS[];
 #define ARENA_LANE_CREEP_KILL_XP        6
 #define ARENA_HERO_KILL_FLOW          100
 #define ARENA_HERO_KILL_XP             60
+/* Assists (S170-187, founder: "assists should gen flow"). Real MOBA convention: anyone else
+ * who damaged the victim within a recent window before the kill (not just the hero who landed
+ * the killing blow) shares in a smaller bounty -- rewards real team fights, not just the last
+ * hit. ARENA_ASSIST_WINDOW_MS mirrors League's own ~10s assist window. Reward is roughly a
+ * third of the full kill bounty, same "meaningfully less than the kill, but a real reward, not
+ * a token amount" shape ARENA_LANE_CREEP_KILL_FLOW already takes relative to
+ * ARENA_JUNGLE_CREEP_KILL_FLOW. */
+#define ARENA_ASSIST_WINDOW_MS       10000
+#define ARENA_HERO_ASSIST_FLOW         35
+#define ARENA_HERO_ASSIST_XP           20
+#define ARENA_MAX_ASSIST_TRACK           4 /* how many distinct recent attackers a hero remembers at once -- LRU-evicts the oldest if a 5th lands a hit before this one expires */
 
 
 typedef struct {
@@ -1236,6 +1247,16 @@ typedef struct {
      * flagged not faked" precedent arena_zone_damage_creeps already set
      * for AoE-vs-creep kills. */
     int last_attacked_by_owner;
+    /* assist_owner/assist_ms (S170-187, founder: "assists should gen flow"): a small recent-
+     * attackers memory, separate from last_attacked_by_owner above (which only ever remembers
+     * the SINGLE most recent hit, exactly what a kill-attribution check needs, not what an
+     * assist check needs -- multiple different heroes can each have damaged this hero within
+     * the assist window). -1 in assist_owner[i] means that slot is empty; assist_ms[i] is how
+     * much longer that attacker still counts for an assist if this hero dies. Recorded at the
+     * exact same damage call sites last_attacked_by_owner already is (melee, homing-shot),
+     * same "ability casts don't grant reward credit" scoping. */
+    int assist_owner[ARENA_MAX_ASSIST_TRACK];
+    int assist_ms[ARENA_MAX_ASSIST_TRACK];
     /* equipped_item (S170-175): -1 = empty, else an index into
      * ARENA_ITEMS, one slot per ArenaItemSlot. No inventory/bag this
      * pass (founder: "no bag... no unequip into bag for now") -- buying
