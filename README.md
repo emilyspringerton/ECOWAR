@@ -8,8 +8,11 @@ comments in `apps/arena/src/main.c` and left implicit across every hero entry in
 
 | Input | Does |
 |---|---|
-| **Left click** | Move to that point. Walking into range of an enemy auto-attacks it — there's no separate "attack" click, melee combat just resolves automatically once you're close enough. |
-| **Q / W / E** | Your three ability slots, in order. Every hero's kit maps its abilities to exactly these three — `docs/HEROES_VS0.md` lists each hero's real Q/W/R names and effects, but the *keys* are always Q/W/E, never anything hero-specific. |
+| **Left click** | Move to that point, or lock onto and auto-attack a live enemy hero if the click landed on one (team matches only — see NORTHSTAR §17). Walking into range of an enemy also auto-attacks it, so there's no separate "attack" input for melee range. |
+| **Q / W / E** | Your three ability slots, in order. Every hero's kit maps its abilities to exactly these three — `docs/HEROES_VS0.md` lists each hero's real Q/W/R names and effects, but the *keys* are always Q/W/E, never anything hero-specific. W is either an instant effect on cooldown or a hold-on/hold-off toggle depending on the hero (`arena_hero_w_is_toggle()`) — toggles drain mana continuously while held rather than charging a flat cost up front. |
+| **B** | Toggle the shop panel (S170-175). Buy any of the 24 items with a click or, for the first 9 in the list, the matching `1`-`9` key — either way it's a single action, no confirm step. Click an occupied slot in the loadout column to sell it back for half price. Only resolves for real within `ARENA_SHOP_RADIUS` of your own team's shop. |
+| **Held TAB** | Scoreboard: every hero's kills/deaths/Flow/XP, plus a team-aggregate row, both teams side by side. |
+| **H** | Toggle an ability-description overlay for your own hero's Q/W/E. |
 | **Right click + drag** | Rotate the camera around your hero. |
 | **Mouse wheel** | Zoom the camera in/out. |
 | **F11** | Toggle the APM (actions-per-minute) overlay. Works in any mode. |
@@ -18,7 +21,25 @@ comments in `apps/arena/src/main.c` and left implicit across every hero entry in
 
 Draft is automatic right now — no pick UI yet, you're assigned a hero based on your slot in the
 lobby (`docs/HEROES_VS0.md` documents every hero's kit if you want to know what you're about to
-play before the match starts).
+play before the match starts). Team matches are **7v7** (`ARENA_TEAM_SIZE`, S170-178).
+
+### Flow, XP, and the item shop (S170-175)
+
+Every hero earns two currencies from kills — jungle creeps, lane creeps, and enemy heroes, melee
+or Gary's homing shot only, not ability-finished kills:
+
+- **Flow** — the spendable currency (this game's "gold"). Shown live in the always-on character
+  pane, bottom-left of the HUD, alongside your current HP/MP/AD/Armor and K/D.
+- **XP** — a separate running total, also shown in the character pane. No leveling system yet;
+  it's tracked for the scoreboard and future power-curve work (NORTHSTAR §19.4).
+
+Two shops sit in the two map corners that don't already have a healing fountain, one per team —
+visible in-world as an amber structure with your own team's color trim, everyone else's in the
+enemy's. Buying auto-equips into that item's slot (11 slots, a mix of FFXI and WoW vocabulary:
+Weapon/Head/Body/Hands/Legs/Feet/Ring/Neck/Back/Waist/Trinket) and auto-sells whatever was already
+there first — there's no bag, and no way to unequip into one; selling is the only way back out of
+a slot, at half the item's cost. `docs/FFXI_ITEM_PARITY_SEED.md` is the real-FFXI-name source for
+the catalog's generic-tier items.
 
 ## Current Status (2026-07-23)
 
