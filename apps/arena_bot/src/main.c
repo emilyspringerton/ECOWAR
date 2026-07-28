@@ -589,7 +589,28 @@ static void play_one_match(int game_port) {
                     flock_offset(&last, &prev, have_prev, my_owner, my_team, &flock_dx, &flock_dz);
 
                     if (best_node != -1) {
-                        send_move(last.nodes[best_node].x + flock_dx, last.nodes[best_node].z + flock_dz);
+                        /* S170-168 fix, real bug found live: "the boyds stuff makes the
+                           team do a weird cluster dance around the objective ... they are
+                           doing the boids dance around the objective not sitting right on
+                           it" -> "at least one of them should sit right on it and ignore
+                           the flock." Root cause: separation force is strongest exactly
+                           when allies are close together, which is unavoidably true the
+                           moment several bots converge on the same node -- flocking kept
+                           perturbing everyone off the node's exact point forever, never
+                           letting anyone actually settle there. Fix: a stateless, no-
+                           coordination-needed "anchor" rule -- whichever bots' owner index
+                           happens to land on this node's own index mod ARENA_SNAPSHOT_NODE_COUNT
+                           ignore the flock entirely and path straight to the node's exact
+                           (x,z), guaranteeing real capture progress; every other bot still
+                           flocks around it as a loose escort, which is the actual organic
+                           "fan out and hold the ground around the objective" look this was
+                           always meant to produce. */
+                        int am_anchor = (my_owner % ARENA_SNAPSHOT_NODE_COUNT) == best_node;
+                        if (am_anchor) {
+                            send_move(last.nodes[best_node].x, last.nodes[best_node].z);
+                        } else {
+                            send_move(last.nodes[best_node].x + flock_dx, last.nodes[best_node].z + flock_dz);
+                        }
                     } else if (best != -1) {
                         /* S170-90 fix, real bug found live: "all of the bots just bunch up on
                            eachother." Root cause -- every bot sent its move target as the
