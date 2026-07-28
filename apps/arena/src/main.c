@@ -1911,6 +1911,15 @@ int main(int argc, char *argv[]) {
     if (!win) { fprintf(stderr, "SDL_CreateWindow failed: %s\n", SDL_GetError()); return 1; }
     SDL_GLContext ctx = SDL_GL_CreateContext(win);
     if (!ctx) { fprintf(stderr, "SDL_GL_CreateContext failed: %s\n", SDL_GetError()); return 1; }
+    /* Hover cursor indicators (S170-69, founder northstar: "nice cursor indicators for hover
+       over enemy vers aly etc"). The color-coded YOU/ALLY/ENEMY bracket+label below already
+       covers "aly etc"; this is the literal cursor-shape half that was still missing -- a real
+       OS cursor swap, same crosshair-over-a-valid-target convention real MOBAs use, not just an
+       in-HUD label. SDL_CreateSystemCursor never fails in practice on a real display driver, but
+       degrades to a NULL cursor (SDL_SetCursor silently no-ops on NULL) rather than crashing if
+       it somehow does -- this is a pure visual affordance, not load-bearing for gameplay. */
+    SDL_Cursor *cursor_default = SDL_CreateSystemCursor(SDL_SYSTEM_CURSOR_ARROW);
+    SDL_Cursor *cursor_enemy = SDL_CreateSystemCursor(SDL_SYSTEM_CURSOR_CROSSHAIR);
 
     if (!load_gl_functions()) {
         fprintf(stderr, "Failed to load required GL 3.x functions via SDL_GL_GetProcAddress\n");
@@ -2775,6 +2784,7 @@ int main(int argc, char *argv[]) {
             }
         }
         g_hover_target = hovered_i; /* S170-143: publish this frame's hover result for the QWE keybind handler to read next frame */
+        if (hovered_i < 0) SDL_SetCursor(cursor_default); /* S170-69: hovering empty ground/terrain -- no lingering crosshair from a previous hover */
         if (hovered_i >= 0) {
             ArenaHero *hh = &arena_state.heroes[hovered_i];
             float bw = 40.0f, bh = 5.0f;
@@ -2785,6 +2795,10 @@ int main(int argc, char *argv[]) {
             if (hovered_i == my_owner) { rr = 0.1f; gg = 0.8f; bb = 0.95f; relation = "YOU"; }
             else if (hh->team == arena_state.heroes[my_owner].team) { rr = 0.15f; gg = 0.55f; bb = 0.95f; relation = "ALLY"; }
             else { rr = 0.95f; gg = 0.25f; bb = 0.15f; relation = "ENEMY"; }
+            /* S170-69: crosshair over a live enemy (a real, hittable click-to-attack target),
+               default arrow over anything else -- self, an ally, or a dead enemy corpse aren't
+               valid attack targets, so the cursor shouldn't imply one. */
+            SDL_SetCursor((relation[0] == 'E' && hh->alive) ? cursor_enemy : cursor_default);
 
             /* Bracket outline around the bar -- distinct from the bar's own
                border (which is always drawn, hover or not): a wider,
@@ -3226,6 +3240,8 @@ int main(int argc, char *argv[]) {
     }
 
     if (audio_dev != 0) SDL_CloseAudioDevice(audio_dev);
+    if (cursor_default) SDL_FreeCursor(cursor_default);
+    if (cursor_enemy) SDL_FreeCursor(cursor_enemy);
     SDL_GL_DeleteContext(ctx);
     SDL_DestroyWindow(win);
     SDL_Quit();
