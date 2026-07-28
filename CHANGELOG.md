@@ -2,6 +2,11 @@
 
 ## 2026-07-28 (continued)
 
+- docs(arena): document Flow/XP economy, item shop, and 7v7 in README (S170-177). Founder: "and
+  document it all in the readme." Extends the S170-97 keybind table (`B` shop, `1`-`9` quick-buy,
+  held-`TAB` scoreboard, `H` overlay, W-toggle-vs-instant mana distinction) and adds a "Flow, XP,
+  and the item shop" section.
+
 - fix(arena): sync `w_active` over the wire; toggle W drains mana over time (S170-180/181).
   Founder: "it seems like toggelable abilities arent working" — real root cause, `w_active` was
   never on the wire at all, so a networked client's own local copy stayed permanently 0/off
