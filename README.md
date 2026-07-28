@@ -43,6 +43,61 @@ there first — there's no bag, and no way to unequip into one; selling is the o
 a slot, at half the item's cost. `docs/FFXI_ITEM_PARITY_SEED.md` is the real-FFXI-name source for
 the catalog's generic-tier items.
 
+### Item stats
+
+The full 24-item catalog (`ARENA_ITEMS`, `packages/simulation/arena_game.c`) — every stat bonus
+applies the instant you buy, no equip delay. Weapon carries 12 named items from
+`docs/HEROES_VS0.md`'s own "Season 3 LoL" starting roster plus 2 "weird" items with unusual stat
+shapes pulled from real FFXI end-game weapon reputations (Kraken Club: huge AD, zero defense;
+Ridill: an oddly-even split across all three defensive/offensive stats). Every other slot gets one
+plain, real FFXI-named item (`docs/FFXI_ITEM_PARITY_SEED.md`).
+
+| Item | Slot | Cost | AD | HP | MP | Armor | Move Speed |
+|---|---|---|---|---|---|---|---|
+| Seedling Charm | Weapon | 300 | +8 | +40 | — | — | — |
+| Bramble Fang | Weapon | 1000 | +35 | — | — | — | — |
+| Thornrender | Weapon | 950 | +28 | +10 | — | — | — |
+| Bloomheart Core | Weapon | 1100 | +45 | — | — | — | — |
+| Wanecall Grimoire | Weapon | 950 | +25 | — | +60 | — | — |
+| Ironbark Plate | Weapon | 900 | +10 | +150 | — | +20 | — |
+| Willowveil | Weapon | 850 | — | +120 | — | +25 | — |
+| Vampiric Bloom | Weapon | 1000 | +32 | +30 | — | — | — |
+| Splinterfang | Weapon | 900 | +30 | — | — | — | — |
+| Hollow Needle | Weapon | 900 | +30 | — | +40 | — | — |
+| Rootrunner Treads | Weapon | 500 | — | +10 | — | — | +0.8 |
+| Gardener's Ward | Weapon | 800 | — | +100 | — | +15 | — |
+| Kraken Club *(weird)* | Weapon | 1200 | +60 | — | — | — | — |
+| Ridill *(weird)* | Weapon | 1100 | +20 | +20 | — | +20 | — |
+| Optical Hat | Head | 400 | — | +60 | — | — | — |
+| Haubergeon | Body | 450 | — | — | — | +18 | — |
+| Battle Gloves | Hands | 400 | +12 | — | — | — | — |
+| Iron Ram Trousers | Legs | 400 | — | — | — | +18 | — |
+| Creek F. Boots | Feet | 400 | — | — | — | — | +0.6 |
+| Astral Ring | Ring | 350 | — | — | +50 | — | — |
+| Justice Badge | Neck | 400 | — | — | — | +14 | — |
+| Forager's Mantle | Back | 350 | +8 | — | — | — | +0.4 |
+| Warwolf Belt | Waist | 400 | — | +80 | — | — | — |
+| Peace Earring | Trinket | 350 | — | +30 | +40 | — | — |
+
+### Suggested heroes for new players
+
+26 heroes is a lot to pick from blind. These four cover the roster's main roles with the most
+forgiving kits — no clone armies to manage (Tyler), no blink mind-games (Loki), no stealth timing
+(Frog/Ghost/NOOR-1/Bacon+Puck) — just a straightforward kit you can read at a glance:
+
+- **MnM, the Shapeshifting Crab** — *Tank.* Q is a melee poke that roots, W is a free toggle for
+  more armor on top of an already-always-on bonus, R makes you unkillable (HP can't drop below 1)
+  for a few seconds. Walk up, root, survive — about as simple as a kit gets.
+- **The Duck** — *Fighter/Assassin.* Q yanks the nearest enemy toward you and deals AD damage on
+  impact; land the killing blow and E briefly makes you stronger. One button does most of the
+  work.
+- **Gary** — *Marksman.* The only hero with zero dash/blink/gap-closer in his whole kit — he just
+  aims and shoots from a stationary position, no positioning tech to learn beyond "stand at
+  range." The easiest hero to understand a MOBA marksman role through.
+- **He Xiangu** — *Support/Sustain.* Every ability heals — herself on Q (a ranged bolt that heals
+  off a fraction of the damage it deals), a free regen toggle on W, an ally heal-zone on R. No
+  damage combos to time, no enemies to predict; just keep the heals up.
+
 ## Current Status (2026-07-23)
 
 See `NORTHSTAR.md` for the full, up-to-date direction — this README's "Acceptance Criteria" and
