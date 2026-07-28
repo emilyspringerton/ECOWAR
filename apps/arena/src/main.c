@@ -2037,13 +2037,20 @@ int main(int argc, char *argv[]) {
             draw_mesh(&plane_mesh);
         }
 
-        /* nodes -- colored by owner (S170-87 cont'd, now that ownership
-           actually reaches the client at all) so the capture redesign's
-           whole point -- who controls this ground right now -- is visible,
-           not just the node's existence/position. Same team-color
-           convention as the hero cubes below (blue = team 0, red =
-           team 1), gold for neutral/contested, matching the territory
-           system's own owner encoding (0/1/2). */
+        /* nodes -- colored RELATIVE to the local viewer's own team (S170-149
+           bugfix, founder: "i cap a node but it flips wrong color"). Was
+           hardcoded absolute (owner==1 always blue, owner==2 always red)
+           while every hero on this same map is colored RELATIVE to the
+           viewer (self/ally = blue-ish, enemy = red) -- for a team-0
+           viewer those two conventions happen to agree by coincidence, but
+           for a team-1 viewer their OWN team's node rendered in the exact
+           red already reserved for enemy heroes on their own screen: a
+           node they just captured looked identical to an enemy-held one.
+           Now: "my team owns this" is always the same blue an ally-colored
+           hero already uses, "the enemy owns this" is always the same red
+           an enemy-colored hero already uses, regardless of which team the
+           local player is actually on. Gold for neutral/contested is
+           unchanged -- it was never team-relative to begin with. */
         for (int i = 0; i < ARENA_NODE_COUNT; i++) {
             Mat4 t = mat4_translate(arena_state.nodes[i].x, 0.15f, arena_state.nodes[i].z);
             Mat4 s = mat4_scale(1.2f, 0.3f, 1.2f);
@@ -2051,10 +2058,14 @@ int main(int argc, char *argv[]) {
             Mat4 mvp = mat4_multiply(&vp, &model);
             glUniformMatrix4fv_(loc_mvp, 1, GL_FALSE, mvp.m);
             glUniformMatrix4fv_(loc_model, 1, GL_FALSE, model.m);
-            switch (arena_state.nodes[i].owner) {
-                case 1: glUniform4f_(loc_color, 0.15f, 0.35f, 0.95f, 1.0f); break; /* team 0's */
-                case 2: glUniform4f_(loc_color, 0.95f, 0.25f, 0.15f, 1.0f); break; /* team 1's */
-                default: glUniform4f_(loc_color, 0.85f, 0.7f, 0.1f, 1.0f); break;  /* neutral/contested */
+            int owner = arena_state.nodes[i].owner;
+            int my_team = arena_state.heroes[my_owner].team;
+            if (owner == 0) {
+                glUniform4f_(loc_color, 0.85f, 0.7f, 0.1f, 1.0f); /* neutral/contested */
+            } else if (owner == my_team + 1) {
+                glUniform4f_(loc_color, 0.15f, 0.35f, 0.95f, 1.0f); /* my team's -- same blue as an ally hero */
+            } else {
+                glUniform4f_(loc_color, 0.95f, 0.25f, 0.15f, 1.0f); /* enemy team's -- same red as an enemy hero */
             }
             draw_mesh(&cube_mesh);
         }
@@ -2540,7 +2551,17 @@ int main(int argc, char *argv[]) {
         }
 
         if (arena_state.winner != 0) {
-            if (arena_state.winner == my_owner + 1) {
+            /* S170-149 bugfix, real founder bug report: "i cap a node...
+               and then they kill the other team but it says i loose."
+               `winner` encodes which TEAM won (1=team0, 2=team1), but this
+               was comparing it against `my_owner` -- the raw client_id/hero
+               SLOT INDEX (0..19 in a real team match, only ever equal to
+               team index by coincidence for owner 0, and only correct for
+               owner 1 in the literal 1v1 case where owner IS team). Any
+               real team-mode player past owner 1 got a flipped result --
+               shown "YOU LOSE" after their own team's real win, or vice
+               versa. Compare against the hero's actual team instead. */
+            if (arena_state.winner == arena_state.heroes[my_owner].team + 1) {
                 glColor3f(0.2f, 1.0f, 0.4f);
                 draw_string("YOU WIN", win_w / 2.0f - 150, win_h / 2.0f, 24);
             } else {

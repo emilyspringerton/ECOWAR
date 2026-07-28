@@ -2,6 +2,35 @@
 
 ## 2026-07-28
 
+- fix(arena): "wrong team wins" and "node flips wrong color" -- two real, high-impact
+  team-mode bugs found from a live founder report (S170-149). Founder, real-time: "there are
+  bugs with node ownership sometimes the wrong team comes out of a node sometimes the wrong
+  team wins" -> "yea theres a bug where i cap a node but it flips wrong color and then my
+  whole team comes out and then they kill the other team but it says i loose."
+  - **Root cause #1 (the "i loose" bug)**: the "YOU WIN"/"YOU LOSE" HUD text
+    (`apps/arena/src/main.c`) compared `arena_state.winner` (which encodes which TEAM won,
+    1/2) against `my_owner + 1` -- `my_owner` is the raw client_id/hero SLOT INDEX (0..19 in
+    a real 20-player match, only ever equal to team index by coincidence for owner 0, and
+    only correct for owner 1 in the literal 1v1 case where owner IS team). Any real team-mode
+    player past owner 1 -- the overwhelming majority of any real 10v10 match -- got a flipped
+    result: shown "YOU LOSE" after their own team's real win, or "YOU WIN" after a real loss.
+    Fixed: compare against `arena_state.heroes[my_owner].team + 1` instead.
+  - **Root cause #2 (the "wrong color" bug)**: node coloring was hardcoded absolute
+    (owner==1 always blue, owner==2 always red) while every HERO on the same map is colored
+    RELATIVE to the local viewer (self/ally = blue-ish, enemy = red). For a team-0 viewer
+    those two conventions happened to agree by coincidence; for a team-1 viewer, their OWN
+    captured node rendered in the exact red already reserved for enemy heroes on their own
+    screen -- a node they just captured looked identical to an enemy-held one. Fixed: nodes
+    now color relative to the local viewer's own team, same "ally-blue / enemy-red" rule
+    heroes already use, gold for neutral/contested unchanged.
+  - Both are client-side display bugs, not sim-logic bugs -- the underlying win-condition and
+    node-capture logic in `packages/simulation/arena_game.c` was already correct on audit (no
+    changes there). **Verified live with the exact broken scenario**: a real 20-player match
+    (19 bots + the actual SDL client under Xvfb) with the human client deliberately connected
+    *last* so it claimed owner slot 19 (team 1, guaranteed NOT owner 0/1) -- match ended with
+    `winner: 2` (team 1), screenshot confirms "YOU WIN" now displays correctly for this exact
+    previously-broken slot. Client-only change; full headless suite unaffected (461 checks).
+
 - feat(arena): mana visible on the HUD, combat-gated regen, fountains restore mana, and a
   real jungle-obstacles-disappearing bug fixed (S170-148). Founder, real-time, three requests
   plus a bug report in sequence:
