@@ -2,6 +2,17 @@
 
 ## 2026-07-28 (continued)
 
+- docs(arena): NORTHSTAR §17 — League of Legends auto-attack movement parity spec (S170-158).
+  Founder, real-time: a detailed request for exactly how LoL's click-based auto-attacking works
+  with respect to movement — does the champion stop, does it chase a fleeing target, ranged vs
+  melee differences — with LoL as the explicit gold standard. Documents the real windup/
+  backswing/kiting state machine, the persistent attack-target chase lock (pure pursuit, no
+  intercept prediction, no leash timeout), and the ranged-specific homing-not-skillshot
+  projectile behavior, then grounds the gap analysis in REDGARDEN's actual current combat code
+  (`resolve_combat`, `arena_hero_attack_creeps`): a fully passive, always-on proximity system
+  today, with no attack command, no windup, no chase state, and no ranged basic attacks at all.
+  Spec only, same "no code yet" treatment as §15/§16.
+
 - feat(arena): map widened + corner graveyards; fix: sudden-death fallback closes a real
   zombie-match gap (S170-155/156/157). Founder, real-time: "the map should be a little bigger
   and the graveyards behind 2 of the corners not in the middle of the map." `ARENA_HALF_EXTENT`
