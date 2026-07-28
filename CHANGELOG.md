@@ -3,7 +3,7 @@
 ## 2026-07-28 (continued)
 
 - feat(arena): click-to-attack system (NORTHSTAR §17) + Gary's homing auto-attack + draft
-  randomization fix (S170-162/163/164). Founder: "gary auto attacks are projetiles that always
+  randomization fix (S170-162/163/166). Founder: "gary auto attacks are projetiles that always
   hit (visually projectile) they can still miss or crit as normal but you cant juke them" ->
   "implement that with the click to auto attack northstar" -> "and the bots will need to be
   updated so they choose their auto attack targets etc in their brain" -> "up our visual

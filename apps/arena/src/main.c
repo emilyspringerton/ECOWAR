@@ -410,7 +410,7 @@ static uint32_t net_last_pick_send_ms = 0; /* for retry -- see net_poll_snapshot
    to start), so which hero ends up excluded varies match to match instead of always being the
    same one hero nobody can ever pick.
 
-   S170-164 fix, founder: "ensure auto draft is random i keep always drafting flutedebt first on
+   S170-166 fix, founder: "ensure auto draft is random i keep always drafting flutedebt first on
    a new client." The port-only version below was deterministic, not actually random -- the
    matchmaker hands out ports sequentially (next_game_port++), and a human player is very often
    owner 0 (first/only real client in a match, as opposed to the bot pool's always-full 20), so
@@ -2462,7 +2462,7 @@ int main(int argc, char *argv[]) {
             glVertex2f(sx - bw / 2, sy); glVertex2f(sx - bw / 2 + bw * frac, sy);
             glVertex2f(sx - bw / 2 + bw * frac, sy + bh); glVertex2f(sx - bw / 2, sy + bh);
             glEnd();
-            /* S170-162/164, founder: "up our visual affordances for auto
+            /* S170-162, founder: "up our visual affordances for auto
                attacks so its readable" / "auto target should still have
                visual affordances." A pulsing amber outline around the
                health bar of anyone CURRENTLY locked as someone's
