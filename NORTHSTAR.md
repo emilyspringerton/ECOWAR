@@ -1428,3 +1428,187 @@ Nothing built this pass. This section exists purely to pin down *exact target be
 founder's explicit "exact parity with LoL, LoL as the gold standard" framing) before any of §17.4's
 structural additions -- a new packet type, a windup/backswing state machine, persistent attack-target
 locking, a homing auto-attack projectile variant -- get implemented against a moving target.
+
+## 18. Unsupervised learning for the bot AI — general + per-hero, cross-hero transfer (2026-07-28, S170-167) -- spec only, no code yet
+
+Founder, real-time: **"write the northstar for unsupervised learning - it will have to be both
+general and per hero - for example experience playing a hero will help inform decisions playing
+with and against it on another hero,"** immediately followed by two grounding clarifications:
+**"also look for archetype engine fwiw"** and **"we are going to want to do long running per
+personality bot training but for now we need generalized ai for the different heroes."** This
+section is that northstar. Same "spec only, no code yet" treatment as §15-§17 -- it exists to pin
+down the actual shape and sequencing before any of it gets built, and to make sure it extends
+§12 Phase E's already-committed plan rather than standing up a competing one.
+
+### 18.1 Scope and sequencing (founder direction, load-bearing)
+
+Two explicitly different timescales, not one blurred ask:
+
+- **Near-term (what this section actually specs for building soon): a generalized AI that plays
+  reasonably across the whole hero roster**, sharing what it learns from any hero's matches with
+  every other hero, not siloed per hero from day one.
+- **Long-term (named, deferred, not specced in implementation detail here): long-running
+  per-personality bot training** -- individual heroes' AI eventually diverging into distinct,
+  persistent "personalities" shaped by extended training specifically on that hero. §18.5 below
+  sketches the shape this likely takes so the general-layer design doesn't accidentally paint it
+  into a corner, but building it is explicitly out of scope for this pass.
+
+The "general vs per-hero" framing from the founder's first message maps onto this sequencing
+directly: general = near-term priority, per-hero-personality = the long-running thing that comes
+after general exists to build on.
+
+### 18.2 What already exists -- reuse, don't reinvent (checked before writing this)
+
+Two real pieces of org tech already exist and are directly relevant, at two different tiers:
+
+**Tier 1 (already this repo's own committed plan): §12 Phase E's GPT-2 policy-network flywheel.**
+`gpt2-alpine-c/docs/GAME_AI_NORTHSTAR.md` (serialize state → generate action tokens → decode),
+extended to REDGARDEN via `packages/simulation/arena_ai_bridge.h`/`.c` --
+`arena_serialize_state(owner, tick_ms, ...)` (a stable, natural-language `self`/`foe`-framed state
+string -- hero name, position, HP, every generic cooldown/status field) and
+`arena_decode_action(...)` (parses a `"move:x,z cast_q:0/1 cast_w:0/1 cast_r:0/1"` action string
+back into a move target + cast flags). Built as a contract (S170-36) but **not wired into a live
+bot yet** -- no inference call, no replay-log fine-tune, no self-play loop running. NORN's
+propose→grade→gate→promote loop (`pkg/norn`) is already named as the evaluation mechanism for
+"is this bot generation actually better." This tier is fast, per-tick, and low-level -- it decides
+*what to do this instant* (move here, cast this).
+
+**Tier 2 (found via this session's own "look for archetype engine" check):
+`EMILY/docs/ARCHETYPE_ENGINE_NORTHSTAR.md`** ("Dynamic Hybrid AI Agent Archetype Engine"), with
+real, partially-built Go code already in `EMILY/emily-agent/pkg/archetypes/`
+(`field.go`/`selector.go`/`spirits.go`) and `EMILY/emily-agent/cmd/archetype-engine/main.go` (HTTP
+service, `:8090`, `POST /invoke`). This is **not** a hero/kit classification system -- despite the
+name overlap with REDGARDEN's own informal "Fighter/Mage/Assassin/Tank/Support" hero-archetype
+vocabulary (`docs/HEROES_VS0.md`), which is just labeling, no engine behind it. The real Archetype
+Engine is an LLM-routing layer: two Claude personas run in parallel per invocation -- **E₁
+"Carrier"** (deterministic, low-temperature) and **E₂ "Explorer"** (high-temperature, divergent) --
+modulated by up to 3 of 72 "Goetia spirit" personas selected by intent-matching, with a computed
+phase-difference (embedding cosine similarity → degrees) classifying a resonance state (Coherent
+Lock / Golden Band / Chaos Edge / Collapse) that weights how E₁/E₂ get synthesized into one output.
+Already named as an intended consumer for "SHANKPIT's game AI" in its own northstar, never
+connected to REDGARDEN. Per its own milestone table, most of the engine (dual-persona invocation,
+resonance/synthesizer) is **not started** as spec, though the Go scaffolding already exists. This
+tier is slow, occasional, and high-level -- it would decide *what kind of hero/what disposition
+this is right now*, not the per-tick mechanics.
+
+These two tiers don't compete and were never connected to each other. §18.3 proposes how they fit
+together for REDGARDEN specifically.
+
+### 18.3 Proposed two-tier architecture (how the pieces fit)
+
+- **Tactical tier (Tier 1, GPT-2 policy net)**: per-tick action decisions -- move/cast -- driven
+  by `arena_serialize_state`/`arena_decode_action`, exactly §12 Phase E's existing plan, unchanged
+  by anything in this section. This is where §18.4's unsupervised general layer actually lives.
+- **Strategic tier (Tier 2, Archetype Engine)**: occasional, higher-level framing -- not called
+  every tick, but periodically (e.g. once per fight, once per objective-contest window) to
+  classify "what disposition should this hero take right now" (aggressive dive vs. peel-and-kite
+  vs. turtle-the-node), expressed as a short intent string that becomes part of Tier 1's next
+  several `arena_serialize_state` calls (a "current disposition" field alongside the existing
+  hero-name/position/HP/cooldown fields) -- steering, not overriding, the fast tactical loop.
+  This is the natural home for §18.5's eventual per-hero "personality" divergence: a hero whose
+  long-running training has shaped a distinct personality expresses it here, at the strategic
+  tier, rather than needing every single per-tick action decision to carry personality weight
+  directly.
+
+Nothing here requires building the Archetype Engine's still-not-started resonance/synthesis
+machinery just to unblock REDGARDEN -- Tier 1 alone (§18.4) is a complete, shippable "generalized
+AI across heroes," matching the founder's explicit "for now we need generalized ai" priority.
+Tier 2 is named and slotted in now so Tier 1's design doesn't have to be redone later to make room
+for it.
+
+### 18.4 The general layer -- genuinely unsupervised, near-term (what to actually build first)
+
+The word "unsupervised" is doing real technical work here, not just flavor -- it names a specific,
+buildable stage that sits *before* §12 Phase E's own Milestone 7+ (supervised fine-tune on
+win/loss-labeled replay outcomes, NORN-graded). GPT-2's own native training objective (next-token
+prediction) is itself self-supervised/unsupervised: no human-authored labels are needed, just raw
+sequences.
+
+- **Corpus**: every replay log from every hero, from every match, undifferentiated -- the exact
+  same corpus §12 Phase E already names ("Phase B's replay logs are the training corpus"), used
+  here for a *different, earlier* purpose than the later supervised stage.
+- **Objective**: next-token prediction over `arena_serialize_state`'s own natural-language
+  state-string format, extended with an action-token suffix per tick (state → the action that was
+  actually taken next) -- learn "what tends to happen next," not "what wins." No win/loss label,
+  no reward signal, no NORN grading at this stage -- purely descriptive of how matches actually
+  unfold. This is where general tactical concepts live: closing distance, retreating below some
+  HP threshold, contesting a node, kiting when faster than a chaser, grouping with allies -- none
+  of which are hero-specific facts, all of which are learnable from ANY hero's replay data.
+  Concretely, this is one shared set of weights, not N per-hero models -- every match, regardless
+  of which hero(es) it features, updates the same general representation.
+- **Where it plugs in**: this is the pretraining stage for Tier 1's own GPT-2 policy net --
+  §12 Phase E's already-planned supervised fine-tune (Milestone 7+, NORN-graded, win/loss-labeled)
+  becomes the SECOND stage, starting from these unsupervised-pretrained weights instead of the
+  base GPT-2 checkpoint cold. Standard, real ML pipeline shape (unsupervised pretrain → supervised
+  fine-tune) applied to this repo's own already-chosen architecture, not a parallel invention.
+
+### 18.5 The per-hero layer -- named, shaped, explicitly deferred (long-running personality training)
+
+Not built this pass, per §18.1's own sequencing -- sketched only so §18.4's general-layer design
+doesn't foreclose it:
+
+- Long-running, per-hero fine-tuning/adaptation on top of the shared general-layer weights from
+  §18.4 -- likely a small adapter per hero (a LoRA-style low-rank delta, not a fully separate
+  model; keeps the general layer as the shared backbone every hero's adapter sits on, so §18.6's
+  cross-hero transfer keeps working even after per-hero specialization exists) rather than N fully
+  independent models trained from scratch.
+  "Personality" divergence over a long training run is naturally where NORN's own
+  propose→grade→gate→promote loop earns its keep per-hero, not just per overall bot generation --
+  each hero's adapter gets its own gated promotion track once this stage exists.
+- This is the natural landing spot for the Archetype Engine's Carrier/Explorer dual-persona
+  concept (§18.2/§18.3) taken literally: a hero's long-run "personality" could quite directly be
+  expressed as where that hero's own trained disposition tends to sit between Carrier
+  (deterministic, reliable, plays the numbers) and Explorer (divergent, riskier, plays for the
+  outlier) -- not decided, just flagged as a strong, cheap-to-explore fit given Tier 2 already
+  exists in that exact shape.
+- Not decided: whether every hero eventually gets a personality adapter, or only a subset (the
+  roster's own "indirect-control archetypes are a deliberate feature, not a gap" precedent, §8,
+  suggests non-piloted heroes like Donkey/Retrieval Cart may never need one at all).
+
+### 18.6 The actual cross-hero transfer mechanism -- the founder's own worked example, made concrete
+
+**"Experience playing a hero will help inform decisions playing with and against it on another
+hero"** is the one requirement this whole section exists to satisfy technically, not just
+gesture at. Two concrete levers, both cheap, both already close to existing infrastructure:
+
+1. **Shared weights are the implicit lever.** Because §18.4's general layer is ONE model trained
+   on ALL heroes' replay data (not per-hero silos), any experience -- playing Gary a lot, say --
+   updates the shared representation of concepts like "ranged auto-attack range management" or
+   "homing-shot pressure," which is available to every OTHER hero's tactical decisions the moment
+   it's learned, including heroes the model has little or no direct experience with, as long as
+   they share enough mechanical shape with what was already learned.
+2. **Archetype/kit-shape tagging is the explicit lever, and the stronger one.** Add a small set of
+   mechanical-shape tags to `arena_serialize_state`'s own output alongside the existing
+   hero-name/position/HP/cooldown fields -- e.g. `ranged`/`melee`, `has_homing_attack`
+   (S170-163's own new mechanic), `has_knockback`, `has_heal`, `has_dash`, `has_stealth` --
+   describing WHAT a hero's kit mechanically does, not just WHICH hero it is. This is what makes
+   transfer *reliable* rather than merely emergent: a future ranged hero that also gets a homing
+   basic attack (§17's own target design, currently only Gary) would carry the same
+   `has_homing_attack` tag Gary's own training data already carries, so kiting/positioning
+   patterns learned against Gary specifically transfer to that new hero on day one of its own
+   existence, before it has accumulated any replay data of its own at all -- the literal "playing
+   against it on another hero" half of the founder's example. `arena_serialize_state` already
+   frames every state from both `self` and `foe` perspectives (§12 Phase E's own existing design,
+   built for a completely different reason), which is exactly the plumbing this needs: the same
+   archetype tags need to appear on both sides of that framing so the model learns a kit-shape's
+   pattern from BOTH playing it and facing it, not just one or the other.
+
+### 18.7 Open questions, not resolved here
+
+- Exact tag vocabulary for §18.6's archetype/kit-shape tags -- not enumerated against the full
+  26-hero roster here; a real design pass of its own once this stage is actually being built,
+  likely grounded in `docs/HEROES_VS0.md`'s existing kit writeups rather than invented fresh.
+- Whether Tier 2 (Archetype Engine) integration happens before or after §18.5's per-hero
+  personality layer, or whether Tier 1's unsupervised+supervised stages (§18.4, then §12 Phase
+  E's own Milestone 7+) are sufficient on their own for longer than expected before Tier 2 is
+  worth building out at all -- genuinely open, not a sequencing claim.
+- Whether the general layer (§18.4) trains once against the full existing replay corpus and then
+  freezes, or keeps training continuously as new matches accumulate (an actual online/continual
+  learning question, not addressed here) -- likely the latter eventually, given "bots need
+  personalities that evolve and learn on their previous matches" is already on record as founder
+  intent (§12 Phase E), but not scoped for this pass.
+
+Nothing built this pass. §18.4 (unsupervised pretraining on the existing replay corpus) is the
+actual next buildable step once someone picks this up -- it slots directly in front of §12 Phase
+E's own already-specced Milestone 7, not after it, and needs nothing from §18.5/Tier 2 to be
+useful on its own.
