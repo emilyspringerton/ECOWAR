@@ -358,11 +358,93 @@ static void send_cast(int slot) {
     sendto(sock, buf, sizeof(buf), 0, (struct sockaddr *)&server_addr, sizeof(server_addr));
 }
 
+/* flock_offset (S170-160), founder: "add boyds to the ai brain[,] check GFD
+ * apps2 crystal for a reference if you need it." GoblinFoxDragon's
+ * apps2/crystal/main.go has a real, working Reynolds boids implementation
+ * (Boid struct, boidForces() blending alignment/cohesion/separation) --
+ * used here as the structural reference, ported to this file's own
+ * plain-float style (no Vec2 type here) and to hero positions instead of
+ * that sim's free-roaming particles.
+ *
+ * Before this, every bot picked its own move target completely
+ * independently -- chase the nearest enemy (with a fixed per-owner
+ * approach-angle spread, S170-90) or walk to the nearest un-owned node
+ * (S170-155). Correct, but robotic: nothing about how one bot moves is
+ * influenced by where its own teammates currently are or are heading.
+ * This computes a small steering offset from nearby, living TEAMMATES
+ * only (never enemies -- flocking is a squad-cohesion behavior, not a
+ * targeting one) within FLOCK_RADIUS:
+ *   - alignment: nudge toward the average heading nearby allies just
+ *     moved in, derived from the previous tick's snapshot vs this one --
+ *     the wire snapshot carries position only, never velocity (same "this
+ *     bot only ever sees what any client sees" constraint every other
+ *     decision in this file already lives under), so velocity has to be
+ *     inferred locally rather than read off the wire.
+ *   - cohesion: nudge toward the average position of those same allies.
+ *   - separation: push away from any ally close enough to actually be
+ *     crowding (a much tighter radius than alignment/cohesion use).
+ * Returned as a small (dx, dz) offset meant to be ADDED to whatever
+ * objective target the caller already computed (node or enemy-engage
+ * point) below -- a perturbation on top of real goal-seeking, not a
+ * replacement for it. Weights are deliberately separation-heavy: this
+ * codebase already once shipped and had to fix "all of the bots just
+ * bunch up on each other" (S170-90); flocking should reinforce that fix,
+ * not quietly reintroduce the same clumping through a different code
+ * path. */
+static void flock_offset(const ArenaSnapshotMsg *cur, const ArenaSnapshotMsg *prev, int have_prev,
+                          int self_owner, int my_team, float *out_dx, float *out_dz) {
+    const float FLOCK_RADIUS = 6.0f;
+    const float SEPARATION_RADIUS = 2.0f;
+    float mx = cur->heroes[self_owner].x, mz = cur->heroes[self_owner].z;
+    float align_x = 0.0f, align_z = 0.0f;
+    float coh_x = 0.0f, coh_z = 0.0f;
+    float sep_x = 0.0f, sep_z = 0.0f;
+    int count = 0;
+
+    for (int i = 0; i < cur->count; i++) {
+        if (i == self_owner || !cur->heroes[i].alive) continue;
+        int team = (i < cur->count / 2) ? 0 : 1;
+        if (team != my_team) continue; /* teammates only -- see doc comment above */
+
+        float dx = cur->heroes[i].x - mx, dz = cur->heroes[i].z - mz;
+        float dist = sqrtf(dx * dx + dz * dz);
+        if (dist <= 0.0f || dist > FLOCK_RADIUS) continue;
+
+        if (have_prev && prev->heroes[i].alive) {
+            align_x += cur->heroes[i].x - prev->heroes[i].x;
+            align_z += cur->heroes[i].z - prev->heroes[i].z;
+        }
+        coh_x += cur->heroes[i].x;
+        coh_z += cur->heroes[i].z;
+        if (dist < SEPARATION_RADIUS) {
+            sep_x -= dx / dist;
+            sep_z -= dz / dist;
+        }
+        count++;
+    }
+
+    if (count == 0) {
+        *out_dx = 0.0f;
+        *out_dz = 0.0f;
+        return;
+    }
+
+    align_x /= (float)count;
+    align_z /= (float)count;
+    coh_x = coh_x / (float)count - mx;
+    coh_z = coh_z / (float)count - mz;
+
+    *out_dx = align_x * 0.3f + coh_x * 0.15f + sep_x * 1.2f;
+    *out_dz = align_z * 0.3f + coh_z * 0.15f + sep_z * 1.2f;
+}
+
 // play_one_match runs the draft + live-play loop for a single match against
 // the already-connected server. Returns once the match ends (winner != 0)
 // or the connection goes quiet for too long.
 static void play_one_match(int game_port) {
     ArenaSnapshotMsg last = {0};
+    ArenaSnapshotMsg prev = {0}; /* S170-160: previous tick's snapshot, purely so flock_offset can infer ally velocity for alignment -- the wire snapshot itself never carries velocity */
+    int have_prev = 0;
     int have_snapshot = 0;
     int picked = 0;
     int ticks_since_pick_send = 0; /* retry, see below -- S170-99 */
@@ -392,6 +474,8 @@ static void play_one_match(int game_port) {
             if (len >= (int)(sizeof(NetHeader) + sizeof(ArenaSnapshotMsg))) {
                 NetHeader *h = (NetHeader *)rbuf;
                 if (h->type == PACKET_ARENA_SNAPSHOT) {
+                    prev = last;
+                    have_prev = have_snapshot;
                     memcpy(&last, rbuf + sizeof(NetHeader), sizeof(ArenaSnapshotMsg));
                     have_snapshot = 1;
                     got_one = 1;
@@ -472,8 +556,18 @@ static void play_one_match(int game_port) {
                             if (best_node == -1 || dist < best_node_dist) { best_node = n; best_node_dist = dist; }
                         }
                     }
+                    /* S170-160: squad flocking (alignment/cohesion/separation among
+                       living teammates, see flock_offset's own doc comment) is a small
+                       perturbation added on top of whichever objective target gets picked
+                       below -- real goal-seeking (capture the node, engage the enemy)
+                       always still drives the bot, flocking just makes the group's motion
+                       toward that goal feel organic instead of every bot pathing as an
+                       island. */
+                    float flock_dx, flock_dz;
+                    flock_offset(&last, &prev, have_prev, my_owner, my_team, &flock_dx, &flock_dz);
+
                     if (best_node != -1) {
-                        send_move(last.nodes[best_node].x, last.nodes[best_node].z);
+                        send_move(last.nodes[best_node].x + flock_dx, last.nodes[best_node].z + flock_dz);
                     } else if (best != -1) {
                         /* S170-90 fix, real bug found live: "all of the bots just bunch up on
                            eachother." Root cause -- every bot sent its move target as the
@@ -487,8 +581,8 @@ static void play_one_match(int game_port) {
                            target, just not literally on top of each other or it. */
                         float approach_angle = (float)(my_owner % 8) * (2.0f * 3.14159265f / 8.0f);
                         float approach_radius = 2.0f;
-                        float tx = last.heroes[best].x + cosf(approach_angle) * approach_radius;
-                        float tz = last.heroes[best].z + sinf(approach_angle) * approach_radius;
+                        float tx = last.heroes[best].x + cosf(approach_angle) * approach_radius + flock_dx;
+                        float tz = last.heroes[best].z + sinf(approach_angle) * approach_radius + flock_dz;
                         send_move(tx, tz);
                         uint32_t now = (uint32_t)time(NULL) * 1000;
                         if (now - last_cast_ms > 2000) {
