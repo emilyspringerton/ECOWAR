@@ -21,7 +21,8 @@ comments in `apps/arena/src/main.c` and left implicit across every hero entry in
 
 Draft is automatic right now — no pick UI yet, you're assigned a hero based on your slot in the
 lobby (`docs/HEROES_VS0.md` documents every hero's kit if you want to know what you're about to
-play before the match starts). Team matches are **7v7** (`ARENA_TEAM_SIZE`, S170-178).
+play before the match starts). Team matches are **10v10** (`ARENA_TEAM_SIZE`, S170-183 —
+briefly 7v7 under S170-178, reverted).
 
 ### Flow, XP, and the item shop (S170-175)
 

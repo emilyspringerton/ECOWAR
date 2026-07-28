@@ -16,7 +16,8 @@
 // --lobby-size N (default 2): 1v1 (the originally-shipped, live-verified
 // mode) uses arena_init/arena_update -- completely unchanged behavior.
 // N > 2 (up to ARENA_MAX_HEROES) uses arena_init_teams/arena_update_teams
-// (NORTHSTAR §13 cont'd, 7v7 scaling, S170-178 -- was 10v10) -- every slot is a real network
+// (NORTHSTAR §13 cont'd, 10v10 scaling, S170-183 -- reverted after briefly being 7v7 under
+// S170-178) -- every slot is a real network
 // client (human or a real apps/arena_bot process); there is no internal
 // bot-AI fallback in team mode, unlike 1v1's solo-vs-bot practice default.
 #include <stdio.h>

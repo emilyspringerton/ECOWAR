@@ -131,15 +131,16 @@ typedef enum {
 #define ARENA_CREEP_TEAM_KILL_DENY_CAPTURE_BONUS_MS 1500 /* counter-play: farming an enemy's own jungle creep helps flip their node */
 
 /* Team-scale arena (2026-07-24, NORTHSTAR §13 cont'd): the array grows from
- * 2 to ARENA_MAX_HEROES so a full 7v7 match fits in the same ArenaState
+ * 2 to ARENA_MAX_HEROES so a full 10v10 match fits in the same ArenaState
  * the 1v1 local demo and apps/arena_server (1v1) already use. The 1v1 path
  * (arena_init/arena_init_with_heroes) still only ever populates heroes[0]/
  * [1] and leaves the rest zeroed/inactive -- see the `active` field below.
- * ARENA_TEAM_SIZE was 10 (10v10) through S170-175; founder, real-time:
- * "reduce it to 7 v 7" (S170-178) -- a single #define change, every other
+ * ARENA_TEAM_SIZE was briefly 7 (7v7, S170-178) then reverted -- founder,
+ * real-time: "ok move back to 10 v 10" (S170-183), mid a live-pool
+ * queueing investigation. A single #define change, every other
  * array/wire-struct size in this codebase derives from ARENA_MAX_HEROES
  * rather than hardcoding 10 or 20. */
-#define ARENA_TEAM_SIZE 7
+#define ARENA_TEAM_SIZE 10
 #define ARENA_MAX_HEROES (ARENA_TEAM_SIZE * 2)
 
 /* ARENA_MAX_CLONE_SLOTS/ARENA_HEROES_ARRAY_SIZE (S170-141, Tyler's puppet

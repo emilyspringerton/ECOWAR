@@ -2,9 +2,9 @@
 # launch_arena_pools.sh — stands up REDGARDEN's two separate MOBA matchmaking
 # pools (EMILY/BACKLOG.md S170-14):
 #
-#   1. BOT POOL   (port 7778, 7v7 -- S170-178, was 10v10) — persistent
-#      apps/arena_bot processes matchmake here continuously; a human can
-#      --queue into it too (S170-44) to validate against real bots.
+#   1. BOT POOL   (port 7778, 10v10 -- S170-183: reverted after briefly being 7v7 under
+#      S170-178) — persistent apps/arena_bot processes matchmake here continuously; a human
+#      can --queue into it too (S170-44) to validate against real bots.
 #   2. PLAYER-ONLY POOL (port 7779, 1v1) — a second, completely separate
 #      matchmaker instance. No bot is ever pointed at this port -- pool
 #      separation here is operational (two processes, two ports), not a
@@ -12,8 +12,8 @@
 #      this codebase's existing pattern of generalizing one binary via
 #      flags rather than building new machinery per mode.
 #
-#      Lobby size is 1v1 (--lobby-size 2), not 7v7: with near-zero real
-#      concurrent human players today, a 7v7 player-only queue would
+#      Lobby size is 1v1 (--lobby-size 2), not 10v10: with near-zero real
+#      concurrent human players today, a 10v10 player-only queue would
 #      never fill. 1v1 is the smallest, already-verified real-PvP case
 #      (S170-42) -- the responsible default until there's real player
 #      volume to justify a bigger lobby (same reasoning as not running a
@@ -31,7 +31,7 @@ cd "$(dirname "$0")/.."
 
 BOT_POOL_PORT=7778
 BOT_POOL_FIRST_GAME_PORT=7300
-BOT_POOL_LOBBY_SIZE=14
+BOT_POOL_LOBBY_SIZE=20
 
 PLAYER_POOL_PORT=7779
 PLAYER_POOL_FIRST_GAME_PORT=7600

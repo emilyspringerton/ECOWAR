@@ -5,15 +5,16 @@
 # of the launch-and-detach pattern scripts/launch_arena_pools.sh used
 # (EMILY/BACKLOG.md S170-65 -- see ops/systemd/redgarden-bot-pool.service).
 #
-# Usage: ./scripts/run_bot_pool.sh [n_bots]   # default 13 -- lobby-size is 14 (S170-178:
-#                                              # 7v7, was 20/10v10) and one slot must stay
-#                                              # open or a human can never queue in
+# Usage: ./scripts/run_bot_pool.sh [n_bots]   # default 19 -- lobby-size is 20 (S170-183:
+#                                              # reverted back to 10v10 after briefly being
+#                                              # 7v7/14 under S170-178) and one slot must
+#                                              # stay open or a human can never queue in
 #                                              # (S170-66: pool used to launch all N and the
 #                                              # lobby was permanently full of bots).
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-N_BOTS="${1:-13}"
+N_BOTS="${1:-19}"
 mkdir -p var
 
 if [ ! -x ./build/red_garden_arena_bot ]; then
