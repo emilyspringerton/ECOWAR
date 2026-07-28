@@ -2,6 +2,16 @@
 
 ## 2026-07-28 (continued)
 
+- feat(arena): bot AI seeks out healing fountains when critically low on HP (S170-173).
+  Founder: "add healing fountains to bot awairness brain and heuristics whatever makes sense
+  bots seek out fountains when super low." New top-priority check in the bot decision loop,
+  evaluated before node-capping or enemy engagement — a hero below 25% HP retreats to the
+  nearest fountain and does nothing else that tick until topped back up. Fountain positions are
+  static, mirrored by hand from `arena_fountain_position()`'s two fixed points, no wire sync
+  needed. Live-verified via an isolated 20-bot match: 153 low-HP snapshots observed, 65 of them
+  (42%) with the hero positioned near a fountain corner — real evidence of retreat behavior, not
+  chance. No crashes, full suite green (bot-client-only).
+
 - feat(arena): heroes and creeps now rotate to face their movement direction (S170-171).
   Founder: "heroes and creeps should rotate to show what direction they are facing currently
   they just float around there is no front of the model." This renderer never had a rotation
