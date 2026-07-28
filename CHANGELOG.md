@@ -2,6 +2,20 @@
 
 ## 2026-07-28 (continued)
 
+- feat(arena): jungle creeps use the "dynamic creep ecosystem" direction (NORTHSTAR §8) -- 
+  graveyard spawn + march/fan-out + toned-down team strength (S170-161). Founder: "add jungle
+  creeps use the redgarden dynamic creep ecosystem something simple to start," refined with:
+  "have the team creeps spawn and fan out from owned nodes marching towards unowned nodes"
+  (team-flavored creeps now continuously walk toward the nearest node their team doesn't own,
+  recomputed live every tick, each owned node's creep independently fanning out toward its own
+  target); "initially they spawn from the graveyards behind the nodes not the center" (spawn
+  position is now the owning team's graveyard, not the node's own position); "tone down the
+  strength of the team creeps just a bit they are so strong" (`ARENA_CREEP_TEAM_HP` 40->26,
+  damage split into neutral/team constants so only team creeps got nerfed). Neutral/contested
+  creeps completely unaffected — still stationary at their node, unchanged stats. 9 existing
+  tests updated for the new positional assumptions, 6 new tests added. Full suite green,
+  live-verified via an isolated 20-bot match.
+
 - feat(arena): boids flocking (alignment/cohesion/separation) in the networked bot AI
   (S170-160). Founder: "add boyds to the ai brain[,] check GFD apps2 crystal for a reference if
   you need it" — GoblinFoxDragon/apps2/crystal/main.go's own working Reynolds boids
