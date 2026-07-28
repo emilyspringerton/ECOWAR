@@ -245,6 +245,7 @@ typedef struct {
     ArenaCreepSnapshot creeps[ARENA_SNAPSHOT_CREEP_COUNT]; /* S170-146 */
     uint8_t lane_creep_count; /* S170-146 */
     ArenaLaneCreepSnapshot lane_creeps[ARENA_SNAPSHOT_MAX_LANE_CREEPS];
+    uint16_t resources[2]; /* S170-153: team resource race, capped at ARENA_RESOURCE_CAP */
 } ArenaSnapshotMsg;
 
 #endif

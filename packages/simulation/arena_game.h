@@ -812,12 +812,41 @@ typedef struct {
 /* ARENA_HERO_RESPAWN_MS (S170-121, "controlling a node enables its spawn
  * for your team"): team-mode-only hero respawn timer. Before this, death
  * was permanent within a match (arena_update_teams only checked team-wipe
- * for the win condition) -- there was no respawn system at all. A dead
- * hero's timer counts down independently of node ownership, but the actual
- * respawn is withheld (timer pins at 0 and rechecks every tick) until the
- * hero's team owns at least one ArenaNode: territory control is the gate,
- * not just a modifier, matching the founder's framing literally. */
-#define ARENA_HERO_RESPAWN_MS 8000
+ * for the win condition) -- there was no respawn system at all.
+ *
+ * S170-153 revision, founder: "add graveyards behind the spawns that never
+ * despawn so there is always a place to respawn." A dead hero still prefers
+ * respawning at the nearest node their team currently owns (unchanged), but
+ * no longer stays dead forever if their team owns nothing -- a fixed,
+ * permanent graveyard behind each team's own spawn line (see
+ * arena_graveyard_position()) is always available as a fallback. This is
+ * the real Arathi Basin shape: you always come back at your own base,
+ * losing every flag costs you tempo and territory, not the ability to
+ * exist. It's also *why* the team-wipe win condition had to go -- with an
+ * always-available respawn point, a team can no longer be permanently
+ * eliminated, so "wipe the enemy" stopped being a reachable win condition
+ * at all. See arena_tick_resources() for what replaced it. */
+#define ARENA_HERO_RESPAWN_MS 8000 /* S170-154: no longer the actual respawn gate -- see ARENA_RESPAWN_WAVE_MS below. Kept as the "how long ago did I die" bookkeeping value death still writes into respawn_ms_remaining (tests/telemetry reference it), just not what arena_tick_respawns waits on anymore. */
+
+/* ARENA_RESPAWN_WAVE_MS (S170-154, founder: "respawns happen in 30 second
+ * waves"): every dead hero on a team comes back TOGETHER, on a fixed global
+ * clock, rather than each individually N seconds after their own death --
+ * a real battleground-style wave respawn (matching this map's own Arathi
+ * Basin lineage). Dying right before a wave costs you almost nothing;
+ * dying right after one costs you almost the full 30s -- that timing
+ * tension is the actual point, not a smoothed-out per-hero countdown. */
+#define ARENA_RESPAWN_WAVE_MS 30000
+
+/* Arathi Basin resource-race win condition (S170-153). Real WoW Arathi
+ * Basin: resources tick up over time, faster the more of the map's nodes
+ * ("bases") your team controls, and the first team to the cap wins --
+ * "objectives are how the game is won," not attrition. Numbers here are
+ * this arena's own tuning (not a claim of exact parity with the real game),
+ * chosen to keep the same *shape*: holding more territory should feel
+ * meaningfully faster than holding one node, and holding every node should
+ * feel like a genuine sprint to the finish, not just linear scaling. */
+#define ARENA_RESOURCE_CAP        2000
+#define ARENA_RESOURCE_TICK_MS    2000 /* real Arathi Basin's own resource tick is on this same ~2s cadence */
 
 /* Mana (S170-132): flat, roster-wide -- see ArenaHero.mp's own doc comment above. Regen fills
  * an empty pool in a bit under 17s; Q is the cheapest, spammable a few times before running dry,
@@ -1066,6 +1095,16 @@ typedef struct {
     ArenaLaneCreep lane_creeps[ARENA_MAX_LANE_CREEPS]; /* S170-139 */
     int lane_wave_timer_ms[2]; /* S170-139: per-team countdown to next wave; starts at 0 (memset), so both teams' first wave spawns on the first tick, matching a real MOBA's 0:00 wave */
     int fountain_tick_ms; /* S170-147: fixed-interval (1000ms) accumulator for the fountain heal tick, same idiom as every other DPS/heal zone's own r_zone_tick_ms -- global, not per-hero, since a fountain heals whoever's nearby, not a single caster's target */
+    /* resources[2]/resource_tick_ms (S170-153, "true arathi basin node
+     * control resource management as a win con instead of team wipe"):
+     * per-team accumulated resource points, real Arathi-Basin-style --
+     * ticks up over time based on how many nodes each team currently
+     * controls (more territory = faster race to the cap), first team to
+     * ARENA_RESOURCE_CAP wins. Team-mode only, see arena_tick_resources()'s
+     * own doc comment for the full design. */
+    int resources[2];
+    int resource_tick_ms;
+    int respawn_wave_timer_ms; /* S170-154: global, ticks 0->ARENA_RESPAWN_WAVE_MS continuously and wraps -- every dead hero respawns together the instant it wraps, not on their own independent per-hero timer */
     /* hover_target (S170-143, "hover casting like in wow macros"): per-owner,
      * real per-player range only (clones never cast independently, see
      * S170-141) -- which hero slot owner[i] was hovering the instant they
@@ -1171,6 +1210,25 @@ void arena_fountain_position(int index, float *x, float *z);
  * arena_fountain_position() above also relies on, so nothing else will ever
  * repopulate this after a reset except calling it again explicitly. */
 void arena_obstacles_reset_layout(void);
+
+/* arena_graveyard_position (S170-153): fills (x,z) with the fixed,
+ * permanent respawn point behind team `team`'s own spawn line -- never
+ * gated by node ownership, always a valid fallback. Deterministic and
+ * shared between sim and client the same way arena_fountain_position()
+ * already is (no wire sync needed for a static position). */
+void arena_graveyard_position(int team, float *x, float *z);
+
+/* arena_tick_resources (S170-153): advances each team's Arathi-Basin-style
+ * resource race by dt_ms. Fixed ARENA_RESOURCE_TICK_MS interval, same
+ * accumulator idiom as every other periodic tick in this file. Gain per
+ * tick scales with how many of the ARENA_NODE_COUNT nodes that team
+ * currently owns (0 nodes = 0 gain, more nodes = a real, more-than-linear
+ * acceleration toward the cap) -- the actual "objectives are how the game
+ * is won" identity this replaces team-wipe with. Does not itself set
+ * arena_state.winner -- that's checked once per tick by the caller
+ * (arena_update_teams), same "tick computes, caller decides" split as
+ * every other subsystem in this file. Team mode only. */
+void arena_tick_resources(unsigned int dt_ms);
 
 /* arena_tick_fountains (S170-147): heals every active, alive, hittable hero
  * within ARENA_FOUNTAIN_RADIUS of either fountain by ARENA_FOUNTAIN_HEAL_PER_SEC

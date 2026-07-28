@@ -732,7 +732,11 @@ static void test_team_melee_converges_multiple_attackers_on_one_target(void) {
           "the lone enemy hero takes damage from being in melee range of two attackers at once");
 }
 
-static void test_team_wipe_win_condition(void) {
+static void test_team_wipe_alone_does_not_win_the_match(void) {
+    /* S170-153: team-wipe was the ORIGINAL win condition (S170-45) but was
+       replaced by the Arathi-Basin-style resource race -- a wiped team can
+       still come back via graveyard/node respawns and isn't eliminated
+       just because every hero happens to be down or deactivated right now. */
     arena_init_teams();
     for (int i = 2; i < ARENA_MAX_HEROES; i++) arena_state.heroes[i].active = 0;
     /* Only owner 0 (team 0) is left active and alive -- team 1 is wiped. */
@@ -740,7 +744,7 @@ static void test_team_wipe_win_condition(void) {
 
     arena_update_teams(16);
 
-    CHECK(arena_state.winner == 1, "team 0 wins once team 1 has zero active-and-alive heroes left");
+    CHECK(arena_state.winner == 0, "team 1 being wiped no longer ends the match on its own -- resources decide it now");
 }
 
 /* S170-45: allies. arena_nearest_ally is the enabling primitive for every
@@ -2073,68 +2077,122 @@ static void test_damage_to_channeling_team_interrupts_the_capture(void) {
           "taking damage interrupts the capture channel, same as real Arathi Basin's flag-channel pushback");
 }
 
-static void test_dead_hero_stays_dead_while_team_owns_no_node(void) {
+static void test_dead_hero_respawns_at_graveyard_when_team_owns_no_node(void) {
     arena_init_teams();
     for (int n = 0; n < ARENA_NODE_COUNT; n++) arena_state.nodes[n].owner = 0;
 
     ArenaHero *h = &arena_state.heroes[0];
     h->alive = 0;
-    h->respawn_ms_remaining = ARENA_HERO_RESPAWN_MS;
+    h->hero_id = ARENA_HERO_GHOST;
 
-    /* Well past the respawn timer, but the team owns nothing to respawn onto. */
-    arena_update_teams(ARENA_HERO_RESPAWN_MS + 5000);
+    /* Before the wave arrives, still dead even though the team owns nothing. */
+    arena_update_teams(ARENA_RESPAWN_WAVE_MS - 100);
+    CHECK(!h->alive, "wave hasn't arrived yet, still dead");
 
-    CHECK(!h->alive, "no owned node means the respawn timer expiring is not enough on its own");
+    arena_update_teams(200); /* crosses the wave boundary */
+    float gx, gz;
+    arena_graveyard_position(h->team, &gx, &gz);
+    CHECK(h->alive, "wave arrived -- hero respawns even though the team owns no node");
+    CHECK(h->x == gx && h->z == gz, "falls back to the team's permanent graveyard");
+    CHECK(h->hero_id == ARENA_HERO_GHOST, "respawning preserves which hero this slot is playing");
 }
 
-static void test_dead_hero_respawns_at_owned_node_once_timer_expires(void) {
+static void test_dead_hero_respawns_at_owned_node_on_wave(void) {
     arena_init_teams();
     for (int n = 0; n < ARENA_NODE_COUNT; n++) arena_state.nodes[n].owner = 0;
     arena_state.nodes[0].owner = 1; /* team 0 owns node 0 */
     arena_state.creeps[0].alive = 0; /* isolate respawn correctness from the node's own creep aggro */
-    arena_state.creeps[0].respawn_ms_remaining = ARENA_HERO_RESPAWN_MS * 10;
+    arena_state.creeps[0].respawn_ms_remaining = ARENA_RESPAWN_WAVE_MS * 10;
 
     ArenaHero *h = &arena_state.heroes[0];
     h->alive = 0;
-    h->respawn_ms_remaining = ARENA_HERO_RESPAWN_MS;
     h->hero_id = ARENA_HERO_GHOST;
 
-    arena_update_teams(ARENA_HERO_RESPAWN_MS / 2);
-    CHECK(!h->alive, "timer hasn't elapsed yet, still dead");
+    arena_update_teams(ARENA_RESPAWN_WAVE_MS - 100);
+    CHECK(!h->alive, "wave hasn't arrived yet, still dead");
 
-    arena_update_teams(ARENA_HERO_RESPAWN_MS / 2 + 16);
-    CHECK(h->alive, "timer elapsed and the team owns a node -- hero respawns");
+    arena_update_teams(200);
+    CHECK(h->alive, "wave arrived and the team owns a node -- hero respawns");
     CHECK(h->hp == h->max_hp, "respawns at full HP");
     CHECK(h->x == arena_state.nodes[0].x && h->z == arena_state.nodes[0].z,
           "respawns at the owned node's position");
     CHECK(h->hero_id == ARENA_HERO_GHOST, "respawning preserves which hero this slot is playing");
 }
 
-static void test_team_wipe_does_not_end_match_while_team_still_owns_a_node(void) {
+static void test_respawn_wave_brings_back_all_dead_heroes_together(void) {
+    /* S170-154, founder: "respawns happen in 30 second waves" -- heroes that
+       died at very different times still come back on the exact same tick,
+       not staggered by their own individual death timers. */
     arena_init_teams();
     for (int n = 0; n < ARENA_NODE_COUNT; n++) arena_state.nodes[n].owner = 0;
-    arena_state.nodes[0].owner = 1; /* team 0 keeps a foothold */
 
-    for (int i = 0; i < ARENA_TEAM_SIZE; i++) {
-        arena_state.heroes[i].alive = 0;
-        arena_state.heroes[i].respawn_ms_remaining = ARENA_HERO_RESPAWN_MS;
-    }
+    ArenaHero *early = &arena_state.heroes[0];
+    ArenaHero *late = &arena_state.heroes[1];
+    early->alive = 1;
+    late->alive = 1;
 
-    arena_update_teams(16);
-    CHECK(arena_state.winner == 0, "team 0 is fully wiped but still owns a node, so the match isn't over yet");
+    arena_update_teams(ARENA_RESPAWN_WAVE_MS / 4);
+    early->alive = 0; /* dies early in the wave cycle */
+
+    arena_update_teams(ARENA_RESPAWN_WAVE_MS / 2);
+    late->alive = 0; /* dies much later, same cycle */
+    CHECK(!early->alive && !late->alive, "both still dead mid-cycle");
+
+    /* Advance to just past the wave boundary (timer started at 0, so the
+       wave lands at ARENA_RESPAWN_WAVE_MS total elapsed). */
+    arena_update_teams(ARENA_RESPAWN_WAVE_MS / 4 + 100);
+
+    CHECK(early->alive && late->alive, "both heroes respawn together on the same wave tick");
 }
 
-static void test_team_wipe_ends_match_once_the_team_owns_nothing(void) {
+static void test_resource_win_condition_replaces_team_wipe(void) {
+    /* S170-153: a fully wiped team no longer instantly loses -- the match
+       is decided by the resource race, not by hero deaths. */
     arena_init_teams();
     for (int n = 0; n < ARENA_NODE_COUNT; n++) arena_state.nodes[n].owner = 0;
 
-    for (int i = 0; i < ARENA_TEAM_SIZE; i++) {
-        arena_state.heroes[i].alive = 0;
-        arena_state.heroes[i].respawn_ms_remaining = ARENA_HERO_RESPAWN_MS;
-    }
+    for (int i = 0; i < ARENA_TEAM_SIZE; i++) arena_state.heroes[i].alive = 0;
 
     arena_update_teams(16);
-    CHECK(arena_state.winner == 2, "team 0 wiped with no nodes to respawn onto -- team 1 wins");
+    CHECK(arena_state.winner == 0, "a full team wipe alone no longer ends the match");
+}
+
+static void test_resource_accumulates_faster_with_more_owned_nodes(void) {
+    arena_init_teams();
+    for (int n = 0; n < ARENA_NODE_COUNT; n++) arena_state.nodes[n].owner = 0;
+    arena_state.nodes[0].owner = 1; /* team 0 owns exactly one node */
+
+    arena_state.resources[0] = 0;
+    arena_state.resources[1] = 0;
+
+    arena_update_teams(ARENA_RESOURCE_TICK_MS);
+    CHECK(arena_state.resources[0] > 0, "team 0 gains resources from its owned node");
+    CHECK(arena_state.resources[1] == 0, "team 1 owns nothing -- gains nothing");
+
+    int gain_with_one_node = arena_state.resources[0];
+    arena_state.nodes[1].owner = 1; /* team 0 now owns two nodes */
+    arena_state.resources[0] = 0;
+
+    arena_update_teams(ARENA_RESOURCE_TICK_MS);
+    CHECK(arena_state.resources[0] > gain_with_one_node,
+          "owning more nodes yields a bigger per-tick resource gain");
+}
+
+static void test_resource_cap_wins_the_match(void) {
+    arena_init_teams();
+    for (int n = 0; n < ARENA_NODE_COUNT; n++) arena_state.nodes[n].owner = 0;
+
+    arena_state.resources[0] = ARENA_RESOURCE_CAP;
+    arena_state.resources[1] = 0;
+    arena_update_teams(16);
+    CHECK(arena_state.winner == 1, "team 0 hitting the resource cap wins for team 0");
+
+    arena_init_teams();
+    for (int n = 0; n < ARENA_NODE_COUNT; n++) arena_state.nodes[n].owner = 0;
+    arena_state.resources[0] = 0;
+    arena_state.resources[1] = ARENA_RESOURCE_CAP;
+    arena_update_teams(16);
+    CHECK(arena_state.winner == 2, "team 1 hitting the resource cap wins for team 1");
 }
 
 static void test_paimon_q_damages_and_roots_in_range(void) {
@@ -3513,7 +3571,7 @@ int main(void) {
     test_nearest_enemy_finds_closest_on_other_team();
     test_nearest_enemy_ignores_teammates_and_dead_heroes();
     test_team_melee_converges_multiple_attackers_on_one_target();
-    test_team_wipe_win_condition();
+    test_team_wipe_alone_does_not_win_the_match();
     test_nearest_ally_finds_closest_teammate();
     test_nearest_ally_ignores_enemies_and_dead_teammates();
     test_nearest_ally_never_returns_self();
@@ -3584,10 +3642,12 @@ int main(void) {
     test_two_visible_teams_still_interrupt_normally_even_near_a_stealthed_ally();
     test_starting_a_channel_breaks_the_capturer_stealth();
     test_damage_to_channeling_team_interrupts_the_capture();
-    test_dead_hero_stays_dead_while_team_owns_no_node();
-    test_dead_hero_respawns_at_owned_node_once_timer_expires();
-    test_team_wipe_does_not_end_match_while_team_still_owns_a_node();
-    test_team_wipe_ends_match_once_the_team_owns_nothing();
+    test_dead_hero_respawns_at_graveyard_when_team_owns_no_node();
+    test_dead_hero_respawns_at_owned_node_on_wave();
+    test_respawn_wave_brings_back_all_dead_heroes_together();
+    test_resource_win_condition_replaces_team_wipe();
+    test_resource_accumulates_faster_with_more_owned_nodes();
+    test_resource_cap_wins_the_match();
     test_paimon_q_damages_and_roots_in_range();
     test_paimon_q_out_of_range_whiffs();
     test_paimon_w_damages_and_silences_in_range();

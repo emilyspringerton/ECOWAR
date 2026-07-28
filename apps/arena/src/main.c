@@ -536,6 +536,8 @@ static void net_poll_snapshots(uint32_t now_ms) {
                         arena_state.lane_creeps[i].alive = 0;
                     }
                 }
+                arena_state.resources[0] = msg->resources[0]; /* S170-153 */
+                arena_state.resources[1] = msg->resources[1];
             }
         }
         len = recvfrom(net_sock, rbuf, sizeof(rbuf), 0, (struct sockaddr *)&sender, &slen);
@@ -2544,6 +2546,50 @@ int main(int argc, char *argv[]) {
                 glVertex2f(90 + 200 * frac, win_h - 50.0f); glVertex2f(90, win_h - 50.0f);
                 glEnd();
             }
+        }
+
+        if (net_mode && net_lobby_size > 2) {
+            /* S170-153 ("true arathi basin node control resource management
+               as a win con instead of team wipe"): the resource race is the
+               actual win condition now, so it needs to be as visible as the
+               HP/MP bars above -- a tug-of-war bar top-center (classic
+               Arathi Basin resource-bar convention), team 0's fill growing
+               rightward from the left edge, team 1's growing leftward from
+               the right edge, meeting in the middle. Gated to net team
+               matches only: local arena_update() 1v1 and 2-player net
+               matches both run the non-team sim, which never populates
+               resources[] (stays 0/0), so the bar would be meaningless
+               there. */
+            float bar_w = 360.0f, bar_h = 16.0f;
+            float bar_x = win_w / 2.0f - bar_w / 2.0f;
+            float bar_y = win_h - 20.0f;
+            float frac0 = (float)arena_state.resources[0] / (float)ARENA_RESOURCE_CAP;
+            float frac1 = (float)arena_state.resources[1] / (float)ARENA_RESOURCE_CAP;
+            if (frac0 < 0.0f) frac0 = 0.0f;
+            if (frac0 > 1.0f) frac0 = 1.0f;
+            if (frac1 < 0.0f) frac1 = 0.0f;
+            if (frac1 > 1.0f) frac1 = 1.0f;
+
+            glColor3f(0.12f, 0.12f, 0.15f);
+            glRectf(bar_x, bar_y - bar_h, bar_x + bar_w, bar_y);
+
+            glColor3f(0.25f, 0.55f, 1.0f); /* team 0: blue, fills from the left */
+            glRectf(bar_x, bar_y - bar_h, bar_x + bar_w * 0.5f * frac0, bar_y);
+            glColor3f(1.0f, 0.3f, 0.25f); /* team 1: red, fills from the right */
+            glRectf(bar_x + bar_w - bar_w * 0.5f * frac1, bar_y - bar_h, bar_x + bar_w, bar_y);
+
+            glColor3f(0.6f, 0.65f, 0.7f);
+            glBegin(GL_LINES);
+            glVertex2f(bar_x + bar_w / 2.0f, bar_y - bar_h); glVertex2f(bar_x + bar_w / 2.0f, bar_y);
+            glEnd();
+
+            char resbuf[32];
+            glColor3f(0.6f, 0.8f, 1.0f);
+            snprintf(resbuf, sizeof(resbuf), "%d", arena_state.resources[0]);
+            draw_string(resbuf, bar_x - 36.0f, bar_y - bar_h + 3.0f, 11);
+            glColor3f(1.0f, 0.6f, 0.55f);
+            snprintf(resbuf, sizeof(resbuf), "%d", arena_state.resources[1]);
+            draw_string(resbuf, bar_x + bar_w + 8.0f, bar_y - bar_h + 3.0f, 11);
         }
 
         {

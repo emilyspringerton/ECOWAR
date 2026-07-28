@@ -353,6 +353,8 @@ static void server_broadcast(void) {
         msg.lane_creeps[slot].max_hp = (uint16_t)lc->max_hp;
         msg.lane_creeps[slot].team = (uint8_t)lc->team;
     }
+    msg.resources[0] = (uint16_t)arena_state.resources[0]; /* S170-153 */
+    msg.resources[1] = (uint16_t)arena_state.resources[1];
 
     memcpy(buffer, &head, sizeof(NetHeader));
     memcpy(buffer + sizeof(NetHeader), &msg, sizeof(ArenaSnapshotMsg));

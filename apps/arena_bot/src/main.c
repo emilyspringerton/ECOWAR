@@ -448,7 +448,33 @@ static void play_one_match(int game_port) {
                         float dist = dx * dx + dz * dz;
                         if (best == -1 || dist < best_dist) { best = i; best_dist = dist; }
                     }
-                    if (best != -1) {
+                    /* S170-155, founder: "add resource management (node capping) to the
+                       bot AI heuristic and brain ... first pass." Before this, bots did
+                       nothing but chase whichever enemy hero was nearest, anywhere on the
+                       map -- with the resource race (S170-153) now the actual win
+                       condition, a bot that never once stands on a node can't meaningfully
+                       contribute to winning. First-pass split: engage a nearby enemy if one
+                       is actually close enough to be a real threat/opportunity (unchanged
+                       feel for real skirmishes); otherwise, walk to and hold the nearest
+                       node this bot's team doesn't already own, same "keep capturing
+                       ground when nothing's fighting you" behavior a real Arathi Basin
+                       player falls back to. Only chases a distant enemy again once the
+                       team already owns every node (nothing left to capture). */
+                    float engage_range_sq = 15.0f * 15.0f;
+                    int want_owner = my_team + 1; /* ArenaNodeSnapshot.owner: 1=team0, 2=team1 */
+                    int best_node = -1;
+                    float best_node_dist = 0;
+                    if (best == -1 || best_dist > engage_range_sq) {
+                        for (int n = 0; n < ARENA_SNAPSHOT_NODE_COUNT; n++) {
+                            if (last.nodes[n].owner == want_owner) continue; /* already ours */
+                            float dx = last.nodes[n].x - mx, dz = last.nodes[n].z - mz;
+                            float dist = dx * dx + dz * dz;
+                            if (best_node == -1 || dist < best_node_dist) { best_node = n; best_node_dist = dist; }
+                        }
+                    }
+                    if (best_node != -1) {
+                        send_move(last.nodes[best_node].x, last.nodes[best_node].z);
+                    } else if (best != -1) {
                         /* S170-90 fix, real bug found live: "all of the bots just bunch up on
                            eachother." Root cause -- every bot sent its move target as the
                            nearest enemy's *exact* (x,z). Whenever several bots shared the same

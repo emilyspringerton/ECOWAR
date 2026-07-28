@@ -661,6 +661,17 @@ void arena_fountain_position(int index, float *x, float *z) {
     *z = layout[index][1];
 }
 
+/* arena_graveyard_position (S170-153): see header doc comment. Just behind
+ * each team's own spawn line (x=+-8, arena_init_teams) but short of the
+ * jungle wall (arena_obstacles_reset_layout's nearest piece sits around
+ * |x|=9.5 once its own collision radius is accounted for) -- close enough
+ * to still read as "your own base," clear of any terrain a respawning hero
+ * could visually clip through. */
+void arena_graveyard_position(int team, float *x, float *z) {
+    *x = (team == 0) ? -9.0f : 9.0f;
+    *z = 0.0f;
+}
+
 /* arena_tick_fountains (S170-147): see header declaration's doc comment. */
 void arena_tick_fountains(unsigned int dt_ms) {
     arena_state.fountain_tick_ms += (int)dt_ms;
@@ -3350,19 +3361,6 @@ void arena_init_teams(void) {
     arena_state.winner = 0;
 }
 
-/* arena_team_alive_count: how many active heroes on `team` are still
- * alive -- the team-wipe win condition needs this rather than a single
- * hardcoded pair (§ arena_update's `!heroes[0].alive` check above, which
- * only ever made sense for exactly 2 heroes). */
-static int arena_team_alive_count(int team) {
-    int count = 0;
-    for (int i = 0; i < ARENA_MAX_HEROES; i++) {
-        ArenaHero *h = &arena_state.heroes[i];
-        if (h->active && h->alive && h->team == team) count++;
-    }
-    return count;
-}
-
 /* arena_team_owns_any_node (S170-121): node.owner is 1 = team 0, 2 = team 1
  * (see ArenaNode) -- this is the literal "controlling a node" gate the
  * founder asked for. */
@@ -3396,41 +3394,82 @@ static ArenaNode *arena_find_owned_node_for_respawn(int team) {
     return best;
 }
 
+/* arena_respawn_hero: the actual "bring this one hero back" logic, shared
+ * by the wave-respawn pass below. Prefers the nearest node the hero's team
+ * currently owns (unchanged behavior, still the faster/closer-to-the-
+ * action option); falls back to that team's own permanent graveyard
+ * (S170-153) if they own nothing -- a team can always eventually come
+ * back, never permanently locked out. */
+static void arena_respawn_hero(ArenaHero *h, int slot_index) {
+    float spawn_x, spawn_z;
+    ArenaNode *node = arena_team_owns_any_node(h->team) ? arena_find_owned_node_for_respawn(h->team) : NULL;
+    if (node) {
+        spawn_x = node->x;
+        spawn_z = node->z;
+    } else {
+        arena_graveyard_position(h->team, &spawn_x, &spawn_z);
+    }
+
+    /* Full clear (status effects, cooldowns, ability state) except the
+       fields that must survive death: which hero this slot is playing,
+       and which team it's on. */
+    ArenaHeroID hero_id = h->hero_id;
+    int team = h->team;
+    memset(h, 0, sizeof(*h));
+    h->active = 1;
+    h->alive = 1;
+    h->hp = h->max_hp = 100;
+    h->mp = h->max_mp = ARENA_MP_MAX;
+    h->owner = slot_index;
+    h->team = team;
+    h->hero_id = hero_id;
+    h->x = h->target_x = spawn_x;
+    h->z = h->target_z = spawn_z;
+}
+
 /* arena_tick_respawns (S170-121, "controlling a node enables its spawn for
- * your team"): before this, hero death was permanent for the rest of the
- * match -- arena_update_teams only ever checked team-wipe for the win
- * condition, there was no respawn system at all. Each dead hero counts its
- * own timer down independently of node control, but the respawn itself is
- * withheld until the team owns at least one node: territory is the actual
- * gate, matching the founder's framing literally, not just a speed bonus.
- * A team holding zero nodes simply stays dead and rechecks every tick,
- * same idiom as ArenaCreep's respawn_ms_remaining/creep_spawn pair. */
+ * your team"; graveyard fallback + wave timing S170-153/154): before
+ * S170-121, hero death was permanent for the rest of the match. S170-154,
+ * founder: "respawns happen in 30 second waves" -- every dead, active hero
+ * (any team) comes back together the instant the global
+ * respawn_wave_timer_ms wraps, not each individually on their own timer
+ * counted from their own death. Dying right before a wave costs almost
+ * nothing; dying right after one costs almost the full
+ * ARENA_RESPAWN_WAVE_MS -- real, intentional timing tension, not smoothed
+ * away. */
 static void arena_tick_respawns(unsigned int dt_ms) {
+    arena_state.respawn_wave_timer_ms += (int)dt_ms;
+    if (arena_state.respawn_wave_timer_ms < ARENA_RESPAWN_WAVE_MS) return;
+    arena_state.respawn_wave_timer_ms -= ARENA_RESPAWN_WAVE_MS;
+
     for (int i = 0; i < ARENA_MAX_HEROES; i++) {
         ArenaHero *h = &arena_state.heroes[i];
         if (!h->active || h->alive) continue;
-        if (h->respawn_ms_remaining > 0) h->respawn_ms_remaining -= (int)dt_ms;
-        if (h->respawn_ms_remaining > 0) continue;
-        h->respawn_ms_remaining = 0;
-        if (!arena_team_owns_any_node(h->team)) continue;
-        ArenaNode *node = arena_find_owned_node_for_respawn(h->team);
-        if (!node) continue;
+        arena_respawn_hero(h, i);
+    }
+}
 
-        /* Full clear (status effects, cooldowns, ability state) except the
-           fields that must survive death: which hero this slot is playing,
-           and which team it's on. */
-        ArenaHeroID hero_id = h->hero_id;
-        int team = h->team;
-        memset(h, 0, sizeof(*h));
-        h->active = 1;
-        h->alive = 1;
-        h->hp = h->max_hp = 100;
-        h->mp = h->max_mp = ARENA_MP_MAX;
-        h->owner = i;
-        h->team = team;
-        h->hero_id = hero_id;
-        h->x = h->target_x = node->x;
-        h->z = h->target_z = node->z;
+/* arena_tick_resources (S170-153): see header declaration's doc comment. */
+void arena_tick_resources(unsigned int dt_ms) {
+    /* Node-count -> gain-per-tick, index = nodes owned (0..ARENA_NODE_COUNT).
+       Deliberately more-than-linear -- controlling every node is meant to
+       feel like a real sprint to the finish, not just "5x the 1-node rate",
+       matching real Arathi Basin's own map-control bonus. */
+    static const int GAIN_BY_NODE_COUNT[ARENA_NODE_COUNT + 1] = {0, 10, 20, 35, 55, 85};
+
+    arena_state.resource_tick_ms += (int)dt_ms;
+    while (arena_state.resource_tick_ms >= ARENA_RESOURCE_TICK_MS) {
+        arena_state.resource_tick_ms -= ARENA_RESOURCE_TICK_MS;
+        int nodes_owned[2] = {0, 0};
+        for (int n = 0; n < ARENA_NODE_COUNT; n++) {
+            int owner = arena_state.nodes[n].owner;
+            if (owner == 1) nodes_owned[0]++;
+            else if (owner == 2) nodes_owned[1]++;
+        }
+        for (int t = 0; t < 2; t++) {
+            arena_state.resources[t] += GAIN_BY_NODE_COUNT[nodes_owned[t]];
+            if (arena_state.resources[t] > ARENA_RESOURCE_CAP) arena_state.resources[t] = ARENA_RESOURCE_CAP;
+        }
     }
 }
 
@@ -3508,13 +3547,15 @@ void arena_update_teams(unsigned int dt_ms) {
        melee, kit ticks, projectile hits) before deciding whether it's
        interrupted. */
     arena_tick_nodes(dt_ms);
+    arena_tick_resources(dt_ms);
 
-    /* S170-121: a team-wipe (0 alive) is no longer instantly final on its
-       own -- a wiped team that still owns a node will respawn back in, so
-       the match only actually ends once they're wiped AND locked out of
-       respawning entirely (own nothing to come back onto). */
-    int team0_alive = arena_team_alive_count(0);
-    int team1_alive = arena_team_alive_count(1);
-    if (team0_alive == 0 && !arena_team_owns_any_node(0)) arena_state.winner = 2;
-    else if (team1_alive == 0 && !arena_team_owns_any_node(1)) arena_state.winner = 1;
+    /* S170-153: the win condition is now the Arathi Basin resource race,
+       not team-wipe -- with S170-153's own graveyard fallback, a team can
+       always eventually respawn, so "wipe the enemy" stopped being a
+       reachable win condition at all (the old team0_alive/team1_alive +
+       "owns no node" check this replaced is gone, not just supplemented;
+       see ARENA_HERO_RESPAWN_MS's own doc comment for why). First team to
+       ARENA_RESOURCE_CAP wins. */
+    if (arena_state.resources[0] >= ARENA_RESOURCE_CAP) arena_state.winner = 1;
+    else if (arena_state.resources[1] >= ARENA_RESOURCE_CAP) arena_state.winner = 2;
 }
