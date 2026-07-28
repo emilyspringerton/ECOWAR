@@ -1,5 +1,29 @@
 # Changelog
 
+## 2026-07-28 (continued 3)
+
+- feat(arena): camera lock + fog of war, NORTHSTAR §15 (S170-196). All S170 sprint checklist
+  items done except S170-193 (flagged as needing the founder's own design call, not auto-picked)
+  — chose the next NORTHSTAR spec-only section to build via a direct question, picked "camera
+  lock/fog of war" (§15) over auto-attack LoL parity (§17), Weatherman/Donkey (§16), and
+  structures (§19.5). Camera lock: new `C` toggle — the orbit pivot already hard-follows
+  `my_owner`'s hero every frame unconditionally, so locking only ever meant freezing the
+  yaw/pitch rotation angle, the one way a player can currently look away from their own hero;
+  zoom stays free while locked, resolving §15.1's own open question per real-MOBA convention.
+  Fog of war: client-side visual only, explicitly not real server-side vision culling (named and
+  accepted in the spec). New `ARENA_VISION_RADIUS` (16.0 * phi, ~25.89 — a real fraction of the
+  current golden-ratio-scaled node spacing, not the pre-S170-191 interaction radii the original
+  spec named, which never got rescaled with the map) — an enemy hero beyond that radius of
+  `my_owner`'s own hero is skipped entirely (no model, no health bar, no name, and — as a natural
+  side effect of skipping before the hover computation — can't be hover-targeted or
+  attack-clicked). Allies and jungle creeps always visible, resolving §15.2's own open questions
+  toward their stated lean. README keybind table + a new "Fog of war" section updated to match.
+  Build clean, full suite green (607/607). Live-verified: `red_garden_arena` ran 6s under Xvfb in
+  local practice mode (a real enemy hero on screen, the new distance-check code exercised every
+  frame) with no crash — visual confirmation of the actual on-screen fog cutoff/lock-freeze isn't
+  capturable in this sandbox (no xdotool for the drag/hover input), same limitation prior
+  visual-only passes this session (S170-182, S170-185) already hit — flagged, not faked.
+
 ## 2026-07-28 (continued 2)
 
 - feat(arena): unsupervised-learning prep, end to end (S170-194, S170-195). Founder: "do the work
