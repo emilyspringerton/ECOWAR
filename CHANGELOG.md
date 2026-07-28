@@ -2,6 +2,18 @@
 
 ## 2026-07-28 (continued)
 
+- fix(arena): sync `w_active` over the wire; toggle W drains mana over time (S170-180/181).
+  Founder: "it seems like toggelable abilities arent working" — real root cause, `w_active` was
+  never on the wire at all, so a networked client's own local copy stayed permanently 0/off
+  regardless of the real server state (the W tile's "active" highlight was always wrong in
+  net_mode). Added the field to `ArenaHeroSnapshot`, synced both directions. Also, founder:
+  "instead of initial mana cost toggle spells should drain mana over time" — the 10 true-toggle
+  heroes no longer charge a flat `ARENA_MP_COST_W` to activate, just need `mp > 0`; a new
+  `ARENA_MP_DRAIN_W_PER_SEC` drains continuously while active (`w_drain_accum`, same
+  fractional-accumulator idiom as mana regen), auto-deactivating at 0 mana. New
+  `arena_hero_w_is_toggle()` lets the client HUD pick the right mana-cost model per hero. 2 tests
+  rewritten, 2 added. Full suite green.
+
 - feat(arena): reduce team size to 7v7 (S170-178). Founder: "reduce it to 7 v 7." `ARENA_TEAM_SIZE`
   10 → 7 — every sim-side array/loop bound derives from `ARENA_MAX_HEROES`, so this is the whole
   gameplay change. Duplicated size constants that don't auto-derive updated to match:
