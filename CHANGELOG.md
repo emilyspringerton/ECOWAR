@@ -2,6 +2,15 @@
 
 ## 2026-07-28 (continued)
 
+- fix(arena): Tyler clone kills now credit Tyler, not the disposable clone slot (S170-188).
+  Found via proactive audit (no fresh backlog item queued). Real bug: a Tyler puppet clone
+  landing the actual killing blow credited Flow/XP/kills to the clone's own disposable
+  `ArenaHero` slot, lost the instant that slot gets reused on Tyler's next R — never reaching
+  Tyler, the real player whose army earned the kill. New `arena_reward_owner()` resolves a raw
+  owner index to who should actually be credited, applied where damage attribution is recorded
+  (the one call site a clone can ever reach — Gary's own homing-shot path never sees clones).
+  1 new test, build clean, full suite green (583/583).
+
 - feat(arena): hero kill assists now grant Flow + XP (S170-187). Founder: "assists should gen
   flow." New `assist_owner[]`/`assist_ms[]` (4-slot recent-attacker memory, separate from
   `last_attacked_by_owner`) recorded via `record_assist_damage()` at the same melee/homing-shot
