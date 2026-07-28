@@ -43,3 +43,20 @@ gcc "${COMMON_FLAGS[@]}" \
   -o "${BUILD_DIR}/red_garden_arena_bot" \
   "${ROOT_DIR}/apps/arena_bot/src/main.c" \
   -lm
+
+# S170-186: this script never built apps/arena itself (the actual human SDL2/GL client --
+# everything player-facing: shop panel, character pane, scoreboard, draft screen, etc.) --
+# only scripts/build_arena.sh did, a fact this session found out the hard way after treating
+# "bash scripts/build.sh exits 0" as proof the client itself compiled clean across many
+# commits, when it had never actually been asked to. Folded in here so "the main build script
+# passed" means what it says for every binary this repo ships, not just most of them.
+# No -lGLU (see build_arena.sh's own original comment): the arena client is a shader-based
+# (modern GL) renderer loading GL 3.x entry points itself via SDL_GL_GetProcAddress, unlike
+# apps/lobby above, which needs GLU.
+gcc -std=c99 -D_DEFAULT_SOURCE -O2 -Wall -Wextra -I"${ROOT_DIR}/packages" \
+  -o "${BUILD_DIR}/red_garden_arena" \
+  "${ROOT_DIR}/apps/arena/src/main.c" \
+  "${ROOT_DIR}/packages/simulation/arena_game.c" \
+  "${ROOT_DIR}/packages/simulation/arena_replay.c" \
+  "${ROOT_DIR}/packages/simulation/arena_ai_bridge.c" \
+  -lSDL2 -lGL -lm
