@@ -2,6 +2,18 @@
 
 ## 2026-07-28 (continued)
 
+- feat(arena): heroes and creeps now rotate to face their movement direction (S170-171).
+  Founder: "heroes and creeps should rotate to show what direction they are facing currently
+  they just float around there is no front of the model." This renderer never had a rotation
+  matrix at all — added `mat4_rotate_y` to `packages/common/mat4.h`. Facing is derived purely
+  from observed motion (position delta since last frame), needing no wire-protocol change and
+  persisting the last known heading through a stop instead of snapping to a default. Heroes'
+  existing per-hero_id silhouettes (Unicorn's horn, Duck's bill, etc.) already had a real
+  "front," just frozen pointing at a fixed +Z — now the whole composite rotates as one rigid
+  shape. Jungle and lane creeps were plain symmetric cubes with nothing to show a turn, so both
+  got a small darker forward-facing nub added. Live-verified via Xvfb, full suite green
+  (client-rendering-only, no sim/protocol touched).
+
 - feat(arena): Tyler's W (Poof) teleports the whole clone army, not just his own body (S170-170).
   Continues the earlier sprint plan's own open item, flagged directly in `docs/HEROES_VS0.md`'s
   S170-141 scope note ("W still moves only Tyler's own body ... a real next step, not attempted
