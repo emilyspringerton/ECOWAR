@@ -358,6 +358,28 @@ static void send_cast(int slot) {
     sendto(sock, buf, sizeof(buf), 0, (struct sockaddr *)&server_addr, sizeof(server_addr));
 }
 
+/* send_attack (S170-162/165, founder: "the bots will need to be updated so
+ * they choose their auto attack targets etc in their brain"): the bot's
+ * own PACKET_ARENA_ATTACK sender. Sent AFTER send_move each decision tick
+ * (not before) -- arena_set_move_target clears attack_target server-side
+ * on purpose (NORTHSTAR §17.1), so ordering matters: this needs to be the
+ * last word each tick for the lock to actually stick. Melee bots don't
+ * strictly need this (their own move-into-range + the existing proximity
+ * combat loop already worked before this system existed), but sending it
+ * uniformly for every hero is what makes a bot-piloted Gary's ranged
+ * homing auto-attack fire at all -- his damage now comes exclusively from
+ * arena_tick_attack_targets, which only ever fires at an explicit
+ * attack_target lock. */
+static void send_attack(int target_owner) {
+    char buf[sizeof(NetHeader) + sizeof(ArenaAttackCmd)];
+    NetHeader *h = (NetHeader *)buf;
+    memset(h, 0, sizeof(NetHeader));
+    h->type = PACKET_ARENA_ATTACK;
+    ArenaAttackCmd *cmd = (ArenaAttackCmd *)(buf + sizeof(NetHeader));
+    cmd->target_owner = (uint8_t)target_owner;
+    sendto(sock, buf, sizeof(buf), 0, (struct sockaddr *)&server_addr, sizeof(server_addr));
+}
+
 /* flock_offset (S170-160), founder: "add boyds to the ai brain[,] check GFD
  * apps2 crystal for a reference if you need it." GoblinFoxDragon's
  * apps2/crystal/main.go has a real, working Reynolds boids implementation
@@ -584,6 +606,13 @@ static void play_one_match(int game_port) {
                         float tx = last.heroes[best].x + cosf(approach_angle) * approach_radius + flock_dx;
                         float tz = last.heroes[best].z + sinf(approach_angle) * approach_radius + flock_dz;
                         send_move(tx, tz);
+                        /* S170-162/165: sent AFTER send_move on purpose, see
+                           send_attack's own doc comment -- this is what
+                           actually makes a bot-piloted ranged hero (Gary)
+                           deal any damage at all, and gives every other bot
+                           the real chase-a-fleeing-target behavior for free
+                           too, on top of the approach-angle move above. */
+                        send_attack(best);
                         uint32_t now = (uint32_t)time(NULL) * 1000;
                         if (now - last_cast_ms > 2000) {
                             send_cast(0); /* Q -- server no-ops it if actually on cooldown */

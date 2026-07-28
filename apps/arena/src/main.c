@@ -351,6 +351,22 @@ static void net_send_move(float x, float z) {
     sendto(net_sock, buf, sizeof(buf), 0, (struct sockaddr *)&net_server_addr, sizeof(net_server_addr));
 }
 
+/* net_send_attack (S170-162, NORTHSTAR SS17's click-to-attack system):
+ * PACKET_ARENA_ATTACK's client-side sender -- locks the local hero onto
+ * target_owner. Sent instead of (never alongside) net_send_move whenever
+ * the click landed on a live enemy hero, matching SS17.1's "right-click
+ * ground vs right-click a unit" split, just on this game's own established
+ * single-left-click convention rather than LoL's literal right-click. */
+static void net_send_attack(int target_owner) {
+    char buf[sizeof(NetHeader) + sizeof(ArenaAttackCmd)];
+    NetHeader *h = (NetHeader *)buf;
+    memset(h, 0, sizeof(NetHeader));
+    h->type = PACKET_ARENA_ATTACK;
+    ArenaAttackCmd *cmd = (ArenaAttackCmd *)(buf + sizeof(NetHeader));
+    cmd->target_owner = (uint8_t)target_owner;
+    sendto(net_sock, buf, sizeof(buf), 0, (struct sockaddr *)&net_server_addr, sizeof(net_server_addr));
+}
+
 /* g_hover_target (S170-143, "hover casting like in wow macros"): which
  * hero slot the mouse is currently over, updated once per frame by the
  * health-bar hover pass below (S170-69's own hit-test, reused rather than
@@ -392,7 +408,18 @@ static uint32_t net_last_pick_send_ms = 0; /* for retry -- see net_poll_snapshot
    the last hero in the roster, a permanent exclusion, not a rare miss (same finding as
    apps/arena_bot's own fix). Re-rolled every time net_picked resets to 0 (a fresh draft is about
    to start), so which hero ends up excluded varies match to match instead of always being the
-   same one hero nobody can ever pick. */
+   same one hero nobody can ever pick.
+
+   S170-164 fix, founder: "ensure auto draft is random i keep always drafting flutedebt first on
+   a new client." The port-only version below was deterministic, not actually random -- the
+   matchmaker hands out ports sequentially (next_game_port++), and a human player is very often
+   owner 0 (first/only real client in a match, as opposed to the bot pool's always-full 20), so
+   (my_owner + port) % ARENA_HERO_COUNT landed on the same residue, and therefore the same hero,
+   across most real test sessions in a row -- a real bug, not a misperception. rand() is mixed in
+   now (this file's own srand(time(NULL)) already runs at startup, see main()) so a fresh client
+   actually rolls a fresh hero; the port term is kept alongside it rather than dropped outright,
+   preserving the original zero-coordination-needed exclusion-avoidance property this field's
+   very first sentence documents, just no longer the ONLY source of entropy. */
 static int net_draft_offset = 0;
 
 /* Defined further down alongside the other particle-effect state
@@ -427,7 +454,7 @@ static void net_poll_snapshots(uint32_t now_ms) {
                        needed, not an independent per-client random roll that could collide with
                        someone else's pick on the same hero. See net_draft_offset's own doc
                        comment for the full "why not rand()" reasoning. */
-                    net_draft_offset = ntohs(net_server_addr.sin_port) % ARENA_HERO_COUNT;
+                    net_draft_offset = (rand() + (int)ntohs(net_server_addr.sin_port)) % ARENA_HERO_COUNT;
                     int hero_id = (my_owner + net_draft_offset) % ARENA_HERO_COUNT;
                     net_send_pick(hero_id);
                     net_picked = 1;
@@ -454,6 +481,7 @@ static void net_poll_snapshots(uint32_t now_ms) {
                     dst->w_cooldown_ms = msg->heroes[i].w_cooldown_ms;
                     dst->r_cooldown_ms = msg->heroes[i].r_cooldown_ms;
                     dst->mp = msg->heroes[i].mp;
+                    dst->attack_target = msg->heroes[i].attack_target; /* S170-162: synced for every hero so the lock reads clearly to any hero watching the fight */
                     if (msg->heroes[i].cast_flash_slot > 0) {
                         spawn_spell_flash(dst->x, dst->z, msg->heroes[i].cast_flash_slot, dst->hero_id);
                         trigger_squish(i);
@@ -1823,14 +1851,40 @@ int main(int argc, char *argv[]) {
              * an observer can look around freely. */
             if (!observing && e.type == SDL_MOUSEBUTTONDOWN && e.button.button == SDL_BUTTON_LEFT &&
                 arena_state.winner == 0) {
-                float gx, gz;
-                float focus_x = arena_state.heroes[my_owner].x, focus_z = arena_state.heroes[my_owner].z;
-                if (screen_to_ground(e.button.x, e.button.y, win_w, win_h, 60.0f,
-                                     focus_x, focus_z, &gx, &gz)) {
-                    if (net_mode) net_send_move(gx, gz);
-                    else arena_set_move_target(my_owner, gx, gz);
-                    spawn_ring(gx, gz);
+                /* S170-162, NORTHSTAR SS17.1's "right-click ground vs
+                   right-click a unit" split, on this game's own established
+                   single-left-click convention: a click that landed on a
+                   LIVE ENEMY hero (g_hover_target, already computed every
+                   frame for hover-casting, S170-143 -- reused rather than
+                   a second hit-test) sends an attack-target lock instead of
+                   a move command. A click on empty ground, an ally, or a
+                   dead hero still falls through to the ordinary move below,
+                   unchanged. Team-mode only (net_lobby_size > 2) -- the
+                   attack-target system itself is team-mode-only
+                   server-side (see arena_tick_attack_targets), so sending
+                   the command in a 1v1 net match would just be a no-op the
+                   server silently ignores. */
+                int enemy_click_target = -1;
+                if (net_mode && net_lobby_size > 2 && g_hover_target >= 0 && g_hover_target < net_lobby_size
+                    && my_owner >= 0 && my_owner < ARENA_MAX_HEROES) {
+                    ArenaHero *hovered = &arena_state.heroes[g_hover_target];
+                    if (hovered->active && hovered->alive && hovered->team != arena_state.heroes[my_owner].team) {
+                        enemy_click_target = g_hover_target;
+                    }
+                }
+                if (enemy_click_target >= 0) {
+                    net_send_attack(enemy_click_target);
                     apm_record_action(now);
+                } else {
+                    float gx, gz;
+                    float focus_x = arena_state.heroes[my_owner].x, focus_z = arena_state.heroes[my_owner].z;
+                    if (screen_to_ground(e.button.x, e.button.y, win_w, win_h, 60.0f,
+                                         focus_x, focus_z, &gx, &gz)) {
+                        if (net_mode) net_send_move(gx, gz);
+                        else arena_set_move_target(my_owner, gx, gz);
+                        spawn_ring(gx, gz);
+                        apm_record_action(now);
+                    }
                 }
             }
             /* Requeue-after-win OK button (S170-66/68: "we need to requeue after
@@ -2408,6 +2462,33 @@ int main(int argc, char *argv[]) {
             glVertex2f(sx - bw / 2, sy); glVertex2f(sx - bw / 2 + bw * frac, sy);
             glVertex2f(sx - bw / 2 + bw * frac, sy + bh); glVertex2f(sx - bw / 2, sy + bh);
             glEnd();
+            /* S170-162/164, founder: "up our visual affordances for auto
+               attacks so its readable" / "auto target should still have
+               visual affordances." A pulsing amber outline around the
+               health bar of anyone CURRENTLY locked as someone's
+               attack_target (synced per-hero now, protocol.h's own doc
+               comment) -- reads to every hero watching the fight, not just
+               the two actually involved, same "legible to the whole
+               battlefield" bar this session's other status affordances
+               (rooted name color, cast flashes) already hold themselves
+               to. O(hero count) extra scan per hero, cheap at this
+               roster's real size (<=20). */
+            for (int a = 0; a < ARENA_MAX_HEROES; a++) {
+                ArenaHero *attacker = &arena_state.heroes[a];
+                if (a == i || !attacker->active || !attacker->alive) continue;
+                if (attacker->attack_target != i) continue;
+                float pulse = 0.6f + 0.4f * sinf((float)now * 0.008f);
+                glColor4f(1.0f, 0.75f, 0.15f, pulse);
+                glLineWidth(2.0f);
+                glBegin(GL_LINE_LOOP);
+                glVertex2f(sx - bw / 2 - 1.5f, sy - 1.5f);
+                glVertex2f(sx + bw / 2 + 1.5f, sy - 1.5f);
+                glVertex2f(sx + bw / 2 + 1.5f, sy + bh + 1.5f);
+                glVertex2f(sx - bw / 2 - 1.5f, sy + bh + 1.5f);
+                glEnd();
+                glLineWidth(1.0f);
+                break;
+            }
             /* S170-96: name label above the bar -- with 17+ heroes in the
                roster now, a colored bar alone doesn't say who's who at a
                glance. arena_hero_name() is the same token vocabulary the

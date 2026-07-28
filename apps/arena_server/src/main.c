@@ -304,6 +304,7 @@ static void server_broadcast(void) {
         msg.heroes[i].w_cooldown_ms = (uint16_t)(h->w_cooldown_ms > 0 ? h->w_cooldown_ms : 0);
         msg.heroes[i].r_cooldown_ms = (uint16_t)(h->r_cooldown_ms > 0 ? h->r_cooldown_ms : 0);
         msg.heroes[i].mp = (uint8_t)(h->mp > 0 ? h->mp : 0);
+        msg.heroes[i].attack_target = (int8_t)h->attack_target; /* S170-162 */
         msg.picked[i] = (uint8_t)hero_picked[i];
     }
     msg.winner = (uint8_t)arena_state.winner;
@@ -468,6 +469,10 @@ static void server_handle_packet(struct sockaddr_in *sender, char *buffer, int s
         if (cmd->slot == 0) arena_cast_q(client_id);
         else if (cmd->slot == 1) arena_toggle_w(client_id);
         else if (cmd->slot == 2) arena_cast_r(client_id);
+    } else if (head->type == PACKET_ARENA_ATTACK) {
+        if (size < (int)(sizeof(NetHeader) + sizeof(ArenaAttackCmd))) return;
+        ArenaAttackCmd *cmd = (ArenaAttackCmd *)(buffer + sizeof(NetHeader));
+        arena_set_attack_target(client_id, cmd->target_owner);
     }
 }
 

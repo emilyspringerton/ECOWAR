@@ -23,6 +23,11 @@ static void arena_creeps_reset(void) {
     for (int i = 0; i < ARENA_MAX_HEROES; i++) {
         arena_state.hover_target[i] = -1;
     }
+    /* attack_target (S170-162): same sentinel-after-memset idiom -- 0 would
+       wrongly mean "attacking owner slot 0," not "no attack lock." */
+    for (int i = 0; i < ARENA_MAX_HEROES; i++) {
+        arena_state.heroes[i].attack_target = -1;
+    }
 }
 
 /* ---- Tiny hand-authored feed-forward "brain" for the bot hero ----
@@ -210,6 +215,18 @@ void arena_set_move_target(int owner, float x, float z) {
     arena_state.heroes[owner].target_x = x;
     arena_state.heroes[owner].target_z = z;
     arena_state.heroes[owner].moving = 1;
+    /* S170-162, NORTHSTAR §17.1: "a fresh move command...immediately
+       clears the lock" -- a real move command always wins over a stale
+       attack-target chase, matching real League's own right-click-ground
+       behavior exactly. */
+    arena_state.heroes[owner].attack_target = -1;
+}
+
+/* arena_set_attack_target (S170-162): see header declaration's doc
+ * comment. */
+void arena_set_attack_target(int owner, int target) {
+    if (owner < 0 || owner >= ARENA_MAX_HEROES) return;
+    arena_state.heroes[owner].attack_target = target;
 }
 
 void arena_bot_tick(unsigned int dt_ms) {
@@ -736,6 +753,59 @@ static int hero_is_hittable(const ArenaHero *h) {
     return h && h->alive && h->intangible_ms <= 0;
 }
 
+/* arena_tick_attack_targets (S170-162, team mode only): see header
+ * declaration's doc comment. */
+void arena_tick_attack_targets(unsigned int dt_ms) {
+    for (int i = 0; i < ARENA_MAX_HEROES; i++) {
+        ArenaHero *h = &arena_state.heroes[i];
+        if (!h->active || !h->alive) continue;
+        int target = h->attack_target;
+        if (target < 0) continue;
+        if (target >= ARENA_MAX_HEROES) { h->attack_target = -1; continue; }
+        ArenaHero *foe = &arena_state.heroes[target];
+        if (!foe->active || !foe->alive || !hero_is_hittable(foe) || foe->team == h->team) {
+            h->attack_target = -1;
+            continue;
+        }
+
+        float range = (h->hero_id == ARENA_HERO_GARY) ? ARENA_GARY_ATTACK_RANGE : ARENA_ATTACK_RANGE;
+        float dx = foe->x - h->x, dz = foe->z - h->z;
+        float dist = sqrtf(dx * dx + dz * dz);
+
+        if (dist > range) {
+            /* Pure pursuit -- chase the target's LIVE position every tick,
+               not a stored waypoint, so a target that keeps moving is
+               chased continuously rather than toward a single stale point.
+               Overrides whatever move target was previously set, same
+               "the attack command wins while it's active" precedence
+               real League gives an active attack-target lock. */
+            arena_state.heroes[i].target_x = foe->x;
+            arena_state.heroes[i].target_z = foe->z;
+            arena_state.heroes[i].moving = 1;
+            continue;
+        }
+
+        /* In range. Melee heroes: intentionally do nothing further here --
+           their real damage still comes from the existing proximity-based
+           combat loops (resolve_combat / the team-mode melee loop), chase
+           above just gets them close enough for those to naturally fire,
+           unchanged. Gary: fires his homing basic auto-attack directly at
+           this lock instead of ever falling through to the flat melee
+           tick (he's excluded from that loop entirely, see the team-mode
+           melee loop's own comment). */
+        if (h->hero_id == ARENA_HERO_GARY) {
+            if (h->attack_cooldown_ms <= 0) {
+                ArenaProjectile *shot = arena_spawn_projectile(i, h->team, ARENA_HERO_GARY,
+                    h->x, h->z, foe->x, foe->z, ARENA_GARY_ATTACK_SPEED, 0.6f,
+                    ARENA_GARY_ATTACK_DAMAGE, ARENA_GARY_ATTACK_RANGE * 3.0f);
+                if (shot) shot->homing_target = target;
+                h->attack_cooldown_ms = ARENA_GARY_ATTACK_COOLDOWN_MS;
+            }
+        }
+    }
+    (void)dt_ms; /* attack_cooldown_ms is ticked in the team-mode melee loop already; this only spends it */
+}
+
 /* arena_spawn_projectile (S170-136, returns a pointer S170-140): see header doc comment. */
 ArenaProjectile *arena_spawn_projectile(int owner, int team, ArenaHeroID hero_id,
                              float x, float z, float target_x, float target_z,
@@ -770,6 +840,7 @@ ArenaProjectile *arena_spawn_projectile(int owner, int team, ArenaHeroID hero_id
     p->on_hit_root_ms = 0;
     p->on_hit_burn_ms = 0;
     p->on_hit_burn_dps = 0;
+    p->homing_target = -1; /* S170-163: a stale homing lock from a previous shot recycled into this slot must never leak onto a fresh skill-shot */
     return p;
 }
 
@@ -782,6 +853,30 @@ void arena_tick_projectiles(unsigned int dt_ms) {
     for (int i = 0; i < ARENA_MAX_PROJECTILES; i++) {
         ArenaProjectile *p = &arena_state.projectiles[i];
         if (!p->active) continue;
+
+        /* S170-163: a homing shot re-aims at its target's LIVE position
+           every tick instead of flying the fixed line the rest of this
+           function assumes -- once vx/vz is refreshed here, the existing
+           travel/collision code below runs completely unchanged and just
+           naturally converges on (and registers a hit against) that exact
+           hero. Fizzles (deactivates, no damage) the instant the target is
+           no longer a valid hit -- dead, inactive, or otherwise unhittable
+           -- rather than let an already-fired shot land on a target that's
+           no longer really there. */
+        if (p->homing_target >= 0) {
+            ArenaHero *tracked = &arena_state.heroes[p->homing_target];
+            if (!tracked->active || !hero_is_hittable(tracked)) {
+                p->active = 0;
+                continue;
+            }
+            float dx = tracked->x - p->x, dz = tracked->z - p->z;
+            float dist = sqrtf(dx * dx + dz * dz);
+            float speed = sqrtf(p->vx * p->vx + p->vz * p->vz);
+            if (dist > 0.0001f) {
+                p->vx = (dx / dist) * speed;
+                p->vz = (dz / dist) * speed;
+            }
+        }
 
         float old_x = p->x, old_z = p->z;
         float step = sqrtf(p->vx * p->vx + p->vz * p->vz) * dt_sec;
@@ -993,6 +1088,15 @@ void arena_hero_attack_creeps(unsigned int dt_ms) {
     for (int i = 0; i < ARENA_MAX_HEROES; i++) {
         ArenaHero *h = &arena_state.heroes[i];
         if (!h->active || !h->alive || h->attack_cooldown_ms > 0) continue;
+        /* S170-163: Gary's basic attack is exclusively his ranged homing
+           shot (arena_tick_attack_targets) -- excluded here too, same
+           reasoning as the hero-vs-hero melee loop, so he can't
+           incidentally flat-melee a jungle creep he happens to be standing
+           next to and burn his shared attack_cooldown_ms on it. Real,
+           scoped gap: Gary can't auto-attack jungle creeps at all until a
+           future pass extends the homing system to creep targets too --
+           flagged, not faked. */
+        if (h->hero_id == ARENA_HERO_GARY) continue;
 
         ArenaHero *foe = arena_nearest_enemy(i);
         if (foe && hero_is_hittable(foe)) {
@@ -1155,6 +1259,9 @@ void arena_hero_attack_lane_creeps(unsigned int dt_ms) {
     for (int i = 0; i < ARENA_MAX_HEROES; i++) {
         ArenaHero *h = &arena_state.heroes[i];
         if (!h->active || !h->alive || h->attack_cooldown_ms > 0) continue;
+        /* S170-163: same exclusion as arena_hero_attack_creeps above -- see
+           that function's own comment. */
+        if (h->hero_id == ARENA_HERO_GARY) continue;
 
         ArenaHero *foe = arena_nearest_enemy(i);
         if (foe && hero_is_hittable(foe)) {
@@ -3579,6 +3686,13 @@ void arena_update_teams(unsigned int dt_ms) {
         if (!h->active) continue;
         if (h->attack_cooldown_ms > 0) h->attack_cooldown_ms -= (int)dt_ms;
         if (!h->alive) continue;
+        /* S170-163: Gary's basic attack is a real homing ranged shot, not
+           this flat melee tick -- fired from arena_tick_attack_targets
+           below instead, on his own longer range/cooldown. Cooldown
+           decrement above still applies to him uniformly (same field,
+           same idiom), just the damage-dealing half of this loop skips
+           him. */
+        if (h->hero_id == ARENA_HERO_GARY) continue;
         ArenaHero *foe = arena_nearest_enemy(i);
         if (!foe) continue;
         float dx = foe->x - h->x, dz = foe->z - h->z;
@@ -3587,6 +3701,12 @@ void arena_update_teams(unsigned int dt_ms) {
         if (hero_is_hittable(foe)) apply_damage(foe, apply_armor(ARENA_ATTACK_DAMAGE, arena_hero_armor(foe)));
         h->attack_cooldown_ms = ARENA_ATTACK_COOLDOWN_MS;
     }
+
+    /* S170-162: attack-target chase + Gary's homing-shot firing -- see this
+       function's own doc comment. Runs after the melee loop above so
+       Gary's attack_cooldown_ms (decremented in that same loop) reflects
+       this tick before being checked here. */
+    arena_tick_attack_targets(dt_ms);
 
     /* Deliberately NOT widened to ARENA_HEROES_ARRAY_SIZE (S170-141): Tyler's
        puppet clones are melee-only auto-fighters, not independent casters --

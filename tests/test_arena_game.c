@@ -2354,6 +2354,178 @@ static void test_sudden_death_full_tie_resolves_to_team_zero(void) {
           "resources AND nodes owned both exactly tied -- last-resort deterministic fallback picks team 0");
 }
 
+/* S170-162/163: NORTHSTAR §17's click-to-attack system -- attack-target
+ * lock, chase, and Gary's homing ranged auto-attack. Team mode only. */
+
+static void test_attack_target_clears_on_fresh_move_command(void) {
+    arena_init_teams();
+    arena_set_attack_target(0, 10);
+    CHECK(arena_state.heroes[0].attack_target == 10, "sanity: the lock is set");
+
+    arena_set_move_target(0, 5.0f, 5.0f);
+
+    CHECK(arena_state.heroes[0].attack_target == -1,
+          "a fresh move command immediately clears the attack-target lock (NORTHSTAR SS17.1)");
+}
+
+static void test_attack_target_chases_out_of_range_enemy(void) {
+    arena_init_teams();
+    for (int i = 2; i < ARENA_MAX_HEROES; i++) arena_state.heroes[i].active = 0;
+    arena_state.heroes[ARENA_TEAM_SIZE].active = 1; /* keep the actual target alive -- the blanket deactivation above would otherwise also deactivate it */
+    arena_state.heroes[ARENA_TEAM_SIZE].alive = 1;
+    arena_state.heroes[0].x = 0.0f; arena_state.heroes[0].z = 0.0f;
+    arena_state.heroes[0].target_x = 0.0f; arena_state.heroes[0].target_z = 0.0f;
+    arena_state.heroes[0].moving = 0;
+    arena_state.heroes[ARENA_TEAM_SIZE].x = 20.0f; arena_state.heroes[ARENA_TEAM_SIZE].z = 0.0f; /* well outside ARENA_ATTACK_RANGE */
+
+    arena_set_attack_target(0, ARENA_TEAM_SIZE);
+    arena_update_teams(16);
+
+    CHECK(arena_state.heroes[0].moving,
+          "an out-of-range attack-target lock starts the hero moving toward it");
+    CHECK(arena_state.heroes[0].target_x == arena_state.heroes[ARENA_TEAM_SIZE].x
+          && arena_state.heroes[0].target_z == arena_state.heroes[ARENA_TEAM_SIZE].z,
+          "chase targets the enemy's actual live position, pure pursuit");
+}
+
+static void test_attack_target_re_chases_a_fleeing_target(void) {
+    /* The literal "if auto attacking and a character runs away do you
+       follow it" ask -- yes, automatically, every tick, no re-click. */
+    arena_init_teams();
+    for (int i = 2; i < ARENA_MAX_HEROES; i++) arena_state.heroes[i].active = 0;
+    arena_state.heroes[ARENA_TEAM_SIZE].active = 1;
+    arena_state.heroes[ARENA_TEAM_SIZE].alive = 1;
+    arena_state.heroes[0].x = 0.0f; arena_state.heroes[0].z = 0.0f;
+    arena_state.heroes[ARENA_TEAM_SIZE].x = 20.0f; arena_state.heroes[ARENA_TEAM_SIZE].z = 0.0f;
+
+    arena_set_attack_target(0, ARENA_TEAM_SIZE);
+    arena_update_teams(16);
+    float first_target_x = arena_state.heroes[0].target_x;
+
+    /* The enemy flees further away without either side re-issuing any command. */
+    arena_state.heroes[ARENA_TEAM_SIZE].x = 25.0f;
+    arena_update_teams(16);
+
+    CHECK(arena_state.heroes[0].target_x != first_target_x
+          && arena_state.heroes[0].target_x == arena_state.heroes[ARENA_TEAM_SIZE].x,
+          "the chase re-targets the enemy's new position every tick, following a fleeing target with no re-click");
+}
+
+static void test_attack_target_clears_when_target_dies(void) {
+    arena_init_teams();
+    for (int i = 2; i < ARENA_MAX_HEROES; i++) arena_state.heroes[i].active = 0;
+    arena_state.heroes[ARENA_TEAM_SIZE].active = 1;
+    arena_state.heroes[ARENA_TEAM_SIZE].alive = 1;
+    arena_state.heroes[ARENA_TEAM_SIZE].x = 20.0f; arena_state.heroes[ARENA_TEAM_SIZE].z = 0.0f;
+    arena_set_attack_target(0, ARENA_TEAM_SIZE);
+
+    arena_state.heroes[ARENA_TEAM_SIZE].alive = 0;
+    arena_update_teams(16);
+
+    CHECK(arena_state.heroes[0].attack_target == -1,
+          "the lock clears on its own once the target dies -- no dangling reference to a dead hero");
+}
+
+static void test_attack_target_rejects_own_team(void) {
+    arena_init_teams();
+    arena_state.heroes[0].team = 0;
+    arena_state.heroes[1].team = 0;
+    arena_set_attack_target(0, 1); /* both team 0 -- never a valid attack target */
+
+    arena_update_teams(16);
+
+    CHECK(arena_state.heroes[0].attack_target == -1,
+          "a lock onto a hero on the same team is rejected/cleared, never chased or attacked");
+}
+
+static void test_gary_fires_homing_shot_at_locked_target_in_range(void) {
+    arena_init_teams();
+    for (int i = 2; i < ARENA_MAX_HEROES; i++) arena_state.heroes[i].active = 0;
+    arena_state.heroes[ARENA_TEAM_SIZE].active = 1;
+    arena_state.heroes[ARENA_TEAM_SIZE].alive = 1;
+    arena_state.heroes[0].hero_id = ARENA_HERO_GARY;
+    arena_state.heroes[0].x = 0.0f; arena_state.heroes[0].z = 0.0f;
+    arena_state.heroes[ARENA_TEAM_SIZE].x = ARENA_GARY_ATTACK_RANGE - 1.0f; /* within Gary's ranged auto-attack range */
+    arena_state.heroes[ARENA_TEAM_SIZE].z = 0.0f;
+
+    arena_set_attack_target(0, ARENA_TEAM_SIZE);
+    arena_update_teams(16);
+
+    int found = 0;
+    for (int p = 0; p < ARENA_MAX_PROJECTILES; p++) {
+        if (arena_state.projectiles[p].active && arena_state.projectiles[p].homing_target == ARENA_TEAM_SIZE
+            && arena_state.projectiles[p].owner == 0) {
+            found = 1;
+        }
+    }
+    CHECK(found, "Gary fires a real homing projectile at his locked target once it's in range");
+}
+
+static void test_gary_does_not_deal_flat_melee_damage(void) {
+    /* Founder: "gary auto attacks are projetiles ... you cant juke them" --
+       Gary's plain auto-attack is exclusively the homing shot above, never
+       the flat proximity melee tick every other hero still uses. */
+    arena_init_teams();
+    for (int i = 2; i < ARENA_MAX_HEROES; i++) arena_state.heroes[i].active = 0;
+    arena_state.heroes[ARENA_TEAM_SIZE].active = 1;
+    arena_state.heroes[ARENA_TEAM_SIZE].alive = 1;
+    arena_state.heroes[0].hero_id = ARENA_HERO_GARY;
+    arena_state.heroes[0].x = 0.0f; arena_state.heroes[0].z = 0.0f;
+    arena_state.heroes[ARENA_TEAM_SIZE].x = 1.0f; arena_state.heroes[ARENA_TEAM_SIZE].z = 0.0f; /* within melee range too */
+    int hp_before = arena_state.heroes[ARENA_TEAM_SIZE].hp;
+    /* Deliberately no attack_target set -- Gary's own homing shot never
+       fires without an explicit lock (see arena_tick_attack_targets), and
+       he's excluded from the generic melee loop, so nothing should land
+       from mere proximity alone. */
+
+    arena_update_teams(ARENA_ATTACK_COOLDOWN_MS);
+
+    CHECK(arena_state.heroes[ARENA_TEAM_SIZE].hp == hp_before,
+          "Gary standing next to an enemy with no attack command issued deals no damage -- unlike every other hero's ambient melee tick");
+}
+
+static void test_homing_shot_hits_target_that_moves_off_the_original_line(void) {
+    /* The exact opposite of how a skill-shot ArenaProjectile already
+       behaves (dodgeable by stepping off the line) -- a homing shot keeps
+       tracking and still connects. */
+    arena_init_teams();
+    for (int i = 1; i < ARENA_MAX_HEROES; i++) { if (i != ARENA_TEAM_SIZE) arena_state.heroes[i].active = 0; } /* isolate: no other hero can accidentally be in the shot's path */
+    ArenaProjectile *shot = arena_spawn_projectile(0, 0, ARENA_HERO_GARY,
+        0.0f, 0.0f, 10.0f, 0.0f, ARENA_GARY_ATTACK_SPEED, 0.6f, ARENA_GARY_ATTACK_DAMAGE, 100.0f);
+    shot->homing_target = ARENA_TEAM_SIZE;
+    arena_state.heroes[ARENA_TEAM_SIZE].team = 1;
+    arena_state.heroes[ARENA_TEAM_SIZE].x = 10.0f;
+    arena_state.heroes[ARENA_TEAM_SIZE].z = 0.0f;
+    int hp_before = arena_state.heroes[ARENA_TEAM_SIZE].hp;
+
+    /* The target immediately steps well off the shot's original firing line. */
+    arena_state.heroes[ARENA_TEAM_SIZE].x = 10.0f;
+    arena_state.heroes[ARENA_TEAM_SIZE].z = 8.0f;
+
+    for (int i = 0; i < 60 && arena_state.projectiles[0].active; i++) {
+        arena_tick_projectiles(16);
+    }
+
+    CHECK(arena_state.heroes[ARENA_TEAM_SIZE].hp < hp_before,
+          "a homing shot still connects even after the target juked off the original firing line -- can't be dodged by positioning");
+}
+
+static void test_homing_shot_fizzles_if_target_dies_before_arrival(void) {
+    arena_init_teams();
+    ArenaProjectile *shot = arena_spawn_projectile(0, 0, ARENA_HERO_GARY,
+        0.0f, 0.0f, 10.0f, 0.0f, ARENA_GARY_ATTACK_SPEED, 0.6f, ARENA_GARY_ATTACK_DAMAGE, 100.0f);
+    shot->homing_target = ARENA_TEAM_SIZE;
+    arena_state.heroes[ARENA_TEAM_SIZE].team = 1;
+    arena_state.heroes[ARENA_TEAM_SIZE].x = 10.0f;
+    arena_state.heroes[ARENA_TEAM_SIZE].z = 0.0f;
+    arena_state.heroes[ARENA_TEAM_SIZE].alive = 0; /* dead before the shot ever gets there */
+
+    arena_tick_projectiles(16);
+
+    CHECK(!arena_state.projectiles[0].active,
+          "a homing shot fizzles (no floating hit) the instant its target is no longer a valid hit");
+}
+
 static void test_paimon_q_damages_and_roots_in_range(void) {
     arena_init_with_heroes(ARENA_HERO_UNICORN, ARENA_HERO_PAIMON);
     ArenaHero *paimon = &arena_state.heroes[1];
@@ -3822,6 +3994,15 @@ int main(void) {
     test_two_visible_teams_still_interrupt_normally_even_near_a_stealthed_ally();
     test_starting_a_channel_breaks_the_capturer_stealth();
     test_damage_to_channeling_team_interrupts_the_capture();
+    test_attack_target_clears_on_fresh_move_command();
+    test_attack_target_chases_out_of_range_enemy();
+    test_attack_target_re_chases_a_fleeing_target();
+    test_attack_target_clears_when_target_dies();
+    test_attack_target_rejects_own_team();
+    test_gary_fires_homing_shot_at_locked_target_in_range();
+    test_gary_does_not_deal_flat_melee_damage();
+    test_homing_shot_hits_target_that_moves_off_the_original_line();
+    test_homing_shot_fizzles_if_target_dies_before_arrival();
     test_dead_hero_respawns_at_graveyard_when_team_owns_no_node();
     test_dead_hero_respawns_at_owned_node_on_wave();
     test_respawn_wave_brings_back_all_dead_heroes_together();

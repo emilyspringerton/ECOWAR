@@ -6,6 +6,20 @@
 #define ARENA_ATTACK_RANGE 1.6f
 #define ARENA_ATTACK_DAMAGE 8
 #define ARENA_ATTACK_COOLDOWN_MS 700
+/* Gary's ranged basic auto-attack (S170-162/163, NORTHSTAR §17's
+ * click-to-attack system, team mode only): the first hero on this roster
+ * whose plain auto-attack is a real homing projectile instead of the flat
+ * melee-proximity tick every other hero still uses. Range chosen to read
+ * as genuinely "ranged" against ARENA_ATTACK_RANGE's melee 1.6, and to
+ * comfortably clear ARENA_CREEP_AGGRO_RADIUS (4.0)/ARENA_NODE_CAPTURE_RADIUS
+ * so a Gary player can actually threaten a node from outside both. Speed
+ * sits in the middle of real League's own basic-attack-projectile range
+ * (roughly 1300-2200+ units/sec across the champion roster, per NORTHSTAR
+ * §17.2) rescaled to this arena's much smaller map. */
+#define ARENA_GARY_ATTACK_RANGE 6.0f
+#define ARENA_GARY_ATTACK_SPEED 14.0f
+#define ARENA_GARY_ATTACK_DAMAGE 7
+#define ARENA_GARY_ATTACK_COOLDOWN_MS 900
 #define ARENA_NODE_COUNT 5 /* S170-119: was 2 -- real Arathi Basin has 5 (Stables/Farm/Blacksmith/Lumber Mill/Gold Mine) */
 
 /* Static jungle terrain (NORTHSTAR §8, "add rocks and trees so we naturally
@@ -1043,6 +1057,21 @@ typedef struct {
      * rule. Unused (0/-1) by every real, client-owned hero slot. */
     int is_clone;
     int clone_owner;
+    /* attack_target (S170-162, NORTHSTAR §17's click-to-attack system):
+     * -1 = no lock, else the owner slot this hero is currently
+     * attack-commanded to engage. Set by PACKET_ARENA_ATTACK
+     * (arena_set_attack_target), cleared by a fresh PACKET_ARENA_MOVE
+     * (arena_set_move_target), by the target dying/becoming unhittable, or
+     * by re-attacking a different target. Consumed by
+     * arena_tick_attack_targets: while set and the target is out of this
+     * hero's own attack range, movement is overridden to chase the
+     * target's live position every tick (pure pursuit, no intercept
+     * prediction -- matches real League exactly, see §17.1). Melee heroes'
+     * actual damage still comes from the existing proximity-based combat
+     * loop once chase closes the distance (unchanged); ranged heroes (Gary
+     * so far) fire their homing auto-attack (ArenaProjectile.homing_target)
+     * directly at this lock once in range. */
+    int attack_target;
 } ArenaHero;
 
 typedef struct {
@@ -1097,7 +1126,7 @@ typedef struct {
     int team;    /* cached at spawn: which team it damages the OPPOSITE of, even if the caster dies/respawns mid-flight */
     ArenaHeroID hero_id; /* which spell this is, for client-side visual style */
     float x, z;
-    float vx, vz;     /* units/sec */
+    float vx, vz;     /* units/sec -- ignored every tick a homing shot re-steers, see homing_target below */
     float radius;
     int damage;
     float max_range;  /* total travel distance before despawning unhit (a whiff) */
@@ -1106,6 +1135,25 @@ typedef struct {
     int on_hit_root_ms;
     int on_hit_burn_ms;
     int on_hit_burn_dps;
+    /* homing_target (S170-163, founder: "gary auto attacks are projetiles
+     * that always hit (visually projectile) they can still miss or crit as
+     * normal but you cant juke them"): -1 = an ordinary skill-shot, exactly
+     * the fixed-velocity/dodgeable behavior this struct's own doc comment
+     * above describes, unchanged. >=0 = a homing basic auto-attack (Gary's
+     * so far) -- the owner slot it's actively tracking. arena_tick_projectiles
+     * re-aims vx/vz toward that target's LIVE position every tick instead
+     * of flying the fixed line set at spawn, so it connects regardless of
+     * how the target moves afterward (not a skillshot, matches NORTHSTAR
+     * §17.2's real-League ranged-auto-attack behavior exactly) -- the
+     * "can't juke them" part of the ask. Fizzles without dealing damage if
+     * the target dies/becomes unhittable before the shot arrives (no floating
+     * hit registers on a target that's no longer there). This engine has no
+     * miss/crit RNG at all today (checked before building this -- every
+     * attack in this codebase is flat, deterministic damage), so "they can
+     * still miss or crit as normal" is a no-op against a mechanic that
+     * doesn't exist yet; homing only ever changes whether a shot connects
+     * via POSITIONING, never whether it connects via chance. */
+    int homing_target;
 } ArenaProjectile;
 
 /* ArenaObstacle: static jungle terrain, see the ARENA_OBSTACLE_COUNT
@@ -1203,6 +1251,33 @@ ArenaHero *arena_nearest_ally(int owner);
  * the status-effect fields on ArenaHero. No-op if owner is out of the real
  * per-player range. */
 void arena_set_hover_target(int owner, int target);
+
+/* arena_set_attack_target (S170-162): PACKET_ARENA_ATTACK's server-side
+ * entry point -- locks `owner` onto `target` (a real, in-range-of-the-real-
+ * roster hero slot; -1 clears the lock outright). No validity/team checks
+ * here on purpose, same "record intent, validate on consumption" split
+ * arena_set_hover_target already uses -- arena_tick_attack_targets is what
+ * actually clears a lock that turns out to be invalid (dead, own team,
+ * etc.) each tick, so a target that becomes invalid AFTER the lock was set
+ * (e.g. dies mid-chase) self-heals on the very next tick without needing a
+ * second code path here. */
+void arena_set_attack_target(int owner, int target);
+
+/* arena_tick_attack_targets (S170-162, NORTHSTAR §17's click-to-attack
+ * system, team mode only): for every active/alive hero with a valid
+ * attack_target lock (a real enemy that's active/alive/hittable -- clears
+ * the lock otherwise), chases the target's LIVE position (pure pursuit, no
+ * intercept prediction, matching real League exactly -- see NORTHSTAR
+ * §17.1) whenever it's out of that hero's own attack range, overriding
+ * whatever move target was previously set. Once in range: melee heroes
+ * are untouched here -- their actual damage still comes from the existing
+ * proximity-based combat loops exactly as before, chase just gets them
+ * close enough for those to naturally fire. Gary specifically fires his
+ * homing basic auto-attack (a real ArenaProjectile with homing_target set,
+ * S170-163) directly at the lock instead, on his own cooldown -- see
+ * ARENA_GARY_ATTACK_RANGE's own doc comment for why he's handled
+ * separately from every other hero's melee tick. */
+void arena_tick_attack_targets(unsigned int dt_ms);
 
 /* arena_hover_ally_or_nearest (S170-143): the real WoW-macro fallback chain
  * -- "cast on unit=mouseover, or default" -- for ally-targeted abilities.

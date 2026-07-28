@@ -18,6 +18,7 @@
 #define PACKET_ARENA_CAST 7     /* client -> arena_server: cast q/w/r */
 #define PACKET_ARENA_SNAPSHOT 8 /* arena_server -> client: both heroes' state */
 #define PACKET_ARENA_PICK 9     /* client -> arena_server: hero pick during draft */
+#define PACKET_ARENA_ATTACK 10  /* client -> arena_server: lock onto and auto-attack a specific hero slot, S170-162 */
 
 #define ARENA_PHASE_WAITING 0 /* fewer than 2 real players connected yet */
 #define ARENA_PHASE_DRAFT   1 /* both connected, waiting on hero picks */
@@ -111,6 +112,19 @@ typedef struct {
     uint8_t hero_id;
 } ArenaPickCmd;
 
+// PACKET_ARENA_ATTACK payload (S170-162, NORTHSTAR §17's click-to-attack
+// system): which hero slot the sending client's own hero should lock onto
+// and auto-attack. Distinct from PACKET_ARENA_MOVE -- §17.1's "right-click
+// ground vs right-click a unit" split. The lock persists server-side
+// (arena_set_attack_target) until the target dies/becomes unhittable or a
+// new PACKET_ARENA_MOVE/PACKET_ARENA_ATTACK arrives; the server chases
+// automatically while the target is out of range (pure pursuit, see
+// arena_tick_attack_targets), same "yes, automatically, indefinitely" chase
+// behavior §17.1 documents for real League.
+typedef struct {
+    uint8_t target_owner;
+} ArenaAttackCmd;
+
 // Per-hero state broadcast in PACKET_ARENA_SNAPSHOT. Originally minimal
 // (position/HP/alive/hero_id only, no ability-state sync) -- enough for a
 // human to see and fight a real remote hero; full status-effect sync
@@ -148,6 +162,15 @@ typedef struct {
     uint16_t w_cooldown_ms;
     uint16_t r_cooldown_ms;
     uint8_t mp;
+    // attack_target (S170-162, NORTHSTAR §17's click-to-attack system,
+    // founder: "up our visual affordances for auto attacks so its
+    // readable" / "auto target should still have visual affordances"):
+    // -1 (encoded as int8_t, same convention as ArenaCastCmd's own
+    // hover_target) if this hero has no attack lock right now, else the
+    // owner slot it's currently locked onto. Synced for every hero, not
+    // just the local player's, so the lock reads clearly to any hero
+    // watching the fight -- not just the two heroes actually involved.
+    int8_t attack_target;
 } ArenaHeroSnapshot;
 
 // ARENA_SNAPSHOT_MAX_HEROES must match packages/simulation/arena_game.h's
