@@ -138,27 +138,126 @@ const char *arena_ability_description(ArenaHeroID hero_id, int slot) {
     return desc ? desc : "?";
 }
 
+/* ArenaHeroTags / ARENA_HERO_TAGS / arena_hero_tags_string (S170-194, NORTHSTAR §18.6's own
+ * "the stronger lever" for cross-hero transfer -- founder: "do the work to prepare for
+ * unsupervised learning"). Mechanical-shape tags describing WHAT a hero's kit does, not WHICH
+ * hero it is, so a future ranged hero that also gets a homing basic attack (say) carries the
+ * same has_homing_attack tag Gary's own training data already carries -- kiting/positioning
+ * patterns learned against Gary transfer to that new hero from day one, before it has any
+ * replay data of its own. Exact tag vocabulary and per-hero values are the first real pass
+ * §18.7 explicitly named as still open ("not enumerated against the full 26-hero roster ...
+ * a real design pass of its own") -- classified here from docs/HEROES_VS0.md's own kit
+ * writeups, one honest judgment call per hero where a kit blurb is genuinely ambiguous on
+ * range (noted inline); refining any single hero's tags later is cheap and doesn't touch this
+ * function's own shape. is_ranged is the one mutually-exclusive pair (every hero is one or the
+ * other); the rest are independent flags, a hero can carry any combination or none. */
+typedef struct {
+    int is_ranged;         /* has a real ranged/projectile/zone damage tool, vs. melee-only */
+    int has_homing_attack; /* BASIC AUTO-ATTACK itself is a homing shot, not just a ranged ability (S170-163) -- Gary only, so far */
+    int has_knockback;     /* forces the target's position (pull, swap, displacement) */
+    int has_heal;          /* heals self or an ally, anywhere in the kit */
+    int has_dash;          /* gap-closer, blink, or forced self-reposition */
+    int has_stealth;       /* grants intangibility/untargetability */
+} ArenaHeroTags;
+
+static const ArenaHeroTags ARENA_HERO_TAGS[ARENA_HERO_COUNT] = {
+    [ARENA_HERO_UNICORN]    = { 0, 0, 0, 1, 1, 0 }, /* Q dash, W regen toggle */
+    [ARENA_HERO_DUCK]       = { 0, 0, 1, 0, 0, 0 }, /* Q pulls the foe -- a forced displacement */
+    [ARENA_HERO_GHOST]      = { 1, 0, 0, 1, 0, 1 }, /* Q projectile, W untargetable, R heals ally */
+    [ARENA_HERO_FROG]       = { 0, 0, 0, 0, 0, 1 }, /* R vanish */
+    [ARENA_HERO_DOC_WHEEL]  = { 0, 0, 0, 1, 1, 0 }, /* Q/R heal, W teleport-to-ally */
+    [ARENA_HERO_TREE]       = { 1, 0, 0, 1, 0, 0 }, /* Q same "instant-hit-if-in-range" ranged-root shape as Ghost's/Flamel's own Q, per docs/HEROES_VS0.md; R heals */
+    [ARENA_HERO_PIZZA]      = { 1, 0, 0, 0, 0, 0 }, /* Q burn DoT reads as a ranged poke */
+    [ARENA_HERO_FLAMEL]     = { 1, 0, 0, 1, 0, 0 }, /* same "instant-hit-if-in-range" Q shape as Tree/Ghost; W/R heal */
+    [ARENA_HERO_MORRIGAN]   = { 0, 0, 0, 0, 1, 0 }, /* W gap-close+root */
+    [ARENA_HERO_DAGDA]      = { 0, 0, 0, 1, 0, 0 }, /* Q/W both heal */
+    [ARENA_HERO_COURIER]    = { 0, 0, 0, 1, 1, 0 }, /* Q dash-strike, W teleport, R life-drain (self-heal) */
+    [ARENA_HERO_LOKI]       = { 0, 0, 1, 0, 1, 0 }, /* Q instant swap -- both a blink and a forced displacement */
+    [ARENA_HERO_GARY]       = { 1, 1, 0, 0, 0, 0 }, /* the one hero whose basic auto-attack itself homes, S170-163 */
+    [ARENA_HERO_FLUTE_DEBT] = { 1, 0, 0, 1, 0, 0 }, /* Q projectile, W self-regen toggle */
+    [ARENA_HERO_BACON_PUCK] = { 0, 0, 0, 1, 0, 1 }, /* Q untargetable, R self-heal */
+    [ARENA_HERO_ABRAHAM]    = { 1, 0, 0, 1, 0, 0 }, /* Q magic bolt, R self-heal */
+    [ARENA_HERO_ADA]        = { 0, 0, 0, 0, 0, 0 }, /* Q root reads melee-range per docs, no ranged/heal/dash/stealth tool */
+    [ARENA_HERO_TYLER]      = { 1, 0, 0, 0, 1, 0 }, /* Q projectile net, W blink-strike */
+    [ARENA_HERO_PAIMON]     = { 1, 0, 0, 1, 0, 0 }, /* Q "ranged bolt" per docs, R heals allies */
+    [ARENA_HERO_NOOR1]      = { 1, 0, 0, 0, 0, 1 }, /* Q projectile, W untargetable */
+    [ARENA_HERO_CAIN]       = { 0, 0, 0, 0, 1, 0 }, /* W dash away from the foe */
+    [ARENA_HERO_GUNNR]      = { 0, 0, 0, 1, 0, 0 }, /* Q explicitly "melee-range direct strike" per docs; W self-regen */
+    [ARENA_HERO_VASSAGO]    = { 1, 0, 0, 0, 0, 0 }, /* Q "ranged bolt" per docs */
+    [ARENA_HERO_HE_XIANGU]  = { 0, 0, 0, 1, 0, 0 }, /* Q/W/R all heal-shaped, kit reads melee-range */
+    [ARENA_HERO_BELETH]     = { 1, 0, 0, 0, 0, 0 }, /* Q projectile burn */
+    [ARENA_HERO_MNM]        = { 0, 0, 0, 0, 0, 0 }, /* Q explicitly "melee root+damage" per docs */
+};
+
+/* arena_hero_tags_string writes a space-separated list of hero_id's TRUE tags into out (empty
+ * string if none, same "only show what's active" idiom hero_status_label already uses for
+ * status effects). is_ranged always prints as "ranged" or "melee" (the one mutually-exclusive
+ * pair); every other tag is independent and only appears when true. */
+void arena_hero_tags_string(ArenaHeroID hero_id, char *out, size_t out_len) {
+    if (out_len == 0) return;
+    out[0] = '\0';
+    if (hero_id < 0 || hero_id >= ARENA_HERO_COUNT) return;
+    const ArenaHeroTags *t = &ARENA_HERO_TAGS[hero_id];
+    size_t used = 0;
+#define APPEND(tag) do { \
+        int n = snprintf(out + used, out_len - used, "%s%s", used > 0 ? " " : "", tag); \
+        if (n > 0 && (size_t)n < out_len - used) used += (size_t)n; \
+    } while (0)
+    APPEND(t->is_ranged ? "ranged" : "melee");
+    if (t->has_homing_attack) APPEND("has_homing_attack");
+    if (t->has_knockback) APPEND("has_knockback");
+    if (t->has_heal) APPEND("has_heal");
+    if (t->has_dash) APPEND("has_dash");
+    if (t->has_stealth) APPEND("has_stealth");
+#undef APPEND
+}
+
 void arena_serialize_state(int owner, unsigned int tick_ms, char *out, size_t out_len) {
     if (out_len == 0) return;
     out[0] = '\0';
-    if (owner < 0 || owner > 1) return;
+    if (owner < 0 || owner >= ARENA_MAX_HEROES) return;
 
     const ArenaHero *self = &arena_state.heroes[owner];
-    const ArenaHero *foe = &arena_state.heroes[owner == 0 ? 1 : 0];
+    if (!self->active) return;
+    /* S170-194 bugfix, found while preparing this function for the unsupervised-learning
+       corpus: this used to hardcode `owner > 1` out of range and `heroes[1-owner]` as "the
+       foe" -- correct ONLY for the 1v1 local demo this function was originally built against
+       (S170-36, before team mode existed at all), silently unusable for every team-mode match
+       since. Team mode is now this game's primary mode and the actual source of most of the
+       replay corpus NORTHSTAR §18.4 names ("every replay log from every hero, from every
+       match") -- excluding it meant excluding almost the whole corpus. arena_nearest_enemy is
+       the same real team-aware lookup every other system in this file already uses; NULL (no
+       living enemy left) writes a self-only state rather than crashing or reading garbage. */
+    const ArenaHero *foe = arena_nearest_enemy(owner);
+    char self_tags[96], foe_tags[96];
+    arena_hero_tags_string(self->hero_id, self_tags, sizeof(self_tags));
+    if (!foe) {
+        snprintf(out, out_len,
+            "redgarden arena tick:%u\n"
+            "self hero:%s tags:%s pos:%.2f,%.2f hp:%d max_hp:%d alive:%d "
+            "q_cd:%d w_active:%d w_cd:%d r_cd:%d r_active:%d silenced:%d intangible:%d\n"
+            "foe none",
+            tick_ms,
+            arena_hero_name(self->hero_id), self_tags, self->x, self->z, self->hp, self->max_hp, self->alive,
+            self->q_cooldown_ms, self->w_active, self->w_cooldown_ms, self->r_cooldown_ms,
+            self->r_active_ms, self->silenced_ms, self->intangible_ms);
+        return;
+    }
+    arena_hero_tags_string(foe->hero_id, foe_tags, sizeof(foe_tags));
     float dx = foe->x - self->x, dz = foe->z - self->z;
     float dist = sqrtf(dx * dx + dz * dz);
 
     snprintf(out, out_len,
         "redgarden arena tick:%u\n"
-        "self hero:%s pos:%.2f,%.2f hp:%d max_hp:%d alive:%d "
+        "self hero:%s tags:%s pos:%.2f,%.2f hp:%d max_hp:%d alive:%d "
         "q_cd:%d w_active:%d w_cd:%d r_cd:%d r_active:%d silenced:%d intangible:%d\n"
-        "foe hero:%s pos:%.2f,%.2f hp:%d max_hp:%d alive:%d dist:%.2f "
+        "foe hero:%s tags:%s pos:%.2f,%.2f hp:%d max_hp:%d alive:%d dist:%.2f "
         "q_cd:%d w_cd:%d r_cd:%d r_active:%d silenced:%d intangible:%d",
         tick_ms,
-        arena_hero_name(self->hero_id), self->x, self->z, self->hp, self->max_hp, self->alive,
+        arena_hero_name(self->hero_id), self_tags, self->x, self->z, self->hp, self->max_hp, self->alive,
         self->q_cooldown_ms, self->w_active, self->w_cooldown_ms, self->r_cooldown_ms,
         self->r_active_ms, self->silenced_ms, self->intangible_ms,
-        arena_hero_name(foe->hero_id), foe->x, foe->z, foe->hp, foe->max_hp, foe->alive, dist,
+        arena_hero_name(foe->hero_id), foe_tags, foe->x, foe->z, foe->hp, foe->max_hp, foe->alive, dist,
         foe->q_cooldown_ms, foe->w_cooldown_ms, foe->r_cooldown_ms, foe->r_active_ms,
         foe->silenced_ms, foe->intangible_ms);
 }
@@ -194,4 +293,59 @@ int arena_decode_action(const char *action_str, ArenaAction *out) {
     }
 
     return found;
+}
+
+/* json_escape_append: appends src to out (starting at *used), escaping the two characters that
+ * would otherwise break a JSON string literal -- '"' and the real newlines
+ * arena_serialize_state's own self/foe sections are separated by. No other escaping needed:
+ * every field this corpus ever serializes is ASCII hero names/numbers/tags, never arbitrary
+ * user text. Truncates cleanly (never writes past out_len) rather than overflowing. */
+static void json_escape_append(char *out, size_t out_len, size_t *used, const char *src) {
+    for (; *src && *used < out_len - 1; src++) {
+        char c = *src;
+        if (c == '"' || c == '\\') {
+            if (*used + 2 > out_len - 1) break;
+            out[(*used)++] = '\\';
+            out[(*used)++] = c;
+        } else if (c == '\n') {
+            if (*used + 2 > out_len - 1) break;
+            out[(*used)++] = '\\';
+            out[(*used)++] = 'n';
+        } else {
+            out[(*used)++] = c;
+        }
+    }
+    out[*used] = '\0';
+}
+
+void arena_corpus_record(int owner, unsigned int tick_ms, char *out, size_t out_len) {
+    if (out_len == 0) return;
+    out[0] = '\0';
+    if (owner < 0 || owner >= ARENA_MAX_HEROES) return;
+    const ArenaHero *h = &arena_state.heroes[owner];
+    if (!h->active) return;
+
+    char state[768];
+    arena_serialize_state(owner, tick_ms, state, sizeof(state));
+    if (state[0] == '\0') return;
+
+    /* Same "move:x,z cast_q:0/1 cast_w:0/1 cast_r:0/1" shape arena_decode_action already
+       parses -- this hero's own CURRENT in-flight action, not necessarily a decision freshly
+       made this exact tick (most ticks continue an already-issued move, same "current input
+       state" framing NORTHSTAR §12 Phase E's own SHANKPIT example already uses, not "a new
+       decision just happened"). cast_flash_slot is the real one-tick-only "a cast just landed
+       its cooldown gate" signal (protocol.h's own doc comment) -- exactly the moment a real
+       new cast decision is visible in this data. */
+    char action[128];
+    snprintf(action, sizeof(action), "action: move:%.2f,%.2f cast_q:%d cast_w:%d cast_r:%d",
+             h->moving ? h->target_x : h->x, h->moving ? h->target_z : h->z,
+             h->cast_flash_slot == 1, h->cast_flash_slot == 2, h->cast_flash_slot == 3);
+
+    char text[1024];
+    size_t used = 0;
+    json_escape_append(text, sizeof(text), &used, state);
+    json_escape_append(text, sizeof(text), &used, "\n");
+    json_escape_append(text, sizeof(text), &used, action);
+
+    snprintf(out, out_len, "{\"text\":\"%s\"}", text);
 }

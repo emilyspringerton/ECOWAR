@@ -35,6 +35,7 @@ gcc "${COMMON_FLAGS[@]}" \
   -o "${BUILD_DIR}/red_garden_arena_server" \
   "${ROOT_DIR}/apps/arena_server/src/main.c" \
   "${ROOT_DIR}/packages/simulation/arena_game.c" \
+  "${ROOT_DIR}/packages/simulation/arena_ai_bridge.c" \
   -lm
 
 # A real networked MOBA bot (not the sim's internal practice-mode brain) --

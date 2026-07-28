@@ -259,6 +259,39 @@ static void match_log_win(int winner) {
     fflush(match_log_fp);
 }
 
+/* ---- AI training corpus log (S170-194, NORTHSTAR §18.4 -- founder: "do the work to prepare
+ * for unsupervised learning" / "target torch training on colab"). Separate file from
+ * match_log_fp above on purpose: that log is the observer/replay-viewer's own minimal x/z/hp
+ * schema (arena_replay.c's contract, not extensible without breaking observer mode); this one
+ * is arena_corpus_record's own state+action JSONL shape, one line per active hero per tick,
+ * already in the exact `{"text": "..."}` format scripts/colab_train.py (ported from
+ * gpt2-alpine-c, see that file's own header) expects with zero conversion needed. */
+static FILE *corpus_log_fp = NULL;
+
+static void corpus_log_open(int port) {
+    mkdir("var", 0755);
+    mkdir("var/corpus", 0755);
+    char path[256];
+    snprintf(path, sizeof(path), "var/corpus/arena-corpus-%d-%ld.jsonl", port, (long)time(NULL));
+    corpus_log_fp = fopen(path, "a");
+    if (!corpus_log_fp) {
+        printf("WARNING: could not open AI corpus log %s -- this match's training data will not be recorded\n", path);
+        return;
+    }
+    printf("AI training corpus log: %s\n", path);
+}
+
+static void corpus_log_tick(unsigned int tick_ms) {
+    if (!corpus_log_fp) return;
+    char record[1024];
+    for (int i = 0; i < lobby_size; i++) {
+        if (!arena_state.heroes[i].active || !arena_state.heroes[i].alive) continue;
+        arena_corpus_record(i, tick_ms, record, sizeof(record));
+        if (record[0] != '\0') fprintf(corpus_log_fp, "%s\n", record);
+    }
+    fflush(corpus_log_fp);
+}
+
 static void server_net_init(int port) {
     setbuf(stdout, NULL);
     #ifdef _WIN32
@@ -534,6 +567,7 @@ int main(int argc, char *argv[]) {
     load_iduna_agent_config();
     server_net_init(port);
     match_log_open(port);
+    corpus_log_open(port);
     /* Nothing is simulated yet -- arena_init()/arena_init_teams() runs once
        the lobby fills (server_handle_packet), not here, so the match clock
        genuinely can't start before real players are present (found live,
@@ -587,6 +621,7 @@ int main(int argc, char *argv[]) {
             if (snapshot_log_timer_ms >= 500) {
                 snapshot_log_timer_ms = 0;
                 match_log_snapshot();
+                corpus_log_tick(get_server_time()); /* S170-194: same 500ms cadence as the match-replay snapshot above, one sensible shared throttle rather than a second independent timer */
             }
             if (arena_state.winner != 0 && !last_winner_logged) {
                 match_log_win(arena_state.winner);

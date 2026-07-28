@@ -46,13 +46,43 @@ const char *arena_ability_name(ArenaHeroID hero_id, int slot);
  * own tiles). Returns "?" for an out-of-range hero_id or slot. */
 const char *arena_ability_description(ArenaHeroID hero_id, int slot);
 
+/* arena_hero_tags_string (S170-194, NORTHSTAR §18.6's cross-hero-transfer tags): writes a
+ * space-separated list of hero_id's mechanical-shape tags into out (NUL-terminated, truncated
+ * to out_len-1 if needed) -- "ranged"/"melee" (always exactly one), then any of
+ * has_homing_attack/has_knockback/has_heal/has_dash/has_stealth that are true, same "only show
+ * what's active" idiom hero_status_label already uses. Empty string for an out-of-range
+ * hero_id. Describes WHAT a kit mechanically does, not WHICH hero it is, so training experience
+ * against/with one hero transfers to any other hero sharing the same tags. */
+void arena_hero_tags_string(ArenaHeroID hero_id, char *out, size_t out_len);
+
 /* arena_serialize_state writes a stable, natural-language state token
  * string for the match as seen from owner's point of view ("self" =
- * owner's hero, "foe" = the other) into out (NUL-terminated, truncated to
- * out_len-1 if needed). owner must be 0 or 1; invalid input writes an
- * empty string rather than garbage. Same input always produces the same
- * output (no timestamps/randomness beyond the tick counter itself). */
+ * owner's hero, "foe" = the nearest living enemy, S170-194: any real team-mode
+ * opponent via arena_nearest_enemy, not just the 1v1 local demo's hardcoded
+ * "the other slot") into out (NUL-terminated, truncated to out_len-1 if
+ * needed). owner must be a real, active hero slot (0..ARENA_MAX_HEROES-1);
+ * invalid input, or a slot with no living enemy left, writes a self-only or
+ * empty string rather than garbage. Includes each side's own
+ * arena_hero_tags_string() output (S170-194) so the model learns a kit
+ * shape's pattern from both playing it and facing it. Same input always
+ * produces the same output (no timestamps/randomness beyond the tick
+ * counter itself). */
 void arena_serialize_state(int owner, unsigned int tick_ms, char *out, size_t out_len);
+
+/* arena_corpus_record (S170-194, NORTHSTAR §18.4's own "state -> the action that was actually
+ * taken next" unsupervised-pretraining corpus format): writes one training-ready JSONL record
+ * for owner's current tick into out -- arena_serialize_state's own output, followed by an
+ * "action:" line built from owner's CURRENT in-flight action (move target if h->moving, which
+ * Q/W/R cast_flash_slot fired this exact tick if any), in the exact same
+ * "move:x,z cast_q:0/1 cast_w:0/1 cast_r:0/1" shape arena_decode_action already parses -- the
+ * same string format works as both this corpus's action label and (later, at inference time)
+ * a real Tier-1 policy net's own generated output, one format for both directions. Wrapped as
+ * a single-line `{"text":"..."}` JSON object, the exact record shape
+ * gpt2-alpine-c/scripts/colab_train.py's own record_to_text() already expects (text field,
+ * newlines escaped) -- this repo's corpus can train with that same, already-proven script
+ * unmodified. Empty string (writes nothing) if owner is out of range or inactive, same
+ * "no garbage" convention arena_serialize_state itself already follows. */
+void arena_corpus_record(int owner, unsigned int tick_ms, char *out, size_t out_len);
 
 typedef struct {
     float move_x, move_z;

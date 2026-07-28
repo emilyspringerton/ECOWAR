@@ -62,6 +62,64 @@ static void test_serialize_invalid_owner_writes_empty_string(void) {
     CHECK(buf[0] == '\0', "an out-of-range owner writes an empty string, not garbage");
 }
 
+/* S170-194, NORTHSTAR §18 ("do the work to prepare for unsupervised learning"). */
+
+static void test_serialize_works_for_team_mode_owners_beyond_1v1(void) {
+    /* Real bug this closes: arena_serialize_state used to hardcode `owner > 1` out of range
+       and `heroes[1-owner]` as "the foe" -- correct only for the 1v1 local demo, silently
+       unusable for every team-mode match (owners 2..ARENA_MAX_HEROES-1), which is almost the
+       entire real replay corpus NORTHSTAR §18.4 names. */
+    arena_init_teams();
+    for (int i = 2; i < ARENA_MAX_HEROES; i++) arena_state.heroes[i].active = 0;
+    arena_state.heroes[ARENA_TEAM_SIZE].active = 1;
+    arena_state.heroes[ARENA_TEAM_SIZE].alive = 1;
+    arena_state.heroes[0].hero_id = ARENA_HERO_GARY;
+    arena_state.heroes[ARENA_TEAM_SIZE].hero_id = ARENA_HERO_FROG;
+
+    char buf[512];
+    arena_serialize_state(0, 0, buf, sizeof(buf));
+
+    CHECK(strstr(buf, "self hero:gary") != NULL, "team-mode owner 0 (previously always in range) still serializes correctly");
+    CHECK(strstr(buf, "foe hero:frog") != NULL, "and finds the real team-mode opponent via arena_nearest_enemy, not a hardcoded slot");
+}
+
+static void test_serialize_no_living_enemy_writes_foe_none(void) {
+    arena_init_teams();
+    for (int i = 1; i < ARENA_MAX_HEROES; i++) arena_state.heroes[i].active = 0;
+
+    char buf[512];
+    arena_serialize_state(0, 0, buf, sizeof(buf));
+
+    CHECK(strstr(buf, "self hero:") != NULL, "self section still writes with nobody else on the map");
+    CHECK(strstr(buf, "foe none") != NULL, "no living enemy writes a real, parseable \"foe none\" instead of garbage or crashing");
+}
+
+static void test_serialize_includes_hero_tags(void) {
+    arena_init_with_heroes(ARENA_HERO_GARY, ARENA_HERO_FROG);
+    char buf[512];
+    arena_serialize_state(0, 0, buf, sizeof(buf));
+
+    CHECK(strstr(buf, "self hero:gary tags:ranged has_homing_attack") != NULL,
+          "Gary's own tags (ranged, the one hero with a homing basic attack) appear in the self section");
+    CHECK(strstr(buf, "foe hero:frog tags:melee has_stealth") != NULL,
+          "Frog's tags (melee, has R vanish stealth) appear in the foe section");
+}
+
+static void test_hero_tags_string_covers_a_few_real_kits(void) {
+    char buf[96];
+    arena_hero_tags_string(ARENA_HERO_GARY, buf, sizeof(buf));
+    CHECK(strcmp(buf, "ranged has_homing_attack") == 0, "Gary: ranged + the one homing-attack tag in the roster");
+
+    arena_hero_tags_string(ARENA_HERO_MNM, buf, sizeof(buf));
+    CHECK(strcmp(buf, "melee") == 0, "MnM: melee, no other tags -- explicitly \"melee root+damage\" per docs/HEROES_VS0.md");
+
+    arena_hero_tags_string(ARENA_HERO_DUCK, buf, sizeof(buf));
+    CHECK(strcmp(buf, "melee has_knockback") == 0, "Duck: melee + knockback (Q pulls the foe, a forced displacement)");
+
+    arena_hero_tags_string((ArenaHeroID)99, buf, sizeof(buf));
+    CHECK(buf[0] == '\0', "an out-of-range hero_id writes an empty tag string, not garbage");
+}
+
 static void test_decode_full_action_string(void) {
     ArenaAction act;
     int ok = arena_decode_action("move:4.20,1.00 cast_q:1 cast_w:0 cast_r:1", &act);
@@ -97,6 +155,10 @@ int main(void) {
     test_serialize_is_stable_for_a_fixed_state();
     test_serialize_self_and_foe_swap_by_owner();
     test_serialize_invalid_owner_writes_empty_string();
+    test_serialize_works_for_team_mode_owners_beyond_1v1();
+    test_serialize_no_living_enemy_writes_foe_none();
+    test_serialize_includes_hero_tags();
+    test_hero_tags_string_covers_a_few_real_kits();
     test_decode_full_action_string();
     test_decode_partial_action_defaults_safely();
     test_decode_garbage_fails_closed();
