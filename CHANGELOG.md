@@ -1,5 +1,33 @@
 # Changelog
 
+## 2026-07-28 (continued 7)
+
+- feat(arena): bot node-capture fix + fractal-boids squad splitting (S170-201, S170-202).
+  Founder: "there is some issue with flcoking my team having a lot of trouble capping a node" ->
+  "like the whole team doesnt need to try to cap the node" -> "add like fractal boids so we
+  naturally split more into squads." Two related bugs in the node-capping/flocking AI, fixed
+  together. S170-201: the old flocking-anchor rule picked one "anchor" bot per node via
+  `owner_index mod ARENA_SNAPSHOT_NODE_COUNT == node_index` — purely coincidental, unrelated to
+  whether that bot was actually heading to that node right now; if its two coincidental
+  slot-owners were dead/engaged/anchoring elsewhere, NOBODY ever anchored that node, and
+  `flock_offset`'s own separation force alone could push every other bot's real move target
+  outside `ARENA_NODE_CAPTURE_RADIUS` forever — exactly "trouble capping A node," not every node.
+  S170-202: fixing anchoring alone left the other half of the complaint — every idle bot
+  independently picking its own nearest node converged the WHOLE team onto the same one. Fixed
+  with a "fractal" application of the same Reynolds boid instinct `flock_offset` already uses,
+  recursively, at a coarser scale: individuals flock tightly within a SQUAD (unchanged math,
+  squad-scoped), while squads spread apart by claiming DIFFERENT nodes via a small deterministic
+  greedy pass every bot computes identically (no coordination needed) — differentiated GOALS
+  instead of a second force, reinforcing goal-seeking rather than fighting it. With squads doing
+  the claiming, the anchor question collapses to "am I my own squad's lowest owner index."
+  Build clean, full suite green (607/607). Live-verified extensively: a full isolated 10v10 match
+  with temporary debug instrumentation confirmed squad assignments span all 5 nodes, movement
+  continues smoothly toward assigned targets (no freeze), and a follow-up 60s run on the final
+  binary showed real, spread-out movement across the whole roster with zero crashes (21/21
+  processes healthy). An initial small 3v3 test appeared frozen, triggering this deep
+  verification pass — traced to a stable melee standoff (unchanged engage-branch code, never
+  reaching the node-capping branch at that low headcount), not a regression.
+
 ## 2026-07-28 (continued 6)
 
 - feat(arena): real cast-radius affordances + ground zone circles (S170-200). Founder: "zone
