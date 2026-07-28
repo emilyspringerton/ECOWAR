@@ -361,6 +361,9 @@ static void server_broadcast(void) {
         msg.heroes[i].slow_pct_x100 = (uint8_t)(h->slow_pct * 100.0f);
         msg.heroes[i].berserker_ms = (uint16_t)(h->berserker_ms > 0 ? h->berserker_ms : 0); /* S170-190 */
         msg.heroes[i].regen_ms = (uint16_t)(h->regen_ms > 0 ? h->regen_ms : 0);
+        msg.heroes[i].r_zone_x = h->r_zone_x; /* S170-200 */
+        msg.heroes[i].r_zone_z = h->r_zone_z;
+        msg.heroes[i].r_active_ms = (uint16_t)(h->r_active_ms > 0 ? h->r_active_ms : 0);
         msg.picked[i] = (uint8_t)hero_picked[i];
     }
     msg.winner = (uint8_t)arena_state.winner;

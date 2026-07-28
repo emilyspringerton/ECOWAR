@@ -518,6 +518,25 @@ float arena_hero_armor(const ArenaHero *h) {
     return arena_hero_base_armor(h) + (float)h->item_bonus_armor;
 }
 
+/* arena_hero_r_zone_radius: see arena_game.h's own doc comment. Doc Wheel's R (a real
+ * ARENA_DOC_WHEEL_R_RADIUS-sized burst, ARENA_HERO_DOC_WHEEL) is deliberately NOT included here
+ * -- it's a one-shot heal-and-cleanse applied instantly at cast time with no persisting
+ * r_zone_x/z/r_active_ms state to render a lingering circle from (see its own cast-site comment
+ * above), unlike every hero below whose R genuinely lingers on the ground for r_active_ms. */
+float arena_hero_r_zone_radius(ArenaHeroID hero_id) {
+    switch (hero_id) {
+        case ARENA_HERO_GHOST:     return ARENA_GHOST_R_RADIUS;
+        case ARENA_HERO_FLAMEL:    return ARENA_FLAMEL_R_RADIUS;
+        case ARENA_HERO_MORRIGAN:  return ARENA_MORRIGAN_R_RADIUS;
+        case ARENA_HERO_PAIMON:    return ARENA_PAIMON_R_RADIUS;
+        case ARENA_HERO_NOOR1:     return ARENA_NOOR1_R_RADIUS;
+        case ARENA_HERO_VASSAGO:   return ARENA_VASSAGO_R_RADIUS;
+        case ARENA_HERO_HE_XIANGU: return ARENA_HE_XIANGU_R_RADIUS;
+        case ARENA_HERO_BELETH:    return ARENA_BELETH_R_RADIUS;
+        default:                   return 0.0f;
+    }
+}
+
 /* arena_hero_bonus_ad (S170-190): item_bonus_ad's own "add this at every damage call site"
  * shape, extended with the Berserker powerup's flat bonus -- same reasoning arena_hero_armor
  * splits base-vs-item, here it's item-vs-powerup, both additive on top of the same flat

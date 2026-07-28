@@ -539,6 +539,9 @@ static void net_poll_snapshots(uint32_t now_ms) {
                     dst->slow_pct = (float)msg->heroes[i].slow_pct_x100 / 100.0f;
                     dst->berserker_ms = msg->heroes[i].berserker_ms; /* S170-190 */
                     dst->regen_ms = msg->heroes[i].regen_ms;
+                    dst->r_zone_x = msg->heroes[i].r_zone_x; /* S170-200 */
+                    dst->r_zone_z = msg->heroes[i].r_zone_z;
+                    dst->r_active_ms = msg->heroes[i].r_active_ms;
                     if (msg->heroes[i].cast_flash_slot > 0) {
                         spawn_spell_flash(dst->x, dst->z, msg->heroes[i].cast_flash_slot, dst->hero_id);
                         trigger_squish(i);
@@ -883,6 +886,36 @@ static void build_ring_mesh(float inner_r, float outer_r) {
             RING_VERTS[vi++] = quad[v][1];
             RING_VERTS[vi++] = quad[v][2];
             RING_VERTS[vi++] = 0; RING_VERTS[vi++] = 1; RING_VERTS[vi++] = 0;
+        }
+    }
+}
+
+/* disc_mesh (S170-200, founder: "zone abilities dont read at all we need true aoe cast
+ * circle... show cast radius... circle on the ground... nice shader spell effect simple but
+ * nice"): a flat, unit-radius filled circle (triangle fan from the center), same "build once at
+ * unit scale, mat4_scale to the real size at draw time" idiom as ring_mesh above -- reused for
+ * every zone ability's ground-radius render rather than approximating a fill out of ring_mesh's
+ * own thin annulus, which reads as a wire outline, not a real area, at a glance across a busy
+ * team fight. */
+#define DISC_SEGMENTS 24
+#define DISC_VERT_COUNT (DISC_SEGMENTS * 3)
+static float DISC_VERTS[DISC_VERT_COUNT * 6];
+
+static void build_disc_mesh(void) {
+    int vi = 0;
+    for (int i = 0; i < DISC_SEGMENTS; i++) {
+        float a0 = (float)i / DISC_SEGMENTS * 2.0f * (float)M_PI;
+        float a1 = (float)(i + 1) / DISC_SEGMENTS * 2.0f * (float)M_PI;
+        float x0 = cosf(a0), z0 = sinf(a0);
+        float x1 = cosf(a1), z1 = sinf(a1);
+        float tri[3][3] = {
+            {0, 0, 0}, {x0, 0, z0}, {x1, 0, z1},
+        };
+        for (int v = 0; v < 3; v++) {
+            DISC_VERTS[vi++] = tri[v][0];
+            DISC_VERTS[vi++] = tri[v][1];
+            DISC_VERTS[vi++] = tri[v][2];
+            DISC_VERTS[vi++] = 0; DISC_VERTS[vi++] = 1; DISC_VERTS[vi++] = 0;
         }
     }
 }
@@ -2050,9 +2083,11 @@ int main(int argc, char *argv[]) {
     GLint loc_light = glGetUniformLocation_(prog, "uLightDir");
 
     build_ring_mesh(0.8f, 1.0f);
+    build_disc_mesh(); /* S170-200 */
     Mesh cube_mesh = upload_mesh(CUBE_VERTS, CUBE_VERT_COUNT);
     Mesh plane_mesh = upload_mesh(PLANE_VERTS, PLANE_VERT_COUNT);
     Mesh ring_mesh = upload_mesh(RING_VERTS, RING_VERT_COUNT);
+    Mesh disc_mesh = upload_mesh(DISC_VERTS, DISC_VERT_COUNT); /* S170-200 */
 
     glEnable(GL_DEPTH_TEST);
 
@@ -2791,6 +2826,68 @@ int main(int argc, char *argv[]) {
             glUniformMatrix4fv_(loc_model, 1, GL_FALSE, model.m);
             glUniform4f_(loc_color, 1.0f, 0.75f, 0.15f, alpha);
             draw_mesh(&ring_mesh);
+        }
+        /* Zone-ability ground circles (S170-200, founder: "zone abilities dont read at all we
+           need true aoe cast circle... show cast radius... circle on the ground... nice shader
+           spell effect simple but nice showing to all participants that the spell was cast
+           there so it reads"). Unlike every flash effect around this block (a brief pop that
+           fades in well under a second regardless of the ability's real shape), this is the
+           actual, radius-accurate footprint of a real lingering zone (Ghost/Flamel/Morrigan/
+           Paimon/NOOR-1/Vassago/He Xiangu's R, or Beleth's fuse-marked detonation point) --
+           drawn every frame for as long as the real server-side zone is real (r_active_ms > 0,
+           synced per S170-200's own protocol.h doc comment), at its real position (r_zone_x/z)
+           and real size (arena_hero_r_zone_radius) -- not the caster's current position, which
+           may have long since walked away from a zone that stays fixed where it was cast.
+           Drawn as a filled disc (so the AREA reads, not just an outline) plus a brighter
+           boundary ring at the exact edge, both gently pulsing so an active zone reads as
+           "still live," not a static decal easy to stop noticing. Every hero in the match sees
+           this identically -- it's driven by synced server state, not a local-only effect. */
+        for (int i = 0; i < ARENA_MAX_HEROES; i++) {
+            ArenaHero *zh = &arena_state.heroes[i];
+            if (!zh->active || !zh->alive || zh->r_active_ms <= 0) continue;
+            float zone_r = arena_hero_r_zone_radius(zh->hero_id);
+            if (zone_r <= 0.0f) continue;
+            float pulse = 0.7f + 0.3f * sinf((float)now * 0.005f);
+            float zr, zg, zb;
+            hero_flash_color(zh->hero_id, &zr, &zg, &zb);
+            Mat4 ztr = mat4_translate(zh->r_zone_x, 0.04f, zh->r_zone_z);
+            Mat4 zsc = mat4_scale(zone_r, 1.0f, zone_r);
+            Mat4 zmodel = mat4_multiply(&ztr, &zsc);
+            Mat4 zmvp = mat4_multiply(&vp, &zmodel);
+            glUniformMatrix4fv_(loc_mvp, 1, GL_FALSE, zmvp.m);
+            glUniformMatrix4fv_(loc_model, 1, GL_FALSE, zmodel.m);
+            glUniform4f_(loc_color, zr, zg, zb, 0.16f * pulse);
+            draw_mesh(&disc_mesh);
+            glUniform4f_(loc_color, zr, zg, zb, 0.55f + 0.25f * pulse);
+            draw_mesh(&ring_mesh);
+        }
+        /* Cast-radius preview (S170-200's own "click affordances that show cast radius" half):
+           while YOUR OWN hero's R is a real zone ability and is actually castable right now
+           (alive, not silenced/stunned, off cooldown, enough mana -- the exact gate arena_cast_r
+           itself checks before doing anything), show a faint outline-only ring at your hero's
+           own live position, at the ability's real radius, so you always know what you're about
+           to commit to before pressing E -- every zone ability in this roster casts at the
+           caster's own current position (no ground-click targeting exists in this input model
+           at all), so "where would it land" is always simply "here," making a live self-centered
+           preview the honest, buildable affordance rather than a full click-to-place targeting
+           system, which would need its own separate aiming input mode and wire command. Own
+           hero only (not every hero's own readiness -- that's not information a player should
+           see about anyone but themselves) and suppressed while observing a replay, since there
+           is no upcoming cast to preview there. */
+        if (!observing) {
+            ArenaHero *me_zone = &arena_state.heroes[my_owner];
+            float my_zone_r = arena_hero_r_zone_radius(me_zone->hero_id);
+            if (my_zone_r > 0.0f && me_zone->alive && me_zone->silenced_ms <= 0 &&
+                me_zone->stunned_ms <= 0 && me_zone->r_cooldown_ms <= 0 && me_zone->mp >= ARENA_MP_COST_R) {
+                Mat4 ptr = mat4_translate(me_zone->x, 0.04f, me_zone->z);
+                Mat4 psc = mat4_scale(my_zone_r, 1.0f, my_zone_r);
+                Mat4 pmodel = mat4_multiply(&ptr, &psc);
+                Mat4 pmvp = mat4_multiply(&vp, &pmodel);
+                glUniformMatrix4fv_(loc_mvp, 1, GL_FALSE, pmvp.m);
+                glUniformMatrix4fv_(loc_model, 1, GL_FALSE, pmodel.m);
+                glUniform4f_(loc_color, 0.9f, 0.9f, 0.95f, 0.35f);
+                draw_mesh(&ring_mesh);
+            }
         }
         /* heal flashes (S170-143): quick, warm-green burst on whoever's HP
            just went up -- the target's own visual, distinct from the

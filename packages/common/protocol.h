@@ -238,6 +238,18 @@ typedef struct {
     uint8_t slow_pct_x100; // 0-100, slow_pct*100 -- quantized same "lossy is fine" precedent as mp (uint8_t)
     uint16_t berserker_ms; // S170-190: Warsong Gulch-style powerup buff, damage bonus
     uint16_t regen_ms;     // S170-190: Warsong Gulch-style powerup buff, HP regen
+    // r_zone_x/r_zone_z/r_active_ms (S170-200, founder: "zone abilities dont read at all we
+    // need true aoe cast circle... show cast radius... circle on the ground... showing to all
+    // participants that the spell was cast there so it reads"): several heroes' R abilities are
+    // real fixed-position ground zones (Ghost/Flamel/Morrigan/Paimon/NOOR-1/Vassago/He Xiangu)
+    // or a delayed-detonation marker (Beleth) that persist for several real seconds -- none of
+    // that state was ever on the wire, so a networked client had no way to know a zone even
+    // existed, let alone where or how big (arena_hero_r_zone_radius, arena_game.h, supplies the
+    // "how big" half; this supplies "where" and "for how much longer"). Synced for every hero,
+    // not just the local player's own, same "the whole battlefield should read clearly"
+    // convention as attack_target/w_active above.
+    float r_zone_x, r_zone_z;
+    uint16_t r_active_ms;
 } ArenaHeroSnapshot;
 
 // ARENA_SNAPSHOT_MAX_HEROES must match packages/simulation/arena_game.h's

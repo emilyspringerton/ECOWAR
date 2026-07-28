@@ -1747,5 +1747,14 @@ void arena_cast_q(int owner);
 void arena_toggle_w(int owner);
 void arena_cast_r(int owner);
 float arena_hero_armor(const ArenaHero *h); /* effective armor, incl. Unicorn R's buff */
+/* arena_hero_r_zone_radius (S170-200, founder: "zone abilities dont read at all we need true
+ * aoe cast circle... show cast radius... circle on the ground... showing to all participants
+ * that the spell was cast there so it reads"): a single lookup from hero_id to that hero's real
+ * R-ability AoE radius (the exact same ARENA_*_R_RADIUS constant tick_hero_kit's own zone-tick
+ * damage/heal check already applies), 0.0f for every hero whose R isn't a real ground-radius
+ * ability at all. One source of truth reused by both arena_cast_r's mechanical radius check
+ * (unchanged, already correct) and the client's new cast-radius rendering (previously nothing
+ * rendered a real radius at all -- see apps/arena/src/main.c's own S170-200 doc comment). */
+float arena_hero_r_zone_radius(ArenaHeroID hero_id);
 
 #endif

@@ -20,6 +20,13 @@ comments in `apps/arena/src/main.c` and left implicit across every hero entry in
 | **R** | Restart the match. Local practice mode only (against the built-in bot) — disabled entirely once you're in a real networked match, since a real match has other players in it. |
 | **Click "OK"** | After a match ends (win or loss), requeues you for another one. Networked mode only. |
 
+**Zone abilities (S170-200):** 8 heroes' R (Ghost, Flamel, Morrigan, Paimon, NOOR-1, Vassago, He
+Xiangu, Beleth) cast a real ground-radius zone, not a single-target effect. Whenever your own R
+is one of these and ready to cast, a faint ring shows exactly where and how big it'll land before
+you press E — every zone always casts centered on your own current position, so that's always
+where the ring is. Once cast, a filled, pulsing circle marks the real zone for its actual
+duration, visible identically to everyone in the match (allies and enemies), not just the caster.
+
 Draft is automatic right now — no pick UI yet, you're assigned a hero based on your slot in the
 lobby (`docs/HEROES_VS0.md` documents every hero's kit if you want to know what you're about to
 play before the match starts). Team matches are **10v10** (`ARENA_TEAM_SIZE`, S170-183 —
