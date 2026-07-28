@@ -2553,13 +2553,27 @@ int main(int argc, char *argv[]) {
                as a win con instead of team wipe"): the resource race is the
                actual win condition now, so it needs to be as visible as the
                HP/MP bars above -- a tug-of-war bar top-center (classic
-               Arathi Basin resource-bar convention), team 0's fill growing
-               rightward from the left edge, team 1's growing leftward from
-               the right edge, meeting in the middle. Gated to net team
-               matches only: local arena_update() 1v1 and 2-player net
+               Arathi Basin resource-bar convention). Physical layout stays
+               fixed (team 0's number always on the left, team 1's always on
+               the right, matching the map's own -x/+x base layout), but the
+               FILL COLOR is perspective-relative -- founder, real-time,
+               caught live: "i think the color of the bar ticking up may
+               just be wrong." It was: team 0 was hardcoded blue and team 1
+               hardcoded red regardless of which team the local viewer is
+               actually on, the exact same absolute-vs-relative mistake
+               S170-149 already found and fixed for node coloring (that
+               fix's own comment: "node coloring was absolute...while hero
+               coloring is perspective-relative"). A team-1 player watching
+               their OWN progress bar climb saw it in "enemy" red -- readable
+               as the enemy winning, not as their own team's progress. Now
+               colored the same way hero name labels already are: MY team's
+               fill is always blue, the opponent's is always red, regardless
+               of which raw team index either side actually is. Gated to net
+               team matches only: local arena_update() 1v1 and 2-player net
                matches both run the non-team sim, which never populates
                resources[] (stays 0/0), so the bar would be meaningless
                there. */
+            int my_team = (my_owner >= 0 && my_owner < ARENA_MAX_HEROES) ? arena_state.heroes[my_owner].team : 0;
             float bar_w = 360.0f, bar_h = 16.0f;
             float bar_x = win_w / 2.0f - bar_w / 2.0f;
             float bar_y = win_h - 20.0f;
@@ -2573,9 +2587,9 @@ int main(int argc, char *argv[]) {
             glColor3f(0.12f, 0.12f, 0.15f);
             glRectf(bar_x, bar_y - bar_h, bar_x + bar_w, bar_y);
 
-            glColor3f(0.25f, 0.55f, 1.0f); /* team 0: blue, fills from the left */
+            if (my_team == 0) glColor3f(0.25f, 0.55f, 1.0f); else glColor3f(1.0f, 0.3f, 0.25f); /* team 0's fill, colored relative to viewer */
             glRectf(bar_x, bar_y - bar_h, bar_x + bar_w * 0.5f * frac0, bar_y);
-            glColor3f(1.0f, 0.3f, 0.25f); /* team 1: red, fills from the right */
+            if (my_team == 1) glColor3f(0.25f, 0.55f, 1.0f); else glColor3f(1.0f, 0.3f, 0.25f); /* team 1's fill, colored relative to viewer */
             glRectf(bar_x + bar_w - bar_w * 0.5f * frac1, bar_y - bar_h, bar_x + bar_w, bar_y);
 
             glColor3f(0.6f, 0.65f, 0.7f);
@@ -2584,10 +2598,10 @@ int main(int argc, char *argv[]) {
             glEnd();
 
             char resbuf[32];
-            glColor3f(0.6f, 0.8f, 1.0f);
+            if (my_team == 0) glColor3f(0.6f, 0.8f, 1.0f); else glColor3f(1.0f, 0.6f, 0.55f);
             snprintf(resbuf, sizeof(resbuf), "%d", arena_state.resources[0]);
             draw_string(resbuf, bar_x - 36.0f, bar_y - bar_h + 3.0f, 11);
-            glColor3f(1.0f, 0.6f, 0.55f);
+            if (my_team == 1) glColor3f(0.6f, 0.8f, 1.0f); else glColor3f(1.0f, 0.6f, 0.55f);
             snprintf(resbuf, sizeof(resbuf), "%d", arena_state.resources[1]);
             draw_string(resbuf, bar_x + bar_w + 8.0f, bar_y - bar_h + 3.0f, 11);
         }
