@@ -2195,6 +2195,57 @@ static void test_resource_cap_wins_the_match(void) {
     CHECK(arena_state.winner == 2, "team 1 hitting the resource cap wins for team 1");
 }
 
+static void test_sudden_death_does_not_fire_before_max_duration(void) {
+    /* S170-157, founder: "i think there may be zombie games with infinite
+       win cons." All nodes neutral -- zero resource gain regardless of how
+       many resource ticks land inside this one big dt_ms, isolating the
+       sudden-death clock from the primary resource-cap check. */
+    arena_init_teams();
+    for (int n = 0; n < ARENA_NODE_COUNT; n++) arena_state.nodes[n].owner = 0;
+    arena_state.resources[0] = 500;
+    arena_state.resources[1] = 500;
+
+    arena_update_teams(ARENA_MATCH_MAX_DURATION_MS - 100);
+    CHECK(arena_state.winner == 0,
+          "no forced winner before the sudden-death clock runs out, even with tied resources and no nodes owned");
+}
+
+static void test_sudden_death_picks_team_ahead_on_resources(void) {
+    arena_init_teams();
+    for (int n = 0; n < ARENA_NODE_COUNT; n++) arena_state.nodes[n].owner = 0;
+    arena_state.resources[0] = 800;
+    arena_state.resources[1] = 300;
+    arena_state.match_elapsed_ms = ARENA_MATCH_MAX_DURATION_MS - 8;
+
+    arena_update_teams(16); /* small dt -- crosses the threshold without also feeding the resource-tick accumulator */
+    CHECK(arena_state.winner == 1, "sudden death: team 0 is ahead on resources once the clock runs out -- team 0 wins outright");
+}
+
+static void test_sudden_death_tiebreaks_by_nodes_owned(void) {
+    arena_init_teams();
+    for (int n = 0; n < ARENA_NODE_COUNT; n++) arena_state.nodes[n].owner = 0;
+    arena_state.nodes[0].owner = 2; /* team 1 owns exactly one node, team 0 owns none */
+    arena_state.resources[0] = 500;
+    arena_state.resources[1] = 500;
+    arena_state.match_elapsed_ms = ARENA_MATCH_MAX_DURATION_MS - 8;
+
+    arena_update_teams(16);
+    CHECK(arena_state.winner == 2,
+          "resources are exactly tied at the sudden-death clock -- falls back to nodes currently owned, team 1 has one");
+}
+
+static void test_sudden_death_full_tie_resolves_to_team_zero(void) {
+    arena_init_teams();
+    for (int n = 0; n < ARENA_NODE_COUNT; n++) arena_state.nodes[n].owner = 0;
+    arena_state.resources[0] = 0;
+    arena_state.resources[1] = 0;
+    arena_state.match_elapsed_ms = ARENA_MATCH_MAX_DURATION_MS - 8;
+
+    arena_update_teams(16);
+    CHECK(arena_state.winner == 1,
+          "resources AND nodes owned both exactly tied -- last-resort deterministic fallback picks team 0");
+}
+
 static void test_paimon_q_damages_and_roots_in_range(void) {
     arena_init_with_heroes(ARENA_HERO_UNICORN, ARENA_HERO_PAIMON);
     ArenaHero *paimon = &arena_state.heroes[1];
@@ -3648,6 +3699,10 @@ int main(void) {
     test_resource_win_condition_replaces_team_wipe();
     test_resource_accumulates_faster_with_more_owned_nodes();
     test_resource_cap_wins_the_match();
+    test_sudden_death_does_not_fire_before_max_duration();
+    test_sudden_death_picks_team_ahead_on_resources();
+    test_sudden_death_tiebreaks_by_nodes_owned();
+    test_sudden_death_full_tie_resolves_to_team_zero();
     test_paimon_q_damages_and_roots_in_range();
     test_paimon_q_out_of_range_whiffs();
     test_paimon_w_damages_and_silences_in_range();

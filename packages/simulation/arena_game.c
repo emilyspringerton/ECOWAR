@@ -661,15 +661,23 @@ void arena_fountain_position(int index, float *x, float *z) {
     *z = layout[index][1];
 }
 
-/* arena_graveyard_position (S170-153): see header doc comment. Just behind
- * each team's own spawn line (x=+-8, arena_init_teams) but short of the
- * jungle wall (arena_obstacles_reset_layout's nearest piece sits around
- * |x|=9.5 once its own collision radius is accounted for) -- close enough
- * to still read as "your own base," clear of any terrain a respawning hero
- * could visually clip through. */
+/* arena_graveyard_position (S170-153, corner placement S170-156): founder,
+ * real-time: "the graveyards ... [should be] behind 2 of the corners not
+ * in the middle of the map." The original placement sat each team's
+ * graveyard right behind its spawn line's own center (x=+-9, z=0) -- dead
+ * center along z, not remotely corner-like. Moved to the map's two
+ * corners NOT already claimed by arena_fountain_position (fountains sit at
+ * (-24,-24)/(24,24) -- see that function's own doc comment), so a
+ * respawning hero never lands on top of the neutral, actively-contested
+ * fountain fight. Same 4-unit margin-from-the-true-edge convention
+ * fountains already use, scaled to this file's current ARENA_HALF_EXTENT
+ * (32) instead of the fountains' now-stale literal 24 (their own 28-4).
+ * Team 0 (the -x side) gets the top-left corner, team 1 the bottom-right
+ * -- still diagonally opposite each other, same symmetry as before. */
 void arena_graveyard_position(int team, float *x, float *z) {
-    *x = (team == 0) ? -9.0f : 9.0f;
-    *z = 0.0f;
+    float corner = ARENA_HALF_EXTENT - 4.0f;
+    *x = (team == 0) ? -corner : corner;
+    *z = (team == 0) ? corner : -corner;
 }
 
 /* arena_tick_fountains (S170-147): see header declaration's doc comment. */
@@ -3558,4 +3566,33 @@ void arena_update_teams(unsigned int dt_ms) {
        ARENA_RESOURCE_CAP wins. */
     if (arena_state.resources[0] >= ARENA_RESOURCE_CAP) arena_state.winner = 1;
     else if (arena_state.resources[1] >= ARENA_RESOURCE_CAP) arena_state.winner = 2;
+
+    /* S170-157 sudden-death fallback, founder: "i think there may be
+       zombie games with infinite win cons." Removing team-wipe (above)
+       also removed the only guarantee that a live match always eventually
+       ends -- if node control keeps flipping without either team ever
+       sustaining ownership long enough to fill the meter, nothing else
+       forces resolution. Once a match runs ARENA_MATCH_MAX_DURATION_MS
+       without either side reaching the cap, whoever's ahead on resources
+       wins outright; an exact resource tie falls back to nodes currently
+       owned; a still-exact tie (no nodes owned by either team) resolves
+       to team 0 -- arbitrary, but deterministic, and this far down the
+       fallback chain a coin flip is genuinely all that's left to decide
+       on. */
+    arena_state.match_elapsed_ms += (int)dt_ms;
+    if (arena_state.winner == 0 && arena_state.match_elapsed_ms >= ARENA_MATCH_MAX_DURATION_MS) {
+        if (arena_state.resources[0] > arena_state.resources[1]) {
+            arena_state.winner = 1;
+        } else if (arena_state.resources[1] > arena_state.resources[0]) {
+            arena_state.winner = 2;
+        } else {
+            int nodes_owned[2] = {0, 0};
+            for (int n = 0; n < ARENA_NODE_COUNT; n++) {
+                int owner = arena_state.nodes[n].owner;
+                if (owner == 1) nodes_owned[0]++;
+                else if (owner == 2) nodes_owned[1]++;
+            }
+            arena_state.winner = (nodes_owned[1] > nodes_owned[0]) ? 2 : 1;
+        }
+    }
 }

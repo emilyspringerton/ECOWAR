@@ -1,7 +1,7 @@
 #ifndef ARENA_GAME_H
 #define ARENA_GAME_H
 
-#define ARENA_HALF_EXTENT 28.0f /* NORTHSTAR §8 jungle pass: was 20.0f -- more room for jungle terrain between spawn and the flank nodes without cramming it against the 1v1 mid-lane */
+#define ARENA_HALF_EXTENT 32.0f /* founder: "the map should be a little bigger" -- was 28.0f (itself bumped from 20.0f for the S170-138 jungle pass); a modest further widen, same reasoning as before (more breathing room), not a full redesign */
 #define ARENA_HERO_SPEED 4.0f      /* units/sec */
 #define ARENA_ATTACK_RANGE 1.6f
 #define ARENA_ATTACK_DAMAGE 8
@@ -848,6 +848,24 @@ typedef struct {
 #define ARENA_RESOURCE_CAP        2000
 #define ARENA_RESOURCE_TICK_MS    2000 /* real Arathi Basin's own resource tick is on this same ~2s cadence */
 
+/* ARENA_MATCH_MAX_DURATION_MS (S170-157): real gap found in the resource-
+ * race redesign itself, founder: "i think there may be zombie games with
+ * infinite win cons." Removing the team-wipe win condition (S170-153)
+ * removed the one guarantee that used to make a live match always
+ * eventually end -- if node control keeps flipping without either team
+ * sustaining ownership long enough to fill the meter, nothing forces
+ * resolution anymore, and apps/arena_server's own LIVE-phase loop has no
+ * timeout at all (waiting_ticks_ms only ever counts during
+ * WAITING/DRAFT). This is the sudden-death fallback: once a live team
+ * match runs this long without either side reaching ARENA_RESOURCE_CAP,
+ * whoever's ahead on resources wins outright (ties broken by nodes
+ * currently owned) -- see the bottom of arena_update_teams(). 12 minutes:
+ * long enough that a real, competitive back-and-forth match is never cut
+ * short (this arena's own live matches have run 10-20 real minutes under
+ * the old team-wipe condition), short enough that a truly stalled match
+ * can't run forever in the persistent bot pool. */
+#define ARENA_MATCH_MAX_DURATION_MS (12 * 60 * 1000)
+
 /* Mana (S170-132): flat, roster-wide -- see ArenaHero.mp's own doc comment above. Regen fills
  * an empty pool in a bit under 17s; Q is the cheapest, spammable a few times before running dry,
  * R is the most expensive, deliberately not repeatable back-to-back even when off cooldown.
@@ -1104,6 +1122,7 @@ typedef struct {
      * own doc comment for the full design. */
     int resources[2];
     int resource_tick_ms;
+    int match_elapsed_ms; /* S170-157: team-mode-only running clock, ticks up every arena_update_teams call -- feeds the sudden-death fallback below, see ARENA_MATCH_MAX_DURATION_MS's own doc comment */
     int respawn_wave_timer_ms; /* S170-154: global, ticks 0->ARENA_RESPAWN_WAVE_MS continuously and wraps -- every dead hero respawns together the instant it wraps, not on their own independent per-hero timer */
     /* hover_target (S170-143, "hover casting like in wow macros"): per-owner,
      * real per-player range only (clones never cast independently, see
