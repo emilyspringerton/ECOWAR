@@ -2,6 +2,17 @@
 
 ## 2026-07-28 (continued)
 
+- feat(arena): Berserker + Regen powerups, Warsong Gulch-style (S170-190). Founder: "add
+  berserker and health regen powerups like from warsong gulch in between the nodes." New
+  `ArenaPowerup` entity, two neutral pickups positioned at the midpoints between the node
+  clusters (derived from `arena_nodes_reset_layout`'s own table). Walking within
+  `ARENA_POWERUP_PICKUP_RADIUS` grabs it, granting a 20s timed buff (Berserker: +15 flat AD via
+  a new `arena_hero_bonus_ad` helper; Regen: +8 HP/sec, same fractional-accumulator idiom as
+  mana regen) — the powerup goes inactive and respawns 60s later. Hero-only, same clone-exclusion
+  scoping as fountains/node-capture/creep-targeting. Wire-synced (unlike static fountains, these
+  have real dynamic state), rendered as a floating orb, `hero_status_label` shows BERSERKER/REGEN
+  tags. Works in both 1v1 and team mode. 6 new tests, build clean, full suite green (597/597).
+
 - docs(arena): NORTHSTAR §19 status update — economy shipped, structures still spec-only. Found
   via proactive audit: the section header still read "spec only, no code yet" even though the
   economy half (Flow/XP, item shop, character pane, bot AI shopping, assists) has been fully
