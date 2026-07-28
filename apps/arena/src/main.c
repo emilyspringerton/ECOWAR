@@ -54,6 +54,27 @@ static int my_owner = 0; /* which arena_state.heroes[] slot is "me" -- 0 in loca
 #define APM_RING_CAP 512
 static int show_apm = 0;
 static int show_ability_help = 0; /* S170-151, founder: "H should show an overlay with character ability descriptions" */
+static int shop_open = 0; /* S170-175, founder: "do a first pass shop interface" -- B toggles, same "works in any mode" precedent as F11/H */
+
+/* Shop panel layout (S170-175): shared by the click hit-test in the event
+ * loop and the draw call in the render pass, so a click always lands on
+ * exactly the row it visually appears over -- both sites compute these from
+ * win_w/win_h with the same formula rather than caching last frame's
+ * positions (unlike g_hover_target's own per-frame cache, this layout only
+ * depends on the window size, not any per-frame simulation state, so
+ * there's no staleness to guard against). */
+#define SHOP_ROW_H 20.0f
+#define SHOP_COL_W 260.0f
+#define SHOP_BUY_COLS 2
+#define SHOP_ITEMS_PER_COL 12 /* ARENA_ITEM_COUNT (24) / SHOP_BUY_COLS */
+static void shop_panel_origin(int win_w, int win_h, float *sp_x, float *sp_y_top) {
+    (void)win_w;
+    *sp_x = 40.0f;
+    *sp_y_top = (float)win_h - 70.0f;
+}
+static const char *ARENA_ITEM_SLOT_NAMES[ARENA_ITEM_SLOT_COUNT] = {
+    "WEAPON", "HEAD", "BODY", "HANDS", "LEGS", "FEET", "RING", "NECK", "BACK", "WAIST", "TRINKET"
+};
 static uint32_t apm_ring[APM_RING_CAP];
 static int apm_ring_head = 0;
 static int apm_ring_count = 0;
@@ -367,6 +388,30 @@ static void net_send_attack(int target_owner) {
     sendto(net_sock, buf, sizeof(buf), 0, (struct sockaddr *)&net_server_addr, sizeof(net_server_addr));
 }
 
+/* PACKET_ARENA_SHOP_BUY/SELL's client-side senders (S170-175). Same shape
+ * as net_send_attack -- server infers "which hero" from the sending
+ * client's own slot, all real validation (proximity, Flow balance) happens
+ * server-side in arena_shop_buy/arena_shop_sell. */
+static void net_send_shop_buy(int item_id) {
+    char buf[sizeof(NetHeader) + sizeof(ArenaShopBuyCmd)];
+    NetHeader *h = (NetHeader *)buf;
+    memset(h, 0, sizeof(NetHeader));
+    h->type = PACKET_ARENA_SHOP_BUY;
+    ArenaShopBuyCmd *cmd = (ArenaShopBuyCmd *)(buf + sizeof(NetHeader));
+    cmd->item_id = (uint8_t)item_id;
+    sendto(net_sock, buf, sizeof(buf), 0, (struct sockaddr *)&net_server_addr, sizeof(net_server_addr));
+}
+
+static void net_send_shop_sell(int slot) {
+    char buf[sizeof(NetHeader) + sizeof(ArenaShopSellCmd)];
+    NetHeader *h = (NetHeader *)buf;
+    memset(h, 0, sizeof(NetHeader));
+    h->type = PACKET_ARENA_SHOP_SELL;
+    ArenaShopSellCmd *cmd = (ArenaShopSellCmd *)(buf + sizeof(NetHeader));
+    cmd->slot = (uint8_t)slot;
+    sendto(net_sock, buf, sizeof(buf), 0, (struct sockaddr *)&net_server_addr, sizeof(net_server_addr));
+}
+
 /* g_hover_target (S170-143, "hover casting like in wow macros"): which
  * hero slot the mouse is currently over, updated once per frame by the
  * health-bar hover pass below (S170-69's own hit-test, reused rather than
@@ -482,6 +527,15 @@ static void net_poll_snapshots(uint32_t now_ms) {
                     dst->r_cooldown_ms = msg->heroes[i].r_cooldown_ms;
                     dst->mp = msg->heroes[i].mp;
                     dst->attack_target = msg->heroes[i].attack_target; /* S170-162: synced for every hero so the lock reads clearly to any hero watching the fight */
+                    /* S170-175: Flow/XP economy + equipped items, for the character pane and stats page below. */
+                    dst->flow = msg->heroes[i].flow;
+                    dst->flow_earned = msg->heroes[i].flow_earned;
+                    dst->xp = msg->heroes[i].xp;
+                    dst->kills = msg->heroes[i].kills;
+                    dst->deaths = msg->heroes[i].deaths;
+                    for (int s = 0; s < ARENA_SNAPSHOT_ITEM_SLOT_COUNT && s < ARENA_ITEM_SLOT_COUNT; s++) {
+                        dst->equipped_item[s] = msg->heroes[i].equipped_item[s];
+                    }
                     if (msg->heroes[i].cast_flash_slot > 0) {
                         spawn_spell_flash(dst->x, dst->z, msg->heroes[i].cast_flash_slot, dst->hero_id);
                         trigger_squish(i);
@@ -1928,6 +1982,65 @@ int main(int argc, char *argv[]) {
             if (e.type == SDL_KEYDOWN && e.key.keysym.sym == SDLK_h) {
                 show_ability_help = !show_ability_help; /* same "works in any mode" precedent as F11 above */
             }
+            if (e.type == SDL_KEYDOWN && e.key.keysym.sym == SDLK_b) {
+                shop_open = !shop_open; /* S170-175, same "works in any mode" precedent as F11/H above -- arena_shop_buy/sell themselves reject a purchase made out of range, so toggling far from a shop is harmless, not broken */
+            }
+            /* Quick-buy (S170-175, cross-cutting UI constraint NORTHSTAR §2: "both keybind
+               and click paths must resolve instantly, no menu-diving"): 1-9 buys the
+               corresponding item in the shop panel's left column (catalog items 0-8) the
+               instant it's pressed, no confirm step -- the keybind-path half of that
+               constraint, mirroring real MOBA quick-buy hotkeys. Only live while the panel
+               is open, same "the affordance you're looking at is the one the key acts on"
+               rule the QWE ability keys already follow. */
+            if (shop_open && !observing && e.type == SDL_KEYDOWN &&
+                e.key.keysym.sym >= SDLK_1 && e.key.keysym.sym <= SDLK_9) {
+                int item_id = (int)(e.key.keysym.sym - SDLK_1);
+                if (item_id < ARENA_ITEM_COUNT) {
+                    if (net_mode) net_send_shop_buy(item_id);
+                    else arena_shop_buy(my_owner, item_id);
+                }
+            }
+            /* Shop panel clicks (S170-175): the click-path half of the same instant-resolve
+               constraint above -- one click buys or sells, no confirm dialog. Hit-tests
+               against the exact same geometry shop_panel_origin()/SHOP_ROW_H/SHOP_COL_W the
+               render pass draws with, so a click always lands on the row it visually
+               overlaps. SDL mouse Y is top-down, this HUD's ortho draw space is bottom-up --
+               same flip the requeue OK-button hit-test above already uses. */
+            if (shop_open && !observing && e.type == SDL_MOUSEBUTTONDOWN && e.button.button == SDL_BUTTON_LEFT) {
+                float bx = (float)e.button.x, by = (float)(win_h - e.button.y);
+                float sp_x, sp_y_top;
+                shop_panel_origin(win_w, win_h, &sp_x, &sp_y_top);
+                int handled = 0;
+                for (int col = 0; col < SHOP_BUY_COLS && !handled; col++) {
+                    float col_x = sp_x + (float)col * SHOP_COL_W;
+                    for (int row = 0; row < SHOP_ITEMS_PER_COL; row++) {
+                        int item_id = col * SHOP_ITEMS_PER_COL + row;
+                        if (item_id >= ARENA_ITEM_COUNT) break;
+                        float row_top = sp_y_top - (float)row * SHOP_ROW_H;
+                        float row_bottom = row_top - (SHOP_ROW_H - 2.0f);
+                        if (bx >= col_x && bx <= col_x + SHOP_COL_W - 8.0f && by >= row_bottom && by <= row_top) {
+                            if (net_mode) net_send_shop_buy(item_id);
+                            else arena_shop_buy(my_owner, item_id);
+                            handled = 1;
+                            break;
+                        }
+                    }
+                }
+                if (!handled) {
+                    float sell_x = sp_x + (float)SHOP_BUY_COLS * SHOP_COL_W + 20.0f;
+                    for (int slot = 0; slot < ARENA_ITEM_SLOT_COUNT; slot++) {
+                        float row_top = sp_y_top - (float)slot * SHOP_ROW_H;
+                        float row_bottom = row_top - (SHOP_ROW_H - 2.0f);
+                        if (bx >= sell_x && bx <= sell_x + SHOP_COL_W - 8.0f && by >= row_bottom && by <= row_top) {
+                            if (arena_state.heroes[my_owner].equipped_item[slot] >= 0) {
+                                if (net_mode) net_send_shop_sell(slot);
+                                else arena_shop_sell(my_owner, (ArenaItemSlot)slot);
+                            }
+                            break;
+                        }
+                    }
+                }
+            }
             /* Everything below drives a live match (movement clicks, kit
              * casts, restart-into-a-new-match) -- none of it applies while
              * observing a logged one. Camera control above still works, so
@@ -2298,6 +2411,30 @@ int main(int argc, char *argv[]) {
             draw_hero_box(fx, fz, 0.0f, 0.15f, 0.0f, 1.6f, 0.15f, 1.6f, 1.0f, &vp, loc_mvp, loc_model, &cube_mesh);
             glUniform4f_(loc_color, 0.4f, 0.95f, 1.0f, 1.0f); /* pillar: bright cyan-white */
             draw_hero_box(fx, fz, 0.0f, 1.3f, 0.0f, 0.4f, 1.1f, 0.4f, 1.0f, &vp, loc_mvp, loc_model, &cube_mesh);
+        }
+
+        /* Shop structures (S170-175, "have there be 2 shops in the other 2
+           corners of the maps that don't have fountains"): a base + counter
+           silhouette, distinct from the fountains' pillar shape above --
+           amber/gold reads as "currency" the same way this HUD's own Flow
+           number will below, with a team-relative trim on top (same
+           self/ally/enemy convention as nodes/heroes) since arena_shop_buy
+           only lets a hero spend at their OWN team's shop, not either one.
+           Position from arena_shop_position() -- same "static, deterministic
+           layout, never synced over the wire" precedent as fountains and
+           jungle obstacles. */
+        for (int team = 0; team < 2; team++) {
+            float shx, shz;
+            arena_shop_position(team, &shx, &shz);
+            glUniform4f_(loc_color, 0.75f, 0.6f, 0.15f, 1.0f); /* base: amber/gold */
+            draw_hero_box(shx, shz, 0.0f, 0.2f, 0.0f, 1.8f, 0.4f, 1.4f, 1.0f, &vp, loc_mvp, loc_model, &cube_mesh);
+            int my_team = arena_state.heroes[my_owner].team;
+            if (team == my_team) {
+                glUniform4f_(loc_color, 0.15f, 0.35f, 0.95f, 1.0f); /* my team's shop: ally blue */
+            } else {
+                glUniform4f_(loc_color, 0.95f, 0.25f, 0.15f, 1.0f); /* enemy team's shop: enemy red */
+            }
+            draw_hero_box(shx, shz, 0.0f, 0.55f, 0.0f, 1.4f, 0.3f, 1.0f, 1.0f, &vp, loc_mvp, loc_model, &cube_mesh);
         }
 
         /* heroes -- ARENA_MAX_HEROES so team-mode matches (up to 10v10)
@@ -2869,6 +3006,169 @@ int main(int argc, char *argv[]) {
                     glColor3f(0.8f, 0.82f, 0.85f);
                     draw_string(arena_ability_description(h->hero_id, slot), panel_x + 42.0f, row_y - 16.0f, 8);
                     row_y -= 44.0f;
+                }
+            }
+        }
+
+        /* Character stat pane (S170-175, founder: "we need a character display pane that
+           shows current stats"): the local player's own hero only (same "local player's own
+           kit only" scope the ability tiles above already hold themselves to), always
+           visible -- unlike the shop/scoreboard below, this isn't a toggle, it's the
+           persistent "how am I doing" readout a real MOBA's own stat panel always shows.
+           Bottom-left, clear of the QWE tiles (bottom-center) and the enemy/BOT bar
+           (top-left). */
+        {
+            ArenaHero *me = &arena_state.heroes[my_owner];
+            float px = 20.0f, py = 130.0f;
+            glEnable(GL_BLEND);
+            glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+            glColor4f(0.05f, 0.08f, 0.1f, 0.82f);
+            glRectf(px, py, px + 190.0f, py + 108.0f);
+            glDisable(GL_BLEND);
+            glColor3f(0.9f, 0.95f, 1.0f);
+            draw_string(arena_hero_name(me->hero_id), px + 8.0f, py + 90.0f, 11);
+            char line[48];
+            glColor3f(0.8f, 0.9f, 0.85f);
+            snprintf(line, sizeof(line), "HP %d/%d", me->hp > 0 ? me->hp : 0, me->max_hp);
+            draw_string(line, px + 8.0f, py + 72.0f, 8);
+            glColor3f(0.6f, 0.8f, 1.0f);
+            snprintf(line, sizeof(line), "MP %d/%d", me->mp, ARENA_MP_MAX);
+            draw_string(line, px + 8.0f, py + 58.0f, 8);
+            glColor3f(0.85f, 0.7f, 0.5f);
+            snprintf(line, sizeof(line), "AD %d  ARMOR %d", me->item_bonus_ad, (int)arena_hero_armor(me));
+            draw_string(line, px + 8.0f, py + 44.0f, 8);
+            glColor3f(0.95f, 0.8f, 0.2f);
+            snprintf(line, sizeof(line), "FLOW %d (EARNED %d)", me->flow, me->flow_earned);
+            draw_string(line, px + 8.0f, py + 30.0f, 8);
+            glColor3f(0.6f, 0.95f, 0.6f);
+            snprintf(line, sizeof(line), "XP %d", me->xp);
+            draw_string(line, px + 8.0f, py + 16.0f, 8);
+            glColor3f(0.9f, 0.6f, 0.6f);
+            snprintf(line, sizeof(line), "K/D %d/%d", me->kills, me->deaths);
+            draw_string(line, px + 8.0f, py + 2.0f, 8);
+        }
+
+        /* Shop panel (S170-175, founder: "do a first pass shop interface... buying an item
+           auto equips it for now no bag you can sell it back for less but no unequip into
+           bag for now"). Left two columns are the buy list (catalog order, same grouping the
+           data itself already has -- specific weapons, then weird, then generic), a third
+           column is the local hero's own loadout (click an occupied slot to sell it back).
+           Every click/keypress here is a single instant action against the server-authoritative
+           arena_shop_buy/arena_shop_sell (or the local-mode equivalents) -- no confirm step,
+           satisfying this repo's own cross-cutting "high-APM... both keybind and click paths
+           must resolve instantly, no menu-diving" constraint (NORTHSTAR §2) the same way the
+           QWE ability keys already do. */
+        if (shop_open) {
+            ArenaHero *me = &arena_state.heroes[my_owner];
+            float sp_x, sp_y_top;
+            shop_panel_origin(win_w, win_h, &sp_x, &sp_y_top);
+            float panel_w = (float)SHOP_BUY_COLS * SHOP_COL_W + SHOP_COL_W + 40.0f;
+            float panel_h = (float)SHOP_ITEMS_PER_COL * SHOP_ROW_H + 40.0f;
+            glEnable(GL_BLEND);
+            glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+            glColor4f(0.05f, 0.08f, 0.1f, 0.92f);
+            glRectf(sp_x - 10.0f, sp_y_top - panel_h, sp_x - 10.0f + panel_w, sp_y_top + 26.0f);
+            glColor4f(0.75f, 0.6f, 0.15f, 0.9f);
+            glLineWidth(2.0f);
+            glBegin(GL_LINE_LOOP);
+            glVertex2f(sp_x - 10.0f, sp_y_top - panel_h); glVertex2f(sp_x - 10.0f + panel_w, sp_y_top - panel_h);
+            glVertex2f(sp_x - 10.0f + panel_w, sp_y_top + 26.0f); glVertex2f(sp_x - 10.0f, sp_y_top + 26.0f);
+            glEnd();
+            glLineWidth(1.0f);
+            glDisable(GL_BLEND);
+
+            char hbuf[48];
+            glColor3f(0.95f, 0.85f, 0.3f);
+            snprintf(hbuf, sizeof(hbuf), "SHOP -- FLOW %d (B TO CLOSE)", me->flow);
+            draw_string(hbuf, sp_x, sp_y_top + 8.0f, 10);
+
+            for (int col = 0; col < SHOP_BUY_COLS; col++) {
+                float col_x = sp_x + (float)col * SHOP_COL_W;
+                for (int row = 0; row < SHOP_ITEMS_PER_COL; row++) {
+                    int item_id = col * SHOP_ITEMS_PER_COL + row;
+                    if (item_id >= ARENA_ITEM_COUNT) break;
+                    const ArenaItemDef *def = &ARENA_ITEMS[item_id];
+                    float row_y = sp_y_top - (float)row * SHOP_ROW_H - 12.0f;
+                    if (me->flow >= def->cost) glColor3f(0.5f, 0.9f, 0.5f);
+                    else glColor3f(0.6f, 0.35f, 0.35f);
+                    char keybind_prefix[4] = "";
+                    if (col == 0 && row < 9) snprintf(keybind_prefix, sizeof(keybind_prefix), "%d ", row + 1);
+                    char rowbuf[64];
+                    snprintf(rowbuf, sizeof(rowbuf), "%s%s %d", keybind_prefix, def->name, def->cost);
+                    draw_string(rowbuf, col_x, row_y, 7);
+                }
+            }
+
+            float sell_x = sp_x + (float)SHOP_BUY_COLS * SHOP_COL_W + 20.0f;
+            glColor3f(0.85f, 0.85f, 0.9f);
+            draw_string("EQUIPPED (CLICK TO SELL)", sell_x, sp_y_top + 8.0f, 8);
+            for (int slot = 0; slot < ARENA_ITEM_SLOT_COUNT; slot++) {
+                float row_y = sp_y_top - (float)slot * SHOP_ROW_H - 12.0f;
+                int item_id = me->equipped_item[slot];
+                char rowbuf[64];
+                if (item_id >= 0 && item_id < ARENA_ITEM_COUNT) {
+                    glColor3f(0.7f, 0.85f, 1.0f);
+                    snprintf(rowbuf, sizeof(rowbuf), "%s: %s", ARENA_ITEM_SLOT_NAMES[slot], ARENA_ITEMS[item_id].name);
+                } else {
+                    glColor3f(0.4f, 0.42f, 0.45f);
+                    snprintf(rowbuf, sizeof(rowbuf), "%s: --", ARENA_ITEM_SLOT_NAMES[slot]);
+                }
+                draw_string(rowbuf, sell_x, row_y, 7);
+            }
+        }
+
+        /* Scoreboard (S170-175, founder: "stats page shows team and individual kd ratio flow
+           and xp"). Held, not toggled -- real MOBA "hold Tab" convention, and simpler than a
+           toggle since it needs no event-loop state at all: just read this frame's keyboard
+           state. Two columns, one per team, each hero's own K/D/Flow/XP plus a team-aggregate
+           row at the bottom of each column (kills/deaths/flow_earned/xp summed across every
+           active hero on that side) -- "team and individual," per the founder's own ask,
+           both in the same view rather than two separate screens. */
+        {
+            const Uint8 *keystate = SDL_GetKeyboardState(NULL);
+            if (keystate[SDL_SCANCODE_TAB]) {
+                float panel_w = 560.0f, panel_h = 420.0f;
+                float panel_x = win_w / 2.0f - panel_w / 2.0f;
+                float panel_y = win_h / 2.0f - panel_h / 2.0f;
+                glEnable(GL_BLEND);
+                glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+                glColor4f(0.03f, 0.05f, 0.07f, 0.92f);
+                glRectf(panel_x, panel_y, panel_x + panel_w, panel_y + panel_h);
+                glColor4f(0.4f, 0.55f, 0.65f, 0.9f);
+                glLineWidth(2.0f);
+                glBegin(GL_LINE_LOOP);
+                glVertex2f(panel_x, panel_y); glVertex2f(panel_x + panel_w, panel_y);
+                glVertex2f(panel_x + panel_w, panel_y + panel_h); glVertex2f(panel_x, panel_y + panel_h);
+                glEnd();
+                glLineWidth(1.0f);
+                glDisable(GL_BLEND);
+
+                for (int team = 0; team < 2; team++) {
+                    float col_x = panel_x + 20.0f + (float)team * (panel_w / 2.0f);
+                    float row_y = panel_y + panel_h - 30.0f;
+                    if (team == arena_state.heroes[my_owner].team) glColor3f(0.4f, 0.75f, 1.0f);
+                    else glColor3f(1.0f, 0.5f, 0.45f);
+                    draw_string(team == 0 ? "TEAM 0" : "TEAM 1", col_x, row_y, 11);
+                    row_y -= 22.0f;
+                    int team_kills = 0, team_deaths = 0, team_flow_earned = 0, team_xp = 0;
+                    for (int i = 0; i < ARENA_MAX_HEROES; i++) {
+                        ArenaHero *hh = &arena_state.heroes[i];
+                        if (!hh->active || hh->team != team) continue;
+                        team_kills += hh->kills; team_deaths += hh->deaths;
+                        team_flow_earned += hh->flow_earned; team_xp += hh->xp;
+                        if (row_y < panel_y + 50.0f) continue; /* panel's fixed height caps visible rows -- team aggregate below still counts everyone */
+                        glColor3f(0.85f, 0.87f, 0.9f);
+                        char rowbuf[64];
+                        snprintf(rowbuf, sizeof(rowbuf), "%s %d/%d  F%d  XP%d",
+                                 arena_hero_name(hh->hero_id), hh->kills, hh->deaths, hh->flow_earned, hh->xp);
+                        draw_string(rowbuf, col_x, row_y, 8);
+                        row_y -= 18.0f;
+                    }
+                    glColor3f(0.95f, 0.85f, 0.3f);
+                    char aggbuf[64];
+                    snprintf(aggbuf, sizeof(aggbuf), "TEAM K/D %d/%d  FLOW %d  XP %d",
+                             team_kills, team_deaths, team_flow_earned, team_xp);
+                    draw_string(aggbuf, col_x, panel_y + 22.0f, 8);
                 }
             }
         }
