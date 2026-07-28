@@ -1041,10 +1041,41 @@ typedef struct {
 } ArenaItemDef;
 
 extern const ArenaItemDef ARENA_ITEMS[];
-#define ARENA_ITEM_COUNT 24
+#define ARENA_ITEM_COUNT 25 /* S170-205: was 24 -- +1 for Blink Dagger */
+/* ARENA_BLINK_DAGGER_ITEM_ID (S170-205, founder: "add blink dagger 1400 flow it gives a new
+ * keybind on screen for tilda"): a named index into ARENA_ITEMS, not just a stat entry -- the
+ * only item in the catalog whose value comes from an ACTIVE ability (arena_use_blink) rather
+ * than passive stats alone, so unlike every other item, code needs to check "is THIS SPECIFIC
+ * item equipped" by index, not just sum stat fields generically the way
+ * arena_recompute_item_stats already does for everyone. Placed last in the catalog (index 24)
+ * so adding it didn't renumber any existing item's index (equipped_item[] wire values, shop
+ * quick-buy 1-9 keys, and any other index-based reference all stay stable). */
+#define ARENA_BLINK_DAGGER_ITEM_ID (ARENA_ITEM_COUNT - 1)
 
 #define ARENA_ITEM_SELL_REFUND_PCT 50 /* founder: "sell it back for less" */
 #define ARENA_SHOP_RADIUS 3.0f /* same "stand near it" convention as ARENA_FOUNTAIN_RADIUS */
+
+/* Blink Dagger (S170-205, founder: "add blink dagger 1400 flow it gives a new keybind on screen
+ * for tilda"). Real DOTA 2 item, "the premier mobility item" -- an instant, short, no-cast-time
+ * teleport on its own cooldown, not a stat stick with an ability bolted on (the +6 AD/+6 HP the
+ * founder also asked for are real but secondary). Bound to a dedicated key (tilde/backtick),
+ * distinct from Q/W/E, since it's an item activation, not a kit ability -- doesn't touch mana
+ * (items in this catalog never have, only Flow to buy them) or the Q/W/R cooldown fields, a
+ * fully separate cooldown track. Direction is derived the same way Unicorn's own Q dash already
+ * derives one (toward the current move target if moving, else toward the nearest foe, else a
+ * no-op) -- reused rather than inventing a second "which way do I dash" convention, and matches
+ * real DOTA's own "blink toward wherever you're pointed" feel close enough for this engine's
+ * click-to-move input model, which has no separate cursor-position wire field to blink toward
+ * more literally. ARENA_BLINK_RANGE is deliberately the single longest gap-closer/escape
+ * distance on the whole roster (every kit dash tops out well under this) -- matching Blink
+ * Dagger's real identity as strictly the best mobility tool in the game, not just "one more
+ * dash." ARENA_BLINK_COOLDOWN_MS matches real DOTA's own Blink Dagger cooldown exactly (15s),
+ * not rescaled -- unlike map-distance constants, a cooldown is already engine-agnostic. Not
+ * blocked by silenced_ms (this engine's own convention: silence blocks CASTING specifically;
+ * using an item isn't a cast) -- only by stunned_ms (which blocks all action, the stronger of
+ * the two generic movement/action blockers everywhere else in this file). */
+#define ARENA_BLINK_RANGE 12.0f
+#define ARENA_BLINK_COOLDOWN_MS 15000
 
 /* Flow/XP kill rewards (S170-175). Melee/homing-shot kills only -- ability
  * casts don't set last_attacked_by_owner, so a kill finished by a spell
@@ -1108,6 +1139,10 @@ typedef struct {
      * (~175ms every ~700ms), and a UI bar for every single swing would be noise, not signal;
      * flagged as a deliberate scope decision, not an oversight. */
     int attack_windup_ms_remaining;
+    /* blink_cooldown_ms (S170-205, Blink Dagger): a fully separate cooldown track from
+     * q/w/r_cooldown_ms -- an item activation, not a kit ability, so it doesn't share or
+     * interfere with the ability slots at all. */
+    int blink_cooldown_ms;
     int owner; /* 0 = player, 1 = bot in the 1v1 local demo; a slot index 0..ARENA_MAX_HEROES-1 in team mode */
     int alive;
     int team;   /* 2026-07-24: which side, for team-mode nearest-enemy targeting. 1v1 local demo sets 0/1 explicitly. */
@@ -1710,6 +1745,14 @@ int arena_shop_buy(int owner, int item_id);
  * into bag for now" -- there's no bag to move it into, selling is the
  * only way to clear a slot. */
 int arena_shop_sell(int owner, ArenaItemSlot slot);
+
+/* arena_use_blink (S170-205): activates Blink Dagger -- no-op (no cooldown spent) unless the
+ * hero has ARENA_BLINK_DAGGER_ITEM_ID actually equipped, is alive, not stunned, and
+ * blink_cooldown_ms has elapsed. Direction: toward the current move target if moving, else
+ * toward the nearest living enemy, else no-op (same fallback chain unicorn_cast_q already
+ * uses) -- clamped to ARENA_BLINK_RANGE and the map bounds. PACKET_ARENA_BLINK's own server-side
+ * handler. */
+void arena_use_blink(int owner);
 
 /* arena_tick_resources (S170-153): advances each team's Arathi-Basin-style
  * resource race by dt_ms. Fixed ARENA_RESOURCE_TICK_MS interval, same

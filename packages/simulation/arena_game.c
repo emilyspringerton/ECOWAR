@@ -59,6 +59,15 @@ const ArenaItemDef ARENA_ITEMS[ARENA_ITEM_COUNT] = {
     { "Forager's Mantle",   ARENA_ITEM_SLOT_BACK,    ARENA_ITEM_TIER_GENERIC,  350,  8,   0,   0,  0, 0.4f },
     { "Warwolf Belt",       ARENA_ITEM_SLOT_WAIST,   ARENA_ITEM_TIER_GENERIC,  400,  0,  80,   0,  0, 0.0f },
     { "Peace Earring",      ARENA_ITEM_SLOT_TRINKET, ARENA_ITEM_TIER_GENERIC,  350,  0,  30,  40,  0, 0.0f },
+    /* -- Blink Dagger (S170-205, founder: "add blink dagger 1400 flow it gives a new keybind on
+       screen for tilda" -> "+6ap +6hp") -- see ARENA_BLINK_DAGGER_ITEM_ID's own header doc
+       comment for why this is fundamentally not like the 24 items above it: the value here is
+       the tilde-bound active (arena_use_blink), the +6 AD/+6 HP are real but secondary. Trinket
+       slot, same as Peace Earring -- a player picks one or the other, not both. WEIRD tier,
+       stretched slightly past its original "unusual FFXI stat shape" framing to cover "an item
+       with a genuinely unusual MECHANIC," the more apt read for the one item in this catalog
+       that isn't just stats at all. -- */
+    { "Blink Dagger",       ARENA_ITEM_SLOT_TRINKET, ARENA_ITEM_TIER_WEIRD,   1400,  6,   6,   0,  0, 0.0f },
 };
 
 /* arena_creeps_reset (S170-51): shared init helper for both arena_init_*
@@ -1101,6 +1110,48 @@ int arena_shop_sell(int owner, ArenaItemSlot slot) {
     h->equipped_item[slot] = -1;
     arena_recompute_item_stats(h);
     return 1;
+}
+
+/* arena_use_blink (S170-205): see header declaration's doc comment. Direction-derivation
+ * (move target, else nearest foe, else no-op) is deliberately the exact same fallback chain
+ * unicorn_cast_q already established for its own dash -- one convention for "which way does an
+ * instant reposition go" across this file, not a second one invented just for this item. */
+void arena_use_blink(int owner) {
+    if (owner < 0 || owner >= ARENA_MAX_HEROES) return;
+    ArenaHero *h = &arena_state.heroes[owner];
+    if (!h->active || !h->alive || h->stunned_ms > 0) return; /* not blocked by silenced_ms -- using an item isn't a cast, see header doc comment */
+    if (h->equipped_item[ARENA_ITEM_SLOT_TRINKET] != ARENA_BLINK_DAGGER_ITEM_ID) return;
+    if (h->blink_cooldown_ms > 0) return;
+
+    float dx, dz;
+    if (h->moving) {
+        dx = h->target_x - h->x;
+        dz = h->target_z - h->z;
+    } else {
+        ArenaHero *foe = arena_nearest_enemy(owner);
+        if (!foe) return;
+        dx = foe->x - h->x;
+        dz = foe->z - h->z;
+    }
+    float len = sqrtf(dx * dx + dz * dz);
+    if (len < 0.01f) return; /* no meaningful direction, e.g. already standing on the target */
+    dx /= len; dz /= len;
+
+    /* Blink covers ARENA_BLINK_RANGE, or the remaining distance to an already-close move
+       target/foe, whichever is shorter -- same "don't overshoot past what you were actually
+       going toward" behavior a real click-to-move stop would give, just instant. */
+    float travel = (len < ARENA_BLINK_RANGE) ? len : ARENA_BLINK_RANGE;
+    float nx = h->x + dx * travel;
+    float nz = h->z + dz * travel;
+    if (nx < -ARENA_HALF_EXTENT) nx = -ARENA_HALF_EXTENT;
+    if (nx > ARENA_HALF_EXTENT) nx = ARENA_HALF_EXTENT;
+    if (nz < -ARENA_HALF_EXTENT) nz = -ARENA_HALF_EXTENT;
+    if (nz > ARENA_HALF_EXTENT) nz = ARENA_HALF_EXTENT;
+    h->x = nx;
+    h->z = nz;
+    resolve_hero_obstacle_collision(h);
+
+    h->blink_cooldown_ms = ARENA_BLINK_COOLDOWN_MS;
 }
 
 /* arena_tick_fountains (S170-147): see header declaration's doc comment. */
@@ -3289,6 +3340,7 @@ static void tick_hero_kit(ArenaHero *h, ArenaHero *foe, ArenaHero *ally, unsigne
     if (h->q_cooldown_ms > 0) h->q_cooldown_ms -= (int)dt_ms;
     if (h->w_cooldown_ms > 0) h->w_cooldown_ms -= (int)dt_ms;
     if (h->r_cooldown_ms > 0) h->r_cooldown_ms -= (int)dt_ms;
+    if (h->blink_cooldown_ms > 0) h->blink_cooldown_ms -= (int)dt_ms; /* S170-205 -- generic same as the three above, independent track */
     /* combat_timer_ms (S170-148): ticks down every tick regardless of kit,
        same generic "runs for every hero" reasoning as the cooldowns above --
        re-armed to ARENA_COMBAT_TIMEOUT_MS by apply_damage() whenever this

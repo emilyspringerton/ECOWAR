@@ -21,6 +21,7 @@
 #define PACKET_ARENA_ATTACK 10  /* client -> arena_server: lock onto and auto-attack a specific hero slot, S170-162 */
 #define PACKET_ARENA_SHOP_BUY 11  /* client -> arena_server: buy an item by catalog index, S170-175 */
 #define PACKET_ARENA_SHOP_SELL 12 /* client -> arena_server: sell an equipped item by slot, S170-175 */
+#define PACKET_ARENA_BLINK 13     /* client -> arena_server: use Blink Dagger, S170-205 -- no payload, direction is derived server-side same as Unicorn's Q dash (toward move target, else nearest foe) */
 
 #define ARENA_PHASE_WAITING 0 /* fewer than 2 real players connected yet */
 #define ARENA_PHASE_DRAFT   1 /* both connected, waiting on hero picks */
@@ -263,6 +264,13 @@ typedef struct {
     uint8_t casting_slot;
     uint16_t cast_time_remaining_ms;
     uint16_t cast_total_ms;
+    // blink_cooldown_ms (S170-205, founder: "add blink dagger 1400 flow it gives a new keybind
+    // on screen for tilda"): synced so the tilde keybind's own on-screen tile (same "net_mode
+    // never calls arena_update() locally, so cooldowns just sat at zero forever without this"
+    // gap S170-137 already fixed for q/w/r_cooldown_ms) shows real cooldown state, not a
+    // permanently-ready tile. Local player's own hero only really needs this, but synced for
+    // every hero same as every other per-hero field on this struct, for consistency.
+    uint16_t blink_cooldown_ms;
 } ArenaHeroSnapshot;
 
 // ARENA_SNAPSHOT_MAX_HEROES must match packages/simulation/arena_game.h's

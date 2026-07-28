@@ -412,6 +412,16 @@ static void net_send_shop_sell(int slot) {
     sendto(net_sock, buf, sizeof(buf), 0, (struct sockaddr *)&net_server_addr, sizeof(net_server_addr));
 }
 
+/* net_send_blink (S170-205): no payload -- arena_use_blink derives everything (equipped-item
+ * check, direction) server-side from the sending client's own owner slot alone. */
+static void net_send_blink(void) {
+    char buf[sizeof(NetHeader)];
+    NetHeader *h = (NetHeader *)buf;
+    memset(h, 0, sizeof(NetHeader));
+    h->type = PACKET_ARENA_BLINK;
+    sendto(net_sock, buf, sizeof(buf), 0, (struct sockaddr *)&net_server_addr, sizeof(net_server_addr));
+}
+
 /* g_hover_target (S170-143, "hover casting like in wow macros"): which
  * hero slot the mouse is currently over, updated once per frame by the
  * health-bar hover pass below (S170-69's own hit-test, reused rather than
@@ -545,6 +555,7 @@ static void net_poll_snapshots(uint32_t now_ms) {
                     dst->casting_slot = msg->heroes[i].casting_slot; /* S170-203 */
                     dst->cast_time_remaining_ms = msg->heroes[i].cast_time_remaining_ms;
                     dst->cast_total_ms = msg->heroes[i].cast_total_ms;
+                    dst->blink_cooldown_ms = msg->heroes[i].blink_cooldown_ms; /* S170-205 */
                     if (msg->heroes[i].cast_flash_slot > 0) {
                         spawn_spell_flash(dst->x, dst->z, msg->heroes[i].cast_flash_slot, dst->hero_id);
                         trigger_squish(i);
@@ -1727,6 +1738,7 @@ static void spawn_spell_flash(float x, float z, int slot, int hero_id) {
 static float q_cooldown_peak_ms = 0.0f;
 static float w_cooldown_peak_ms = 0.0f;
 static float r_cooldown_peak_ms = 0.0f;
+static float blink_cooldown_peak_ms = 0.0f; /* S170-205 */
 
 /* draw_ability_tile: one Overwatch-style square ability icon -- bordered
  * tile, a radial dark wedge (GL_TRIANGLE_FAN from the tile's center)
@@ -2350,6 +2362,17 @@ int main(int argc, char *argv[]) {
                     if (e.key.keysym.sym == SDLK_q) { arena_cast_q(my_owner); arena_log_ability("Q"); }
                     if (e.key.keysym.sym == SDLK_w) { arena_toggle_w(my_owner); arena_log_ability("W"); }
                     if (e.key.keysym.sym == SDLK_e) { arena_cast_r(my_owner); arena_log_ability("R"); }
+                }
+                /* Blink Dagger (S170-205, founder: "add blink dagger 1400 flow it gives a new
+                   keybind on screen for tilda"): a dedicated key, not one of Q/W/E, since it's
+                   an item activation, not a kit ability -- same "the affordance you're looking
+                   at is the one the key acts on" precedent as every other keybind in this file.
+                   apm_record_action deliberately NOT called here -- item actives aren't kit
+                   abilities, same reasoning the shop's own quick-buy keys (1-9) don't count
+                   toward APM either. */
+                if (e.key.keysym.sym == SDLK_BACKQUOTE) {
+                    if (net_mode) net_send_blink();
+                    else arena_use_blink(my_owner);
                 }
             }
         }
@@ -3298,6 +3321,18 @@ int main(int argc, char *argv[]) {
                                h->w_active || h->casting_slot != 0, w_mana_blocked, "W", arena_ability_name(h->hero_id, 1), 0.7f, 0.3f, 1.0f);
             draw_ability_tile(tiles_x0 + tile_pitch * 2.0f, tiles_y, tile_size, h->r_cooldown_ms, &r_cooldown_peak_ms,
                                h->r_active_ms > 0, h->mp < ARENA_MP_COST_R, "E", arena_ability_name(h->hero_id, 2), 1.0f, 0.85f, 0.2f);
+            /* Blink Dagger (S170-205, founder: "add blink dagger 1400 flow it gives a new
+               keybind on screen for tilda"): a 4th tile, separate from the Q/W/E row's own
+               fixed-width layout (tile_pitch * 3.0f, one pitch past E) -- only drawn while the
+               local player actually has it equipped, same "the affordance you're looking at is
+               the one the key acts on" precedent, not a permanently-visible empty slot for an
+               item most heroes will never buy. Never mana-blocked (items in this catalog don't
+               cost mana to use, only Flow to buy) and never shows an "active" highlight (an
+               instant reposition has no sustained active state to highlight, same as Q). */
+            if (h->equipped_item[ARENA_ITEM_SLOT_TRINKET] == ARENA_BLINK_DAGGER_ITEM_ID) {
+                draw_ability_tile(tiles_x0 + tile_pitch * 3.0f, tiles_y, tile_size, h->blink_cooldown_ms, &blink_cooldown_peak_ms,
+                                   0, 0, "~", "BLINK DAGGER", 0.55f, 0.85f, 0.95f);
+            }
 
             /* Ability-help overlay (S170-151, "H should show an overlay with
                character ability descriptions"): a real quick-reference panel,

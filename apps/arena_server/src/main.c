@@ -367,6 +367,7 @@ static void server_broadcast(void) {
         msg.heroes[i].casting_slot = (uint8_t)h->casting_slot; /* S170-203 */
         msg.heroes[i].cast_time_remaining_ms = (uint16_t)(h->cast_time_remaining_ms > 0 ? h->cast_time_remaining_ms : 0);
         msg.heroes[i].cast_total_ms = (uint16_t)(h->cast_total_ms > 0 ? h->cast_total_ms : 0);
+        msg.heroes[i].blink_cooldown_ms = (uint16_t)(h->blink_cooldown_ms > 0 ? h->blink_cooldown_ms : 0); /* S170-205 */
         msg.picked[i] = (uint8_t)hero_picked[i];
     }
     msg.winner = (uint8_t)arena_state.winner;
@@ -555,6 +556,11 @@ static void server_handle_packet(struct sockaddr_in *sender, char *buffer, int s
         if (size < (int)(sizeof(NetHeader) + sizeof(ArenaShopSellCmd))) return;
         ArenaShopSellCmd *cmd = (ArenaShopSellCmd *)(buffer + sizeof(NetHeader));
         arena_shop_sell(client_id, (ArenaItemSlot)cmd->slot);
+    } else if (head->type == PACKET_ARENA_BLINK) {
+        /* S170-205: no payload -- arena_use_blink itself validates equipped item/cooldown/stun
+           and derives direction server-side, same trust model as every other Arena*Cmd handler
+           above. */
+        arena_use_blink(client_id);
     }
 }
 

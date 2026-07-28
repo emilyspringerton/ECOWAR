@@ -4002,6 +4002,114 @@ static void test_shop_sell_fails_on_empty_slot(void) {
     CHECK(arena_state.heroes[0].flow == 500, "a failed sell changes nothing");
 }
 
+/* S170-205, founder: "add blink dagger 1400 flow it gives a new keybind on screen for tilda" ->
+ * "+6ap +6hp". The one item in the catalog with a real active ability, not just stats -- these
+ * tests exercise arena_use_blink directly (equipped_item is set by hand, the same "skip the
+ * shop, exercise the mechanic" convention every other ability test in this file already uses
+ * rather than routing through arena_shop_buy first). */
+
+static void test_blink_noop_without_dagger_equipped(void) {
+    arena_init_teams();
+    arena_state.heroes[0].x = 0; arena_state.heroes[0].z = 0;
+    arena_state.heroes[0].target_x = 20.0f; arena_state.heroes[0].target_z = 0;
+    arena_state.heroes[0].moving = 1;
+
+    arena_use_blink(0);
+
+    CHECK(arena_state.heroes[0].x == 0, "no Blink Dagger equipped -- no dash happens at all");
+    CHECK(arena_state.heroes[0].blink_cooldown_ms == 0, "no cooldown spent on a no-op");
+}
+
+static void test_blink_dashes_toward_move_target(void) {
+    arena_init_teams();
+    arena_state.heroes[0].equipped_item[ARENA_ITEM_SLOT_TRINKET] = ARENA_BLINK_DAGGER_ITEM_ID;
+    arena_state.heroes[0].x = 0; arena_state.heroes[0].z = 0;
+    arena_state.heroes[0].target_x = 100.0f; arena_state.heroes[0].target_z = 0; /* well beyond ARENA_BLINK_RANGE */
+    arena_state.heroes[0].moving = 1;
+
+    arena_use_blink(0);
+
+    CHECK(fabsf(arena_state.heroes[0].x - ARENA_BLINK_RANGE) < 0.01f,
+          "blinks exactly ARENA_BLINK_RANGE toward a move target well beyond that range, not the whole remaining distance");
+    CHECK(arena_state.heroes[0].z == 0, "no lateral drift -- straight line toward the target");
+    CHECK(arena_state.heroes[0].blink_cooldown_ms == ARENA_BLINK_COOLDOWN_MS, "cooldown is spent on a real blink");
+}
+
+static void test_blink_toward_close_move_target_does_not_overshoot(void) {
+    arena_init_teams();
+    arena_state.heroes[0].equipped_item[ARENA_ITEM_SLOT_TRINKET] = ARENA_BLINK_DAGGER_ITEM_ID;
+    arena_state.heroes[0].x = 0; arena_state.heroes[0].z = 0;
+    arena_state.heroes[0].target_x = 3.0f; arena_state.heroes[0].target_z = 0; /* well within ARENA_BLINK_RANGE */
+    arena_state.heroes[0].moving = 1;
+
+    arena_use_blink(0);
+
+    CHECK(fabsf(arena_state.heroes[0].x - 3.0f) < 0.01f, "a close move target is reached exactly, not overshot past it");
+}
+
+static void test_blink_toward_nearest_foe_when_not_moving(void) {
+    arena_init_teams();
+    for (int i = 2; i < ARENA_MAX_HEROES; i++) arena_state.heroes[i].active = 0;
+    arena_state.heroes[ARENA_TEAM_SIZE].active = 1;
+    arena_state.heroes[ARENA_TEAM_SIZE].alive = 1;
+    arena_state.heroes[0].equipped_item[ARENA_ITEM_SLOT_TRINKET] = ARENA_BLINK_DAGGER_ITEM_ID;
+    arena_state.heroes[0].x = 0; arena_state.heroes[0].z = 0;
+    arena_state.heroes[0].moving = 0;
+    arena_state.heroes[ARENA_TEAM_SIZE].x = 5.0f; arena_state.heroes[ARENA_TEAM_SIZE].z = 0;
+
+    arena_use_blink(0);
+
+    CHECK(fabsf(arena_state.heroes[0].x - 5.0f) < 0.01f, "not moving -- blinks toward the nearest living enemy instead, same fallback unicorn_cast_q already uses");
+}
+
+static void test_blink_respects_its_own_cooldown(void) {
+    arena_init_teams();
+    arena_state.heroes[0].equipped_item[ARENA_ITEM_SLOT_TRINKET] = ARENA_BLINK_DAGGER_ITEM_ID;
+    arena_state.heroes[0].x = 0; arena_state.heroes[0].z = 0;
+    arena_state.heroes[0].target_x = 100.0f; arena_state.heroes[0].target_z = 0;
+    arena_state.heroes[0].moving = 1;
+
+    arena_use_blink(0);
+    float x_after_first = arena_state.heroes[0].x;
+    arena_state.heroes[0].moving = 1; /* still "trying" to move further */
+    arena_use_blink(0);
+
+    CHECK(arena_state.heroes[0].x == x_after_first, "a second blink attempt while still on cooldown does nothing");
+}
+
+static void test_blink_blocked_by_stun(void) {
+    arena_init_teams();
+    arena_state.heroes[0].equipped_item[ARENA_ITEM_SLOT_TRINKET] = ARENA_BLINK_DAGGER_ITEM_ID;
+    arena_state.heroes[0].x = 0; arena_state.heroes[0].z = 0;
+    arena_state.heroes[0].target_x = 100.0f; arena_state.heroes[0].target_z = 0;
+    arena_state.heroes[0].moving = 1;
+    arena_state.heroes[0].stunned_ms = 500;
+
+    arena_use_blink(0);
+
+    CHECK(arena_state.heroes[0].x == 0, "a stunned hero can't blink -- stun blocks all action, same as every other kit ability");
+}
+
+static void test_blink_not_blocked_by_silence(void) {
+    arena_init_teams();
+    arena_state.heroes[0].equipped_item[ARENA_ITEM_SLOT_TRINKET] = ARENA_BLINK_DAGGER_ITEM_ID;
+    arena_state.heroes[0].x = 0; arena_state.heroes[0].z = 0;
+    arena_state.heroes[0].target_x = 100.0f; arena_state.heroes[0].target_z = 0;
+    arena_state.heroes[0].moving = 1;
+    arena_state.heroes[0].silenced_ms = 500;
+
+    arena_use_blink(0);
+
+    CHECK(fabsf(arena_state.heroes[0].x - ARENA_BLINK_RANGE) < 0.01f,
+          "a silenced hero can still blink -- using an item isn't a cast, only stun blocks it");
+}
+
+static void test_blink_dagger_catalog_entry_costs_1400(void) {
+    CHECK(ARENA_ITEMS[ARENA_BLINK_DAGGER_ITEM_ID].cost == 1400, "Blink Dagger costs the documented 1400 Flow");
+    CHECK(ARENA_ITEMS[ARENA_BLINK_DAGGER_ITEM_ID].bonus_ad == 6, "Blink Dagger grants +6 AD");
+    CHECK(ARENA_ITEMS[ARENA_BLINK_DAGGER_ITEM_ID].bonus_max_hp == 6, "Blink Dagger grants +6 HP");
+}
+
 static void test_item_stats_apply_to_hp_mp_armor_ad_speed(void) {
     arena_init_teams();
     arena_state.heroes[0].team = 0;
@@ -4966,6 +5074,14 @@ int main(void) {
     test_shop_buy_auto_sells_occupied_slot();
     test_shop_sell_refunds_partial_flow_and_clears_slot();
     test_shop_sell_fails_on_empty_slot();
+    test_blink_noop_without_dagger_equipped();
+    test_blink_dashes_toward_move_target();
+    test_blink_toward_close_move_target_does_not_overshoot();
+    test_blink_toward_nearest_foe_when_not_moving();
+    test_blink_respects_its_own_cooldown();
+    test_blink_blocked_by_stun();
+    test_blink_not_blocked_by_silence();
+    test_blink_dagger_catalog_entry_costs_1400();
     test_item_stats_apply_to_hp_mp_armor_ad_speed();
     test_jungle_creep_kill_grants_flow_and_xp();
     test_lane_creep_kill_grants_flow_and_xp();
