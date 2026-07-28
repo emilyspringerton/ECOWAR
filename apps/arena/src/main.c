@@ -536,6 +536,7 @@ static void net_poll_snapshots(uint32_t now_ms) {
                     for (int s = 0; s < ARENA_SNAPSHOT_ITEM_SLOT_COUNT && s < ARENA_ITEM_SLOT_COUNT; s++) {
                         dst->equipped_item[s] = msg->heroes[i].equipped_item[s];
                     }
+                    dst->w_active = msg->heroes[i].w_active; /* S170-180 bugfix: was never synced, so the W tile's "active" highlight was always wrong in net_mode */
                     if (msg->heroes[i].cast_flash_slot > 0) {
                         spawn_spell_flash(dst->x, dst->z, msg->heroes[i].cast_flash_slot, dst->hero_id);
                         trigger_squish(i);
@@ -2963,8 +2964,15 @@ int main(int argc, char *argv[]) {
             float tiles_y = 90.0f; /* near the bottom edge, leaving room below for the keybind/name labels */
             draw_ability_tile(tiles_x0, tiles_y, tile_size, h->q_cooldown_ms, &q_cooldown_peak_ms,
                                0, h->mp < ARENA_MP_COST_Q, "Q", arena_ability_name(h->hero_id, 0), 0.3f, 0.7f, 1.0f);
+            /* S170-181: toggle heroes only need mp > 0 to activate (drained over time, not
+               charged up front); the instant-effect W heroes (Ghost, Frog, etc.) still pay
+               the old flat ARENA_MP_COST_W, so the tile's own "can I afford this" gate has to
+               ask which mana-cost model this hero's W actually uses. */
+            int w_mana_blocked = arena_hero_w_is_toggle(h->hero_id)
+                                      ? (!h->w_active && h->mp <= 0)
+                                      : (!h->w_active && h->mp < ARENA_MP_COST_W);
             draw_ability_tile(tiles_x0 + tile_pitch, tiles_y, tile_size, h->w_cooldown_ms, &w_cooldown_peak_ms,
-                               h->w_active, (!h->w_active && h->mp < ARENA_MP_COST_W), "W", arena_ability_name(h->hero_id, 1), 0.7f, 0.3f, 1.0f);
+                               h->w_active, w_mana_blocked, "W", arena_ability_name(h->hero_id, 1), 0.7f, 0.3f, 1.0f);
             draw_ability_tile(tiles_x0 + tile_pitch * 2.0f, tiles_y, tile_size, h->r_cooldown_ms, &r_cooldown_peak_ms,
                                h->r_active_ms > 0, h->mp < ARENA_MP_COST_R, "E", arena_ability_name(h->hero_id, 2), 1.0f, 0.85f, 0.2f);
 

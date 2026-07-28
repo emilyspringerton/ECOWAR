@@ -313,6 +313,7 @@ static void server_broadcast(void) {
         for (int s = 0; s < ARENA_SNAPSHOT_ITEM_SLOT_COUNT; s++) {
             msg.heroes[i].equipped_item[s] = (int8_t)h->equipped_item[s];
         }
+        msg.heroes[i].w_active = (uint8_t)h->w_active; /* S170-180 bugfix */
         msg.picked[i] = (uint8_t)hero_picked[i];
     }
     msg.winner = (uint8_t)arena_state.winner;

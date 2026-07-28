@@ -213,6 +213,15 @@ typedef struct {
     uint8_t kills;
     uint8_t deaths;
     int8_t equipped_item[ARENA_SNAPSHOT_ITEM_SLOT_COUNT];
+    // w_active (S170-180 bugfix, founder: "it seems like toggelable abilities arent
+    // working"): real root cause -- this field never existed on the wire at all, so a
+    // networked client's own local ArenaHero.w_active sat at whatever memset left it
+    // (always 0/off) no matter what arena_toggle_w actually did server-side. The W
+    // ability tile's "active" highlight (and anything else client-side that reads
+    // w_active) was correspondingly always wrong in net_mode -- looked broken because it
+    // was, not a toggle-logic bug. Synced for every hero, not just the local player's,
+    // same "the whole battlefield should read clearly" convention as attack_target above.
+    uint8_t w_active;
 } ArenaHeroSnapshot;
 
 // ARENA_SNAPSHOT_MAX_HEROES must match packages/simulation/arena_game.h's

@@ -194,30 +194,59 @@ static void test_mp_blocks_cast_when_insufficient(void) {
     CHECK(h->q_cooldown_ms == 0, "a cast blocked by mana never starts its cooldown, same as a whiff");
 }
 
-static void test_mp_toggle_w_charges_on_activate_free_on_deactivate(void) {
+/* S170-181, founder: "instead of initial mana cost toggle spells should drain mana over
+ * time" -- activating a true toggle no longer charges ARENA_MP_COST_W up front; it drains
+ * ARENA_MP_DRAIN_W_PER_SEC continuously via tick_hero_kit for as long as it stays on. */
+static void test_mp_toggle_w_activates_free_drains_over_time(void) {
     arena_init();
     ArenaHero *h = &arena_state.heroes[0];
     int mp_before = h->mp;
 
     arena_toggle_w(0);
     CHECK(h->w_active == 1, "W toggles on");
-    CHECK(h->mp == mp_before - ARENA_MP_COST_W, "activating a toggle spends its flat mana cost");
+    CHECK(h->mp == mp_before, "activating a toggle no longer spends a flat cost up front");
 
-    int mp_after_activate = h->mp;
+    arena_update(1000); /* one full second of drain */
+    CHECK(h->mp == mp_before - ARENA_MP_DRAIN_W_PER_SEC, "held on, it drains at the documented per-second rate");
+
+    int mp_after_drain = h->mp;
     arena_toggle_w(0);
     CHECK(h->w_active == 0, "W toggles back off");
-    CHECK(h->mp == mp_after_activate, "deactivating a toggle is free -- canceling isn't a new cast");
+    CHECK(h->mp == mp_after_drain, "deactivating a toggle is free -- canceling isn't a new cast, and stops the drain");
+    arena_update(1000);
+    /* Out-of-combat mana regen (ARENA_MP_REGEN_PER_SEC) is free to apply once the toggle's
+       own drain stops -- >= rather than == so this doesn't fight that separate, correct
+       behavior; what actually matters here is that mp never goes back DOWN once w_active
+       is off. */
+    CHECK(h->mp >= mp_after_drain, "no further drain once toggled off");
 }
 
-static void test_mp_toggle_w_blocked_when_insufficient(void) {
+static void test_mp_toggle_w_blocked_at_zero_mana(void) {
     arena_init();
     ArenaHero *h = &arena_state.heroes[0];
-    h->mp = ARENA_MP_COST_W - 1; /* one short */
+    h->mp = 0;
 
     arena_toggle_w(0);
 
-    CHECK(h->w_active == 0, "insufficient mana blocks activating a toggle, same as any other cast");
-    CHECK(h->mp == ARENA_MP_COST_W - 1, "a blocked activation doesn't spend the mana it didn't have");
+    CHECK(h->w_active == 0, "zero mana blocks activating a toggle -- there's nothing left to drain");
+    CHECK(h->mp == 0, "a blocked activation doesn't go negative");
+}
+
+static void test_mp_toggle_w_auto_deactivates_when_drained_to_empty(void) {
+    arena_init();
+    ArenaHero *h = &arena_state.heroes[0];
+    h->mp = 2; /* less than one second's worth of drain */
+    h->combat_timer_ms = 5000; /* in combat -- caps regen at the slow trickle (1/sec), well
+                                   under the 5/sec drain rate, so mana actually runs out
+                                   instead of the two rates roughly canceling out */
+
+    arena_toggle_w(0);
+    CHECK(h->w_active == 1, "W toggles on with only a little mana left -- activation itself is free now");
+
+    arena_update(1000);
+
+    CHECK(h->w_active == 0, "the toggle can't be held on for free once mana actually runs out -- auto-deactivates");
+    CHECK(h->mp == 0, "mana is clamped at 0, never negative");
 }
 
 static void test_unicorn_r_doubles_armor_temporarily(void) {
@@ -4155,8 +4184,9 @@ int main(void) {
     test_mp_regenerates_over_time();
     test_mp_deducted_on_landed_q_cast();
     test_mp_blocks_cast_when_insufficient();
-    test_mp_toggle_w_charges_on_activate_free_on_deactivate();
-    test_mp_toggle_w_blocked_when_insufficient();
+    test_mp_toggle_w_activates_free_drains_over_time();
+    test_mp_toggle_w_blocked_at_zero_mana();
+    test_mp_toggle_w_auto_deactivates_when_drained_to_empty();
     test_unicorn_r_doubles_armor_temporarily();
     test_unicorn_armor_reduces_incoming_damage();
     test_duck_q_pulls_foe_and_damages();

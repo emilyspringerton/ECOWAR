@@ -36,6 +36,32 @@ const char *arena_hero_name(ArenaHeroID hero_id) {
     }
 }
 
+/* arena_hero_w_is_toggle (S170-181, founder: "instead of initial mana cost toggle spells
+ * should drain mana over time"): which heroes' W is a genuine hold-on/hold-off toggle
+ * (arena_toggle_w's own `w_active = !w_active` cases) rather than an instant effect on
+ * cooldown that happens to reuse the W slot (Ghost, Frog, Doc Wheel, etc., which keep the
+ * old flat ARENA_MP_COST_W charge). Client-side HUD code needs this to know which mana-cost
+ * model applies to a given hero's W tile -- kept here, next to arena_hero_name, rather than
+ * duplicated client-side, so arena_toggle_w's own case list stays the single source of truth
+ * a future new hero only has to update once. */
+int arena_hero_w_is_toggle(ArenaHeroID hero_id) {
+    switch (hero_id) {
+    case ARENA_HERO_UNICORN:
+    case ARENA_HERO_LOKI:
+    case ARENA_HERO_GARY:
+    case ARENA_HERO_FLUTE_DEBT:
+    case ARENA_HERO_BACON_PUCK:
+    case ARENA_HERO_ABRAHAM:
+    case ARENA_HERO_ADA:
+    case ARENA_HERO_GUNNR:
+    case ARENA_HERO_HE_XIANGU:
+    case ARENA_HERO_MNM:
+        return 1;
+    default:
+        return 0;
+    }
+}
+
 /* Real ability names, one row per hero, matching docs/HEROES_VS0.md exactly (S170-96/S170-112
  * follow-up: the HUD only ever showed generic "Q READY/CD", never which real ability that was).
  * {Q, W, R} -- kept short enough to fit the existing cooldown-strip HUD slots. */

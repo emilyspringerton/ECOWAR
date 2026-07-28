@@ -2499,9 +2499,8 @@ void arena_toggle_w(int owner) {
 
     switch (h->hero_id) {
     case ARENA_HERO_UNICORN:
-        if (!h->w_active && h->mp < ARENA_MP_COST_W) return; /* insufficient MP to activate; toggling off is always free */
+        if (!h->w_active && h->mp <= 0) return; /* S170-181: activating no longer charges a flat cost, just requires some mana to sustain -- see ARENA_MP_DRAIN_W_PER_SEC; toggling off is always free */
         h->w_active = !h->w_active;
-        if (h->w_active) h->mp -= ARENA_MP_COST_W;
         break;
     case ARENA_HERO_GHOST:
         /* Not a Ghost: an instant-use buff on its own cooldown, not a
@@ -2581,45 +2580,39 @@ void arena_toggle_w(int owner) {
         /* Bound Where the Myth Says: free toggle, no cooldown, same
            convention as Unicorn's W -- arena_hero_armor() reads w_active
            directly for the actual bonus. */
-        if (!h->w_active && h->mp < ARENA_MP_COST_W) return; /* insufficient MP to activate; toggling off is always free */
+        if (!h->w_active && h->mp <= 0) return; /* S170-181: activating no longer charges a flat cost, just requires some mana to sustain -- see ARENA_MP_DRAIN_W_PER_SEC; toggling off is always free */
         h->w_active = !h->w_active;
-        if (h->w_active) h->mp -= ARENA_MP_COST_W;
         break;
     case ARENA_HERO_GARY:
         /* Watching the Bridge: free toggle, no cooldown -- gary_cast_q()
            reads w_active directly for Q's extended range, not a stat bonus. */
-        if (!h->w_active && h->mp < ARENA_MP_COST_W) return; /* insufficient MP to activate; toggling off is always free */
+        if (!h->w_active && h->mp <= 0) return; /* S170-181: activating no longer charges a flat cost, just requires some mana to sustain -- see ARENA_MP_DRAIN_W_PER_SEC; toggling off is always free */
         h->w_active = !h->w_active;
-        if (h->w_active) h->mp -= ARENA_MP_COST_W;
         break;
     case ARENA_HERO_FLUTE_DEBT:
         /* Recouping Interest: free toggle self-heal-over-time, same shape
            as Unicorn's W -- see tick_hero_kit for the actual regen tick. */
-        if (!h->w_active && h->mp < ARENA_MP_COST_W) return; /* insufficient MP to activate; toggling off is always free */
+        if (!h->w_active && h->mp <= 0) return; /* S170-181: activating no longer charges a flat cost, just requires some mana to sustain -- see ARENA_MP_DRAIN_W_PER_SEC; toggling off is always free */
         h->w_active = !h->w_active;
-        if (h->w_active) h->mp -= ARENA_MP_COST_W;
         break;
     case ARENA_HERO_BACON_PUCK:
         /* Which One Is The Real One: free toggle, no cooldown --
            bacon_puck_cast_q() reads w_active directly for Q's extended
            intangibility duration, not a stat bonus. */
-        if (!h->w_active && h->mp < ARENA_MP_COST_W) return; /* insufficient MP to activate; toggling off is always free */
+        if (!h->w_active && h->mp <= 0) return; /* S170-181: activating no longer charges a flat cost, just requires some mana to sustain -- see ARENA_MP_DRAIN_W_PER_SEC; toggling off is always free */
         h->w_active = !h->w_active;
-        if (h->w_active) h->mp -= ARENA_MP_COST_W;
         break;
     case ARENA_HERO_ABRAHAM:
         /* The Book, Unattested: free toggle, no cooldown -- abraham_cast_q()
            reads w_active directly for Q's boosted damage while channeling. */
-        if (!h->w_active && h->mp < ARENA_MP_COST_W) return; /* insufficient MP to activate; toggling off is always free */
+        if (!h->w_active && h->mp <= 0) return; /* S170-181: activating no longer charges a flat cost, just requires some mana to sustain -- see ARENA_MP_DRAIN_W_PER_SEC; toggling off is always free */
         h->w_active = !h->w_active;
-        if (h->w_active) h->mp -= ARENA_MP_COST_W;
         break;
     case ARENA_HERO_ADA:
         /* The frame's own plating: free toggle, no cooldown --
            arena_hero_armor() reads w_active directly for the bonus. */
-        if (!h->w_active && h->mp < ARENA_MP_COST_W) return; /* insufficient MP to activate; toggling off is always free */
+        if (!h->w_active && h->mp <= 0) return; /* S170-181: activating no longer charges a flat cost, just requires some mana to sustain -- see ARENA_MP_DRAIN_W_PER_SEC; toggling off is always free */
         h->w_active = !h->w_active;
-        if (h->w_active) h->mp -= ARENA_MP_COST_W;
         break;
     case ARENA_HERO_TYLER:
         /* Poof: an instant-use blink-strike on its own cooldown, not a toggle --
@@ -2657,9 +2650,8 @@ void arena_toggle_w(int owner) {
     case ARENA_HERO_GUNNR:
         /* Three More Things: free toggle, no cooldown -- tick_hero_kit reads w_active
            directly for the regen, same shape as Flute Debt's Recouping Interest. */
-        if (!h->w_active && h->mp < ARENA_MP_COST_W) return; /* insufficient MP to activate; toggling off is always free */
+        if (!h->w_active && h->mp <= 0) return; /* S170-181: activating no longer charges a flat cost, just requires some mana to sustain -- see ARENA_MP_DRAIN_W_PER_SEC; toggling off is always free */
         h->w_active = !h->w_active;
-        if (h->w_active) h->mp -= ARENA_MP_COST_W;
         break;
     case ARENA_HERO_VASSAGO: {
         /* The Soft Foresight, extended: grants the nearest ally next_cast_refund, same
@@ -2678,9 +2670,8 @@ void arena_toggle_w(int owner) {
         /* Self-Denial Taken Past the Point: free toggle, no cooldown -- tick_hero_kit
            reads w_active directly for the regen, same shape as Flute Debt's Recouping
            Interest. */
-        if (!h->w_active && h->mp < ARENA_MP_COST_W) return; /* insufficient MP to activate; toggling off is always free */
+        if (!h->w_active && h->mp <= 0) return; /* S170-181: activating no longer charges a flat cost, just requires some mana to sustain -- see ARENA_MP_DRAIN_W_PER_SEC; toggling off is always free */
         h->w_active = !h->w_active;
-        if (h->w_active) h->mp -= ARENA_MP_COST_W;
         break;
     case ARENA_HERO_BELETH:
         /* Hope Is a Terror I Leash With Song: instant silence-only decree on its own
@@ -2695,9 +2686,8 @@ void arena_toggle_w(int owner) {
     case ARENA_HERO_MNM:
         /* Wasn't That Shape A Second Ago: free toggle bonus armor, same shape as Loki's/Ada's
            own -- arena_hero_armor() reads w_active directly for the bonus. */
-        if (!h->w_active && h->mp < ARENA_MP_COST_W) return;
+        if (!h->w_active && h->mp <= 0) return; /* S170-181: same activation-gate change as every other true toggle above */
         h->w_active = !h->w_active;
-        if (h->w_active) h->mp -= ARENA_MP_COST_W;
         break;
     default:
         /* No-op for any hero without a real W in this arena, not a crash
@@ -3012,6 +3002,28 @@ static void tick_hero_kit(ArenaHero *h, ArenaHero *foe, ArenaHero *ally, unsigne
         }
     } else {
         h->mp_regen_accum = 0.0f; /* dead or already full -- don't let fractional progress silently bank while it can't apply */
+    }
+    /* Toggle-W mana drain (S170-181): generic across every TRUE toggle hero (see
+       ArenaHero.w_drain_accum's own doc comment for the exact case list) -- arena_toggle_w
+       itself no longer charges a flat activation cost for these, it only gates on mp > 0 to
+       turn on. Same fractional-accumulator idiom as mana regen just above, and can run in the
+       same tick as regen (a toggle hero below max mp both regens and drains; the two rates
+       simply net out, no special-case needed). Auto-deactivates the instant mp is fully spent
+       -- a toggle can't be held on for free once the tank is empty. */
+    if (h->alive && h->w_active) {
+        h->w_drain_accum += ARENA_MP_DRAIN_W_PER_SEC * ((float)dt_ms / 1000.0f);
+        int drain_whole = (int)h->w_drain_accum;
+        if (drain_whole > 0) {
+            h->mp -= drain_whole;
+            h->w_drain_accum -= (float)drain_whole;
+            if (h->mp <= 0) {
+                h->mp = 0;
+                h->w_active = 0;
+                h->w_drain_accum = 0.0f;
+            }
+        }
+    } else {
+        h->w_drain_accum = 0.0f; /* not toggled on -- don't let fractional progress silently bank */
     }
     if (h->silenced_ms > 0) {
         h->silenced_ms -= (int)dt_ms;

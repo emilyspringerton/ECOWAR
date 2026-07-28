@@ -911,8 +911,18 @@ typedef struct {
 #define ARENA_MP_REGEN_IN_COMBAT_PER_SEC 1 /* S170-150, founder: "have mana tic up slowly 1 per second always" -- a slow trickle that runs even mid-fight, distinct from the faster out-of-combat rate above */
 #define ARENA_COMBAT_TIMEOUT_MS 4000 /* WoW-adjacent -- long enough that a brief lull mid-fight doesn't falsely read as "out of combat" */
 #define ARENA_MP_COST_Q            20
-#define ARENA_MP_COST_W            20
+#define ARENA_MP_COST_W            20 /* still the flat cost for the INSTANT-effect W heroes (Ghost, Frog, etc.) -- see ARENA_MP_DRAIN_W_PER_SEC below for the true toggle heroes */
 #define ARENA_MP_COST_R            45
+/* ARENA_MP_DRAIN_W_PER_SEC (S170-181, founder: "instead of initial mana cost toggle spells
+ * should drain mana over time"): replaces the old flat ARENA_MP_COST_W activation charge for
+ * every TRUE toggle W (arena_toggle_w's own `w_active = !w_active` cases) -- activating now
+ * only requires mp > 0, and tick_hero_kit drains this rate continuously for as long as
+ * w_active stays on, auto-deactivating the instant mp hits 0 (see ArenaHero.w_drain_accum's
+ * own doc comment). 5/sec against ARENA_MP_MAX=100 means a full bar sustains a toggle for
+ * ~20s -- roughly the same total spend as the old flat 20-cost activation if left on for the
+ * first ~4s, but scales with how long the toggle is actually used instead of charging the
+ * same amount whether it's held for one second or the whole fight. */
+#define ARENA_MP_DRAIN_W_PER_SEC    5
 
 /* ---- Flow/XP economy + item shop (S170-175) ----
  * Founder, real-time: "do a first pass shop interface have there be 2
@@ -1096,6 +1106,15 @@ typedef struct {
      * time, and a whole point is applied (and subtracted back out of the
      * accumulator) once enough of it has built up. */
     float mp_regen_accum;
+    /* w_drain_accum (S170-181, founder: "instead of initial mana cost toggle spells should
+     * drain mana over time"): same fractional-accumulator idiom as mp_regen_accum right above,
+     * for the same reason -- ARENA_MP_DRAIN_W_PER_SEC * dt_ms/1000 truncates to 0 almost every
+     * real 16ms tick if applied directly, so the fractional remainder has to persist across
+     * ticks instead of being discarded. Only ever nonzero while a TRUE toggle ability (Unicorn/
+     * Loki/Gary/Flute Debt/Bacon Puck/Abraham/Ada/Gunnr/He Xiangu/MnM's own w_active, per
+     * arena_toggle_w's own case list) is active; drains nothing for the OTHER W-slot heroes
+     * (Ghost, Frog, etc.) whose W is an instant effect on cooldown, not a hold state. */
+    float w_drain_accum;
     /* next_cast_refund: generic ally-buff flag (S170-45, Frog's Borrowed
      * Time places this on an ally, not itself) -- the next successful Q/W/R
      * cast by whoever carries this flag has its cooldown refunded to 0

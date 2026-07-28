@@ -25,6 +25,12 @@
  * pointer or crash. */
 const char *arena_hero_name(ArenaHeroID hero_id);
 
+/* arena_hero_w_is_toggle (S170-181): 1 if hero_id's W is a genuine hold-on/hold-off toggle
+ * (drains mana over time via ARENA_MP_DRAIN_W_PER_SEC while active), 0 if it's an instant
+ * effect on cooldown that reuses the W slot (still charges the flat ARENA_MP_COST_W). The
+ * client HUD needs this to know which mana-cost model applies to a given hero's W tile. */
+int arena_hero_w_is_toggle(ArenaHeroID hero_id);
+
 /* arena_ability_name returns the real ability name for hero_id's Q/W/R slot
  * (slot 0/1/2), matching docs/HEROES_VS0.md's own naming ("EARTHBIND", "POOF",
  * not a generic "Q"/"W"/"R" label) -- S170-96/S170-112, the client HUD only
