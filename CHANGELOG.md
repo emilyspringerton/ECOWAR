@@ -1,5 +1,22 @@
 # Changelog
 
+## 2026-07-28 (continued 4)
+
+- fix(arena): remove fog of war -- client-side-only visibility isn't real (S170-198). Founder,
+  real-time, immediately after S170-196 shipped: "remove fog of war its only client side fuck
+  that." NORTHSTAR §15.2 itself named this exact tradeoff and explicitly deferred real
+  server-side vision culling rather than build it -- "the enemy just doesn't render" was always
+  a cosmetic-only gate a modified client trivially bypasses, not real information hiding. Reverts
+  the fog half of S170-196 (`ARENA_VISION_RADIUS`, both distance-check skip blocks in
+  `apps/arena/src/main.c`, the README section) -- camera lock (§15.1, the `C` toggle) is
+  untouched, not part of this complaint. Build clean, full suite green (607/607).
+- feat(arena): 10x Flow earned from all sources (S170-197). Founder, real-time: "the economy is
+  too slow i can never buy anything increase flow gained by 10x from all sources." All 4
+  Flow-earning constants x10: jungle creep kill 15->150, lane creep kill 8->80, hero kill
+  100->1000, assist 35->350. XP left untouched -- not mentioned, and XP has no spend pressure the
+  way Flow does. Every existing test already checked against the constants, not literal numbers,
+  so nothing needed updating. Build clean, full suite green (607/607).
+
 ## 2026-07-28 (continued 3)
 
 - feat(arena): camera lock + fog of war, NORTHSTAR §15 (S170-196). All S170 sprint checklist
