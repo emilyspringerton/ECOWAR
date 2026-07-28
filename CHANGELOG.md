@@ -2,6 +2,16 @@
 
 ## 2026-07-28 (continued)
 
+- feat(arena): Tyler's W (Poof) teleports the whole clone army, not just his own body (S170-170).
+  Continues the earlier sprint plan's own open item, flagged directly in `docs/HEROES_VS0.md`'s
+  S170-141 scope note ("W still moves only Tyler's own body ... a real next step, not attempted
+  this pass"). `tyler_cast_w` now teleports every active clone linked to Tyler to the exact same
+  point he blinks to, each independently landing its own arrival-damage check against the same
+  target — concentrating the whole clone army's damage onto one enemy, the real "full-team dive
+  tool" identity the original design names. Removed `ARENA_TYLER_W_HIT_RADIUS`, now genuinely
+  unused (the old distance check was always trivially true by construction). 1 new test, full
+  suite green, live-verified via an isolated 20-bot match with no crashes.
+
 - fix(arena): boids flocking made bots dance around node objectives instead of capping
   (S170-168). Founder, real-time, live: "there is a bug where the boyds stuff makes the team do
   a weird cluster dance around the objective ... not sitting right on it" -> "at least one of
