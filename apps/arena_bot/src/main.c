@@ -39,6 +39,7 @@
 #define TICKET_MAC_LEN 16
 #define TICKET_TOTAL_LEN (TICKET_PAYLOAD_LEN + TICKET_MAC_LEN)
 #define ARENA_MATCHMAKER_PORT 7778 /* separate queue from the card-RTS matchmaker's 7777 */
+#define ARENA_BOT_LOW_HP_FRACTION 0.25f /* S170-173: "seek out fountains when super low" -- real-MOBA "go top off" threshold */
 /* Mirrors packages/simulation/arena_game.h's ARENA_HERO_COUNT -- this file is a pure network
    client and deliberately doesn't include the sim header (no direct ArenaState access, wire
    protocol only), so the roster size has to be kept in sync by hand here. Bump this alongside
@@ -544,102 +545,133 @@ static void play_one_match(int game_port) {
                        would have. */
                     float mx = last.heroes[my_owner].x, mz = last.heroes[my_owner].z;
                     int my_team = (my_owner < last.count / 2) ? 0 : 1;
-                    int best = -1;
-                    float best_dist = 0;
-                    for (int i = 0; i < last.count; i++) {
-                        if (!last.heroes[i].alive) continue;
-                        int team = (i < last.count / 2) ? 0 : 1;
-                        if (team == my_team) continue;
-                        float dx = last.heroes[i].x - mx, dz = last.heroes[i].z - mz;
-                        float dist = dx * dx + dz * dz;
-                        if (best == -1 || dist < best_dist) { best = i; best_dist = dist; }
-                    }
-                    /* S170-155, founder: "add resource management (node capping) to the
-                       bot AI heuristic and brain ... first pass." Before this, bots did
-                       nothing but chase whichever enemy hero was nearest, anywhere on the
-                       map -- with the resource race (S170-153) now the actual win
-                       condition, a bot that never once stands on a node can't meaningfully
-                       contribute to winning. First-pass split: engage a nearby enemy if one
-                       is actually close enough to be a real threat/opportunity (unchanged
-                       feel for real skirmishes); otherwise, walk to and hold the nearest
-                       node this bot's team doesn't already own, same "keep capturing
-                       ground when nothing's fighting you" behavior a real Arathi Basin
-                       player falls back to. Only chases a distant enemy again once the
-                       team already owns every node (nothing left to capture). */
-                    float engage_range_sq = 15.0f * 15.0f;
-                    int want_owner = my_team + 1; /* ArenaNodeSnapshot.owner: 1=team0, 2=team1 */
-                    int best_node = -1;
-                    float best_node_dist = 0;
-                    if (best == -1 || best_dist > engage_range_sq) {
-                        for (int n = 0; n < ARENA_SNAPSHOT_NODE_COUNT; n++) {
-                            if (last.nodes[n].owner == want_owner) continue; /* already ours */
-                            float dx = last.nodes[n].x - mx, dz = last.nodes[n].z - mz;
-                            float dist = dx * dx + dz * dz;
-                            if (best_node == -1 || dist < best_node_dist) { best_node = n; best_node_dist = dist; }
-                        }
-                    }
-                    /* S170-160: squad flocking (alignment/cohesion/separation among
-                       living teammates, see flock_offset's own doc comment) is a small
-                       perturbation added on top of whichever objective target gets picked
-                       below -- real goal-seeking (capture the node, engage the enemy)
-                       always still drives the bot, flocking just makes the group's motion
-                       toward that goal feel organic instead of every bot pathing as an
-                       island. */
-                    float flock_dx, flock_dz;
-                    flock_offset(&last, &prev, have_prev, my_owner, my_team, &flock_dx, &flock_dz);
 
-                    if (best_node != -1) {
-                        /* S170-168 fix, real bug found live: "the boyds stuff makes the
-                           team do a weird cluster dance around the objective ... they are
-                           doing the boids dance around the objective not sitting right on
-                           it" -> "at least one of them should sit right on it and ignore
-                           the flock." Root cause: separation force is strongest exactly
-                           when allies are close together, which is unavoidably true the
-                           moment several bots converge on the same node -- flocking kept
-                           perturbing everyone off the node's exact point forever, never
-                           letting anyone actually settle there. Fix: a stateless, no-
-                           coordination-needed "anchor" rule -- whichever bots' owner index
-                           happens to land on this node's own index mod ARENA_SNAPSHOT_NODE_COUNT
-                           ignore the flock entirely and path straight to the node's exact
-                           (x,z), guaranteeing real capture progress; every other bot still
-                           flocks around it as a loose escort, which is the actual organic
-                           "fan out and hold the ground around the objective" look this was
-                           always meant to produce. */
-                        int am_anchor = (my_owner % ARENA_SNAPSHOT_NODE_COUNT) == best_node;
-                        if (am_anchor) {
-                            send_move(last.nodes[best_node].x, last.nodes[best_node].z);
-                        } else {
-                            send_move(last.nodes[best_node].x + flock_dx, last.nodes[best_node].z + flock_dz);
+                    /* S170-173, founder: "add healing fountains to bot awareness
+                       brain and heuristics ... bots seek out fountains when super
+                       low." Top priority, checked before anything else this tick --
+                       a hero below ARENA_BOT_LOW_HP_FRACTION retreats to the nearest
+                       fountain and does nothing else (no node-capping, no engaging,
+                       no casting) until topped back up, same "go here to top off"
+                       real-MOBA instinct the fountain's own heal rate was already
+                       tuned for (arena_game.h's ARENA_FOUNTAIN_HEAL_PER_SEC doc
+                       comment). Fountain positions are static/deterministic (same
+                       "kept in sync by hand" convention this whole file already
+                       uses for roster-size constants, see ARENA_HERO_COUNT's own
+                       doc comment) -- mirrors arena_fountain_position()'s two fixed
+                       points exactly, no wire sync needed since neither ever
+                       moves. */
+                    int retreating_to_fountain = last.heroes[my_owner].max_hp > 0
+                        && (float)last.heroes[my_owner].hp / (float)last.heroes[my_owner].max_hp < ARENA_BOT_LOW_HP_FRACTION;
+                    if (retreating_to_fountain) {
+                        static const float fountains[2][2] = { { -24.0f, -24.0f }, { 24.0f, 24.0f } };
+                        int nearest = 0;
+                        float nearest_dist = 0.0f;
+                        for (int f = 0; f < 2; f++) {
+                            float fdx = fountains[f][0] - mx, fdz = fountains[f][1] - mz;
+                            float fdist = fdx * fdx + fdz * fdz;
+                            if (f == 0 || fdist < nearest_dist) { nearest = f; nearest_dist = fdist; }
                         }
-                    } else if (best != -1) {
-                        /* S170-90 fix, real bug found live: "all of the bots just bunch up on
-                           eachother." Root cause -- every bot sent its move target as the
-                           nearest enemy's *exact* (x,z). Whenever several bots shared the same
-                           nearest enemy (common once a team clusters up), they'd all converge on
-                           the literal same point and stack. Spread each bot to its own approach
-                           angle around the target instead, derived from its stable owner index
-                           (no coordination needed between bots, no shared state) -- a real
-                           surround formation rather than a single pile. Radius is just outside
-                           ARENA_ATTACK_RANGE (1.6f) so bots still end up in melee range of the
-                           target, just not literally on top of each other or it. */
-                        float approach_angle = (float)(my_owner % 8) * (2.0f * 3.14159265f / 8.0f);
-                        float approach_radius = 2.0f;
-                        float tx = last.heroes[best].x + cosf(approach_angle) * approach_radius + flock_dx;
-                        float tz = last.heroes[best].z + sinf(approach_angle) * approach_radius + flock_dz;
-                        send_move(tx, tz);
-                        /* S170-162/165: sent AFTER send_move on purpose, see
-                           send_attack's own doc comment -- this is what
-                           actually makes a bot-piloted ranged hero (Gary)
-                           deal any damage at all, and gives every other bot
-                           the real chase-a-fleeing-target behavior for free
-                           too, on top of the approach-angle move above. */
-                        send_attack(best);
-                        uint32_t now = (uint32_t)time(NULL) * 1000;
-                        if (now - last_cast_ms > 2000) {
-                            send_cast(0); /* Q -- server no-ops it if actually on cooldown */
-                            last_cast_ms = now;
-                        }
+                        send_move(fountains[nearest][0], fountains[nearest][1]);
                     }
+
+                    if (!retreating_to_fountain) {
+                        int best = -1;
+                        float best_dist = 0;
+                        for (int i = 0; i < last.count; i++) {
+                            if (!last.heroes[i].alive) continue;
+                            int team = (i < last.count / 2) ? 0 : 1;
+                            if (team == my_team) continue;
+                            float dx = last.heroes[i].x - mx, dz = last.heroes[i].z - mz;
+                            float dist = dx * dx + dz * dz;
+                            if (best == -1 || dist < best_dist) { best = i; best_dist = dist; }
+                        }
+                        /* S170-155, founder: "add resource management (node capping) to the
+                           bot AI heuristic and brain ... first pass." Before this, bots did
+                           nothing but chase whichever enemy hero was nearest, anywhere on the
+                           map -- with the resource race (S170-153) now the actual win
+                           condition, a bot that never once stands on a node can't meaningfully
+                           contribute to winning. First-pass split: engage a nearby enemy if one
+                           is actually close enough to be a real threat/opportunity (unchanged
+                           feel for real skirmishes); otherwise, walk to and hold the nearest
+                           node this bot's team doesn't already own, same "keep capturing
+                           ground when nothing's fighting you" behavior a real Arathi Basin
+                           player falls back to. Only chases a distant enemy again once the
+                           team already owns every node (nothing left to capture). */
+                        float engage_range_sq = 15.0f * 15.0f;
+                        int want_owner = my_team + 1; /* ArenaNodeSnapshot.owner: 1=team0, 2=team1 */
+                        int best_node = -1;
+                        float best_node_dist = 0;
+                        if (best == -1 || best_dist > engage_range_sq) {
+                            for (int n = 0; n < ARENA_SNAPSHOT_NODE_COUNT; n++) {
+                                if (last.nodes[n].owner == want_owner) continue; /* already ours */
+                                float dx = last.nodes[n].x - mx, dz = last.nodes[n].z - mz;
+                                float dist = dx * dx + dz * dz;
+                                if (best_node == -1 || dist < best_node_dist) { best_node = n; best_node_dist = dist; }
+                            }
+                        }
+                        /* S170-160: squad flocking (alignment/cohesion/separation among
+                           living teammates, see flock_offset's own doc comment) is a small
+                           perturbation added on top of whichever objective target gets picked
+                           below -- real goal-seeking (capture the node, engage the enemy)
+                           always still drives the bot, flocking just makes the group's motion
+                           toward that goal feel organic instead of every bot pathing as an
+                           island. */
+                        float flock_dx, flock_dz;
+                        flock_offset(&last, &prev, have_prev, my_owner, my_team, &flock_dx, &flock_dz);
+
+                        if (best_node != -1) {
+                            /* S170-168 fix, real bug found live: "the boyds stuff makes the
+                               team do a weird cluster dance around the objective ... they are
+                               doing the boids dance around the objective not sitting right on
+                               it" -> "at least one of them should sit right on it and ignore
+                               the flock." Root cause: separation force is strongest exactly
+                               when allies are close together, which is unavoidably true the
+                               moment several bots converge on the same node -- flocking kept
+                               perturbing everyone off the node's exact point forever, never
+                               letting anyone actually settle there. Fix: a stateless, no-
+                               coordination-needed "anchor" rule -- whichever bots' owner index
+                               happens to land on this node's own index mod ARENA_SNAPSHOT_NODE_COUNT
+                               ignore the flock entirely and path straight to the node's exact
+                               (x,z), guaranteeing real capture progress; every other bot still
+                               flocks around it as a loose escort, which is the actual organic
+                               "fan out and hold the ground around the objective" look this was
+                               always meant to produce. */
+                            int am_anchor = (my_owner % ARENA_SNAPSHOT_NODE_COUNT) == best_node;
+                            if (am_anchor) {
+                                send_move(last.nodes[best_node].x, last.nodes[best_node].z);
+                            } else {
+                                send_move(last.nodes[best_node].x + flock_dx, last.nodes[best_node].z + flock_dz);
+                            }
+                        } else if (best != -1) {
+                            /* S170-90 fix, real bug found live: "all of the bots just bunch up on
+                               eachother." Root cause -- every bot sent its move target as the
+                               nearest enemy's *exact* (x,z). Whenever several bots shared the same
+                               nearest enemy (common once a team clusters up), they'd all converge on
+                               the literal same point and stack. Spread each bot to its own approach
+                               angle around the target instead, derived from its stable owner index
+                               (no coordination needed between bots, no shared state) -- a real
+                               surround formation rather than a single pile. Radius is just outside
+                               ARENA_ATTACK_RANGE (1.6f) so bots still end up in melee range of the
+                               target, just not literally on top of each other or it. */
+                            float approach_angle = (float)(my_owner % 8) * (2.0f * 3.14159265f / 8.0f);
+                            float approach_radius = 2.0f;
+                            float tx = last.heroes[best].x + cosf(approach_angle) * approach_radius + flock_dx;
+                            float tz = last.heroes[best].z + sinf(approach_angle) * approach_radius + flock_dz;
+                            send_move(tx, tz);
+                            /* S170-162/165: sent AFTER send_move on purpose, see
+                               send_attack's own doc comment -- this is what
+                               actually makes a bot-piloted ranged hero (Gary)
+                               deal any damage at all, and gives every other bot
+                               the real chase-a-fleeing-target behavior for free
+                               too, on top of the approach-angle move above. */
+                            send_attack(best);
+                            uint32_t now = (uint32_t)time(NULL) * 1000;
+                            if (now - last_cast_ms > 2000) {
+                                send_cast(0); /* Q -- server no-ops it if actually on cooldown */
+                                last_cast_ms = now;
+                            }
+                        }
+                    } /* !retreating_to_fountain */
                 }
             }
         }
