@@ -46,6 +46,24 @@
    ARENA_HERO_COUNT whenever a new hero is added. */
 #define ARENA_HERO_COUNT 26
 
+/* ARENA_BOT_ITEM_COSTS (S170-175 Sprint 5, "bot AI shop interaction" -- explicitly deferred at
+ * the time, "bots simply won't buy anything yet, flagged not faked"): same "pure network
+ * client, kept in sync by hand" idiom as ARENA_HERO_COUNT and the fountain positions just
+ * below -- this file deliberately doesn't link packages/simulation/arena_game.c, so it can't
+ * read ARENA_ITEMS directly. Only cost is needed (not name/slot/stats): the bot doesn't reason
+ * about WHICH item helps its build, it just cycles through the catalog in order
+ * (shop_next_item_id below) and lets arena_shop_buy's own server-side validation (proximity,
+ * affordability, auto-sell-then-replace on a filled slot) do the real work -- a genuinely
+ * simple first pass, not a build-optimizing bot brain. Costs copied verbatim from
+ * packages/simulation/arena_game.c's own ARENA_ITEMS array; bump alongside it if the catalog
+ * ever changes. */
+#define ARENA_BOT_ITEM_COUNT 24
+static const int ARENA_BOT_ITEM_COSTS[ARENA_BOT_ITEM_COUNT] = {
+    300, 1000, 950, 1100, 950, 900, 850, 1000, 900, 900, 500, 800,
+    1200, 1100,
+    400, 450, 400, 400, 400, 350, 400, 350, 400, 350
+};
+
 /* Memorable bot names (founder: "prep for an observation phase... the bots
  * should have interesting memorable names"), so the leaderboard reads as a
  * real cast of characters worth watching evolve over time rather than
@@ -381,6 +399,19 @@ static void send_attack(int target_owner) {
     sendto(sock, buf, sizeof(buf), 0, (struct sockaddr *)&server_addr, sizeof(server_addr));
 }
 
+/* send_shop_buy (S170-175 Sprint 5, "bot AI shop interaction" -- explicitly deferred at the
+ * time, "bots simply won't buy anything yet, flagged not faked"). The bot's own
+ * PACKET_ARENA_SHOP_BUY sender, same shape as send_attack above. */
+static void send_shop_buy(int item_id) {
+    char buf[sizeof(NetHeader) + sizeof(ArenaShopBuyCmd)];
+    NetHeader *h = (NetHeader *)buf;
+    memset(h, 0, sizeof(NetHeader));
+    h->type = PACKET_ARENA_SHOP_BUY;
+    ArenaShopBuyCmd *cmd = (ArenaShopBuyCmd *)(buf + sizeof(NetHeader));
+    cmd->item_id = (uint8_t)item_id;
+    sendto(sock, buf, sizeof(buf), 0, (struct sockaddr *)&server_addr, sizeof(server_addr));
+}
+
 /* flock_offset (S170-160), founder: "add boyds to the ai brain[,] check GFD
  * apps2 crystal for a reference if you need it." GoblinFoxDragon's
  * apps2/crystal/main.go has a real, working Reynolds boids implementation
@@ -473,6 +504,8 @@ static void play_one_match(int game_port) {
     int ticks_since_pick_send = 0; /* retry, see below -- S170-99 */
     uint32_t last_cast_ms = 0;
     int silent_ticks = 0;
+    int shop_next_item_id = 0; /* S170-175 Sprint 5: cycles through ARENA_BOT_ITEM_COSTS in catalog order */
+    uint32_t last_shop_buy_ms = 0;
     /* draft_offset (S170-105, real bug found live, twice): ARENA_HERO_COUNT (21) now exceeds
        ARENA_MAX_HEROES (20) for the first time -- a full 20-player lobby only ever has owner
        slots 0..19, so a bare `owner % hero_count` always maps to hero_ids 0..19 and can NEVER
@@ -585,6 +618,44 @@ static void play_one_match(int game_port) {
                             float dist = dx * dx + dz * dz;
                             if (best == -1 || dist < best_dist) { best = i; best_dist = dist; }
                         }
+                        /* S170-175 Sprint 5, founder: "bot AI shop interaction" -- explicitly
+                           deferred at the time ("bots simply won't buy anything yet, flagged
+                           not faked"). A genuinely simple first pass: when no enemy is nearby
+                           (safe, real "recall to shop" instinct) and this bot can afford the
+                           next item in catalog order, detour to its own team's shop and buy it
+                           -- arena_shop_buy's own server-side validation (proximity,
+                           affordability, auto-sell-then-replace on an already-filled slot) does
+                           all the real work, this is just deciding WHEN to go and WHICH item to
+                           try next, not reasoning about build strategy. Shop positions mirror
+                           arena_shop_position() exactly (ARENA_HALF_EXTENT=32, corner=28,
+                           +/-5 diagonal offset) -- same "kept in sync by hand" idiom as the
+                           fountain positions above, this file deliberately doesn't link
+                           packages/simulation/arena_game.c. */
+                        static const float shops[2][2] = { { -33.0f, 33.0f }, { 33.0f, -33.0f } };
+                        float shop_safe_dist_sq = 20.0f * 20.0f;
+                        int shopping = shop_next_item_id < ARENA_BOT_ITEM_COUNT
+                            && (best == -1 || best_dist > shop_safe_dist_sq)
+                            && (float)last.heroes[my_owner].flow >= (float)ARENA_BOT_ITEM_COSTS[shop_next_item_id];
+                        if (shopping) {
+                            float sx = shops[my_team][0], sz = shops[my_team][1];
+                            float sdx = sx - mx, sdz = sz - mz;
+                            float sdist_sq = sdx * sdx + sdz * sdz;
+                            send_move(sx, sz);
+                            uint32_t now_shop = (uint32_t)time(NULL) * 1000;
+                            /* ARENA_SHOP_RADIUS is 3.0f (packages/simulation/arena_game.h) --
+                               hardcoded here rather than duplicated as its own named constant
+                               since it's used in exactly this one place. A 2s cooldown between
+                               buy attempts, same shape as last_cast_ms above, so a bot parked
+                               at its own shop doesn't spam repurchase the same slot every tick
+                               (arena_shop_buy auto-sells then rebuys on a repeat call, which
+                               would just bleed Flow to the 50%-refund loss over and over). */
+                            if (sdist_sq <= 3.0f * 3.0f && now_shop - last_shop_buy_ms > 2000) {
+                                send_shop_buy(shop_next_item_id);
+                                shop_next_item_id++;
+                                last_shop_buy_ms = now_shop;
+                            }
+                        }
+                        if (!shopping) {
                         /* S170-155, founder: "add resource management (node capping) to the
                            bot AI heuristic and brain ... first pass." Before this, bots did
                            nothing but chase whichever enemy hero was nearest, anywhere on the
@@ -671,6 +742,7 @@ static void play_one_match(int game_port) {
                                 last_cast_ms = now;
                             }
                         }
+                        } /* !shopping */
                     } /* !retreating_to_fountain */
                 }
             }
