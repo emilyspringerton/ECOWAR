@@ -412,6 +412,111 @@ static void send_shop_buy(int item_id) {
     sendto(sock, buf, sizeof(buf), 0, (struct sockaddr *)&server_addr, sizeof(server_addr));
 }
 
+/* Squad system (S170-202, founder real-time follow-ups to S170-201's node-capture anchor fix:
+ * "like the whole team doesnt need to try to cap the node" -> "add like fractal boids so we
+ * naturally split more into squads"). S170-201 fixed WHETHER a contested node ever gets a real
+ * capper; this fixes the separate, related problem that every idle bot independently computing
+ * its own single nearest-uncapped-node naturally converges the WHOLE team onto the same one
+ * node whenever the team starts out clustered together (the common case) -- every OTHER
+ * uncapped node sits completely uncontested while the whole team dogpiles one spot.
+ *
+ * "Fractal" reading, applying the exact same Reynolds grouping/spreading instinct S170-160's own
+ * flock_offset already uses, recursively, at a coarser scale:
+ *   - Individuals still flock together via flock_offset's own alignment/cohesion/separation
+ *     math, unchanged -- just scoped to SQUADMATES only now instead of the whole team (see
+ *     flock_offset's own updated doc comment below), so tight little clusters emerge instead of
+ *     one big blob.
+ *   - Squads themselves "separate" from each other by claiming DIFFERENT contested nodes
+ *     (hero_squad_target_node below) rather than a second force-based repulsion between squad
+ *     centroids -- the same "don't all pile into the same spot" principle expressed as
+ *     differentiated GOALS instead of a second physics term, since goal-seeking already
+ *     dominates a bot's real movement (flocking is explicitly only ever a perturbation on top of
+ *     it, flock_offset's own doc comment) -- a competing squad-repulsion FORCE on top would
+ *     fight that existing goal-seeking rather than reinforce it, the same reasoning that made
+ *     S170-168 anchor the capper to the node's exact point instead of leaving it purely
+ *     force-driven.
+ *
+ * Squad membership is a simple, stable, no-coordination-needed partition of the team's OWNER
+ * SLOTS (my_owner % squad_count) -- every bot computes the same partition independently from
+ * data already in the shared snapshot, same idiom the S170-90 approach-angle spread and the
+ * S170-201 anchor fix both already rely on. squad_count tracks how many nodes are actually
+ * worth splitting toward right now (uncapped), capped by how many living teammates there are
+ * (no point in more squads than bots), so the structure adapts as the map state changes instead
+ * of using a fixed number regardless of what's actually happening. */
+static int hero_squad_count(const ArenaSnapshotMsg *cur, int hero_team) {
+    int want_owner = hero_team + 1;
+    int uncapped_count = 0;
+    for (int n = 0; n < ARENA_SNAPSHOT_NODE_COUNT; n++) {
+        if (cur->nodes[n].owner != want_owner) uncapped_count++;
+    }
+    int living = 0;
+    for (int i = 0; i < cur->count; i++) {
+        if (!cur->heroes[i].alive) continue;
+        int team_i = (i < cur->count / 2) ? 0 : 1;
+        if (team_i == hero_team) living++;
+    }
+    int count = uncapped_count < 1 ? 1 : uncapped_count;
+    if (count > living) count = living > 0 ? living : 1;
+    return count;
+}
+
+/* squad_centroid: average live position of hero_team members in squad squad_id (my_owner %
+ * squad_count == squad_id). Every bot needs to be able to compute ANY squad's centroid, not
+ * just its own, for the greedy squad-to-node assignment below, which has to reason about every
+ * squad's position, not just self's. */
+static void squad_centroid(const ArenaSnapshotMsg *cur, int hero_team, int squad_count, int squad_id,
+                            float *cx, float *cz) {
+    float sx = 0, sz = 0;
+    int n = 0;
+    for (int i = 0; i < cur->count; i++) {
+        if (!cur->heroes[i].alive) continue;
+        int team_i = (i < cur->count / 2) ? 0 : 1;
+        if (team_i != hero_team) continue;
+        if ((i % squad_count) != squad_id) continue;
+        sx += cur->heroes[i].x;
+        sz += cur->heroes[i].z;
+        n++;
+    }
+    *cx = n > 0 ? sx / (float)n : 0.0f;
+    *cz = n > 0 ? sz / (float)n : 0.0f;
+}
+
+/* hero_squad_target_node: which uncapped node THIS bot's own squad has claimed, via a
+ * deterministic greedy pass every bot computes identically (no communication needed -- same
+ * inputs, same algorithm, same answer everywhere). Squads claim in ascending squad-id order,
+ * each claiming whichever still-unclaimed uncapped node is nearest to that squad's own
+ * centroid. squad_count is sized (hero_squad_count above) so squad_count <= the number of
+ * uncapped nodes always holds, which guarantees every squad finds a distinct, never-before-
+ * claimed node -- normally a clean 1-squad-per-node split. */
+static int hero_squad_target_node(const ArenaSnapshotMsg *cur, int hero_team, int squad_count, int my_squad) {
+    int want_owner = hero_team + 1;
+    int uncapped[ARENA_SNAPSHOT_NODE_COUNT];
+    int uncapped_count = 0;
+    for (int n = 0; n < ARENA_SNAPSHOT_NODE_COUNT; n++) {
+        if (cur->nodes[n].owner != want_owner) uncapped[uncapped_count++] = n;
+    }
+    if (uncapped_count == 0) return -1;
+
+    int claimed[ARENA_SNAPSHOT_NODE_COUNT] = {0};
+    int my_pick = -1;
+    for (int s = 0; s < squad_count; s++) {
+        float sx, sz;
+        squad_centroid(cur, hero_team, squad_count, s, &sx, &sz);
+        int pick = -1;
+        float pick_d = 0;
+        for (int u = 0; u < uncapped_count; u++) {
+            int n = uncapped[u];
+            if (claimed[n]) continue;
+            float dx = cur->nodes[n].x - sx, dz = cur->nodes[n].z - sz;
+            float d = dx * dx + dz * dz;
+            if (pick == -1 || d < pick_d) { pick = n; pick_d = d; }
+        }
+        if (pick != -1) claimed[pick] = 1;
+        if (s == my_squad) my_pick = pick;
+    }
+    return my_pick;
+}
+
 /* flock_offset (S170-160), founder: "add boyds to the ai brain[,] check GFD
  * apps2 crystal for a reference if you need it." GoblinFoxDragon's
  * apps2/crystal/main.go has a real, working Reynolds boids implementation
@@ -425,7 +530,7 @@ static void send_shop_buy(int item_id) {
  * approach-angle spread, S170-90) or walk to the nearest un-owned node
  * (S170-155). Correct, but robotic: nothing about how one bot moves is
  * influenced by where its own teammates currently are or are heading.
- * This computes a small steering offset from nearby, living TEAMMATES
+ * This computes a small steering offset from nearby, living SQUADMATES
  * only (never enemies -- flocking is a squad-cohesion behavior, not a
  * targeting one) within FLOCK_RADIUS:
  *   - alignment: nudge toward the average heading nearby allies just
@@ -444,9 +549,17 @@ static void send_shop_buy(int item_id) {
  * codebase already once shipped and had to fix "all of the bots just
  * bunch up on each other" (S170-90); flocking should reinforce that fix,
  * not quietly reintroduce the same clumping through a different code
- * path. */
+ * path.
+ *
+ * S170-202: SQUAD-scoped, not whole-team-scoped, as of this pass -- the "fractal" half of the
+ * squad system (see its own doc comment above): individuals flock tightly within a squad via
+ * this exact same unchanged math, while squads themselves spread apart by claiming different
+ * nodes (hero_squad_target_node), not by a second force here. Whole-team flocking would have
+ * pulled every squad back toward each other the instant they got within FLOCK_RADIUS of another
+ * squad, fighting the very spread the squad-target-node split is trying to create. */
 static void flock_offset(const ArenaSnapshotMsg *cur, const ArenaSnapshotMsg *prev, int have_prev,
-                          int self_owner, int my_team, float *out_dx, float *out_dz) {
+                          int self_owner, int my_team, int squad_count, int my_squad,
+                          float *out_dx, float *out_dz) {
     const float FLOCK_RADIUS = 6.0f;
     const float SEPARATION_RADIUS = 2.0f;
     float mx = cur->heroes[self_owner].x, mz = cur->heroes[self_owner].z;
@@ -459,6 +572,7 @@ static void flock_offset(const ArenaSnapshotMsg *cur, const ArenaSnapshotMsg *pr
         if (i == self_owner || !cur->heroes[i].alive) continue;
         int team = (i < cur->count / 2) ? 0 : 1;
         if (team != my_team) continue; /* teammates only -- see doc comment above */
+        if ((i % squad_count) != my_squad) continue; /* S170-202: squadmates only, not the whole team */
 
         float dx = cur->heroes[i].x - mx, dz = cur->heroes[i].z - mz;
         float dist = sqrtf(dx * dx + dz * dz);
@@ -681,45 +795,66 @@ static void play_one_match(int game_port) {
                            player falls back to. Only chases a distant enemy again once the
                            team already owns every node (nothing left to capture). */
                         float engage_range_sq = 15.0f * 15.0f;
-                        int want_owner = my_team + 1; /* ArenaNodeSnapshot.owner: 1=team0, 2=team1 */
+                        /* S170-202: squad membership/target computed unconditionally (cheap --
+                           see hero_squad_count's own doc comment for the sizing reasoning), used
+                           by both the node-capping branch below and flock_offset's own now
+                           squad-scoped flocking, whichever branch ends up mattering this tick. */
+                        int squad_count = hero_squad_count(&last, my_team);
+                        int my_squad = my_owner % squad_count;
                         int best_node = -1;
-                        float best_node_dist = 0;
                         if (best == -1 || best_dist > engage_range_sq) {
-                            for (int n = 0; n < ARENA_SNAPSHOT_NODE_COUNT; n++) {
-                                if (last.nodes[n].owner == want_owner) continue; /* already ours */
-                                float dx = last.nodes[n].x - mx, dz = last.nodes[n].z - mz;
-                                float dist = dx * dx + dz * dz;
-                                if (best_node == -1 || dist < best_node_dist) { best_node = n; best_node_dist = dist; }
-                            }
+                            best_node = hero_squad_target_node(&last, my_team, squad_count, my_squad);
                         }
-                        /* S170-160: squad flocking (alignment/cohesion/separation among
-                           living teammates, see flock_offset's own doc comment) is a small
+                        /* S170-160/S170-202: squad flocking (alignment/cohesion/separation among
+                           living SQUADMATES, see flock_offset's own doc comment) is a small
                            perturbation added on top of whichever objective target gets picked
                            below -- real goal-seeking (capture the node, engage the enemy)
-                           always still drives the bot, flocking just makes the group's motion
+                           always still drives the bot, flocking just makes the squad's motion
                            toward that goal feel organic instead of every bot pathing as an
                            island. */
                         float flock_dx, flock_dz;
-                        flock_offset(&last, &prev, have_prev, my_owner, my_team, &flock_dx, &flock_dz);
+                        flock_offset(&last, &prev, have_prev, my_owner, my_team, squad_count, my_squad, &flock_dx, &flock_dz);
 
                         if (best_node != -1) {
-                            /* S170-168 fix, real bug found live: "the boyds stuff makes the
-                               team do a weird cluster dance around the objective ... they are
-                               doing the boids dance around the objective not sitting right on
-                               it" -> "at least one of them should sit right on it and ignore
-                               the flock." Root cause: separation force is strongest exactly
+                            /* S170-168's original fix: separation force is strongest exactly
                                when allies are close together, which is unavoidably true the
                                moment several bots converge on the same node -- flocking kept
                                perturbing everyone off the node's exact point forever, never
-                               letting anyone actually settle there. Fix: a stateless, no-
-                               coordination-needed "anchor" rule -- whichever bots' owner index
-                               happens to land on this node's own index mod ARENA_SNAPSHOT_NODE_COUNT
-                               ignore the flock entirely and path straight to the node's exact
-                               (x,z), guaranteeing real capture progress; every other bot still
-                               flocks around it as a loose escort, which is the actual organic
-                               "fan out and hold the ground around the objective" look this was
-                               always meant to produce. */
-                            int am_anchor = (my_owner % ARENA_SNAPSHOT_NODE_COUNT) == best_node;
+                               letting anyone actually settle there. Its "anchor" rule (whichever
+                               bot's owner index mod ARENA_SNAPSHOT_NODE_COUNT matched this
+                               node's own index ignored the flock and pathed straight to the
+                               node) worked, but only by coincidence: a bot's OWNER SLOT is
+                               permanent and has nothing to do with which node it's actually
+                               heading to on any given tick. If neither of a node's two
+                               coincidental slot-owners happened to be heading there right now
+                               (dead, engaged with an enemy instead, already anchoring a
+                               different node), nobody ever anchored it -- every other bot
+                               flocked around it forever, and flock_offset's own separation term
+                               alone can push a crowded bot's real move target outside
+                               ARENA_NODE_CAPTURE_RADIUS, so the crowd never actually registered
+                               as team_present[] there. That node stayed silently uncappable for
+                               as long as its two coincidental slot-owners stayed unavailable,
+                               while every OTHER node capped fine -- S170-201, founder: "some
+                               issue with flocking my team having a lot of trouble capping a
+                               node" (singular: exactly this per-node failure mode, not every
+                               node at once). S170-202 then found the OTHER half of the same
+                               complaint ("the whole team doesnt need to try to cap the node"):
+                               every idle bot picking its own single nearest node also meant the
+                               WHOLE team piled onto the same one, leaving every other node
+                               uncontested -- fixed by hero_squad_target_node above splitting
+                               the team into squads that each claim a distinct node.
+
+                               With squads now doing that claiming, every LIVING member of MY
+                               OWN squad has, by construction, the exact same best_node -- so the
+                               anchor question collapses to "am I my own squad's lowest owner
+                               index," no per-candidate node lookup needed anymore. */
+                            int am_anchor = 1;
+                            for (int i = 0; i < last.count; i++) {
+                                if (i == my_owner || !last.heroes[i].alive) continue;
+                                int team_i = (i < last.count / 2) ? 0 : 1;
+                                if (team_i != my_team || (i % squad_count) != my_squad) continue;
+                                if (i < my_owner) { am_anchor = 0; break; }
+                            }
                             if (am_anchor) {
                                 send_move(last.nodes[best_node].x, last.nodes[best_node].z);
                             } else {
