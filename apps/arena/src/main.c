@@ -465,7 +465,15 @@ static void trigger_squish(int owner);
 #define ARENA_AUDIO_HEARING_RADIUS 15.0f /* how far from the local player's own hero a cast/hit sound is still audible */
 
 static void net_poll_snapshots(uint32_t now_ms) {
-    char rbuf[2048];
+    /* CRITICAL BUG FOUND LIVE (S170-192): this was a fixed char rbuf[2048] -- see
+       apps/arena_bot/src/main.c's own identical fix for the full story. Same truncation, same
+       root cause, same fix: sized dynamically to the real current packet size. This one hit
+       the actual human client, not just bots -- a real networked match's snapshots have been
+       silently truncated and rejected this whole time, which plausibly explains at least part
+       of the "frozen match" symptom reported earlier this session (a genuinely different,
+       already-fixed live-pool binary mismatch was the other confirmed cause; this may have
+       been compounding it, or affecting matches that got past that first issue). */
+    char rbuf[sizeof(NetHeader) + sizeof(ArenaSnapshotMsg)];
     struct sockaddr_in sender;
     socklen_t slen = sizeof(sender);
     int len = recvfrom(net_sock, rbuf, sizeof(rbuf), 0, (struct sockaddr *)&sender, &slen);

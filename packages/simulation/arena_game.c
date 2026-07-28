@@ -159,12 +159,19 @@ static void bot_brain_forward(const float in[4], float out[2]) {
  * the real Stables/Farm .. Blacksmith .. Lumber Mill/Gold Mine layout, just
  * along this arena's existing spawn axis instead of Arathi's own geography. */
 static void arena_nodes_reset_layout(void) {
+    /* S170-191, founder: "use golden ratio to expand map size" -- each node scaled by the same
+       phi (1.618034) factor ARENA_HALF_EXTENT itself scaled by, so the whole node spread grows
+       proportionally with the map instead of staying clustered in the old, now much smaller
+       relative footprint. Written as the original pre-S170-191 coordinate times phi, not a
+       pre-computed literal, so the scaling stays visible and traceable, same idiom
+       ARENA_HALF_EXTENT's own definition now uses. Blacksmith stays at the true center (0,0)
+       regardless of scale. */
     static const float layout[ARENA_NODE_COUNT][2] = {
-        { -18.0f,  11.0f }, /* Stables -- rescaled with the S170-138 map expansion, same 1.4x spread as ARENA_HALF_EXTENT's own 20->28 widening */
-        { -18.0f, -11.0f }, /* Farm */
+        { -18.0f * 1.618034f,  11.0f * 1.618034f }, /* Stables */
+        { -18.0f * 1.618034f, -11.0f * 1.618034f }, /* Farm */
         {   0.0f,   0.0f }, /* Blacksmith (center, contested) */
-        {  18.0f,  11.0f }, /* Lumber Mill */
-        {  18.0f, -11.0f }, /* Gold Mine */
+        {  18.0f * 1.618034f,  11.0f * 1.618034f }, /* Lumber Mill */
+        {  18.0f * 1.618034f, -11.0f * 1.618034f }, /* Gold Mine */
     };
     for (int n = 0; n < ARENA_NODE_COUNT; n++) {
         arena_state.nodes[n].x = layout[n][0];
@@ -176,17 +183,31 @@ static void arena_nodes_reset_layout(void) {
 
 /* arena_obstacles_reset_layout (S170-138, "add rocks and trees so we
  * naturally start to create some lanes"): two mirrored jungle walls, one
- * between each team's spawn column (x=+-8) and that side's flank nodes
- * (x=+-18, see the layout above). Each wall spans roughly z=-5.5..5.5 --
- * wide enough that a hero can't draw a straight line through it to a
- * flank node, forcing a detour around the top (z>6) or the bottom (z<-6),
- * which is the actual "lanes" the founder asked for: two routes either
- * side of terrain you can't walk through, rather than one open field.
- * Deliberately never reaches the x=0 mid lane (nearest obstacle is at
- * |x|=10.5) or the 1v1 local demo's own spawn points/movement-test
- * coordinates (all of which stay within |x|<7) -- the jungle is additive
- * scenery + flank routing, not a change to how the existing 1v1 demo or
- * its test suite already move heroes.
+ * between each team's spawn column and that side's flank nodes (Stables/
+ * Farm/Lumber Mill/Gold Mine, see arena_nodes_reset_layout's own layout).
+ * Each wall spans a real z-range wide enough that a hero can't draw a
+ * straight line through it to a flank node, forcing a detour around the
+ * top or the bottom, which is the actual "lanes" the founder asked for:
+ * two routes either side of terrain you can't walk through, rather than
+ * one open field. Deliberately never reaches the x=0 mid lane or the 1v1
+ * local demo's own spawn points/movement-test coordinates (which stay
+ * within |x|<7, never rescaled -- see S170-191's own note on why below) --
+ * the jungle is additive scenery + flank routing, not a change to how the
+ * existing 1v1 demo or its test suite already move heroes.
+ *
+ * S170-191, founder: "use golden ratio to expand map size and add more
+ * jungle obstacles." The original 22-piece layout scaled by the same phi
+ * factor ARENA_HALF_EXTENT/the node layout itself now use (written as the
+ * original coordinate times phi, same traceable idiom), plus 10 new
+ * pieces: 2 more per wall (extending coverage further out to match the
+ * flank nodes' own new, further-out z-spread) and 6 more scattered
+ * dressing pieces filling the substantial new outer margin the map extent
+ * growing from ~32 to ~51.78 opened up -- "add more jungle obstacles" so
+ * a bigger map doesn't just mean more empty space. The 1v1 local demo's
+ * own spawn points (x=+-6) are deliberately NOT rescaled -- that's a
+ * separate, always-compact practice pairing, unrelated to team mode's own
+ * map scale (same distinction this function's own original comment
+ * already drew before this pass).
  *
  * S170-148 bugfix: made public (was static) so apps/arena's own requeue
  * handler can call it directly. Obstacles are never wire-synced (client
@@ -203,31 +224,44 @@ static void arena_nodes_reset_layout(void) {
 void arena_obstacles_reset_layout(void) {
     static const struct { float x, z, radius; ArenaObstacleKind kind; } layout[ARENA_OBSTACLE_COUNT] = {
         /* left wall (between team 0's spawn and Stables/Farm) */
-        { -11.5f,  5.5f, 1.0f, ARENA_OBSTACLE_TREE },
-        { -13.0f,  4.0f, 0.9f, ARENA_OBSTACLE_ROCK },
-        { -10.5f,  2.5f, 1.0f, ARENA_OBSTACLE_TREE },
-        { -12.5f,  1.0f, 0.9f, ARENA_OBSTACLE_ROCK },
-        { -11.0f, -1.0f, 1.0f, ARENA_OBSTACLE_TREE },
-        { -13.5f, -2.5f, 0.9f, ARENA_OBSTACLE_ROCK },
-        { -10.5f, -4.0f, 1.0f, ARENA_OBSTACLE_TREE },
-        { -12.0f, -5.5f, 0.9f, ARENA_OBSTACLE_ROCK },
+        { -11.5f * 1.618034f,  5.5f * 1.618034f, 1.0f, ARENA_OBSTACLE_TREE },
+        { -13.0f * 1.618034f,  4.0f * 1.618034f, 0.9f, ARENA_OBSTACLE_ROCK },
+        { -10.5f * 1.618034f,  2.5f * 1.618034f, 1.0f, ARENA_OBSTACLE_TREE },
+        { -12.5f * 1.618034f,  1.0f * 1.618034f, 0.9f, ARENA_OBSTACLE_ROCK },
+        { -11.0f * 1.618034f, -1.0f * 1.618034f, 1.0f, ARENA_OBSTACLE_TREE },
+        { -13.5f * 1.618034f, -2.5f * 1.618034f, 0.9f, ARENA_OBSTACLE_ROCK },
+        { -10.5f * 1.618034f, -4.0f * 1.618034f, 1.0f, ARENA_OBSTACLE_TREE },
+        { -12.0f * 1.618034f, -5.5f * 1.618034f, 0.9f, ARENA_OBSTACLE_ROCK },
+        { -17.5f,  11.5f, 1.0f, ARENA_OBSTACLE_TREE }, /* new (S170-191): extends the wall further toward the flank nodes' own new spread */
+        { -19.0f, -11.5f, 0.9f, ARENA_OBSTACLE_ROCK },
         /* right wall (mirrored, between team 1's spawn and Lumber Mill/Gold Mine) */
-        {  11.5f,  5.5f, 1.0f, ARENA_OBSTACLE_TREE },
-        {  13.0f,  4.0f, 0.9f, ARENA_OBSTACLE_ROCK },
-        {  10.5f,  2.5f, 1.0f, ARENA_OBSTACLE_TREE },
-        {  12.5f,  1.0f, 0.9f, ARENA_OBSTACLE_ROCK },
-        {  11.0f, -1.0f, 1.0f, ARENA_OBSTACLE_TREE },
-        {  13.5f, -2.5f, 0.9f, ARENA_OBSTACLE_ROCK },
-        {  10.5f, -4.0f, 1.0f, ARENA_OBSTACLE_TREE },
-        {  12.0f, -5.5f, 0.9f, ARENA_OBSTACLE_ROCK },
+        {  11.5f * 1.618034f,  5.5f * 1.618034f, 1.0f, ARENA_OBSTACLE_TREE },
+        {  13.0f * 1.618034f,  4.0f * 1.618034f, 0.9f, ARENA_OBSTACLE_ROCK },
+        {  10.5f * 1.618034f,  2.5f * 1.618034f, 1.0f, ARENA_OBSTACLE_TREE },
+        {  12.5f * 1.618034f,  1.0f * 1.618034f, 0.9f, ARENA_OBSTACLE_ROCK },
+        {  11.0f * 1.618034f, -1.0f * 1.618034f, 1.0f, ARENA_OBSTACLE_TREE },
+        {  13.5f * 1.618034f, -2.5f * 1.618034f, 0.9f, ARENA_OBSTACLE_ROCK },
+        {  10.5f * 1.618034f, -4.0f * 1.618034f, 1.0f, ARENA_OBSTACLE_TREE },
+        {  12.0f * 1.618034f, -5.5f * 1.618034f, 0.9f, ARENA_OBSTACLE_ROCK },
+        {  17.5f,  11.5f, 1.0f, ARENA_OBSTACLE_TREE }, /* new (S170-191) */
+        {  19.0f, -11.5f, 0.9f, ARENA_OBSTACLE_ROCK },
         /* scattered outer-edge dressing, purely for jungle vibe -- past every
            node and lane, never in the way of anything */
-        { -23.0f,   6.0f, 1.1f, ARENA_OBSTACLE_TREE },
-        {  23.0f,  -6.0f, 1.1f, ARENA_OBSTACLE_TREE },
-        {  -6.0f,  17.0f, 0.9f, ARENA_OBSTACLE_ROCK },
-        {   6.0f, -17.0f, 0.9f, ARENA_OBSTACLE_ROCK },
-        { -20.0f, -15.0f, 1.0f, ARENA_OBSTACLE_TREE },
-        {  20.0f,  15.0f, 1.0f, ARENA_OBSTACLE_TREE },
+        { -23.0f * 1.618034f,   6.0f * 1.618034f, 1.1f, ARENA_OBSTACLE_TREE },
+        {  23.0f * 1.618034f,  -6.0f * 1.618034f, 1.1f, ARENA_OBSTACLE_TREE },
+        {  -6.0f * 1.618034f,  17.0f * 1.618034f, 0.9f, ARENA_OBSTACLE_ROCK },
+        {   6.0f * 1.618034f, -17.0f * 1.618034f, 0.9f, ARENA_OBSTACLE_ROCK },
+        { -20.0f * 1.618034f, -15.0f * 1.618034f, 1.0f, ARENA_OBSTACLE_TREE },
+        {  20.0f * 1.618034f,  15.0f * 1.618034f, 1.0f, ARENA_OBSTACLE_TREE },
+        /* new (S170-191): fills the substantial new outer margin the map extent's own growth
+           (~32 to ~51.78) opened up -- well clear of fountains/graveyards/shops in every
+           corner (all sit at |x|,|z| ~44-48). */
+        { -45.0f,  20.0f, 1.2f, ARENA_OBSTACLE_TREE },
+        {  45.0f, -20.0f, 1.2f, ARENA_OBSTACLE_TREE },
+        { -15.0f,  40.0f, 1.0f, ARENA_OBSTACLE_ROCK },
+        {  15.0f, -40.0f, 1.0f, ARENA_OBSTACLE_ROCK },
+        { -38.0f, -32.0f, 1.1f, ARENA_OBSTACLE_TREE },
+        {  38.0f,  32.0f, 1.1f, ARENA_OBSTACLE_TREE },
     };
     for (int i = 0; i < ARENA_OBSTACLE_COUNT; i++) {
         arena_state.obstacles[i].x = layout[i].x;
@@ -862,20 +896,27 @@ void arena_tick_nodes(unsigned int dt_ms) {
     }
 }
 
-/* arena_fountain_position (S170-147): see header doc comment. Diagonally
- * opposite corners, well clear of every jungle obstacle's own outer-edge
- * dressing (arena_obstacles_reset_layout's furthest pieces sit around
- * |x|<=23, |z|<=17) and within the hero movement clamp (ARENA_HALF_EXTENT
- * 28), so a fountain is always reachable, never buried in terrain. */
+/* arena_fountain_position (S170-147): see header doc comment. Diagonally opposite corners, well
+ * clear of every jungle obstacle's own outer-edge dressing and always within the hero movement
+ * clamp (ARENA_HALF_EXTENT), so a fountain is always reachable, never buried in terrain.
+ *
+ * S170-191 bugfix, found while re-checking everything against the new golden-ratio-scaled
+ * ARENA_HALF_EXTENT: this used to be a hardcoded literal (-24,-24)/(24,24) that was ALREADY
+ * stale even before this pass -- arena_graveyard_position's own comment flags it as "the
+ * fountains' own now-stale literal 24 (their own 28-4)" from the S170-138 map widen (28->32)
+ * that never got carried over here. Converted to a real formula (ARENA_HALF_EXTENT - 8.0f,
+ * which reproduces the exact same 24.0 the old literal gave against the pre-S170-191 extent of
+ * 32) so it can never drift out of sync with the map size again -- same "-4.0f margin" idiom
+ * arena_graveyard_position already uses, just a deliberately larger margin so fountains and
+ * graveyards sit at two genuinely different rings, not stacked (graveyard_position's own
+ * comment explains why: a respawning hero shouldn't land on top of the neutral, contested
+ * fountain fight). */
 void arena_fountain_position(int index, float *x, float *z) {
-    static const float layout[ARENA_FOUNTAIN_COUNT][2] = {
-        { -24.0f, -24.0f },
-        {  24.0f,  24.0f },
-    };
+    float corner = ARENA_HALF_EXTENT - 8.0f;
     if (index < 0) index = 0;
     if (index >= ARENA_FOUNTAIN_COUNT) index = ARENA_FOUNTAIN_COUNT - 1;
-    *x = layout[index][0];
-    *z = layout[index][1];
+    *x = (index == 0) ? -corner : corner;
+    *z = (index == 0) ? -corner : corner;
 }
 
 /* arena_powerups_reset_layout (S170-190): see header declaration's doc comment. Positions
@@ -884,10 +925,14 @@ void arena_fountain_position(int index, float *x, float *z) {
  * two "top" nodes (0,11), Regen at the midpoint of the two "bottom" nodes (0,-11), both offset
  * from the center Blacksmith node (0,0) so they read as their own distinct ground. */
 void arena_powerups_reset_layout(void) {
+    /* S170-191: the node layout itself scaled by phi (arena_nodes_reset_layout's own doc
+       comment) -- these midpoints scale the same 11.0f * 1.618034f the Stables/Farm/Lumber
+       Mill/Gold Mine z-coordinates now use, so the powerups stay genuinely "between the node
+       clusters" rather than drifting toward the center as the nodes spread further out. */
     arena_state.powerups[ARENA_POWERUP_BERSERKER].x = 0.0f;
-    arena_state.powerups[ARENA_POWERUP_BERSERKER].z = 11.0f;
+    arena_state.powerups[ARENA_POWERUP_BERSERKER].z = 11.0f * 1.618034f;
     arena_state.powerups[ARENA_POWERUP_REGEN].x = 0.0f;
-    arena_state.powerups[ARENA_POWERUP_REGEN].z = -11.0f;
+    arena_state.powerups[ARENA_POWERUP_REGEN].z = -11.0f * 1.618034f;
     for (int p = 0; p < ARENA_POWERUP_COUNT; p++) {
         arena_state.powerups[p].kind = (ArenaPowerupKind)p;
         arena_state.powerups[p].active = 1;
@@ -900,14 +945,14 @@ void arena_powerups_reset_layout(void) {
  * in the middle of the map." The original placement sat each team's
  * graveyard right behind its spawn line's own center (x=+-9, z=0) -- dead
  * center along z, not remotely corner-like. Moved to the map's two
- * corners NOT already claimed by arena_fountain_position (fountains sit at
- * (-24,-24)/(24,24) -- see that function's own doc comment), so a
+ * corners NOT already claimed by arena_fountain_position (a smaller margin
+ * from the true edge than this function's own -- see that function's own
+ * doc comment for the exact numbers and the S170-191 bugfix that made both
+ * margins real formulas instead of one drifting hardcoded literal), so a
  * respawning hero never lands on top of the neutral, actively-contested
- * fountain fight. Same 4-unit margin-from-the-true-edge convention
- * fountains already use, scaled to this file's current ARENA_HALF_EXTENT
- * (32) instead of the fountains' now-stale literal 24 (their own 28-4).
- * Team 0 (the -x side) gets the top-left corner, team 1 the bottom-right
- * -- still diagonally opposite each other, same symmetry as before. */
+ * fountain fight. Team 0 (the -x side) gets the top-left corner, team 1
+ * the bottom-right -- still diagonally opposite each other, same symmetry
+ * as before. */
 void arena_graveyard_position(int team, float *x, float *z) {
     float corner = ARENA_HALF_EXTENT - 4.0f;
     *x = (team == 0) ? -corner : corner;

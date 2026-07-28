@@ -1,7 +1,14 @@
 #ifndef ARENA_GAME_H
 #define ARENA_GAME_H
 
-#define ARENA_HALF_EXTENT 32.0f /* founder: "the map should be a little bigger" -- was 28.0f (itself bumped from 20.0f for the S170-138 jungle pass); a modest further widen, same reasoning as before (more breathing room), not a full redesign */
+/* ARENA_HALF_EXTENT (S170-191, founder: "use golden ratio to expand map size"): 32.0 * phi
+ * (1.618034), an explicit golden-ratio scale-up from the previous widen (20->28->32 through
+ * S170-138/the earlier "a little bigger" pass) instead of another ad-hoc bump. Left as a real
+ * expression, not a pre-computed literal, so the phi relationship to the old 32.0 is visible in
+ * the code itself, not just a comment. Everything positioned relative to the map edge
+ * (fountains, node layout, jungle obstacles, powerups) was re-derived or re-scaled alongside
+ * this -- see each of their own S170-191 doc comments. */
+#define ARENA_HALF_EXTENT (32.0f * 1.618034f) /* ~51.78 */
 #define ARENA_HERO_SPEED 4.0f      /* units/sec */
 #define ARENA_ATTACK_RANGE 1.6f
 #define ARENA_ATTACK_DAMAGE 8
@@ -43,7 +50,7 @@ typedef enum {
     ARENA_OBSTACLE_ROCK = 0,
     ARENA_OBSTACLE_TREE = 1,
 } ArenaObstacleKind;
-#define ARENA_OBSTACLE_COUNT 22
+#define ARENA_OBSTACLE_COUNT 32 /* S170-191: was 22 -- scaled positions plus 10 new pieces, "add more jungle obstacles" to fill the golden-ratio-expanded map instead of leaving new open space empty */
 #define ARENA_HERO_COLLISION_RADIUS 0.6f /* how close a hero's own footprint can get to an obstacle's edge before being pushed back out */
 
 /* Healing fountains (S170-147). Founder: "add healing fountains at 2

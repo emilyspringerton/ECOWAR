@@ -521,7 +521,18 @@ static void play_one_match(int game_port) {
     int draft_offset = game_port % ARENA_HERO_COUNT;
 
     while (1) {
-        char rbuf[2048];
+        /* CRITICAL BUG FOUND LIVE (S170-192): this was a fixed char rbuf[2048] -- harmless
+           when first written, but every field this session added to ArenaHeroSnapshot/
+           ArenaSnapshotMsg (Flow/XP/equipped items, w_active, 7 status-effect fields,
+           berserker/regen, powerups) grew the real wire packet past 2048 bytes without
+           anyone checking this fixed buffer's own headroom. recvfrom silently truncates a UDP
+           datagram larger than the buffer given to it -- every snapshot this whole time was
+           truncated, so the size check below (len >= the real packet size) failed on EVERY
+           snapshot, `have_snapshot` never went true, and no bot has been able to draft or play
+           a real networked match since whichever commit first pushed the struct over 2048.
+           Sized dynamically to the actual current packet size instead of a magic-number guess,
+           so this can never silently drift out of sync again the same way. */
+        char rbuf[sizeof(NetHeader) + sizeof(ArenaSnapshotMsg)];
         struct sockaddr_in sender;
         socklen_t slen = sizeof(sender);
         int len = recvfrom(sock, rbuf, sizeof(rbuf), 0, (struct sockaddr *)&sender, &slen);
@@ -596,7 +607,7 @@ static void play_one_match(int game_port) {
                     int retreating_to_fountain = last.heroes[my_owner].max_hp > 0
                         && (float)last.heroes[my_owner].hp / (float)last.heroes[my_owner].max_hp < ARENA_BOT_LOW_HP_FRACTION;
                     if (retreating_to_fountain) {
-                        static const float fountains[2][2] = { { -24.0f, -24.0f }, { 24.0f, 24.0f } };
+                        static const float fountains[2][2] = { { -43.78f, -43.78f }, { 43.78f, 43.78f } }; /* S170-191: ARENA_HALF_EXTENT-8 against the golden-ratio-scaled 51.78 (was -24/24 against the old 32) -- kept in sync by hand, same idiom this file's own doc comment already flags for every other duplicated map constant */
                         int nearest = 0;
                         float nearest_dist = 0.0f;
                         for (int f = 0; f < 2; f++) {
@@ -627,11 +638,12 @@ static void play_one_match(int game_port) {
                            affordability, auto-sell-then-replace on an already-filled slot) does
                            all the real work, this is just deciding WHEN to go and WHICH item to
                            try next, not reasoning about build strategy. Shop positions mirror
-                           arena_shop_position() exactly (ARENA_HALF_EXTENT=32, corner=28,
-                           +/-5 diagonal offset) -- same "kept in sync by hand" idiom as the
-                           fountain positions above, this file deliberately doesn't link
-                           packages/simulation/arena_game.c. */
-                        static const float shops[2][2] = { { -33.0f, 33.0f }, { 33.0f, -33.0f } };
+                           arena_shop_position() exactly (S170-191: ARENA_HALF_EXTENT is now
+                           32*1.618034~=51.78, corner=47.78, +/-5 diagonal offset -- was
+                           ARENA_HALF_EXTENT=32/corner=28 before the golden-ratio expansion) --
+                           same "kept in sync by hand" idiom as the fountain positions above,
+                           this file deliberately doesn't link packages/simulation/arena_game.c. */
+                        static const float shops[2][2] = { { -52.78f, 52.78f }, { 52.78f, -52.78f } };
                         float shop_safe_dist_sq = 20.0f * 20.0f;
                         int shopping = shop_next_item_id < ARENA_BOT_ITEM_COUNT
                             && (best == -1 || best_dist > shop_safe_dist_sq)
