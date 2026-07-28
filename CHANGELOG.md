@@ -2,6 +2,13 @@
 
 ## 2026-07-28 (continued)
 
+- revert(arena): move team size back to 10v10 (S170-183). Founder, real-time, mid a live-pool
+  queueing investigation: "ok move back to 10 v 10." Symmetric revert of S170-178's 7v7 change —
+  `ARENA_TEAM_SIZE` 7 → 10, `ARENA_SNAPSHOT_MAX_HEROES` 14 → 20, both pool-launch
+  scripts/systemd deploy sources reverted to match (not the live host itself), doc comments
+  updated. Build clean, full suite green. Doesn't by itself confirm the live-pool queueing issue
+  is resolved — the live host's own binaries still need a separate rebuild/restart.
+
 - feat(arena): real draft pick-a-hero UI, replacing auto-draft (S170-182). Split out from the old
   bundled S170-69 item. Draft used to auto-pick instantly (S170-66/68); now a real 26-hero grid
   screen (`draw_draft_screen`) replaces the normal match view for as long as
