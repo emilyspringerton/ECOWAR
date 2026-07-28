@@ -2,6 +2,15 @@
 
 ## 2026-07-28 (continued)
 
+- feat(arena): shop wire protocol, Sprint 3 of NORTHSTAR §19 (S170-175). `PACKET_ARENA_SHOP_BUY`/
+  `PACKET_ARENA_SHOP_SELL` + `ArenaShopBuyCmd`/`ArenaShopSellCmd`, dispatched in
+  `server_handle_packet` the same shape as the existing `PACKET_ARENA_ATTACK` handler.
+  `ArenaHeroSnapshot` gains `flow`/`flow_earned`/`xp`/`kills`/`deaths`/`equipped_item[]` so the
+  client can see this state once the character pane (Sprint 4) reads it. Wire plumbing only —
+  shop positions/proximity/buy-sell validation shipped in Sprint 2 with full test coverage. Not
+  live-network-verified with a raw UDP client this round; flagged, not faked (see commit
+  `c80cb93` for the full reasoning). Full suite still green.
+
 - feat(arena): Flow/XP economy + FFXI/WoW item slots, Sprint 1+2 of NORTHSTAR §19 (S170-175).
   Per-hero `flow`/`flow_earned`/`xp`/`kills`/`deaths` fields, kept deliberately separate from
   `resources[team]`'s win-condition meter (the conflict §19.1 resolved). Flow/XP awarded on
