@@ -2,6 +2,34 @@
 
 ## 2026-07-28 (continued)
 
+- fix(arena): boids flocking made bots dance around node objectives instead of capping
+  (S170-168). Founder, real-time, live: "there is a bug where the boyds stuff makes the team do
+  a weird cluster dance around the objective ... not sitting right on it" -> "at least one of
+  them should sit right on it and ignore the flock." Root cause: separation force is strongest
+  exactly when allies are close together, unavoidably true the moment several bots converge on
+  the same node — flocking never let anyone settle long enough to make real capture progress.
+  Fixed with a stateless "anchor" rule: a bot ignores the flock and paths straight to the node's
+  exact position whenever its own owner index mod the node count matches the target node's
+  index; every other bot still flocks around it as a loose escort. Live-verified via an isolated
+  20-bot match, no crashes.
+
+- docs(arena): NORTHSTAR §18 — unsupervised learning for the bot AI, general + per-hero,
+  cross-hero transfer (S170-167). Founder: "write the northstar for unsupervised learning - it
+  will have to be both general and per hero - for example experience playing a hero will help
+  inform decisions playing with and against it on another hero" -> "also look for archetype
+  engine fwiw" -> "we are going to want to do long running per personality bot training but for
+  now we need generalized ai for the different heroes." Checked for existing org tech first
+  (found a real Archetype Engine, `EMILY/docs/ARCHETYPE_ENGINE_NORTHSTAR.md`, unrelated to hero
+  kits but a real fit as a slower strategic tier). Proposes a two-tier architecture — Tier 1
+  (fast, per-tick) is this repo's own already-committed §12 Phase E GPT-2 policy-network plan,
+  Tier 2 (slow, occasional) is the Archetype Engine, the natural home for the deferred
+  long-running per-personality training. Names the general layer as a genuinely unsupervised
+  (next-token prediction, no labels) pretraining stage slotting in front of §12's own supervised
+  fine-tune, and answers the cross-hero-transfer example concretely: shared weights plus explicit
+  archetype/kit-shape tags on `arena_serialize_state`'s existing self/foe framing, so a pattern
+  learned on one hero transfers to any other hero sharing the same tagged mechanic. Spec only,
+  same "no code yet" treatment as §15-§17.
+
 - feat(arena): click-to-attack system (NORTHSTAR §17) + Gary's homing auto-attack + draft
   randomization fix (S170-162/163/166). Founder: "gary auto attacks are projetiles that always
   hit (visually projectile) they can still miss or crit as normal but you cant juke them" ->
