@@ -2,6 +2,13 @@
 
 ## 2026-07-28 (continued)
 
+- feat(arena): real cursor-shape swap on enemy hover (S170-69). Founder northstar: "nice cursor
+  indicators for hover over enemy vers aly etc." The color-coded YOU/ALLY/ENEMY bracket+label
+  already covered the relation-indicator half; this adds the literal cursor-shape swap
+  (`SDL_CreateSystemCursor`/`SDL_SetCursor`) — crosshair over a live hittable enemy, default
+  arrow otherwise. Client-only, full suite green. S170-69's other half (a real draft/lobby
+  pick-a-hero UI) is substantial standalone work, split out and left open.
+
 - docs(arena): document Flow/XP economy, item shop, and 7v7 in README (S170-177). Founder: "and
   document it all in the readme." Extends the S170-97 keybind table (`B` shop, `1`-`9` quick-buy,
   held-`TAB` scoreboard, `H` overlay, W-toggle-vs-instant mana distinction) and adds a "Flow, XP,
