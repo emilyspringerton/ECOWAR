@@ -2,6 +2,17 @@
 
 ## 2026-07-28 (continued)
 
+- fix(arena): real 7-segment digit glyphs — every number was illegible (S170-185). Founder:
+  "ensure our font can render numbers." Real bug: `draw_char`'s digit branch drew the exact same
+  generic box outline for every digit 0-9, completely indistinguishable from each other. Every
+  numeric HUD value this game shows (HP/MP, ability cooldown countdown, Flow/XP/item costs, K/D,
+  APM) has been effectively illegible as a specific number this whole session. Replaced with a
+  real standard 7-segment mapping, same `GL_LINES` stroke style as every other glyph in this
+  font. Build clean, full suite green (client-only). Live Xvfb screenshot confirms the rendering
+  pipeline itself is healthy (letters render correctly) — couldn't capture a frame with an
+  active on-screen number in this sandbox (no interactive input, no cooldowns active yet at
+  match start); the segment mapping is a standard, directly-verifiable table, not a guess.
+
 - feat(arena): generic Stun + Slow status effects, using GoblinFoxDragon's `server/status`
   package as reference (S170-184). Closes a gap `hero_status_label`'s own doc comment already
   flagged. New `stunned_ms` (hard CC — blocks movement/casting/auto-attack, gated at every
