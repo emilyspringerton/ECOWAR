@@ -2,6 +2,21 @@
 
 ## 2026-07-28 (continued)
 
+- feat(arena): Flow/XP economy + FFXI/WoW item slots, Sprint 1+2 of NORTHSTAR §19 (S170-175).
+  Per-hero `flow`/`flow_earned`/`xp`/`kills`/`deaths` fields, kept deliberately separate from
+  `resources[team]`'s win-condition meter (the conflict §19.1 resolved). Flow/XP awarded on
+  jungle creep, lane creep, and hero kills — melee/homing-shot only, matching
+  `arena_zone_damage_creeps`'s existing "AoE kills grant nothing" precedent. 24-item catalog
+  (12 specific from `docs/HEROES_VS0.md`, 2 weird, 10 generic FFXI names from
+  `docs/FFXI_ITEM_PARITY_SEED.md`) across 11 FFXI+WoW-style equip slots
+  (Weapon/Head/Body/Hands/Legs/Feet/Ring/Neck/Back/Waist/Trinket). Buying auto-equips (no bag),
+  auto-sells whatever was already in that slot first; selling refunds 50%. All economy state
+  and equipped items survive `arena_respawn_hero`'s reset, with item stat bonuses correctly
+  reapplied afterward — found and fixed a related latent bug where `attack_target`/
+  `last_attacked_by_owner` were left at 0 (not -1) post-respawn, wrongly meaning "hit by owner
+  slot 0." 13 new tests. Sprint 3 (shop wire protocol) and Sprint 4 (client shop UI + character
+  stat pane) are next.
+
 - docs(arena): NORTHSTAR §19 — gold/XP economy + structures, resolving a real resources[]
   conflict (S170-174). Founder: "continue the backlog for redgarden." Picks up sprint plan
   items 4/5, designed together since structures' gold-bounty payoff needs gold to exist first.
