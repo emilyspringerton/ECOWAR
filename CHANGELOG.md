@@ -2,6 +2,17 @@
 
 ## 2026-07-28 (continued)
 
+- feat(arena): hero kill assists now grant Flow + XP (S170-187). Founder: "assists should gen
+  flow." New `assist_owner[]`/`assist_ms[]` (4-slot recent-attacker memory, separate from
+  `last_attacked_by_owner`) recorded via `record_assist_damage()` at the same melee/homing-shot
+  call sites the kill-attribution field already uses. On a kill, everyone else in the victim's
+  assist list within the ~10s window gets `ARENA_HERO_ASSIST_FLOW`/`XP` (35/20, roughly a third
+  of the full kill bounty), excluding whoever got the full kill reward. Fixed the same sentinel-
+  after-memset gap this session has now hit three times, for `assist_owner[]` this time, in both
+  reset paths. No new wire/UI surface needed — flows into the already-synced/displayed
+  `flow`/`xp` fields. 4 new tests, build clean (via the now-fixed `scripts/build.sh`), full suite
+  green (578/578).
+
 - fix(arena): `scripts/build.sh` now actually builds `apps/arena` (S170-186). Real gap found
   while investigating an unrelated rendering question: the script every "build clean" claim
   this session relied on never built the actual human GUI client at all — only
