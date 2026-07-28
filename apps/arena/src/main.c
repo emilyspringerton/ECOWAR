@@ -1820,6 +1820,16 @@ int main(int argc, char *argv[]) {
 #endif
                     net_sock = -1;
                     memset(&arena_state, 0, sizeof(arena_state));
+                    /* S170-148 bugfix: obstacles (and fountains, position-only/
+                       always-recomputed so no explicit call needed there) are
+                       never wire-synced -- the memset above just wiped this
+                       client's own local obstacles[] to all-zero with nothing to
+                       repopulate it, since server_broadcast() never sends this
+                       static layout in the first place. Was the real cause of
+                       "first game had jungle rocks and trees, subsequent games
+                       didn't" -- every match after the first requeue silently
+                       lost its jungle terrain. */
+                    arena_obstacles_reset_layout();
                     memset(rings, 0, sizeof(rings));
                     win_logged = 0;
                     net_picked = 0;
@@ -2443,6 +2453,30 @@ int main(int argc, char *argv[]) {
             glBegin(GL_QUADS);
             glVertex2f(90, win_h - 38.0f); glVertex2f(90 + 200 * frac, win_h - 38.0f);
             glVertex2f(90 + 200 * frac, win_h - 20.0f); glVertex2f(90, win_h - 20.0f);
+            glEnd();
+            /* S170-148 ("mana as a resource should be visible to the player"):
+               a real persistent mana bar, not just the ability tiles' occasional
+               "MP" text when a cast is blocked -- sits in the existing gap
+               between the HP bar and the enemy/bot bar below, no other HUD
+               coordinates need to move. Dims toward grey while in combat
+               (combat_timer_ms > 0) so the "why isn't this refilling" question
+               the gate itself creates has a visible answer right on the bar,
+               not just implied by it staying still. */
+            /* ARENA_MP_MAX, not h->max_mp -- max_mp is deliberately not part of
+               the wire snapshot (it's flat/roster-wide, see ArenaHeroSnapshot's
+               own doc comment), so a net_mode hero's local max_mp field is
+               never populated and would silently read 0. */
+            float mp_frac = (float)h->mp / (float)ARENA_MP_MAX;
+            glColor3f(0.15f, 0.15f, 0.2f);
+            glBegin(GL_QUADS);
+            glVertex2f(90, win_h - 48.0f); glVertex2f(290, win_h - 48.0f);
+            glVertex2f(290, win_h - 40.0f); glVertex2f(90, win_h - 40.0f);
+            glEnd();
+            if (h->combat_timer_ms > 0) glColor3f(0.25f, 0.35f, 0.55f); /* in combat: dim, not regenerating */
+            else glColor3f(0.25f, 0.55f, 1.0f); /* out of combat: bright, actively regenerating */
+            glBegin(GL_QUADS);
+            glVertex2f(90, win_h - 48.0f); glVertex2f(90 + 200 * mp_frac, win_h - 48.0f);
+            glVertex2f(90 + 200 * mp_frac, win_h - 40.0f); glVertex2f(90, win_h - 40.0f);
             glEnd();
         }
         glColor3f(0.95f, 0.25f, 0.15f);

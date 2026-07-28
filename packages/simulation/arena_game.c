@@ -109,8 +109,21 @@ static void arena_nodes_reset_layout(void) {
  * |x|=10.5) or the 1v1 local demo's own spawn points/movement-test
  * coordinates (all of which stay within |x|<7) -- the jungle is additive
  * scenery + flank routing, not a change to how the existing 1v1 demo or
- * its test suite already move heroes. */
-static void arena_obstacles_reset_layout(void) {
+ * its test suite already move heroes.
+ *
+ * S170-148 bugfix: made public (was static) so apps/arena's own requeue
+ * handler can call it directly. Obstacles are never wire-synced (client
+ * computes the same static layout independently, same "no sync needed for
+ * a deterministic layout" precedent fountains also use) -- but the
+ * requeue-after-a-networked-match button does a blanket
+ * `memset(&arena_state, 0, ...)` before reconnecting, which silently wiped
+ * the client's own obstacles[] to all-zero with nothing to repopulate it.
+ * First match after program start looked correct (this function's own
+ * initial call in arena_init_with_heroes/arena_init_teams populated it
+ * once); every match reached via requeue afterward showed an empty map --
+ * exactly the "first game had jungle rocks and trees, subsequent games
+ * didn't" bug report this fixes. */
+void arena_obstacles_reset_layout(void) {
     static const struct { float x, z, radius; ArenaObstacleKind kind; } layout[ARENA_OBSTACLE_COUNT] = {
         /* left wall (between team 0's spawn and Stables/Farm) */
         { -11.5f,  5.5f, 1.0f, ARENA_OBSTACLE_TREE },
@@ -382,6 +395,7 @@ static void tyler_clone_cascade_kill(int link_owner) {
  * routes through here, so this needed no new call sites of its own. */
 static void apply_damage(ArenaHero *target, int amount) {
     target->damaged_this_tick = 1;
+    target->combat_timer_ms = ARENA_COMBAT_TIMEOUT_MS; /* S170-148: any damage taken re-arms the "in combat" window, gating mana regen */
     target->hp -= amount;
     if (target->hp <= 0) {
         if (target->survive_floor_ms > 0) {
@@ -666,6 +680,14 @@ void arena_tick_fountains(unsigned int dt_ms) {
                 if (sqrtf(dx * dx + dz * dz) > ARENA_FOUNTAIN_RADIUS) continue;
                 h->hp += ARENA_FOUNTAIN_HEAL_PER_SEC;
                 if (h->hp > h->max_hp) h->hp = h->max_hp;
+                /* S170-148, founder: "fountains should also restore mana."
+                   Unconditional, not gated by combat_timer_ms like passive
+                   regen is -- a fountain is a deliberate, location-based
+                   resource (real MOBA fountains work in or out of combat),
+                   distinct from the passive out-of-combat-only regen tick
+                   above it. */
+                h->mp += ARENA_FOUNTAIN_MANA_PER_SEC;
+                if (h->mp > h->max_mp) h->mp = h->max_mp;
             }
         }
     }
@@ -2532,9 +2554,20 @@ static void tick_hero_kit(ArenaHero *h, ArenaHero *foe, ArenaHero *ally, unsigne
     if (h->q_cooldown_ms > 0) h->q_cooldown_ms -= (int)dt_ms;
     if (h->w_cooldown_ms > 0) h->w_cooldown_ms -= (int)dt_ms;
     if (h->r_cooldown_ms > 0) h->r_cooldown_ms -= (int)dt_ms;
-    /* Mana regen (S170-132): generic and roster-wide, same "runs for every hero every tick
-       regardless of kit" reasoning as the cooldown decrements just above. */
-    if (h->alive && h->mp < h->max_mp) {
+    /* combat_timer_ms (S170-148): ticks down every tick regardless of kit,
+       same generic "runs for every hero" reasoning as the cooldowns above --
+       re-armed to ARENA_COMBAT_TIMEOUT_MS by apply_damage() whenever this
+       hero actually takes damage. */
+    if (h->combat_timer_ms > 0) {
+        h->combat_timer_ms -= (int)dt_ms;
+        if (h->combat_timer_ms < 0) h->combat_timer_ms = 0;
+    }
+    /* Mana regen (S170-132, combat-gated S170-148: "mana should slowly
+       regenerate when not in combat"). Real WoW-style out-of-combat regen --
+       paused entirely while combat_timer_ms is still counting down, so
+       taking or landing hits in a fight can't be quietly offset by regen
+       ticking the whole time. */
+    if (h->alive && h->mp < h->max_mp && h->combat_timer_ms <= 0) {
         float regen = ARENA_MP_REGEN_PER_SEC * ((float)dt_ms / 1000.0f);
         h->mp += (int)regen;
         if (h->mp > h->max_mp) h->mp = h->max_mp;

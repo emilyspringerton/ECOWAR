@@ -1,5 +1,45 @@
 # Changelog
 
+## 2026-07-28
+
+- feat(arena): mana visible on the HUD, combat-gated regen, fountains restore mana, and a
+  real jungle-obstacles-disappearing bug fixed (S170-148). Founder, real-time, three requests
+  plus a bug report in sequence:
+  - **"mana as a resource should be visible to the player"**: a real persistent mana bar under
+    the existing HP bar in the local player's own HUD corner (`apps/arena/src/main.c`) --
+    before this, mana was only ever visible as occasional "MP" text replacing an ability
+    tile's countdown when a cast was blocked, never as a standing resource meter. Uses
+    `ARENA_MP_MAX` (not `h->max_mp`, which is deliberately not part of the wire snapshot --
+    flat/roster-wide, the client already knows it) so it reads correctly in both local and
+    net_mode.
+  - **"it should slowly regenerate when not in combat"**: new `combat_timer_ms` on `ArenaHero`
+    (`packages/simulation/arena_game.h`/`.c`), re-armed to `ARENA_COMBAT_TIMEOUT_MS` (4000ms,
+    WoW-adjacent) by `apply_damage()` every time a hero takes damage from any source -- mana
+    regen (`tick_hero_kit`) is now gated on this hitting 0, real WoW-style out-of-combat regen
+    instead of the previous always-on flat tick. Honest simplification, flagged in the code:
+    keyed off damage *taken*, not dealt -- threading an attacker-side signal through every
+    damage call site in this file would be a much larger change for a rare edge case (pure
+    safe-distance poking) real fights are overwhelmingly mutual, so this covers the vast
+    majority of "am I actually fighting" correctly. The mana bar dims while in combat so the
+    gate has a visible answer on the bar itself, not just implied by it holding still.
+  - **"fountains should also restore mana"**: `arena_tick_fountains()` (S170-147) now restores
+    `ARENA_FOUNTAIN_MANA_PER_SEC` (15, same rate as the heal) alongside HP, unconditionally --
+    a fountain is a deliberate location-based resource, not gated by the new combat timer the
+    way passive regen is.
+  - **Real bug found and fixed, not requested but reported live**: "the first game i played i
+    saw jungle rocks and trees but subsequent games were missing those." Root cause: the
+    requeue-after-a-networked-match button (`apps/arena/src/main.c`) does a blanket
+    `memset(&arena_state, 0, ...)` before reconnecting, which silently wiped the client's own
+    `obstacles[]` -- obstacles are never wire-synced (client computes the same static layout
+    independently, same precedent fountains use), so nothing ever repopulated it after that
+    memset. `arena_obstacles_reset_layout()` made public (was `static`) so the requeue handler
+    can call it directly; first match after program start was never affected (its own initial
+    call happens before this bug's code path), every match reached via requeue was.
+  - 6 new headless tests (fountain mana restore + cap, regen gated correctly both ways, damage
+    re-arms the timer, timer counts down and pins at 0). Verified live: a real Xvfb screenshot
+    confirms the mana bar rendering correctly under the HP bar. Full suite green (461 checks,
+    up from 455).
+
 ## 2026-07-27 (continued)
 
 - feat(arena): healing fountains at 2 opposite map corners (S170-147). Founder, real-time:

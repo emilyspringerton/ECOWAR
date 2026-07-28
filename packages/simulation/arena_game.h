@@ -54,6 +54,7 @@ typedef enum {
 #define ARENA_FOUNTAIN_COUNT 2
 #define ARENA_FOUNTAIN_RADIUS 3.0f
 #define ARENA_FOUNTAIN_HEAL_PER_SEC 15 /* strong, deliberate -- "go here to top off," not a passive trickle */
+#define ARENA_FOUNTAIN_MANA_PER_SEC 15 /* S170-148, founder: "fountains should also restore mana" -- same rate as the heal, one consistent "resource top-off" spot */
 
 /* Territorial dynamic jungle creeps (S170-51). Founder direction: territory
  * is the macro/economy layer, objectives (the team-wipe win condition) are
@@ -820,9 +821,15 @@ typedef struct {
 
 /* Mana (S170-132): flat, roster-wide -- see ArenaHero.mp's own doc comment above. Regen fills
  * an empty pool in a bit under 17s; Q is the cheapest, spammable a few times before running dry,
- * R is the most expensive, deliberately not repeatable back-to-back even when off cooldown. */
+ * R is the most expensive, deliberately not repeatable back-to-back even when off cooldown.
+ * S170-148 ("mana should slowly regenerate when not in combat"): regen is now gated on
+ * combat_timer_ms hitting 0 -- see that field's own doc comment on ArenaHero for the full
+ * design (keyed off damage taken, real WoW-style "any hit re-arms the timer"). The rate
+ * itself (ARENA_MP_REGEN_PER_SEC) is unchanged -- already reads as "slowly" (~17s for a full
+ * bar) once it's actually gated to only run outside combat, the real fix the ask needed. */
 #define ARENA_MP_MAX             100
 #define ARENA_MP_REGEN_PER_SEC     6
+#define ARENA_COMBAT_TIMEOUT_MS 4000 /* WoW-adjacent -- long enough that a brief lull mid-fight doesn't falsely read as "out of combat" */
 #define ARENA_MP_COST_Q            20
 #define ARENA_MP_COST_W            20
 #define ARENA_MP_COST_R            45
@@ -902,6 +909,22 @@ typedef struct {
      * individual-capturing-hero, flagged here rather than silently
      * narrowed. */
     int damaged_this_tick;
+    /* combat_timer_ms (S170-148, "mana should slowly regenerate when not in
+     * combat"): counts down from ARENA_COMBAT_TIMEOUT_MS, reset to that
+     * value by apply_damage() every time this hero takes damage from ANY
+     * source (same single choke point damaged_this_tick already uses,
+     * matching real WoW's own "any damage taken re-arms the combat timer"
+     * rule). Mana regen (tick_hero_kit) is gated on this hitting 0. Honest
+     * simplification, flagged not silently narrowed: keyed off damage
+     * TAKEN, not damage dealt -- threading an attacker-side signal through
+     * every one of this file's damage call sites (melee, every kit's Q/W/R,
+     * projectiles, creeps, zone ticks) would be a much larger, riskier
+     * change for a case (a hero purely poking from a safe distance,
+     * landing hits while never being hit back) that's rare in practice --
+     * real fights are overwhelmingly mutual, so "did I take damage
+     * recently" already covers the vast majority of "am I actually
+     * fighting" correctly. */
+    int combat_timer_ms;
     /* next_cast_refund: generic ally-buff flag (S170-45, Frog's Borrowed
      * Time places this on an ally, not itself) -- the next successful Q/W/R
      * cast by whoever carries this flag has its cooldown refunded to 0
@@ -1123,6 +1146,16 @@ void arena_tick_nodes(unsigned int dt_ms);
  * table already follows for jungle obstacles. Clamps out-of-range index
  * defensively rather than reading past the internal table. */
 void arena_fountain_position(int index, float *x, float *z);
+
+/* arena_obstacles_reset_layout (S170-138, made public S170-148): fills
+ * arena_state.obstacles[] with the static, deterministic jungle terrain
+ * layout. Public specifically so a client (apps/arena) can call it directly
+ * after any full-state reset (e.g. the requeue-after-a-networked-match
+ * handler's own memset(&arena_state, 0, ...)) -- obstacles are never
+ * wire-synced, the same "static layout, no sync needed" precedent
+ * arena_fountain_position() above also relies on, so nothing else will ever
+ * repopulate this after a reset except calling it again explicitly. */
+void arena_obstacles_reset_layout(void);
 
 /* arena_tick_fountains (S170-147): heals every active, alive, hittable hero
  * within ARENA_FOUNTAIN_RADIUS of either fountain by ARENA_FOUNTAIN_HEAL_PER_SEC

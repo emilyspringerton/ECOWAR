@@ -3292,6 +3292,85 @@ static void test_fountain_does_not_heal_dead_hero(void) {
     CHECK(arena_state.heroes[0].hp == 0, "a dead hero standing at a fountain's position is not healed");
 }
 
+static void test_fountain_restores_mana(void) {
+    arena_init_teams();
+    for (int i = 1; i < ARENA_MAX_HEROES; i++) arena_state.heroes[i].active = 0;
+    float fx, fz;
+    arena_fountain_position(0, &fx, &fz);
+    arena_state.heroes[0].x = fx; arena_state.heroes[0].z = fz;
+    arena_state.heroes[0].max_mp = ARENA_MP_MAX; arena_state.heroes[0].mp = 10;
+
+    arena_tick_fountains(1000);
+
+    CHECK(arena_state.heroes[0].mp == 10 + ARENA_FOUNTAIN_MANA_PER_SEC,
+          "founder: 'fountains should also restore mana' -- one tick's worth restored");
+}
+
+static void test_fountain_mana_restore_caps_at_max(void) {
+    arena_init_teams();
+    for (int i = 1; i < ARENA_MAX_HEROES; i++) arena_state.heroes[i].active = 0;
+    float fx, fz;
+    arena_fountain_position(0, &fx, &fz);
+    arena_state.heroes[0].x = fx; arena_state.heroes[0].z = fz;
+    arena_state.heroes[0].max_mp = ARENA_MP_MAX; arena_state.heroes[0].mp = ARENA_MP_MAX - 1;
+
+    arena_tick_fountains(1000);
+
+    CHECK(arena_state.heroes[0].mp == ARENA_MP_MAX, "fountain mana restore caps at max_mp, doesn't overfill");
+}
+
+/* S170-148: mana visibility + combat-gated regen. */
+
+static void test_mana_regenerates_out_of_combat(void) {
+    arena_init_teams();
+    for (int i = 1; i < ARENA_MAX_HEROES; i++) arena_state.heroes[i].active = 0;
+    arena_state.heroes[0].max_mp = ARENA_MP_MAX;
+    arena_state.heroes[0].mp = 0;
+    arena_state.heroes[0].combat_timer_ms = 0; /* out of combat */
+
+    arena_update_teams(1000);
+
+    CHECK(arena_state.heroes[0].mp > 0, "mana regenerates normally once combat_timer_ms has expired");
+}
+
+static void test_mana_does_not_regenerate_in_combat(void) {
+    arena_init_teams();
+    for (int i = 1; i < ARENA_MAX_HEROES; i++) arena_state.heroes[i].active = 0;
+    arena_state.heroes[0].max_mp = ARENA_MP_MAX;
+    arena_state.heroes[0].mp = 0;
+    arena_state.heroes[0].combat_timer_ms = ARENA_COMBAT_TIMEOUT_MS; /* just took damage */
+
+    arena_update_teams(1000);
+
+    CHECK(arena_state.heroes[0].mp == 0,
+          "founder: 'mana should slowly regenerate when not in combat' -- paused while the combat timer is still counting down");
+}
+
+static void test_taking_damage_rearms_the_combat_timer(void) {
+    arena_init_teams();
+    for (int i = 2; i < ARENA_MAX_HEROES; i++) arena_state.heroes[i].active = 0;
+    arena_state.heroes[ARENA_TEAM_SIZE].active = 1;
+    arena_state.heroes[ARENA_TEAM_SIZE].alive = 1;
+    arena_state.heroes[0].combat_timer_ms = 0;
+    arena_state.heroes[0].x = 0; arena_state.heroes[0].z = 0;
+    arena_state.heroes[ARENA_TEAM_SIZE].x = 0.5f; arena_state.heroes[ARENA_TEAM_SIZE].z = 0;
+    arena_state.heroes[ARENA_TEAM_SIZE].attack_cooldown_ms = 0;
+
+    arena_update_teams(16); /* one tick -- enough for the enemy's melee auto-attack to land */
+
+    CHECK(arena_state.heroes[0].combat_timer_ms > 0, "taking damage re-arms the combat timer, gating mana regen again");
+}
+
+static void test_combat_timer_counts_down_to_zero(void) {
+    arena_init_teams();
+    for (int i = 1; i < ARENA_MAX_HEROES; i++) arena_state.heroes[i].active = 0;
+    arena_state.heroes[0].combat_timer_ms = 500;
+
+    arena_update_teams(1000); /* more than enough to fully expire it */
+
+    CHECK(arena_state.heroes[0].combat_timer_ms == 0, "the combat timer counts down and pins at 0, doesn't go negative");
+}
+
 int main(void) {
     printf("RED GARDEN arena_game headless smoke test\n\n");
     test_movement_reaches_target();
@@ -3484,6 +3563,12 @@ int main(void) {
     test_fountain_heals_either_team_neutral();
     test_fountain_caps_healing_at_max_hp();
     test_fountain_does_not_heal_dead_hero();
+    test_fountain_restores_mana();
+    test_fountain_mana_restore_caps_at_max();
+    test_mana_regenerates_out_of_combat();
+    test_mana_does_not_regenerate_in_combat();
+    test_taking_damage_rearms_the_combat_timer();
+    test_combat_timer_counts_down_to_zero();
     printf("\n%s\n", failures == 0 ? "ALL PASS" : "SOME FAILED");
     return failures == 0 ? 0 : 1;
 }
