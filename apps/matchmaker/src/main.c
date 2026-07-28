@@ -21,7 +21,7 @@
 // Run from the repo root (expects the target server binary to exist, or
 // pass --server-bin):
 //   scripts/build.sh && build/red_garden_matchmaker   # card-RTS, 1v1 pairs
-//   build/red_garden_matchmaker --listen-port 7778 --lobby-size 20 --server-bin ./build/red_garden_arena_server --first-game-port 7300   # arena, 10v10
+//   build/red_garden_matchmaker --listen-port 7778 --lobby-size 14 --server-bin ./build/red_garden_arena_server --first-game-port 7300   # arena, 7v7 (S170-178, was 20/10v10)
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>

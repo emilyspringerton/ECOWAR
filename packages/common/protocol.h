@@ -216,10 +216,11 @@ typedef struct {
 } ArenaHeroSnapshot;
 
 // ARENA_SNAPSHOT_MAX_HEROES must match packages/simulation/arena_game.h's
-// ARENA_MAX_HEROES (ARENA_TEAM_SIZE*2 = 20) -- duplicated here rather than
-// included, since protocol.h is a lower-level shared header that doesn't
-// otherwise depend on the sim package.
-#define ARENA_SNAPSHOT_MAX_HEROES 20
+// ARENA_MAX_HEROES (ARENA_TEAM_SIZE*2 = 14, S170-178: "reduce it to 7 v 7",
+// was 20/10v10 through S170-175) -- duplicated here rather than included,
+// since protocol.h is a lower-level shared header that doesn't otherwise
+// depend on the sim package.
+#define ARENA_SNAPSHOT_MAX_HEROES 14
 
 // Per-node territory state broadcast in PACKET_ARENA_SNAPSHOT (S170-87 fix
 // -- this didn't exist before, and its absence is the real root cause of
@@ -291,7 +292,7 @@ typedef struct {
 
 // PACKET_ARENA_SNAPSHOT payload: up to ARENA_SNAPSHOT_MAX_HEROES hero
 // slots, in owner order -- `count` says how many are actually meaningful
-// (2 for a 1v1 match, up to 20 for a full 10v10 lobby), same "count +
+// (2 for a 1v1 match, up to 14 for a full 7v7 lobby), same "count +
 // fixed-size array" convention as NetEntity/entity_count elsewhere in this
 // protocol. Plus the match phase and each side's draft-pick status
 // (2026-07-24: draft phase added so players choose a hero instead of it

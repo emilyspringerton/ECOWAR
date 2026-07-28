@@ -3724,8 +3724,8 @@ void arena_update(unsigned int dt_ms) {
     else if (!arena_state.heroes[1].alive) arena_state.winner = 1;
 }
 
-/* ---- Team mode (2026-07-24, NORTHSTAR §13 cont'd: 10v10, up to
-   ARENA_TEAM_SIZE per side). Additive, not a replacement for the 1v1 local
+/* ---- Team mode (2026-07-24, NORTHSTAR §13 cont'd: 7v7 (S170-178, was
+   10v10), up to ARENA_TEAM_SIZE per side). Additive, not a replacement for the 1v1 local
    demo above -- arena_update()/arena_init_with_heroes() are untouched, so
    nothing about the existing solo-vs-bot practice mode changes. Every slot
    in team mode is filled by a real network client (human or a real

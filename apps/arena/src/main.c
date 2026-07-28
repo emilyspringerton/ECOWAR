@@ -2437,7 +2437,7 @@ int main(int argc, char *argv[]) {
             draw_hero_box(shx, shz, 0.0f, 0.55f, 0.0f, 1.4f, 0.3f, 1.0f, 1.0f, &vp, loc_mvp, loc_model, &cube_mesh);
         }
 
-        /* heroes -- ARENA_MAX_HEROES so team-mode matches (up to 10v10)
+        /* heroes -- ARENA_MAX_HEROES so team-mode matches (up to 7v7, S170-178, was 10v10)
            render every real hero; local/1v1 heroes[2..] are simply never
            alive, so this loop is a no-op regression risk for that mode. */
         for (int i = 0; i < ARENA_MAX_HEROES; i++) {
