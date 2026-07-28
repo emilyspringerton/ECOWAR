@@ -2,6 +2,15 @@
 
 ## 2026-07-28 (continued)
 
+- fix(arena): `scripts/build.sh` now actually builds `apps/arena` (S170-186). Real gap found
+  while investigating an unrelated rendering question: the script every "build clean" claim
+  this session relied on never built the actual human GUI client at all — only
+  `scripts/build_arena.sh` did. Checked: it does compile clean (pre-existing warnings only, none
+  from this session), so no broken commits, just an unverified claim that happened to hold.
+  Folded the same `gcc` invocation into `build.sh` so this can't recur. Verified with a full
+  `rm -rf build` + rebuild from scratch — every binary this repo ships now comes out of the one
+  script. Full suite still green.
+
 - fix(arena): real 7-segment digit glyphs — every number was illegible (S170-185). Founder:
   "ensure our font can render numbers." Real bug: `draw_char`'s digit branch drew the exact same
   generic box outline for every digit 0-9, completely indistinguishable from each other. Every
