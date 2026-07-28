@@ -2,6 +2,16 @@
 
 ## 2026-07-28 (continued)
 
+- feat(arena): reduce team size to 7v7 (S170-178). Founder: "reduce it to 7 v 7." `ARENA_TEAM_SIZE`
+  10 → 7 — every sim-side array/loop bound derives from `ARENA_MAX_HEROES`, so this is the whole
+  gameplay change. Duplicated size constants that don't auto-derive updated to match:
+  `ARENA_SNAPSHOT_MAX_HEROES` (protocol.h) 20 → 14, `launch_arena_pools.sh`'s
+  `BOT_POOL_LOBBY_SIZE` 20 → 14, `run_bot_pool.sh`'s default bot count 19 → 13, both
+  `ops/systemd/*.service` deploy sources' lobby-size/bot-count. The systemd files are deploy
+  sources only — editing them doesn't touch the actually-running live pool, which needs a manual
+  re-copy + restart on the host (deliberately not done here). Build clean, full suite green — all
+  team-mode tests already reference `ARENA_TEAM_SIZE` symbolically.
+
 - feat(arena): shop panel + character pane + scoreboard, Sprint 4 of NORTHSTAR §19 (S170-175).
   Shop structures rendered at each `arena_shop_position()` (team-relative colored trim). An
   always-visible character stat pane (local hero's HP/MP/AD/Armor/Flow/Flow-earned/XP/K-D). A
