@@ -84,6 +84,12 @@ static void arena_creeps_reset(void) {
     for (int i = 0; i < ARENA_MAX_HEROES; i++) {
         arena_state.heroes[i].attack_target = -1;
     }
+    /* cast_target (S170-203): same sentinel-after-memset idiom -- 0 would wrongly mean
+       "casting at owner slot 0." casting_slot itself doesn't need one (0 is already the correct
+       "not casting" value memset already leaves it at). */
+    for (int i = 0; i < ARENA_MAX_HEROES; i++) {
+        arena_state.heroes[i].cast_target = -1;
+    }
     /* last_attacked_by_owner/equipped_item (S170-175): same sentinel-after-
        memset idiom -- 0 would wrongly mean "owner slot 0 gets kill credit"
        / "slot 0 has item #0 equipped." Covers the full ARENA_HEROES_ARRAY_SIZE
@@ -2166,13 +2172,14 @@ static void loki_cast_r(ArenaHero *loki) {
  * missed. */
 static int gary_cast_q(ArenaHero *gary, ArenaHero *foe) {
     if (!hero_is_hittable(foe)) return 0;
-    float range = gary->w_active ? ARENA_GARY_Q_RANGE_WATCHING : ARENA_GARY_Q_RANGE;
+    /* S170-203: no longer w_active-conditional -- W stopped being a toggle that extends this
+       range and became its own real ability (Aimed Shot), so Q is back to one fixed range. */
     float dx = foe->x - gary->x, dz = foe->z - gary->z;
-    if (sqrtf(dx * dx + dz * dz) > range) return 0;
+    if (sqrtf(dx * dx + dz * dz) > ARENA_GARY_Q_RANGE) return 0;
     arena_spawn_projectile(gary->owner, gary->team, ARENA_HERO_GARY,
                            gary->x, gary->z, foe->x, foe->z,
                            ARENA_GARY_Q_PROJECTILE_SPEED, ARENA_GARY_Q_PROJECTILE_RADIUS,
-                           ARENA_GARY_Q_DAMAGE, range);
+                           ARENA_GARY_Q_DAMAGE, ARENA_GARY_Q_RANGE);
     return 1;
 }
 
@@ -2702,8 +2709,12 @@ void arena_toggle_w(int owner) {
        below, so this passes for them unconditionally -- correctly gates
        only the instant-cast-with-cooldown heroes (Ghost, Tyler, Paimon,
        etc.), whose own internal `if (w_cooldown_ms > 0) return;` a few
-       lines into their case would otherwise let a blocked cast still flash. */
-    if (h->w_cooldown_ms <= 0) h->cast_flash_slot = 2;
+       lines into their case would otherwise let a blocked cast still flash.
+       Gary excluded (S170-203): his W now begins a cast, not an instant effect -- the flash
+       belongs at the moment the shot actually fires (cast completion, tick_hero_kit), not the
+       moment the wind-up begins, so his own case below sets cast_flash_slot itself instead of
+       relying on this shared pre-switch line. */
+    if (h->w_cooldown_ms <= 0 && h->hero_id != ARENA_HERO_GARY) h->cast_flash_slot = 2;
 
     switch (h->hero_id) {
     case ARENA_HERO_UNICORN:
@@ -2791,12 +2802,28 @@ void arena_toggle_w(int owner) {
         if (!h->w_active && h->mp <= 0) return; /* S170-181: activating no longer charges a flat cost, just requires some mana to sustain -- see ARENA_MP_DRAIN_W_PER_SEC; toggling off is always free */
         h->w_active = !h->w_active;
         break;
-    case ARENA_HERO_GARY:
-        /* Watching the Bridge: free toggle, no cooldown -- gary_cast_q()
-           reads w_active directly for Q's extended range, not a stat bonus. */
-        if (!h->w_active && h->mp <= 0) return; /* S170-181: activating no longer charges a flat cost, just requires some mana to sustain -- see ARENA_MP_DRAIN_W_PER_SEC; toggling off is always free */
-        h->w_active = !h->w_active;
+    case ARENA_HERO_GARY: {
+        /* Aimed Shot (S170-203): begins a cast, doesn't fire anything itself -- the actual
+           damage application lives in tick_hero_kit, at the moment cast_time_remaining_ms
+           reaches 0 (or nowhere, if the cast gets interrupted first). Real commitment, same
+           "needs a shot lined up to fire at all" gate gary_cast_q already holds itself to --
+           no hittable foe in range right now means this is a no-op, no cooldown/mana spent,
+           rather than winding up a cast aimed at nothing. */
+        if (h->w_cooldown_ms > 0 || h->mp < ARENA_MP_COST_W) return;
+        ArenaHero *foe = arena_nearest_enemy(owner);
+        if (!hero_is_hittable(foe)) return;
+        float dx = foe->x - h->x, dz = foe->z - h->z;
+        if (sqrtf(dx * dx + dz * dz) > ARENA_GARY_W_RANGE) return;
+        h->casting_slot = 2;
+        h->cast_time_remaining_ms = ARENA_GARY_W_CAST_MS;
+        h->cast_total_ms = ARENA_GARY_W_CAST_MS;
+        h->cast_anchor_x = h->x;
+        h->cast_anchor_z = h->z;
+        h->cast_target = foe->owner;
+        h->w_cooldown_ms = cast_cooldown(h, ARENA_GARY_W_COOLDOWN_MS);
+        h->mp -= ARENA_MP_COST_W;
         break;
+    }
     case ARENA_HERO_FLUTE_DEBT:
         /* Recouping Interest: free toggle self-heal-over-time, same shape
            as Unicorn's W -- see tick_hero_kit for the actual regen tick. */
@@ -3259,6 +3286,60 @@ static void tick_hero_kit(ArenaHero *h, ArenaHero *foe, ArenaHero *ally, unsigne
     if (h->silenced_ms > 0) {
         h->silenced_ms -= (int)dt_ms;
         if (h->silenced_ms < 0) h->silenced_ms = 0;
+    }
+    /* Cast-time ability progression (S170-203, founder: "movement interrupts cast damage does
+     * not interrupt cast silence does"). Generic across any hero/slot that ever sets
+     * casting_slot -- Gary's Aimed Shot (W) is the first, not the only one this is meant to
+     * support. Checked right after silenced_ms just ticked down above, so a silence landing
+     * mid-cast interrupts on the very tick it lands, not one tick late. */
+    if (h->casting_slot != 0) {
+        if (h->silenced_ms > 0) {
+            /* Silence interrupts. No refund of the mana/cooldown already spent at cast start --
+               same real-commitment shape as every other Gary ability. */
+            h->casting_slot = 0;
+            h->cast_time_remaining_ms = 0;
+            h->cast_total_ms = 0;
+            h->cast_target = -1;
+        } else {
+            float cast_dx = h->x - h->cast_anchor_x, cast_dz = h->z - h->cast_anchor_z;
+            if (cast_dx * cast_dx + cast_dz * cast_dz > 0.0001f) {
+                /* Movement interrupts -- any real drift from where the cast began, whether a
+                   fresh move command or a forced displacement (a pull, a knockback), not just a
+                   deliberate click; comparing live position against the cast-start anchor every
+                   tick catches both uniformly, no need to hook every movement code path
+                   separately. Damage taken alone does NOT interrupt -- deliberately no HP/
+                   combat_timer_ms check anywhere in this block. */
+                h->casting_slot = 0;
+                h->cast_time_remaining_ms = 0;
+                h->cast_total_ms = 0;
+                h->cast_target = -1;
+            } else {
+                h->cast_time_remaining_ms -= (int)dt_ms;
+                if (h->cast_time_remaining_ms <= 0) {
+                    int finished_slot = h->casting_slot;
+                    int target_idx = h->cast_target;
+                    h->casting_slot = 0;
+                    h->cast_time_remaining_ms = 0;
+                    h->cast_total_ms = 0;
+                    h->cast_target = -1;
+                    if (h->hero_id == ARENA_HERO_GARY && finished_slot == 2 &&
+                        target_idx >= 0 && target_idx < ARENA_MAX_HEROES) {
+                        ArenaHero *target = &arena_state.heroes[target_idx];
+                        /* Re-validated only here, at completion, not every tick -- a target
+                           that stepped out of range mid-cast (without the CASTER moving) still
+                           costs Gary the cast, same "real commitment, not a guaranteed poke"
+                           convention his Q already holds itself to. */
+                        if (hero_is_hittable(target)) {
+                            float tdx = target->x - h->cast_anchor_x, tdz = target->z - h->cast_anchor_z;
+                            if (sqrtf(tdx * tdx + tdz * tdz) <= ARENA_GARY_W_RANGE) {
+                                apply_damage(target, apply_armor(ARENA_GARY_W_DAMAGE, arena_hero_armor(target)));
+                                h->cast_flash_slot = 2; /* the shot actually fires now, not at cast start */
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
     if (h->intangible_ms > 0) {
         h->intangible_ms -= (int)dt_ms;
@@ -3754,12 +3835,14 @@ static void bot_cast_kit_if_ready(ArenaHero *bot, ArenaHero *foe) {
         }
         break;
     case ARENA_HERO_GARY:
-        /* Stationary marksman -- toggle W on early for the extended range,
-           then just poke with Q whenever in range and off cooldown. R when
-           the foe is close enough to actually want rooted. */
-        if (!bot->w_active) {
+        /* Stationary marksman -- S170-203: W (Aimed Shot) is real burst now, off cooldown and
+           in range takes priority over the smaller Q poke; this internal bot AI doesn't reason
+           about the cast being interruptible, same "first pass, not a masterclass" level every
+           other bot heuristic in this switch already operates at. R when the foe is close
+           enough to actually want rooted. */
+        if (bot->w_cooldown_ms <= 0 && dist <= ARENA_GARY_W_RANGE) {
             arena_toggle_w(bot->owner);
-        } else if (bot->q_cooldown_ms <= 0 && dist <= ARENA_GARY_Q_RANGE_WATCHING) {
+        } else if (bot->q_cooldown_ms <= 0 && dist <= ARENA_GARY_Q_RANGE) {
             arena_cast_q(bot->owner);
         } else if (bot->r_cooldown_ms <= 0 && dist <= ARENA_GARY_R_RANGE) {
             arena_cast_r(bot->owner);
@@ -4129,6 +4212,12 @@ static void arena_respawn_hero(ArenaHero *h, int slot_index) {
        from the memset, and 0 already means "expired/inert," same convention this array's own
        tick-down already relies on. */
     for (int a = 0; a < ARENA_MAX_ASSIST_TRACK; a++) h->assist_owner[a] = -1;
+    /* cast_target (S170-203): same sentinel convention as attack_target/last_attacked_by_owner
+       above -- casting_slot is already correctly 0 ("not casting") from the memset, but 0 for
+       cast_target would wrongly mean "casting at owner slot 0." A hero that respawns mid-cast
+       already lost the cast anyway (death itself isn't one of this ability's own interrupt
+       conditions, but a dead hero can't be casting by construction). */
+    h->cast_target = -1;
     arena_recompute_item_stats(h);
 }
 

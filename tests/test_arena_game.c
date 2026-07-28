@@ -3505,6 +3505,135 @@ static void test_gary_q_projectile_despawns_after_max_range_unhit(void) {
     CHECK(find_active_projectile() == NULL, "an unhit projectile despawns once it exceeds its max range, doesn't travel forever");
 }
 
+/* S170-203: Gary's W (Aimed Shot) -- a real WoW Hunter-style cast-time nuke. Founder: "switch
+ * gary w to aimed shot just like wow hunter cast time big damage for now movement interrupts
+ * cast damage does not interrupt cast silence does." These tests exercise the whole shape:
+ * cast begins only with a hittable foe in range, damage lands only after the full wind-up,
+ * movement interrupts (self-moved OR forced), silence interrupts, damage taken does not. */
+
+static void test_gary_w_cast_begins_with_hittable_foe_in_range(void) {
+    arena_init_teams();
+    for (int i = 2; i < ARENA_MAX_HEROES; i++) arena_state.heroes[i].active = 0;
+    arena_state.heroes[ARENA_TEAM_SIZE].active = 1;
+    arena_state.heroes[0].hero_id = ARENA_HERO_GARY;
+    arena_state.heroes[0].x = 0; arena_state.heroes[0].z = 0;
+    arena_state.heroes[ARENA_TEAM_SIZE].x = ARENA_GARY_W_RANGE - 1.0f;
+    arena_state.heroes[ARENA_TEAM_SIZE].z = 0;
+    int foe_hp_before = arena_state.heroes[ARENA_TEAM_SIZE].hp;
+
+    arena_toggle_w(0);
+
+    CHECK(arena_state.heroes[0].casting_slot == 2, "W begins a real cast (slot 2), not an instant effect");
+    CHECK(arena_state.heroes[0].cast_time_remaining_ms == ARENA_GARY_W_CAST_MS, "cast starts at the full wind-up duration");
+    CHECK(arena_state.heroes[0].cast_target == ARENA_TEAM_SIZE, "the hittable foe in range at cast start is locked in as the target");
+    CHECK(arena_state.heroes[0].w_cooldown_ms == ARENA_GARY_W_COOLDOWN_MS, "cooldown is spent the instant the cast begins");
+    CHECK(arena_state.heroes[ARENA_TEAM_SIZE].hp == foe_hp_before, "no damage yet -- the shot hasn't fired, only begun aiming");
+}
+
+static void test_gary_w_no_foe_in_range_is_noop(void) {
+    arena_init_teams();
+    for (int i = 2; i < ARENA_MAX_HEROES; i++) arena_state.heroes[i].active = 0;
+    arena_state.heroes[ARENA_TEAM_SIZE].active = 1;
+    arena_state.heroes[0].hero_id = ARENA_HERO_GARY;
+    arena_state.heroes[0].x = 0; arena_state.heroes[0].z = 0;
+    arena_state.heroes[ARENA_TEAM_SIZE].x = ARENA_GARY_W_RANGE + 5.0f;
+    arena_state.heroes[ARENA_TEAM_SIZE].z = 0;
+
+    arena_toggle_w(0);
+
+    CHECK(arena_state.heroes[0].casting_slot == 0, "no foe in range at cast time -- no cast begins, same 'needs a shot lined up' commitment as Q");
+    CHECK(arena_state.heroes[0].w_cooldown_ms == 0, "a whiff doesn't consume the cooldown");
+}
+
+static void test_gary_w_completes_and_deals_damage_after_full_duration(void) {
+    arena_init_teams();
+    for (int i = 2; i < ARENA_MAX_HEROES; i++) arena_state.heroes[i].active = 0;
+    arena_state.heroes[ARENA_TEAM_SIZE].active = 1;
+    arena_state.heroes[0].hero_id = ARENA_HERO_GARY;
+    arena_state.heroes[0].x = 0; arena_state.heroes[0].z = 0;
+    /* Duck, not the default hero_id 0 (Unicorn) arena_init_teams would otherwise leave this
+       slot at -- Unicorn's own passive base armor would mitigate the exact-value CHECK below;
+       Duck carries no such passive, so the raw ARENA_GARY_W_DAMAGE arrives unmitigated. */
+    arena_state.heroes[ARENA_TEAM_SIZE].hero_id = ARENA_HERO_DUCK;
+    arena_state.heroes[ARENA_TEAM_SIZE].x = ARENA_GARY_W_RANGE - 1.0f;
+    arena_state.heroes[ARENA_TEAM_SIZE].z = 0;
+    int foe_hp_before = arena_state.heroes[ARENA_TEAM_SIZE].hp;
+
+    arena_toggle_w(0);
+    arena_update_teams((unsigned int)ARENA_GARY_W_CAST_MS);
+
+    CHECK(arena_state.heroes[0].casting_slot == 0, "the cast clears itself once it completes");
+    CHECK(arena_state.heroes[ARENA_TEAM_SIZE].hp == foe_hp_before - ARENA_GARY_W_DAMAGE,
+          "the full wind-up elapsing with nothing interrupting it lands the real Aimed Shot damage");
+}
+
+static void test_gary_w_movement_interrupts_cast(void) {
+    arena_init_teams();
+    for (int i = 2; i < ARENA_MAX_HEROES; i++) arena_state.heroes[i].active = 0;
+    arena_state.heroes[ARENA_TEAM_SIZE].active = 1;
+    arena_state.heroes[0].hero_id = ARENA_HERO_GARY;
+    arena_state.heroes[0].x = 0; arena_state.heroes[0].z = 0;
+    arena_state.heroes[ARENA_TEAM_SIZE].x = ARENA_GARY_W_RANGE - 1.0f;
+    arena_state.heroes[ARENA_TEAM_SIZE].z = 0;
+    int foe_hp_before = arena_state.heroes[ARENA_TEAM_SIZE].hp;
+
+    arena_toggle_w(0);
+    /* Any real drift off the cast-start anchor interrupts, whether it's a deliberate move
+       command or a forced displacement (a pull, a knockback) -- mutating x directly here
+       covers both cases identically, since the check is purely position-based. */
+    arena_state.heroes[0].x = 1.0f;
+    arena_update_teams((unsigned int)ARENA_GARY_W_CAST_MS);
+
+    CHECK(arena_state.heroes[0].casting_slot == 0, "moving mid-cast cancels it");
+    CHECK(arena_state.heroes[ARENA_TEAM_SIZE].hp == foe_hp_before, "an interrupted cast deals no damage");
+}
+
+static void test_gary_w_damage_does_not_interrupt_cast(void) {
+    arena_init_teams();
+    for (int i = 2; i < ARENA_MAX_HEROES; i++) arena_state.heroes[i].active = 0;
+    arena_state.heroes[ARENA_TEAM_SIZE].active = 1;
+    arena_state.heroes[0].hero_id = ARENA_HERO_GARY;
+    arena_state.heroes[0].x = 0; arena_state.heroes[0].z = 0;
+    /* Duck, not the default hero_id 0 (Unicorn) -- see the completes-and-deals-damage test's
+       own comment for why the exact-value CHECK below needs an armor-passive-free target. */
+    arena_state.heroes[ARENA_TEAM_SIZE].hero_id = ARENA_HERO_DUCK;
+    arena_state.heroes[ARENA_TEAM_SIZE].x = ARENA_GARY_W_RANGE - 1.0f;
+    arena_state.heroes[ARENA_TEAM_SIZE].z = 0;
+    int foe_hp_before = arena_state.heroes[ARENA_TEAM_SIZE].hp;
+
+    arena_toggle_w(0);
+    arena_state.heroes[0].hp -= 10; /* the caster takes damage mid-cast -- founder, explicit: this must not interrupt */
+    arena_update_teams((unsigned int)ARENA_GARY_W_CAST_MS);
+
+    CHECK(arena_state.heroes[0].casting_slot == 0, "the cast still completes normally");
+    CHECK(arena_state.heroes[ARENA_TEAM_SIZE].hp == foe_hp_before - ARENA_GARY_W_DAMAGE,
+          "taking damage mid-cast does not interrupt it -- the shot still lands");
+}
+
+static void test_gary_w_silence_interrupts_cast(void) {
+    arena_init_teams();
+    for (int i = 2; i < ARENA_MAX_HEROES; i++) arena_state.heroes[i].active = 0;
+    arena_state.heroes[ARENA_TEAM_SIZE].active = 1;
+    arena_state.heroes[0].hero_id = ARENA_HERO_GARY;
+    arena_state.heroes[0].x = 0; arena_state.heroes[0].z = 0;
+    arena_state.heroes[ARENA_TEAM_SIZE].x = ARENA_GARY_W_RANGE - 1.0f;
+    arena_state.heroes[ARENA_TEAM_SIZE].z = 0;
+    int foe_hp_before = arena_state.heroes[ARENA_TEAM_SIZE].hp;
+
+    arena_toggle_w(0);
+    arena_state.heroes[0].silenced_ms = 500; /* lands mid-cast */
+    /* Two steps, not one big tick spanning the whole cast: silenced_ms and the interrupt check
+       that reads it both live in the same per-tick pass, so a single tick covering the entire
+       remaining duration would decay silenced_ms to 0 (500 - 1500, clamped) in the same instant
+       the check runs, silently passing the interrupt check it's supposed to trip. A small first
+       tick leaves silenced_ms genuinely > 0 when the check evaluates it, same as it would be at
+       any real, non-test frame rate. */
+    arena_update_teams(100);
+    CHECK(arena_state.heroes[0].casting_slot == 0, "silence lands mid-cast and cancels it");
+    arena_update_teams((unsigned int)ARENA_GARY_W_CAST_MS);
+    CHECK(arena_state.heroes[ARENA_TEAM_SIZE].hp == foe_hp_before, "an interrupted cast deals no damage even once the original wind-up duration has fully elapsed");
+}
+
 /* S170-140: Tyler's Q (Earthbind) converted from an instant hit to a real
  * projectile, carrying both root and burn as on-hit effects. */
 static void test_tyler_q_cast_spawns_projectile_no_instant_effect(void) {
@@ -4685,6 +4814,12 @@ int main(void) {
     test_gary_q_projectile_lands_after_travel_time();
     test_gary_q_projectile_misses_if_target_steps_off_line();
     test_gary_q_projectile_despawns_after_max_range_unhit();
+    test_gary_w_cast_begins_with_hittable_foe_in_range();
+    test_gary_w_no_foe_in_range_is_noop();
+    test_gary_w_completes_and_deals_damage_after_full_duration();
+    test_gary_w_movement_interrupts_cast();
+    test_gary_w_damage_does_not_interrupt_cast();
+    test_gary_w_silence_interrupts_cast();
     test_tyler_q_cast_spawns_projectile_no_instant_effect();
     test_tyler_q_projectile_roots_and_burns_on_hit();
     test_tyler_q_projectile_misses_if_target_steps_off_line();

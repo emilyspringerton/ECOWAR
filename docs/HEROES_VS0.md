@@ -386,8 +386,12 @@ teleport, no gap-closer of any kind: Gary doesn't chase, he watches from where h
   flight time to cross the distance, so a foe that steps off the firing line before it arrives
   genuinely dodges it — no homing. The range check still gates the cast itself (Gary needs a shot
   lined up to fire at all), but landing the hit is no longer guaranteed.
-- **W — Watching the Bridge**: a free toggle (no cooldown) that extends Q's own range while
-  active, rather than granting a stat bonus like every other toggle in this roster.
+- **W — Aimed Shot** (S170-203): no longer a free toggle — a real WoW Hunter-style cast-time
+  nuke, big single-target damage on a real cooldown. Needs a hittable foe in range to even begin
+  (same "needs a shot lined up" commitment as Q); once the 1.5s wind-up starts, moving (a fresh
+  move command or a forced displacement — a pull, a knockback) cancels it, and being silenced
+  cancels it, but taking damage does not. A cast bar renders over Gary's head the whole time,
+  visible to everyone, not just him.
 - **R — "Slow Down, This Isn't a Track Meet"**: a fixed-duration root on the nearest enemy — the
   same "slow simplified to a full stop" convention Tree's R/Flamel's R already use.
 

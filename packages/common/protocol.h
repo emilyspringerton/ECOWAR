@@ -250,6 +250,19 @@ typedef struct {
     // convention as attack_target/w_active above.
     float r_zone_x, r_zone_z;
     uint16_t r_active_ms;
+    // casting_slot/cast_time_remaining_ms/cast_total_ms (S170-203, founder: "switch gary w to
+    // aimed shot just like wow hunter cast time big damage" -> "ensure cast bar affordance
+    // shown to user"): generic cast-time-ability state (ArenaHero's own doc comment in
+    // arena_game.h) -- Gary's Aimed Shot (W) is the first ability to use it. Synced for every
+    // hero, not just the local player's own, same "the whole battlefield should read clearly"
+    // convention as attack_target/w_active/r_zone_x above -- a cast bar only a player can see
+    // over their own head isn't the affordance that was asked for; every hero watching a Gary
+    // wind up a shot needs to see it too, same as every other cast/status affordance already on
+    // this wire. cast_anchor_x/z and cast_target aren't synced -- purely server-side
+    // interrupt/damage bookkeeping the client's own cast-bar rendering never needs to read.
+    uint8_t casting_slot;
+    uint16_t cast_time_remaining_ms;
+    uint16_t cast_total_ms;
 } ArenaHeroSnapshot;
 
 // ARENA_SNAPSHOT_MAX_HEROES must match packages/simulation/arena_game.h's

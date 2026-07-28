@@ -364,6 +364,9 @@ static void server_broadcast(void) {
         msg.heroes[i].r_zone_x = h->r_zone_x; /* S170-200 */
         msg.heroes[i].r_zone_z = h->r_zone_z;
         msg.heroes[i].r_active_ms = (uint16_t)(h->r_active_ms > 0 ? h->r_active_ms : 0);
+        msg.heroes[i].casting_slot = (uint8_t)h->casting_slot; /* S170-203 */
+        msg.heroes[i].cast_time_remaining_ms = (uint16_t)(h->cast_time_remaining_ms > 0 ? h->cast_time_remaining_ms : 0);
+        msg.heroes[i].cast_total_ms = (uint16_t)(h->cast_total_ms > 0 ? h->cast_total_ms : 0);
         msg.picked[i] = (uint8_t)hero_picked[i];
     }
     msg.winner = (uint8_t)arena_state.winner;

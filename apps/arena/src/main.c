@@ -542,6 +542,9 @@ static void net_poll_snapshots(uint32_t now_ms) {
                     dst->r_zone_x = msg->heroes[i].r_zone_x; /* S170-200 */
                     dst->r_zone_z = msg->heroes[i].r_zone_z;
                     dst->r_active_ms = msg->heroes[i].r_active_ms;
+                    dst->casting_slot = msg->heroes[i].casting_slot; /* S170-203 */
+                    dst->cast_time_remaining_ms = msg->heroes[i].cast_time_remaining_ms;
+                    dst->cast_total_ms = msg->heroes[i].cast_total_ms;
                     if (msg->heroes[i].cast_flash_slot > 0) {
                         spawn_spell_flash(dst->x, dst->z, msg->heroes[i].cast_flash_slot, dst->hero_id);
                         trigger_squish(i);
@@ -2986,6 +2989,34 @@ int main(int argc, char *argv[]) {
             glVertex2f(sx - bw / 2, sy); glVertex2f(sx - bw / 2 + bw * frac, sy);
             glVertex2f(sx - bw / 2 + bw * frac, sy + bh); glVertex2f(sx - bw / 2, sy + bh);
             glEnd();
+            /* Cast bar (S170-203, founder: "switch gary w to aimed shot just like wow hunter
+               cast time" -> "ensure cast bar affordance shown to user"). Drawn for ANY hero
+               currently casting -- Gary's Aimed Shot is the first ability to ever set
+               casting_slot, not the only one this is meant to support. Below the health bar
+               (screen space here is Y-up, so "below" is sy MINUS the bar height, not plus) so
+               it doesn't collide with the name/status stack already above it. Visible to every
+               hero watching, not just the caster -- same "reads to the whole battlefield"
+               convention every other cast/status affordance in this file already holds itself
+               to; a cast bar only the caster can see isn't the affordance that was asked for. */
+            if (h->casting_slot != 0 && h->cast_total_ms > 0) {
+                float cast_frac = 1.0f - (float)h->cast_time_remaining_ms / (float)h->cast_total_ms;
+                if (cast_frac < 0.0f) cast_frac = 0.0f;
+                if (cast_frac > 1.0f) cast_frac = 1.0f;
+                float cbh = 4.0f;
+                float cby = sy - cbh - 2.0f;
+                glColor3f(0.1f, 0.1f, 0.1f);
+                glBegin(GL_QUADS);
+                glVertex2f(sx - bw / 2, cby); glVertex2f(sx + bw / 2, cby);
+                glVertex2f(sx + bw / 2, cby + cbh); glVertex2f(sx - bw / 2, cby + cbh);
+                glEnd();
+                glColor3f(0.95f, 0.8f, 0.2f); /* gold -- distinct from HP's relationship color, the real WoW cast-bar convention this ability is modeled on */
+                glBegin(GL_QUADS);
+                glVertex2f(sx - bw / 2, cby); glVertex2f(sx - bw / 2 + bw * cast_frac, cby);
+                glVertex2f(sx - bw / 2 + bw * cast_frac, cby + cbh); glVertex2f(sx - bw / 2, cby + cbh);
+                glEnd();
+                glColor3f(0.95f, 0.85f, 0.4f);
+                draw_string(arena_ability_name(h->hero_id, h->casting_slot - 1), sx - bw / 2, cby - 10.0f, 7);
+            }
             /* S170-162, founder: "up our visual affordances for auto
                attacks so its readable" / "auto target should still have
                visual affordances." A pulsing amber outline around the
@@ -3258,8 +3289,13 @@ int main(int argc, char *argv[]) {
             int w_mana_blocked = arena_hero_w_is_toggle(h->hero_id)
                                       ? (!h->w_active && h->mp <= 0)
                                       : (!h->w_active && h->mp < ARENA_MP_COST_W);
+            /* S170-203: OR'd with casting_slot != 0 so Gary's W tile highlights while his Aimed
+               Shot is mid-cast, same "active" affordance the R tile already gives r_active_ms --
+               w_active itself stays permanently 0 for him now (he's not in the toggle list
+               anymore), so this only ever adds the new condition, never changes behavior for
+               any hero whose W really is a toggle. */
             draw_ability_tile(tiles_x0 + tile_pitch, tiles_y, tile_size, h->w_cooldown_ms, &w_cooldown_peak_ms,
-                               h->w_active, w_mana_blocked, "W", arena_ability_name(h->hero_id, 1), 0.7f, 0.3f, 1.0f);
+                               h->w_active || h->casting_slot != 0, w_mana_blocked, "W", arena_ability_name(h->hero_id, 1), 0.7f, 0.3f, 1.0f);
             draw_ability_tile(tiles_x0 + tile_pitch * 2.0f, tiles_y, tile_size, h->r_cooldown_ms, &r_cooldown_peak_ms,
                                h->r_active_ms > 0, h->mp < ARENA_MP_COST_R, "E", arena_ability_name(h->hero_id, 2), 1.0f, 0.85f, 0.2f);
 

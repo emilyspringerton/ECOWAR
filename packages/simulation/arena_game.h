@@ -531,15 +531,28 @@ typedef enum {
 /* Gary, Bifrost Security (Off-Duty) (S170-91, TYLER multiverse_heroes.md #35) -- pure
  * marksman, no magic, "extraordinary eyesight, extraordinary aim." Q is a stationary
  * long-range precision shot (no dash, no movement -- Gary doesn't chase, he watches).
- * W is a free toggle that extends Q's own range rather than granting a stat like every
- * other toggle so far ("watching the bridge" further out, a genuinely different toggle
- * shape). R is a fixed-duration root on the nearest enemy -- "slow down, this isn't a
+ * R is a fixed-duration root on the nearest enemy -- "slow down, this isn't a
  * track meet," simplified to a full stop the same way Tree's R/Flamel's R already
- * simplify a slow down to a root rather than adding a real speed-multiplier system. */
+ * simplify a slow down to a root rather than adding a real speed-multiplier system.
+ *
+ * W -- Aimed Shot (S170-203, founder: "switch gary w to aimed shot just like wow hunter
+ * cast time big damage for now movement interrupts cast damage does not interrupt cast
+ * silence does"). Was a free toggle extending Q's own range; now a real WoW Hunter-style
+ * cast-time nuke, the first ability in this roster to use the generic casting_slot/
+ * cast_time_remaining_ms/cast_anchor_x/z/cast_target state (arena_game.h's own doc comment
+ * on those fields). Real commitment, same "Gary needs a shot lined up to fire at all"
+ * convention his Q already holds itself to -- requires a hittable foe in range at cast
+ * START, or the ability simply doesn't fire (no cooldown/mana spent), and the target is
+ * re-checked (still alive, still in range of where the cast began) only at completion, not
+ * continuously -- stepping out of range mid-cast still costs Gary the cast, exactly like a
+ * foe dodging his Q's travel time. */
 #define ARENA_GARY_Q_RANGE          6.0f
-#define ARENA_GARY_Q_RANGE_WATCHING 9.0f /* Q's range while W is toggled on */
 #define ARENA_GARY_Q_DAMAGE         11
 #define ARENA_GARY_Q_COOLDOWN_MS    3500
+#define ARENA_GARY_W_RANGE          9.0f  /* same reach the old Q-range toggle used to grant */
+#define ARENA_GARY_W_DAMAGE         30    /* real burst -- comparable to a strong R-tier ultimate elsewhere on the roster, not a Q-tier poke */
+#define ARENA_GARY_W_CAST_MS        1500  /* stand-still wind-up; interruptible the whole time */
+#define ARENA_GARY_W_COOLDOWN_MS    6000
 /* S170-136: Q is now a real travelling projectile (first one in the game),
  * not an instant hit -- fired straight at the foe's position at cast time,
  * no homing, so a foe that moves off the line after the shot is fired
@@ -1088,6 +1101,28 @@ typedef struct {
     int r_zone_tick_ms; /* Ghost's Recital: counts up to 1000ms, then ticks one DPS-worth of damage --
                           * a fixed-interval tick rather than fractional-per-tick accumulation, so it
                           * behaves correctly at any real frame rate, not just in a single big test step. */
+    /* Cast-time ability state (S170-203, founder: "switch gary w to aimed shot just like wow
+     * hunter cast time big damage for now movement interrupts cast damage does not interrupt
+     * cast silence does"). Generic across any slot/hero, same "shared field names across kits"
+     * reasoning as everything else in this block -- Gary's W (Aimed Shot) is the first ability
+     * to use it, not the only one this is meant to ever support. casting_slot is 0 when not
+     * casting, else 1/2/3 for Q/W/R (same convention as cast_flash_slot). cast_anchor_x/z is
+     * the caster's own position the instant the cast began -- checked every tick against the
+     * caster's CURRENT position; any real drift (self-directed movement OR forced displacement,
+     * e.g. a pull) interrupts, matching "movement interrupts" literally rather than only
+     * catching a deliberate move-click. cast_target is the hittable enemy locked in at cast
+     * start (-1 if the cast has no single-target component), re-validated for range/hittability
+     * only at completion, not every tick -- a target that steps out of range mid-cast still
+     * costs the caster the cast, same "real commitment, not a guaranteed poke" convention every
+     * other Gary ability already holds itself to. cast_total_ms is the fixed duration the cast
+     * started with, kept alongside cast_time_remaining_ms purely so the client can compute a
+     * remaining/total progress fraction for the cast-bar UI without needing to know each
+     * ability's cast time itself. */
+    int casting_slot;
+    int cast_time_remaining_ms;
+    int cast_total_ms;
+    float cast_anchor_x, cast_anchor_z;
+    int cast_target;
     /* Status effects -- generic, any hero's kit can apply these to any
      * other hero, not just Ghost's own state (S170-32 is the first kit to
      * apply them, but the fields aren't Ghost-specific). */
