@@ -1087,10 +1087,33 @@ static void draw_char(char c, float x, float y, float s) {
     glLineWidth(2.0f);
     glBegin(GL_LINES);
     if (c >= '0' && c <= '9') {
-        glVertex2f(x, y + s); glVertex2f(x + s, y + s);
-        glVertex2f(x + s, y + s); glVertex2f(x + s, y);
-        glVertex2f(x + s, y); glVertex2f(x, y);
-        glVertex2f(x, y); glVertex2f(x, y + s);
+        /* Real 7-segment-style digits (S170-185, founder: "ensure our font can render
+           numbers"). Real bug fixed here: every digit used to draw the exact same generic box
+           outline, indistinguishable from any other -- every numeric HUD value this game shows
+           (HP/MP, ability cooldown countdown, Flow/XP/item costs, K/D, APM) was effectively
+           illegible as a SPECIFIC number, just "some digits are here." Standard 7-segment
+           mapping, same GL_LINES stroke style as every other glyph in this font. */
+        int seg_top = 0, seg_top_left = 0, seg_top_right = 0, seg_mid = 0;
+        int seg_bot_left = 0, seg_bot_right = 0, seg_bot = 0;
+        switch (c) {
+        case '0': seg_top = seg_top_left = seg_top_right = seg_bot_left = seg_bot_right = seg_bot = 1; break;
+        case '1': seg_top_right = seg_bot_right = 1; break;
+        case '2': seg_top = seg_top_right = seg_mid = seg_bot_left = seg_bot = 1; break;
+        case '3': seg_top = seg_top_right = seg_mid = seg_bot_right = seg_bot = 1; break;
+        case '4': seg_top_left = seg_top_right = seg_mid = seg_bot_right = 1; break;
+        case '5': seg_top = seg_top_left = seg_mid = seg_bot_right = seg_bot = 1; break;
+        case '6': seg_top = seg_top_left = seg_mid = seg_bot_left = seg_bot_right = seg_bot = 1; break;
+        case '7': seg_top = seg_top_right = seg_bot_right = 1; break;
+        case '8': seg_top = seg_top_left = seg_top_right = seg_mid = seg_bot_left = seg_bot_right = seg_bot = 1; break;
+        case '9': seg_top = seg_top_left = seg_top_right = seg_mid = seg_bot_right = seg_bot = 1; break;
+        }
+        if (seg_top) { glVertex2f(x, y + s); glVertex2f(x + s, y + s); }
+        if (seg_top_left) { glVertex2f(x, y + s); glVertex2f(x, y + s / 2); }
+        if (seg_top_right) { glVertex2f(x + s, y + s); glVertex2f(x + s, y + s / 2); }
+        if (seg_mid) { glVertex2f(x, y + s / 2); glVertex2f(x + s, y + s / 2); }
+        if (seg_bot_left) { glVertex2f(x, y + s / 2); glVertex2f(x, y); }
+        if (seg_bot_right) { glVertex2f(x + s, y + s / 2); glVertex2f(x + s, y); }
+        if (seg_bot) { glVertex2f(x, y); glVertex2f(x + s, y); }
     } else if (c == 'W') {
         glVertex2f(x, y + s); glVertex2f(x + s * 0.25f, y);
         glVertex2f(x + s * 0.25f, y); glVertex2f(x + s * 0.5f, y + s * 0.6f);
