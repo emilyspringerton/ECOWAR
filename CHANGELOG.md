@@ -2,6 +2,16 @@
 
 ## 2026-07-28 (continued)
 
+- feat(arena): real draft pick-a-hero UI, replacing auto-draft (S170-182). Split out from the old
+  bundled S170-69 item. Draft used to auto-pick instantly (S170-66/68); now a real 26-hero grid
+  screen (`draw_draft_screen`) replaces the normal match view for as long as
+  `net_phase == ARENA_PHASE_DRAFT && !net_picked` — click a tile to draft it
+  (`draft_screen_hero_at` shared between hit-test and hover-highlight). Replaced the old
+  auto-pick's `net_draft_offset` formula with `net_picked_hero_id` so the existing resend safety
+  net resends the real click, not a recomputed value. No auto-fallback if the player never
+  clicks — deliberate scope decision, flagged not faked. Build clean, full suite green;
+  server-side draft flow (untouched) verified via an isolated bot-vs-bot match on a fresh port.
+
 - feat(arena): real cursor-shape swap on enemy hover (S170-69). Founder northstar: "nice cursor
   indicators for hover over enemy vers aly etc." The color-coded YOU/ALLY/ENEMY bracket+label
   already covered the relation-indicator half; this adds the literal cursor-shape swap
