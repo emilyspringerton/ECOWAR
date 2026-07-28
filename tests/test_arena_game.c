@@ -3467,6 +3467,38 @@ static void test_tyler_clones_mirror_move_target_and_fight(void) {
           "an enemy near the marching clone army takes real damage -- clones fight through the generic melee loop");
 }
 
+static void test_tyler_w_teleports_the_whole_clone_army(void) {
+    /* S170-170, "true meepo parity" follow-up: docs/HEROES_VS0.md's own
+       S170-141 scope note flagged this as "a real next step, not attempted
+       this pass" -- W used to move only Tyler's own body. */
+    arena_init_teams();
+    for (int i = 1; i < ARENA_MAX_HEROES; i++) arena_state.heroes[i].active = 0;
+    arena_state.heroes[ARENA_TEAM_SIZE].active = 1;
+    arena_state.heroes[ARENA_TEAM_SIZE].alive = 1;
+    arena_state.heroes[0].hero_id = ARENA_HERO_TYLER;
+    arena_state.heroes[0].x = 0.0f; arena_state.heroes[0].z = 0.0f;
+    arena_cast_r(0); /* spawn the clone army, far from the eventual W target */
+
+    arena_state.heroes[ARENA_TEAM_SIZE].x = 30.0f; arena_state.heroes[ARENA_TEAM_SIZE].z = 0.0f;
+    arena_state.heroes[ARENA_TEAM_SIZE].hp = arena_state.heroes[ARENA_TEAM_SIZE].max_hp = 1000;
+    int foe_hp_before = arena_state.heroes[ARENA_TEAM_SIZE].hp;
+
+    arena_toggle_w(0);
+
+    CHECK(arena_state.heroes[0].x == 30.0f && arena_state.heroes[0].z == 0.0f,
+          "Tyler himself still blinks to the target as before");
+    int clones_teleported = 0;
+    for (int i = ARENA_MAX_HEROES; i < ARENA_HEROES_ARRAY_SIZE; i++) {
+        ArenaHero *c = &arena_state.heroes[i];
+        if (!c->active) continue;
+        if (c->x == 30.0f && c->z == 0.0f) clones_teleported++;
+    }
+    CHECK(clones_teleported == ARENA_TYLER_R_CLONE_COUNT,
+          "every active clone teleports alongside Tyler to the exact same point, not just his own body");
+    CHECK(arena_state.heroes[ARENA_TEAM_SIZE].hp < foe_hp_before,
+          "the target takes real arrival damage from the concentrated clone-army landing");
+}
+
 /* apply_damage/arena_tick_respawns are static to arena_game.c -- the three
  * tests below drive real kills entirely through the public arena_update_teams
  * loop (a lone, heavily-buffed enemy hero parked in melee range), the same
@@ -4070,6 +4102,7 @@ int main(void) {
     test_tyler_q_projectile_roots_and_burns_on_hit();
     test_tyler_q_projectile_misses_if_target_steps_off_line();
     test_tyler_r_spawns_clones_linked_to_caster();
+    test_tyler_w_teleports_the_whole_clone_army();
     test_tyler_clones_mirror_move_target_and_fight();
     test_tyler_shared_fate_clone_death_kills_tyler_and_siblings();
     test_tyler_death_kills_his_clones_too();

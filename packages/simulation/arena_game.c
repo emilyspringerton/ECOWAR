@@ -1874,16 +1874,37 @@ static int tyler_cast_q(ArenaHero *tyler, ArenaHero *foe) {
 }
 
 /* tyler_cast_w: Poof -- an instant blink to the nearest enemy plus real damage on arrival.
- * One body, one blink, not "every clone" -- see the header comment on why. Returns 1 if a
- * living enemy was there to blink to. */
+ * S170-170, "true meepo parity" follow-up (docs/HEROES_VS0.md's own S170-141 scope note: "W
+ * (Poof) still moves only Tyler's own body, not the whole clone army teleporting together -- a
+ * real next step, not attempted this pass"): every active clone linked to this Tyler
+ * (`clone_owner`) now teleports alongside him to the exact same point and independently lands
+ * its own arrival-damage check against the same target -- the original design's "TYLER and
+ * every active clone teleport to the target point" (docs/HEROES_VS0.md), simplified the same
+ * honest way the rest of this kit already is: single-target instant damage on arrival, not a
+ * true two-point AoE at both the departure and landing spot. Concentrates the whole clone
+ * army's arrival damage onto the one enemy Tyler jumped to -- the actual "full-team dive tool"
+ * identity the original design names, just expressed through this engine's existing simplified
+ * hit model rather than a new AoE system. Returns 1 if a living enemy was there to blink to. */
 static int tyler_cast_w(ArenaHero *tyler, ArenaHero *foe) {
     if (!hero_is_hittable(foe)) return 0;
+    int tyler_owner = (int)(tyler - arena_state.heroes);
+
     tyler->x = foe->x;
     tyler->z = foe->z;
     tyler->moving = 0;
-    float fdx = foe->x - tyler->x, fdz = foe->z - tyler->z;
-    if (sqrtf(fdx * fdx + fdz * fdz) <= ARENA_TYLER_W_HIT_RADIUS) {
+    if (hero_is_hittable(foe)) {
         apply_damage(foe, apply_armor(ARENA_TYLER_W_DAMAGE, arena_hero_armor(foe)));
+    }
+
+    for (int i = ARENA_MAX_HEROES; i < ARENA_HEROES_ARRAY_SIZE; i++) {
+        ArenaHero *clone = &arena_state.heroes[i];
+        if (!clone->active || !clone->alive || clone->clone_owner != tyler_owner) continue;
+        clone->x = foe->x;
+        clone->z = foe->z;
+        clone->moving = 0;
+        if (hero_is_hittable(foe)) {
+            apply_damage(foe, apply_armor(ARENA_TYLER_W_DAMAGE, arena_hero_armor(foe)));
+        }
     }
     return 1;
 }

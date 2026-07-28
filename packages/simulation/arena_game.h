@@ -560,7 +560,6 @@ typedef enum {
 #define ARENA_TYLER_Q_PROJECTILE_SPEED  10.0f
 #define ARENA_TYLER_Q_PROJECTILE_RADIUS 0.7f
 #define ARENA_TYLER_W_DAMAGE          12
-#define ARENA_TYLER_W_HIT_RADIUS      1.8f
 #define ARENA_TYLER_W_COOLDOWN_MS     5500
 #define ARENA_TYLER_R_DAMAGE          16
 #define ARENA_TYLER_R_RANGE           4.0f

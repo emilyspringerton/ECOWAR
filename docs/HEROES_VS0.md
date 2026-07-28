@@ -223,18 +223,26 @@ armor-debuff stand-in alone (which stays, on top). Clones are excluded from
 `arena_tick_respawns` (they don't respawn independently -- Tyler has to recast R after his own
 respawn to rebuild the clone army).
 
+**S170-170 follow-up, "true meepo parity" continued:** W (Poof) now teleports every active clone
+linked to Tyler alongside him to the exact same point, each independently landing its own
+arrival-damage check against the same target -- the original design's "TYLER and every active
+clone teleport to the target point," simplified the same honest way the rest of this kit already
+is (single-target instant damage on arrival, not a true two-point AoE at both the departure and
+landing spot). Concentrates the whole clone army's arrival damage onto the one enemy Tyler jumped
+to -- the real "full-team dive tool" identity, expressed through this engine's existing simplified
+hit model.
+
 **What's still simplified, flagged not faked:** clones are melee-only -- they don't independently
 cast Q/W/R (only Tyler's own real input drives ability casts), so "every melee attack from TYLER or
-any clone" applies Geostrike's DoT for Tyler's own hits only, not the clones'. W (Poof) still moves
-only Tyler's own body, not the whole clone army teleporting together -- a real next step, not
-attempted this pass. Clones aren't targetable by jungle/lane creeps or projectiles (only real
-hero-vs-hero melee sees them) and don't participate in node-capture presence -- narrower blast
-radius on purpose, so this pass didn't need to touch the creep/projectile/capture systems' own
-loops (and their existing test coverage) to ship the core "real bodies, shared fate, move and fight
-together" identity. Simulated in team mode only (`arena_update_teams`) -- the 1v1 local practice
-demo's own tick functions are hardcoded to exactly two heroes and don't loop over the puppet range
-at all, so casting R there still grants the self-buff but any claimed clone slot sits inert,
-unmoved and non-combatant, until a real team match runs it.
+any clone" applies Geostrike's DoT for Tyler's own hits only, not the clones'. Clones aren't
+targetable by jungle/lane creeps or projectiles (only real hero-vs-hero melee sees them) and don't
+participate in node-capture presence -- narrower blast radius on purpose, so this pass didn't need
+to touch the creep/projectile/capture systems' own loops (and their existing test coverage) to ship
+the core "real bodies, shared fate, move and fight together" identity. Simulated in team mode only
+(`arena_update_teams`) -- the 1v1 local practice demo's own tick functions are hardcoded to exactly
+two heroes and don't loop over the puppet range at all, so casting R there still grants the
+self-buff but any claimed clone slot sits inert, unmoved and non-combatant, until a real team match
+runs it.
 
 - **Q — Earthbind** *(original design)*: Fires a net at a target area; any enemy hit is rooted and
   treated as a bigger hitbox for a few seconds (classic setup for the blink-strike below).
