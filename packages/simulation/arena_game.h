@@ -1043,11 +1043,15 @@ extern const ArenaItemDef ARENA_ITEMS[];
  * already set for AoE-vs-creep kills (that function's own doc comment).
  * Hero kills pay the most by a wide margin -- real MOBA precedent (a
  * creep kill is routine map presence, a hero kill is a real fight won). */
-#define ARENA_JUNGLE_CREEP_KILL_FLOW   15
+/* S170-197, founder: "the economy is too slow i can never buy anything increase flow gained by
+ * 10x from all sources." All 4 Flow-earning constants below x10 (XP left untouched -- not
+ * mentioned, and XP has no spend pressure the way Flow does, so slow XP was never the complaint).
+ * Values were the original S170-175 amounts times 10, not independently re-tuned. */
+#define ARENA_JUNGLE_CREEP_KILL_FLOW  150
 #define ARENA_JUNGLE_CREEP_KILL_XP     10
-#define ARENA_LANE_CREEP_KILL_FLOW      8
+#define ARENA_LANE_CREEP_KILL_FLOW     80
 #define ARENA_LANE_CREEP_KILL_XP        6
-#define ARENA_HERO_KILL_FLOW          100
+#define ARENA_HERO_KILL_FLOW         1000
 #define ARENA_HERO_KILL_XP             60
 /* Assists (S170-187, founder: "assists should gen flow"). Real MOBA convention: anyone else
  * who damaged the victim within a recent window before the kill (not just the hero who landed
@@ -1057,7 +1061,7 @@ extern const ArenaItemDef ARENA_ITEMS[];
  * a token amount" shape ARENA_LANE_CREEP_KILL_FLOW already takes relative to
  * ARENA_JUNGLE_CREEP_KILL_FLOW. */
 #define ARENA_ASSIST_WINDOW_MS       10000
-#define ARENA_HERO_ASSIST_FLOW         35
+#define ARENA_HERO_ASSIST_FLOW        350 /* S170-197: x10, see ARENA_JUNGLE_CREEP_KILL_FLOW's own comment */
 #define ARENA_HERO_ASSIST_XP           20
 #define ARENA_MAX_ASSIST_TRACK           4 /* how many distinct recent attackers a hero remembers at once -- LRU-evicts the oldest if a 5th lands a hit before this one expires */
 
