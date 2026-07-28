@@ -1,5 +1,23 @@
 # Changelog
 
+## 2026-07-28 (continued 10)
+
+- feat(arena): Blink Dagger, item catalog's first real active ability (S170-205). Founder: "add
+  blink dagger 1400 flow it gives a new keybind on screen for tilda" -> "+6ap +6hp". New 25th
+  item (Trinket slot, 1400 Flow, +6 AD/+6 HP), but the real value is `arena_use_blink` -- the
+  first item in the catalog that isn't just passive stats. Bound to a dedicated key (tilde/
+  backquote), distinct from Q/W/E, since it's an item activation, not a kit ability. New
+  `PACKET_ARENA_BLINK` (no payload), a fully separate `blink_cooldown_ms` track (doesn't touch
+  Q/W/R cooldowns or mana). Direction: toward the current move target if moving, else the
+  nearest living enemy, else no-op -- the same fallback chain `unicorn_cast_q` already
+  established. Travels `ARENA_BLINK_RANGE` (12.0, the single longest gap-closer/escape distance
+  on the whole roster) or the remaining distance to an already-close target, whichever is
+  shorter. `ARENA_BLINK_COOLDOWN_MS` matches real DOTA's own Blink Dagger cooldown exactly (15s).
+  Blocked by stun but NOT by silence -- using an item isn't a cast. A 4th ability tile shows real
+  synced cooldown state, only drawn while the local player actually has it equipped. 8 new tests,
+  build clean, full suite green (638/638). Live-verified: GUI client ran 6s under Xvfb with the
+  new keybind/tile render code active, no crash.
+
 ## 2026-07-28 (continued 9)
 
 - feat(arena): auto-attack windup/backswing, NORTHSTAR §17 LoL parity (S170-204). Picked as the
