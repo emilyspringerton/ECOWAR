@@ -2,6 +2,19 @@
 
 ## 2026-07-28 (continued)
 
+- fix(arena): resource-race bar color was absolute, not viewer-relative (S170-159). Founder,
+  real-time, live: "check the win cons i think it shows the wrong team winning" -> "i think the
+  color of the bar ticking up may just be wrong." Verified the win-condition logic itself first,
+  live: temporarily lowered `ARENA_RESOURCE_CAP` and added a debug print to `apps/arena_bot`
+  logging each bot's own team/winner/resources/verdict, ran an isolated match to completion —
+  every one of the 20 bots correctly identified win/loss matching its own team and the actual
+  resource totals, confirming the simulation's winner logic has no bug (debug changes reverted
+  after, zero diff left behind). The real bug was in the resource bar added by S170-153: team 0
+  was hardcoded blue and team 1 hardcoded red regardless of which team the local viewer is
+  actually on — the exact same absolute-vs-relative mistake S170-149 already found and fixed for
+  node coloring. Fixed to color relative to the viewer's own team (mine always blue, opponent
+  always red), matching the convention hero name labels and node coloring already use.
+
 - docs(arena): NORTHSTAR §17 — League of Legends auto-attack movement parity spec (S170-158).
   Founder, real-time: a detailed request for exactly how LoL's click-based auto-attacking works
   with respect to movement — does the champion stop, does it chase a fleeing target, ranged vs
