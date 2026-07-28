@@ -910,6 +910,83 @@ typedef struct {
 #define ARENA_MP_COST_W            20
 #define ARENA_MP_COST_R            45
 
+/* ---- Flow/XP economy + item shop (S170-175) ----
+ * Founder, real-time: "do a first pass shop interface have there be 2
+ * shops in the other 2 corner of the maps that dont have fountains use
+ * the ffxi items doc as a reference" / "add a cobination of ffxi and wow
+ * for the equipable item slots" / "i want trinkets too" / "buying an item
+ * auto equips it for now no bag you can sell it back for less but no
+ * unequip into bag for now" / "we call gold flow". See NORTHSTAR.md §19
+ * for the full design this implements (a genuinely separate currency from
+ * resources[team], which stays win-condition-only, untouched by any of
+ * this). */
+
+/* ArenaItemSlot: 11 slots, combining FFXI's real equip-slot vocabulary
+ * (Weapon/Head/Body/Hands/Legs/Feet/Ring/Neck/Back/Waist,
+ * docs/FFXI_ITEM_PARITY_SEED.md §4) with WoW's Trinket -- the one slot
+ * FFXI's own set doesn't really have an equivalent for, added because the
+ * founder specifically asked for it ("i want trinkets too thats cool").
+ * One item per slot per hero; buying into an occupied slot auto-sells
+ * whatever was there first (see arena_shop_buy). */
+typedef enum {
+    ARENA_ITEM_SLOT_WEAPON = 0,
+    ARENA_ITEM_SLOT_HEAD,
+    ARENA_ITEM_SLOT_BODY,
+    ARENA_ITEM_SLOT_HANDS,
+    ARENA_ITEM_SLOT_LEGS,
+    ARENA_ITEM_SLOT_FEET,
+    ARENA_ITEM_SLOT_RING,
+    ARENA_ITEM_SLOT_NECK,
+    ARENA_ITEM_SLOT_BACK,
+    ARENA_ITEM_SLOT_WAIST,
+    ARENA_ITEM_SLOT_TRINKET,
+    ARENA_ITEM_SLOT_COUNT
+} ArenaItemSlot;
+
+/* ArenaItemTier: purely descriptive (for the character pane / shop UI to
+ * label with, per the founder's own three-way split), doesn't affect
+ * mechanics at all -- a "weird" item isn't mechanically special-cased
+ * beyond having an unusual stat *shape* (see ARENA_ITEMS' own doc comment
+ * below), it's just labeled differently in the shop. */
+typedef enum {
+    ARENA_ITEM_TIER_GENERIC = 0, /* real FFXI names, used verbatim, plain single-stat bonuses */
+    ARENA_ITEM_TIER_WEIRD,       /* real FFXI end-game weapons with real unusual reputations (Kraken Club, Ridill), stat SHAPE reflects that (glass-cannon / oddly-balanced) rather than a new RNG mechanic -- see ARENA_ITEMS' doc comment */
+    ARENA_ITEM_TIER_SPECIFIC     /* docs/HEROES_VS0.md's existing 12-item LoL-Season-3-styled roster ("season 3 lol is the gold standard for the best meta ever") */
+} ArenaItemTier;
+
+typedef struct {
+    const char *name;
+    ArenaItemSlot slot;
+    ArenaItemTier tier;
+    int cost;        /* Flow */
+    int bonus_ad;
+    int bonus_max_hp;
+    int bonus_max_mp;
+    int bonus_armor;
+    float bonus_move_speed; /* units/sec, additive on top of ARENA_HERO_SPEED */
+} ArenaItemDef;
+
+extern const ArenaItemDef ARENA_ITEMS[];
+#define ARENA_ITEM_COUNT 24
+
+#define ARENA_ITEM_SELL_REFUND_PCT 50 /* founder: "sell it back for less" */
+#define ARENA_SHOP_RADIUS 3.0f /* same "stand near it" convention as ARENA_FOUNTAIN_RADIUS */
+
+/* Flow/XP kill rewards (S170-175). Melee/homing-shot kills only -- ability
+ * casts don't set last_attacked_by_owner, so a kill finished by a spell
+ * grants nothing this pass, same "not every damage source needs full
+ * reward wiring, flagged not faked" precedent arena_zone_damage_creeps
+ * already set for AoE-vs-creep kills (that function's own doc comment).
+ * Hero kills pay the most by a wide margin -- real MOBA precedent (a
+ * creep kill is routine map presence, a hero kill is a real fight won). */
+#define ARENA_JUNGLE_CREEP_KILL_FLOW   15
+#define ARENA_JUNGLE_CREEP_KILL_XP     10
+#define ARENA_LANE_CREEP_KILL_FLOW      8
+#define ARENA_LANE_CREEP_KILL_XP        6
+#define ARENA_HERO_KILL_FLOW          100
+#define ARENA_HERO_KILL_XP             60
+
+
 typedef struct {
     float x, z;
     float target_x, target_z;
@@ -1071,6 +1148,63 @@ typedef struct {
      * so far) fire their homing auto-attack (ArenaProjectile.homing_target)
      * directly at this lock once in range. */
     int attack_target;
+    /* flow/xp (S170-175, founder: "we need a character display pane that
+     * shows current stats" / "tracking xp and flow" / "we call gold
+     * flow"): the two per-hero progression resources NORTHSTAR §19 spec'd
+     * as deliberately separate from resources[team] (the team-level
+     * win-condition meter, untouched by any of this) -- Flow is spent at a
+     * team's own shop (arena_shop_buy/sell) on equipped items
+     * (equipped_item[] below); XP feeds a flat, roster-wide power curve
+     * (§19.4, not a per-level ability-point system). Both start at 0 and
+     * only ever grow via real kills (jungle/lane creep, hero) -- no
+     * passive trickle, matching real MOBA "you earn it by doing
+     * something" precedent, same reasoning §19.2 already gives for why
+     * this isn't a LoL-style base-gold-over-time tick. */
+    int flow;
+    /* flow_earned (S170-175, founder: "(flow earned not counting spent)"):
+     * lifetime cumulative total, only ever increases -- flow above is the
+     * current SPENDABLE balance (decreases on purchase, used for shop
+     * affordability checks); the character pane displays this field
+     * instead, since "how much have I actually earned" is the real stat,
+     * not a number that goes back down every time you buy something. */
+    int flow_earned;
+    int xp;
+    /* kills/deaths (S170-175, founder: "stats page shows team and
+     * individual kd ratio flow and xp"): hero kills only, same real-MOBA
+     * KDA convention -- creep kills feed Flow/XP (above) but never these
+     * two, so the ratio reflects hero-vs-hero fighting specifically. Team
+     * K/D is never stored separately -- it's just the sum of each team's
+     * own heroes' kills/deaths, computed client-side for display, no new
+     * synced field needed for that aggregate. */
+    int kills;
+    int deaths;
+    /* last_attacked_by_owner (S170-175): same "who gets credit on the
+     * kill" idiom ArenaCreep already established -- -1 = never hit since
+     * spawning/respawning, else the owner index of whoever last damaged
+     * this hero. Set only at the hero-vs-hero melee/homing-shot damage
+     * sites (resolve_combat, the team-mode melee loop,
+     * arena_tick_attack_targets's Gary branch) -- ability casts don't set
+     * this, so a kill finished by a spell grants no Flow/XP bounty this
+     * pass, same "not every damage source needs full reward wiring,
+     * flagged not faked" precedent arena_zone_damage_creeps already set
+     * for AoE-vs-creep kills. */
+    int last_attacked_by_owner;
+    /* equipped_item (S170-175): -1 = empty, else an index into
+     * ARENA_ITEMS, one slot per ArenaItemSlot. No inventory/bag this
+     * pass (founder: "no bag... no unequip into bag for now") -- buying
+     * auto-equips (replacing and auto-selling whatever was there), an
+     * explicit sell empties a slot for a partial refund. */
+    int equipped_item[ARENA_ITEM_SLOT_COUNT];
+    /* item_bonus_* (S170-175): cached aggregate of every equipped item's
+     * stat bonuses, recomputed by arena_recompute_item_stats whenever the
+     * loadout changes (buy/sell/respawn) rather than summed fresh every
+     * tick -- max_hp/max_mp are applied directly at recompute time (see
+     * that function), these three are consumed elsewhere: item_bonus_armor
+     * by arena_hero_armor(), item_bonus_ad by the melee/homing-shot damage
+     * call sites, item_bonus_move_speed by update_hero_motion. */
+    int item_bonus_armor;
+    int item_bonus_ad;
+    float item_bonus_move_speed;
 } ArenaHero;
 
 typedef struct {
@@ -1325,6 +1459,43 @@ void arena_obstacles_reset_layout(void);
  * shared between sim and client the same way arena_fountain_position()
  * already is (no wire sync needed for a static position). */
 void arena_graveyard_position(int team, float *x, float *z);
+
+/* arena_recompute_item_stats (S170-175): re-derives max_hp/max_mp (applied
+ * directly, with current hp/mp adjusted by the delta so buying/selling an
+ * HP or MP item feels like a real top-up/loss, not a silent cap change)
+ * and the item_bonus_armor/item_bonus_ad/item_bonus_move_speed cache
+ * fields from h->equipped_item[] -- called after any loadout change
+ * (arena_shop_buy/sell) and once on respawn (equipped items survive
+ * death, but max_hp/max_mp get reset to the flat base by the respawn
+ * clear, so this re-applies the bonuses on top immediately after). */
+void arena_recompute_item_stats(ArenaHero *h);
+
+/* arena_shop_position (S170-175): fills (x,z) with team `team`'s (0 or 1)
+ * shop location -- a fixed offset from that team's own graveyard
+ * (arena_graveyard_position), same corner arithmetic, so each team's shop
+ * sits near their own permanent respawn point without exactly overlapping
+ * it. Founder: "have there be 2 shops in the other 2 corner of the maps
+ * that dont have fountains" -- the graveyard corners already ARE the two
+ * corners the fountains don't occupy (S170-153/156), so the shop just
+ * needs its own distinct point in that same corner region. */
+void arena_shop_position(int team, float *x, float *z);
+
+/* arena_shop_buy (S170-175): the real purchase path -- validates owner is
+ * a real, active, alive hero within ARENA_SHOP_RADIUS of their OWN team's
+ * shop, item_id is real, and h->flow covers item cost (net of an
+ * automatic sell-back if item_id's slot is already occupied, "buying an
+ * item auto equips it... no bag"). Silent no-op on any failure (same
+ * "whiffed cast costs nothing" convention every ability cast in this file
+ * already follows), returns 1 on a real purchase. */
+int arena_shop_buy(int owner, int item_id);
+
+/* arena_shop_sell (S170-175): sells whatever's in `slot` for
+ * ARENA_ITEM_SELL_REFUND_PCT of its purchase cost, emptying the slot.
+ * Same shop-proximity gate and silent-no-op-on-failure convention as
+ * arena_shop_buy. Founder: "you can sell it back for less but no unequip
+ * into bag for now" -- there's no bag to move it into, selling is the
+ * only way to clear a slot. */
+int arena_shop_sell(int owner, ArenaItemSlot slot);
 
 /* arena_tick_resources (S170-153): advances each team's Arathi-Basin-style
  * resource race by dt_ms. Fixed ARENA_RESOURCE_TICK_MS interval, same

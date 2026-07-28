@@ -5,6 +5,62 @@
 ArenaState arena_state;
 int arena_bot_enabled = 1;
 
+/* ARENA_ITEMS (S170-175): the actual 24-item shop catalog. See
+ * arena_game.h's own doc comment on ArenaItemDef/ArenaItemTier for the
+ * design shape. WEAPON carries all 12 of docs/HEROES_VS0.md's existing
+ * "specific" Season-3-styled items (founder: "season 3 lol is the gold
+ * standard for the best meta ever") plus 2 "weird" items pulled from
+ * docs/FFXI_ITEM_PARITY_SEED.md's own "notable end-game weapons" section
+ * (Kraken Club, Ridill -- both already flagged there as having real
+ * unusual reputations; expressed here as unusual STAT SHAPE -- Kraken
+ * Club's real "designed to miss" glass-cannon identity becomes huge AD
+ * with zero defense, Ridill's real dual-purpose reputation becomes an
+ * oddly-even AD/HP/Armor split -- rather than new hit-chance RNG this
+ * engine has never needed, same scope discipline NORTHSTAR §17.2 already
+ * flagged: no miss/crit RNG exists anywhere in this codebase yet, and
+ * this first pass doesn't introduce it just for two items). Every other
+ * slot gets exactly one plain, real FFXI name (docs/FFXI_ITEM_PARITY_SEED.md
+ * §4, "Armor, by real equip slot") with a flat single-or-double-stat
+ * bonus -- a first pass, not exhaustive; more items per slot is a real,
+ * cheap follow-on once this catalog is live.
+ *
+ * bonus_ad only ever affects basic auto-attack damage (ARENA_ATTACK_DAMAGE/
+ * ARENA_GARY_ATTACK_DAMAGE at the point of purchase-driven recompute,
+ * arena_recompute_item_stats) -- every hero's Q/W/R still deals its own
+ * hardcoded flat damage, unaffected by items. Making ability damage
+ * stat-scaled too is a real, much larger follow-on (every one of the
+ * roster's 26 kits would need its own damage formula rewritten), not
+ * attempted this pass. */
+const ArenaItemDef ARENA_ITEMS[ARENA_ITEM_COUNT] = {
+    /* -- WEAPON: the 12 existing "specific" items, docs/HEROES_VS0.md -- */
+    { "Seedling Charm",     ARENA_ITEM_SLOT_WEAPON, ARENA_ITEM_TIER_SPECIFIC,  300,  8,  40,   0,  0, 0.0f },
+    { "Bramble Fang",       ARENA_ITEM_SLOT_WEAPON, ARENA_ITEM_TIER_SPECIFIC, 1000, 35,   0,   0,  0, 0.0f },
+    { "Thornrender",        ARENA_ITEM_SLOT_WEAPON, ARENA_ITEM_TIER_SPECIFIC,  950, 28,  10,   0,  0, 0.0f },
+    { "Bloomheart Core",    ARENA_ITEM_SLOT_WEAPON, ARENA_ITEM_TIER_SPECIFIC, 1100, 45,   0,   0,  0, 0.0f },
+    { "Wanecall Grimoire",  ARENA_ITEM_SLOT_WEAPON, ARENA_ITEM_TIER_SPECIFIC,  950, 25,   0,  60,  0, 0.0f },
+    { "Ironbark Plate",     ARENA_ITEM_SLOT_WEAPON, ARENA_ITEM_TIER_SPECIFIC,  900, 10, 150,   0, 20, 0.0f },
+    { "Willowveil",         ARENA_ITEM_SLOT_WEAPON, ARENA_ITEM_TIER_SPECIFIC,  850,  0, 120,   0, 25, 0.0f },
+    { "Vampiric Bloom",     ARENA_ITEM_SLOT_WEAPON, ARENA_ITEM_TIER_SPECIFIC, 1000, 32,  30,   0,  0, 0.0f },
+    { "Splinterfang",       ARENA_ITEM_SLOT_WEAPON, ARENA_ITEM_TIER_SPECIFIC,  900, 30,   0,   0,  0, 0.0f },
+    { "Hollow Needle",      ARENA_ITEM_SLOT_WEAPON, ARENA_ITEM_TIER_SPECIFIC,  900, 30,   0,  40,  0, 0.0f },
+    { "Rootrunner Treads",  ARENA_ITEM_SLOT_WEAPON, ARENA_ITEM_TIER_SPECIFIC,  500,  0,  10,   0,  0, 0.8f },
+    { "Gardener's Ward",    ARENA_ITEM_SLOT_WEAPON, ARENA_ITEM_TIER_SPECIFIC,  800,  0, 100,   0, 15, 0.0f },
+    /* -- WEAPON: 2 "weird" items, docs/FFXI_ITEM_PARITY_SEED.md §6 -- */
+    { "Kraken Club",        ARENA_ITEM_SLOT_WEAPON, ARENA_ITEM_TIER_WEIRD,    1200, 60,   0,   0,  0, 0.0f },
+    { "Ridill",              ARENA_ITEM_SLOT_WEAPON, ARENA_ITEM_TIER_WEIRD,    1100, 20,  20,   0, 20, 0.0f },
+    /* -- one generic FFXI item per remaining slot -- */
+    { "Optical Hat",        ARENA_ITEM_SLOT_HEAD,    ARENA_ITEM_TIER_GENERIC,  400,  0,  60,   0,  0, 0.0f },
+    { "Haubergeon",         ARENA_ITEM_SLOT_BODY,    ARENA_ITEM_TIER_GENERIC,  450,  0,   0,   0, 18, 0.0f },
+    { "Battle Gloves",      ARENA_ITEM_SLOT_HANDS,   ARENA_ITEM_TIER_GENERIC,  400, 12,   0,   0,  0, 0.0f },
+    { "Iron Ram Trousers",  ARENA_ITEM_SLOT_LEGS,    ARENA_ITEM_TIER_GENERIC,  400,  0,   0,   0, 18, 0.0f },
+    { "Creek F. Boots",     ARENA_ITEM_SLOT_FEET,    ARENA_ITEM_TIER_GENERIC,  400,  0,   0,   0,  0, 0.6f },
+    { "Astral Ring",        ARENA_ITEM_SLOT_RING,    ARENA_ITEM_TIER_GENERIC,  350,  0,   0,  50,  0, 0.0f },
+    { "Justice Badge",      ARENA_ITEM_SLOT_NECK,    ARENA_ITEM_TIER_GENERIC,  400,  0,   0,   0, 14, 0.0f },
+    { "Forager's Mantle",   ARENA_ITEM_SLOT_BACK,    ARENA_ITEM_TIER_GENERIC,  350,  8,   0,   0,  0, 0.4f },
+    { "Warwolf Belt",       ARENA_ITEM_SLOT_WAIST,   ARENA_ITEM_TIER_GENERIC,  400,  0,  80,   0,  0, 0.0f },
+    { "Peace Earring",      ARENA_ITEM_SLOT_TRINKET, ARENA_ITEM_TIER_GENERIC,  350,  0,  30,  40,  0, 0.0f },
+};
+
 /* arena_creeps_reset (S170-51): shared init helper for both arena_init_*
  * entry points. memset already zeroes alive/respawn_ms_remaining to the
  * correct "spawn on the first tick" defaults; the one field that needs an
@@ -27,6 +83,17 @@ static void arena_creeps_reset(void) {
        wrongly mean "attacking owner slot 0," not "no attack lock." */
     for (int i = 0; i < ARENA_MAX_HEROES; i++) {
         arena_state.heroes[i].attack_target = -1;
+    }
+    /* last_attacked_by_owner/equipped_item (S170-175): same sentinel-after-
+       memset idiom -- 0 would wrongly mean "owner slot 0 gets kill credit"
+       / "slot 0 has item #0 equipped." Covers the full ARENA_HEROES_ARRAY_SIZE
+       range (real heroes AND clone slots) since a clone can be killed and
+       needs the same clean starting state a real hero does. */
+    for (int i = 0; i < ARENA_HEROES_ARRAY_SIZE; i++) {
+        arena_state.heroes[i].last_attacked_by_owner = -1;
+        for (int s = 0; s < ARENA_ITEM_SLOT_COUNT; s++) {
+            arena_state.heroes[i].equipped_item[s] = -1;
+        }
     }
 }
 
@@ -290,7 +357,7 @@ static void update_hero_motion(ArenaHero *h, float dt_sec) {
         h->moving = 0;
         return;
     }
-    float step = ARENA_HERO_SPEED * dt_sec;
+    float step = (ARENA_HERO_SPEED + h->item_bonus_move_speed) * dt_sec; /* S170-175: items (e.g. Rootrunner Treads, Creek F. Boots) */
     if (step >= dist) {
         h->x = h->target_x;
         h->z = h->target_z;
@@ -302,11 +369,15 @@ static void update_hero_motion(ArenaHero *h, float dt_sec) {
     resolve_hero_obstacle_collision(h);
 }
 
-/* arena_hero_armor: effective armor including Full Disclosure's temporary
- * double. Only The Unicorn has passive armor (S170-18); The Duck (S170-31)
- * has none -- dispatch is by hero_id now, not by owner slot, so either side
- * gets Unicorn's armor if either side is playing Unicorn. */
-float arena_hero_armor(const ArenaHero *h) {
+/* arena_hero_base_armor: every hero-specific armor rule (S170-175:
+ * renamed from arena_hero_armor, which is now a thin public wrapper below
+ * that adds item_bonus_armor on top -- items apply universally regardless
+ * of which hero-specific branch below fires, so it can't live inside this
+ * function's own many early-return branches). Only The Unicorn has passive
+ * armor (S170-18); The Duck (S170-31) has none -- dispatch is by hero_id
+ * now, not by owner slot, so either side gets Unicorn's armor if either
+ * side is playing Unicorn. */
+static float arena_hero_base_armor(const ArenaHero *h) {
     if (h->hero_id == ARENA_HERO_UNICORN) {
         float armor = (float)ARENA_UNICORN_ARMOR;
         if (h->r_active_ms > 0) armor *= 2.0f;
@@ -371,6 +442,12 @@ float arena_hero_armor(const ArenaHero *h) {
     return 0.0f;
 }
 
+/* arena_hero_armor (S170-175): see arena_hero_base_armor's own doc comment
+ * just above for why this split exists. */
+float arena_hero_armor(const ArenaHero *h) {
+    return arena_hero_base_armor(h) + (float)h->item_bonus_armor;
+}
+
 static int apply_armor(int raw_damage, float armor) {
     int dmg = raw_damage - (int)armor;
     return dmg < 1 ? 1 : dmg;
@@ -421,6 +498,25 @@ static void apply_damage(ArenaHero *target, int amount) {
             target->hp = 0;
             target->alive = 0;
             target->respawn_ms_remaining = ARENA_HERO_RESPAWN_MS;
+            target->deaths++;
+            /* S170-175: hero-kill Flow/XP/kills bounty -- only ever set at
+               the melee/homing-shot damage sites (resolve_combat, the
+               team-mode melee loop, arena_tick_attack_targets's Gary
+               branch), so a kill finished by an ability cast grants
+               nothing this pass, same "not every damage source needs full
+               reward wiring" precedent arena_zone_damage_creeps already
+               set for creeps. -1 (never hit, or last hit was an ability)
+               means no reward, same sentinel convention ArenaCreep's own
+               last_attacked_by_owner already uses. */
+            if (target->last_attacked_by_owner >= 0 && target->last_attacked_by_owner < ARENA_HEROES_ARRAY_SIZE) {
+                ArenaHero *killer = &arena_state.heroes[target->last_attacked_by_owner];
+                if (killer->active && killer != target) {
+                    killer->flow += ARENA_HERO_KILL_FLOW;
+                    killer->flow_earned += ARENA_HERO_KILL_FLOW;
+                    killer->xp += ARENA_HERO_KILL_XP;
+                    killer->kills++;
+                }
+            }
             /* S170-141: Tyler's real shared-fate death. Only pay the extra
                scan when the hero that just died is actually clone-linked
                (a clone itself, or a real Tyler who may have active clones
@@ -697,6 +793,104 @@ void arena_graveyard_position(int team, float *x, float *z) {
     *z = (team == 0) ? corner : -corner;
 }
 
+/* arena_shop_position (S170-175): see header declaration's doc comment.
+ * Offset a fixed distance from the team's own graveyard, along the same
+ * diagonal that corner already sits on, so the shop reads as a second,
+ * distinct structure in that corner rather than exactly overlapping the
+ * graveyard's own point. */
+void arena_shop_position(int team, float *x, float *z) {
+    float gx, gz;
+    arena_graveyard_position(team, &gx, &gz);
+    float offset = (team == 0) ? -5.0f : 5.0f;
+    *x = gx + offset;
+    *z = gz - offset;
+}
+
+/* arena_recompute_item_stats (S170-175): see header declaration's doc
+ * comment. */
+void arena_recompute_item_stats(ArenaHero *h) {
+    int bonus_hp = 0, bonus_mp = 0, bonus_armor = 0, bonus_ad = 0;
+    float bonus_speed = 0.0f;
+    for (int s = 0; s < ARENA_ITEM_SLOT_COUNT; s++) {
+        int item_id = h->equipped_item[s];
+        if (item_id < 0 || item_id >= ARENA_ITEM_COUNT) continue;
+        const ArenaItemDef *def = &ARENA_ITEMS[item_id];
+        bonus_hp += def->bonus_max_hp;
+        bonus_mp += def->bonus_max_mp;
+        bonus_armor += def->bonus_armor;
+        bonus_ad += def->bonus_ad;
+        bonus_speed += def->bonus_move_speed;
+    }
+
+    int old_max_hp = h->max_hp;
+    h->max_hp = 100 + bonus_hp; /* 100 matches every hero's flat base HP everywhere else in this file */
+    h->hp += (h->max_hp - old_max_hp); /* buying/selling an HP item tops up/pulls down by the delta, a real change, not a silent cap adjustment */
+    if (h->hp > h->max_hp) h->hp = h->max_hp;
+    if (h->alive && h->hp < 1) h->hp = 1; /* a stat recompute alone should never be what kills someone */
+
+    int old_max_mp = h->max_mp;
+    h->max_mp = ARENA_MP_MAX + bonus_mp;
+    h->mp += (h->max_mp - old_max_mp);
+    if (h->mp > h->max_mp) h->mp = h->max_mp;
+    if (h->mp < 0) h->mp = 0;
+
+    h->item_bonus_armor = bonus_armor;
+    h->item_bonus_ad = bonus_ad;
+    h->item_bonus_move_speed = bonus_speed;
+}
+
+/* arena_shop_buy (S170-175): see header declaration's doc comment. */
+int arena_shop_buy(int owner, int item_id) {
+    if (owner < 0 || owner >= ARENA_MAX_HEROES) return 0;
+    if (item_id < 0 || item_id >= ARENA_ITEM_COUNT) return 0;
+    ArenaHero *h = &arena_state.heroes[owner];
+    if (!h->active || !h->alive) return 0;
+
+    float shop_x, shop_z;
+    arena_shop_position(h->team, &shop_x, &shop_z);
+    float dx = h->x - shop_x, dz = h->z - shop_z;
+    if (sqrtf(dx * dx + dz * dz) > ARENA_SHOP_RADIUS) return 0;
+
+    const ArenaItemDef *def = &ARENA_ITEMS[item_id];
+    int cost = def->cost;
+    /* "buying an item auto equips it... no bag" -- an occupied slot gets
+       auto-sold first (same refund rate an explicit sell would give),
+       netting the price difference in one action rather than requiring
+       sell-then-buy as two separate player actions. */
+    int existing = h->equipped_item[def->slot];
+    if (existing >= 0 && existing < ARENA_ITEM_COUNT) {
+        h->flow += (ARENA_ITEMS[existing].cost * ARENA_ITEM_SELL_REFUND_PCT) / 100;
+    }
+    if (h->flow < cost) return 0; /* checked AFTER the auto-sell credit, same "upgrade" affordability real MOBA shops give */
+
+    h->flow -= cost;
+    h->flow_earned += 0; /* spending never reduces flow_earned -- see that field's own doc comment; explicit no-op line so this isn't silently forgotten by a future editor */
+    h->equipped_item[def->slot] = item_id;
+    arena_recompute_item_stats(h);
+    return 1;
+}
+
+/* arena_shop_sell (S170-175): see header declaration's doc comment. */
+int arena_shop_sell(int owner, ArenaItemSlot slot) {
+    if (owner < 0 || owner >= ARENA_MAX_HEROES) return 0;
+    if (slot < 0 || slot >= ARENA_ITEM_SLOT_COUNT) return 0;
+    ArenaHero *h = &arena_state.heroes[owner];
+    if (!h->active || !h->alive) return 0;
+
+    float shop_x, shop_z;
+    arena_shop_position(h->team, &shop_x, &shop_z);
+    float dx = h->x - shop_x, dz = h->z - shop_z;
+    if (sqrtf(dx * dx + dz * dz) > ARENA_SHOP_RADIUS) return 0;
+
+    int item_id = h->equipped_item[slot];
+    if (item_id < 0 || item_id >= ARENA_ITEM_COUNT) return 0; /* nothing there to sell */
+
+    h->flow += (ARENA_ITEMS[item_id].cost * ARENA_ITEM_SELL_REFUND_PCT) / 100;
+    h->equipped_item[slot] = -1;
+    arena_recompute_item_stats(h);
+    return 1;
+}
+
 /* arena_tick_fountains (S170-147): see header declaration's doc comment. */
 void arena_tick_fountains(unsigned int dt_ms) {
     arena_state.fountain_tick_ms += (int)dt_ms;
@@ -797,7 +991,7 @@ void arena_tick_attack_targets(unsigned int dt_ms) {
             if (h->attack_cooldown_ms <= 0) {
                 ArenaProjectile *shot = arena_spawn_projectile(i, h->team, ARENA_HERO_GARY,
                     h->x, h->z, foe->x, foe->z, ARENA_GARY_ATTACK_SPEED, 0.6f,
-                    ARENA_GARY_ATTACK_DAMAGE, ARENA_GARY_ATTACK_RANGE * 3.0f);
+                    ARENA_GARY_ATTACK_DAMAGE + h->item_bonus_ad, ARENA_GARY_ATTACK_RANGE * 3.0f);
                 if (shot) shot->homing_target = target;
                 h->attack_cooldown_ms = ARENA_GARY_ATTACK_COOLDOWN_MS;
             }
@@ -916,6 +1110,13 @@ void arena_tick_projectiles(unsigned int dt_ms) {
             float dx = foe->x - closest_x, dz = foe->z - closest_z;
             if (sqrtf(dx * dx + dz * dz) > p->radius) continue;
 
+            /* S170-175: only a HOMING shot (Gary's basic auto-attack) sets
+               kill attribution -- an ordinary ability skill-shot (Tyler's
+               Q, Ghost's Q, etc.) travels through this exact same hit code
+               but deliberately does NOT grant Flow/XP/kill credit, same
+               "ability kills grant nothing this pass" scope this file's
+               other reward sites already hold to. */
+            if (p->homing_target >= 0) foe->last_attacked_by_owner = p->owner;
             apply_damage(foe, apply_armor(p->damage, arena_hero_armor(foe)));
             if (p->on_hit_silence_ms > 0) foe->silenced_ms = p->on_hit_silence_ms;
             if (p->on_hit_root_ms > 0) foe->rooted_ms = p->on_hit_root_ms;
@@ -1056,6 +1257,13 @@ static void creep_die(ArenaCreep *creep, ArenaNode *node) {
     if (creep->last_attacked_by_owner < 0) return;
     ArenaHero *killer = &arena_state.heroes[creep->last_attacked_by_owner];
 
+    /* S170-175: Flow/XP applies to any jungle creep kill, neutral or
+       team-flavored alike -- unlike the capture-bonus/heal rewards below,
+       which stay flavor-specific. */
+    killer->flow += ARENA_JUNGLE_CREEP_KILL_FLOW;
+    killer->flow_earned += ARENA_JUNGLE_CREEP_KILL_FLOW;
+    killer->xp += ARENA_JUNGLE_CREEP_KILL_XP;
+
     if (creep->flavor == ARENA_CREEP_NEUTRAL) {
         /* The contested prize: a big swing toward capturing THIS node,
            but only if the killer's team is actually the one channeling it
@@ -1111,7 +1319,7 @@ void arena_hero_attack_creeps(unsigned int dt_ms) {
             if (sqrtf(dx * dx + dz * dz) > ARENA_ATTACK_RANGE) continue;
 
             /* Creeps have no armor stat -- flat damage, no apply_armor call needed. */
-            creep->hp -= ARENA_ATTACK_DAMAGE;
+            creep->hp -= ARENA_ATTACK_DAMAGE + h->item_bonus_ad;
             creep->last_attacked_by_owner = i;
             h->attack_cooldown_ms = ARENA_ATTACK_COOLDOWN_MS;
             if (creep->hp <= 0) {
@@ -1275,12 +1483,20 @@ void arena_hero_attack_lane_creeps(unsigned int dt_ms) {
             float dx = creep->x - h->x, dz = creep->z - h->z;
             if (sqrtf(dx * dx + dz * dz) > ARENA_ATTACK_RANGE) continue;
 
-            creep->hp -= ARENA_ATTACK_DAMAGE; /* no armor stat on lane creeps, same as jungle creeps */
+            creep->hp -= ARENA_ATTACK_DAMAGE + h->item_bonus_ad; /* no armor stat on lane creeps, same as jungle creeps */
             h->attack_cooldown_ms = ARENA_ATTACK_COOLDOWN_MS;
             if (creep->hp <= 0) {
                 creep->hp = 0;
                 creep->alive = 0;
                 creep->active = 0;
+                /* S170-175: melee kill only -- arena_zone_damage_creeps'
+                   own AoE-vs-lane-creep branch deliberately doesn't award
+                   this, same "not every damage source needs full reward
+                   wiring" precedent that function's own doc comment
+                   already sets for jungle creeps. */
+                h->flow += ARENA_LANE_CREEP_KILL_FLOW;
+                h->flow_earned += ARENA_LANE_CREEP_KILL_FLOW;
+                h->xp += ARENA_LANE_CREEP_KILL_XP;
             }
             break; /* one creep target per hero per attack, same as jungle creeps/hero-vs-hero */
         }
@@ -3600,9 +3816,20 @@ static void arena_respawn_hero(ArenaHero *h, int slot_index) {
 
     /* Full clear (status effects, cooldowns, ability state) except the
        fields that must survive death: which hero this slot is playing,
-       and which team it's on. */
+       which team it's on, and (S170-175) its economy/stat progression --
+       Flow/XP/kills/deaths/equipped items are earned across the whole
+       match, not reset by dying, same "death costs tempo, not identity or
+       progress" principle the graveyard/wave-respawn system itself was
+       already built on (S170-153/154). */
     ArenaHeroID hero_id = h->hero_id;
     int team = h->team;
+    int flow = h->flow;
+    int flow_earned = h->flow_earned;
+    int xp = h->xp;
+    int kills = h->kills;
+    int deaths = h->deaths;
+    int equipped_item[ARENA_ITEM_SLOT_COUNT];
+    for (int s = 0; s < ARENA_ITEM_SLOT_COUNT; s++) equipped_item[s] = h->equipped_item[s];
     memset(h, 0, sizeof(*h));
     h->active = 1;
     h->alive = 1;
@@ -3613,6 +3840,23 @@ static void arena_respawn_hero(ArenaHero *h, int slot_index) {
     h->hero_id = hero_id;
     h->x = h->target_x = spawn_x;
     h->z = h->target_z = spawn_z;
+    h->flow = flow;
+    h->flow_earned = flow_earned;
+    h->xp = xp;
+    h->kills = kills;
+    h->deaths = deaths;
+    for (int s = 0; s < ARENA_ITEM_SLOT_COUNT; s++) h->equipped_item[s] = equipped_item[s];
+    /* attack_target/last_attacked_by_owner (real latent bug found while
+       auditing this function for the fields above, fixed collaterally):
+       memset above zeroes both to 0, which wrongly means "attacking/was-
+       hit-by owner slot 0" rather than "nothing." A freshly-respawned
+       hero would otherwise silently inherit a bogus attack lock on
+       whoever happens to occupy owner slot 0, or misattribute a kill if
+       they died again before ever being hit by anyone new -- same
+       sentinel convention as everywhere else this field is initialized. */
+    h->attack_target = -1;
+    h->last_attacked_by_owner = -1;
+    arena_recompute_item_stats(h);
 }
 
 /* arena_tick_respawns (S170-121, "controlling a node enables its spawn for
@@ -3719,7 +3963,13 @@ void arena_update_teams(unsigned int dt_ms) {
         float dx = foe->x - h->x, dz = foe->z - h->z;
         if (sqrtf(dx * dx + dz * dz) > ARENA_ATTACK_RANGE) continue;
         if (h->attack_cooldown_ms > 0) continue;
-        if (hero_is_hittable(foe)) apply_damage(foe, apply_armor(ARENA_ATTACK_DAMAGE, arena_hero_armor(foe)));
+        if (hero_is_hittable(foe)) {
+            /* S170-175: kill attribution, set before the damage that might
+               actually land the kill -- apply_damage's own death branch
+               reads this. */
+            foe->last_attacked_by_owner = i;
+            apply_damage(foe, apply_armor(ARENA_ATTACK_DAMAGE + h->item_bonus_ad, arena_hero_armor(foe)));
+        }
         h->attack_cooldown_ms = ARENA_ATTACK_COOLDOWN_MS;
     }
 

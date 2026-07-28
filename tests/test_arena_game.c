@@ -3499,6 +3499,243 @@ static void test_tyler_w_teleports_the_whole_clone_army(void) {
           "the target takes real arrival damage from the concentrated clone-army landing");
 }
 
+/* S170-175: Flow/XP economy + FFXI/WoW-slot item shop. See NORTHSTAR.md
+ * §19 for the design, docs/FFXI_ITEM_PARITY_SEED.md for the real item
+ * names. Item indices below are fixed positions in ARENA_ITEMS -- 0 is
+ * Seedling Charm (WEAPON, 300 Flow, +8 AD/+40 HP), 16 is Battle Gloves
+ * (HANDS, 400 Flow, +12 AD), matching arena_game.c's own catalog. */
+
+static void test_shop_buy_deducts_flow_and_equips_item(void) {
+    arena_init_teams();
+    arena_state.heroes[0].team = 0;
+    float sx, sz;
+    arena_shop_position(0, &sx, &sz);
+    arena_state.heroes[0].x = sx; arena_state.heroes[0].z = sz;
+    arena_state.heroes[0].flow = 1000;
+
+    int ok = arena_shop_buy(0, 0); /* Seedling Charm */
+
+    CHECK(ok, "a real purchase within shop range with enough Flow succeeds");
+    CHECK(arena_state.heroes[0].flow == 1000 - ARENA_ITEMS[0].cost, "the item's cost is deducted from spendable Flow");
+    CHECK(arena_state.heroes[0].equipped_item[ARENA_ITEM_SLOT_WEAPON] == 0, "the item is auto-equipped into its own slot");
+}
+
+static void test_shop_buy_fails_outside_shop_radius(void) {
+    arena_init_teams();
+    arena_state.heroes[0].team = 0;
+    arena_state.heroes[0].x = 0.0f; arena_state.heroes[0].z = 0.0f; /* nowhere near either shop */
+    arena_state.heroes[0].flow = 1000;
+
+    int ok = arena_shop_buy(0, 0);
+
+    CHECK(!ok, "buying far from any shop fails");
+    CHECK(arena_state.heroes[0].flow == 1000, "a failed purchase spends no Flow");
+    CHECK(arena_state.heroes[0].equipped_item[ARENA_ITEM_SLOT_WEAPON] == -1, "a failed purchase equips nothing");
+}
+
+static void test_shop_buy_fails_insufficient_flow(void) {
+    arena_init_teams();
+    arena_state.heroes[0].team = 0;
+    float sx, sz;
+    arena_shop_position(0, &sx, &sz);
+    arena_state.heroes[0].x = sx; arena_state.heroes[0].z = sz;
+    arena_state.heroes[0].flow = 10; /* nowhere near ARENA_ITEMS[0]'s cost */
+
+    int ok = arena_shop_buy(0, 0);
+
+    CHECK(!ok, "buying without enough Flow fails");
+    CHECK(arena_state.heroes[0].flow == 10, "a failed purchase spends no Flow");
+}
+
+static void test_shop_buy_auto_sells_occupied_slot(void) {
+    arena_init_teams();
+    arena_state.heroes[0].team = 0;
+    float sx, sz;
+    arena_shop_position(0, &sx, &sz);
+    arena_state.heroes[0].x = sx; arena_state.heroes[0].z = sz;
+    arena_state.heroes[0].flow = 5000;
+    arena_shop_buy(0, 0);   /* Seedling Charm into WEAPON */
+    int flow_after_first_buy = arena_state.heroes[0].flow;
+
+    int ok = arena_shop_buy(0, 1); /* Bramble Fang, also WEAPON -- should replace, not stack */
+
+    CHECK(ok, "buying into an already-occupied slot succeeds");
+    CHECK(arena_state.heroes[0].equipped_item[ARENA_ITEM_SLOT_WEAPON] == 1, "the new item replaces the old one in that slot");
+    int expected_refund = (ARENA_ITEMS[0].cost * ARENA_ITEM_SELL_REFUND_PCT) / 100;
+    CHECK(arena_state.heroes[0].flow == flow_after_first_buy + expected_refund - ARENA_ITEMS[1].cost,
+          "the old item is auto-sold at the same refund rate an explicit sell would give, netting the price difference");
+}
+
+static void test_shop_sell_refunds_partial_flow_and_clears_slot(void) {
+    arena_init_teams();
+    arena_state.heroes[0].team = 0;
+    float sx, sz;
+    arena_shop_position(0, &sx, &sz);
+    arena_state.heroes[0].x = sx; arena_state.heroes[0].z = sz;
+    arena_state.heroes[0].flow = 1000;
+    arena_shop_buy(0, 0);
+    int flow_after_buy = arena_state.heroes[0].flow;
+
+    int ok = arena_shop_sell(0, ARENA_ITEM_SLOT_WEAPON);
+
+    CHECK(ok, "selling an equipped item in range succeeds");
+    CHECK(arena_state.heroes[0].equipped_item[ARENA_ITEM_SLOT_WEAPON] == -1, "the slot is empty after selling -- no bag to move it into");
+    int expected_refund = (ARENA_ITEMS[0].cost * ARENA_ITEM_SELL_REFUND_PCT) / 100;
+    CHECK(arena_state.heroes[0].flow == flow_after_buy + expected_refund, "selling refunds less than the original purchase price");
+    CHECK(expected_refund < ARENA_ITEMS[0].cost, "sanity: the refund really is a loss, not a full refund");
+}
+
+static void test_shop_sell_fails_on_empty_slot(void) {
+    arena_init_teams();
+    arena_state.heroes[0].team = 0;
+    float sx, sz;
+    arena_shop_position(0, &sx, &sz);
+    arena_state.heroes[0].x = sx; arena_state.heroes[0].z = sz;
+    arena_state.heroes[0].flow = 500;
+
+    int ok = arena_shop_sell(0, ARENA_ITEM_SLOT_HEAD);
+
+    CHECK(!ok, "selling an empty slot fails -- nothing there to sell");
+    CHECK(arena_state.heroes[0].flow == 500, "a failed sell changes nothing");
+}
+
+static void test_item_stats_apply_to_hp_mp_armor_ad_speed(void) {
+    arena_init_teams();
+    arena_state.heroes[0].team = 0;
+    arena_state.heroes[0].hero_id = ARENA_HERO_GHOST; /* no hero-specific armor passive to muddy the item-only comparison */
+    float sx, sz;
+    arena_shop_position(0, &sx, &sz);
+    arena_state.heroes[0].x = sx; arena_state.heroes[0].z = sz;
+    arena_state.heroes[0].flow = 5000;
+    int base_max_hp = arena_state.heroes[0].max_hp;
+
+    arena_shop_buy(0, 0);  /* Seedling Charm: WEAPON, +8 AD, +40 HP */
+    arena_shop_buy(0, 15); /* Haubergeon: BODY, +18 Armor */
+    arena_shop_buy(0, 18); /* Creek F. Boots: FEET, +0.6 move speed */
+
+    CHECK(arena_state.heroes[0].max_hp == base_max_hp + ARENA_ITEMS[0].bonus_max_hp,
+          "equipped items' HP bonus raises max_hp");
+    CHECK(arena_state.heroes[0].item_bonus_ad == ARENA_ITEMS[0].bonus_ad, "equipped items' AD bonus is cached for damage call sites to read");
+    CHECK(arena_hero_armor(&arena_state.heroes[0]) == (float)ARENA_ITEMS[15].bonus_armor,
+          "arena_hero_armor() includes equipped items' armor bonus for a hero with no hero-specific armor passive");
+    CHECK(arena_state.heroes[0].item_bonus_move_speed == ARENA_ITEMS[18].bonus_move_speed,
+          "equipped items' move-speed bonus is cached for update_hero_motion to read");
+}
+
+static void test_jungle_creep_kill_grants_flow_and_xp(void) {
+    arena_init_teams();
+    arena_state.heroes[0].x = arena_state.nodes[0].x;
+    arena_state.heroes[0].z = arena_state.nodes[0].z;
+
+    arena_tick_creeps(16); /* spawn */
+    arena_state.creeps[0].hp = ARENA_ATTACK_DAMAGE;
+    arena_hero_attack_creeps(16);
+
+    CHECK(!arena_state.creeps[0].alive, "sanity: the creep actually died");
+    CHECK(arena_state.heroes[0].flow == ARENA_JUNGLE_CREEP_KILL_FLOW, "a jungle creep kill grants the documented Flow bounty");
+    CHECK(arena_state.heroes[0].flow_earned == ARENA_JUNGLE_CREEP_KILL_FLOW, "flow_earned tracks the same amount");
+    CHECK(arena_state.heroes[0].xp == ARENA_JUNGLE_CREEP_KILL_XP, "a jungle creep kill grants the documented XP");
+}
+
+static void test_lane_creep_kill_grants_flow_and_xp(void) {
+    arena_init_teams();
+    for (int i = 1; i < ARENA_MAX_HEROES; i++) arena_state.heroes[i].active = 0;
+    ArenaLaneCreep *lc = &arena_state.lane_creeps[0];
+    lc->active = 1; lc->alive = 1; lc->team = 1; /* enemy wave */
+    lc->hp = ARENA_ATTACK_DAMAGE;
+    lc->x = arena_state.heroes[0].x; lc->z = arena_state.heroes[0].z;
+
+    arena_hero_attack_lane_creeps(16);
+
+    CHECK(!lc->alive, "sanity: the lane creep actually died");
+    CHECK(arena_state.heroes[0].flow == ARENA_LANE_CREEP_KILL_FLOW, "a lane creep kill grants the documented Flow bounty -- previously rewarded nothing at all (S170-139's own flagged gap)");
+    CHECK(arena_state.heroes[0].xp == ARENA_LANE_CREEP_KILL_XP, "a lane creep kill grants the documented XP");
+}
+
+static void test_hero_kill_grants_flow_xp_kills_and_deaths(void) {
+    arena_init_teams();
+    for (int i = 2; i < ARENA_MAX_HEROES; i++) arena_state.heroes[i].active = 0;
+    arena_state.heroes[ARENA_TEAM_SIZE].active = 1;
+    arena_state.heroes[ARENA_TEAM_SIZE].alive = 1;
+    arena_state.heroes[0].x = arena_state.heroes[ARENA_TEAM_SIZE].x;
+    arena_state.heroes[0].z = arena_state.heroes[ARENA_TEAM_SIZE].z;
+    arena_state.heroes[ARENA_TEAM_SIZE].hp = 1; /* apply_armor floors at 1 dmg, so any landed hit finishes it regardless of the default Unicorn armor */
+
+    for (int i = 0; i < 500 && arena_state.heroes[ARENA_TEAM_SIZE].alive; i++) arena_update_teams(16);
+
+    CHECK(!arena_state.heroes[ARENA_TEAM_SIZE].alive, "sanity: the enemy hero actually died");
+    CHECK(arena_state.heroes[0].flow == ARENA_HERO_KILL_FLOW, "a hero kill grants the documented Flow bounty");
+    CHECK(arena_state.heroes[0].xp == ARENA_HERO_KILL_XP, "a hero kill grants the documented XP");
+    CHECK(arena_state.heroes[0].kills == 1, "the killer's kill count increments");
+    CHECK(arena_state.heroes[ARENA_TEAM_SIZE].deaths == 1, "the victim's death count increments");
+}
+
+static void test_ability_kill_grants_no_flow(void) {
+    /* Same "not every damage source needs full reward wiring, flagged not
+       faked" precedent arena_zone_damage_creeps' own doc comment already
+       sets for AoE-vs-creep kills -- Ghost's R zone finishes the kill
+       here, an ability, not the melee/homing-shot loop last_attacked_by_owner
+       is only ever set from. */
+    arena_init_with_heroes(ARENA_HERO_GHOST, ARENA_HERO_UNICORN);
+    ArenaHero *ghost = &arena_state.heroes[0];
+    ArenaHero *foe = &arena_state.heroes[1];
+    foe->x = ghost->x + 3.0f;
+    foe->z = ghost->z;
+    foe->hp = 1;
+
+    arena_cast_r(0);
+    arena_update(1000); /* one full zone tick, enough to finish a 1-hp foe */
+
+    CHECK(!foe->alive, "sanity: the zone actually finished the kill");
+    CHECK(ghost->flow == 0, "a kill finished by an ability grants no Flow this pass -- only melee/homing-shot kills do");
+}
+
+static void test_flow_earned_does_not_decrease_on_purchase(void) {
+    arena_init_teams();
+    arena_state.heroes[0].team = 0;
+    float sx, sz;
+    arena_shop_position(0, &sx, &sz);
+    arena_state.heroes[0].x = sx; arena_state.heroes[0].z = sz;
+    arena_state.heroes[0].flow = 1000;
+    arena_state.heroes[0].flow_earned = 1000;
+
+    arena_shop_buy(0, 0);
+
+    CHECK(arena_state.heroes[0].flow < 1000, "sanity: spendable Flow went down");
+    CHECK(arena_state.heroes[0].flow_earned == 1000, "flow_earned never decreases on a purchase -- the character pane's own stat, not the spendable balance");
+}
+
+static void test_respawn_preserves_economy_and_equipped_items(void) {
+    arena_init_teams();
+    arena_state.heroes[0].flow = 777;
+    arena_state.heroes[0].flow_earned = 999;
+    arena_state.heroes[0].xp = 321;
+    arena_state.heroes[0].kills = 3;
+    arena_state.heroes[0].deaths = 1;
+    float sx, sz;
+    arena_shop_position(0, &sx, &sz);
+    arena_state.heroes[0].x = sx; arena_state.heroes[0].z = sz;
+    arena_shop_buy(0, 0);
+    int flow_before_death = arena_state.heroes[0].flow;
+
+    /* Bypasses apply_damage's own death/reward handling on purpose -- that
+       path (kills++/deaths++ on a real kill) is already covered by
+       test_hero_kill_grants_flow_xp_kills_and_deaths below. This test's
+       only job is the respawn-preservation contract, so kills/deaths are
+       pre-seeded above and must come through unchanged, not incremented. */
+    arena_state.heroes[0].alive = 0;
+    for (int i = 0; i < 2000 && !arena_state.heroes[0].alive; i++) arena_update_teams(16); /* run real ticks until the wave respawns it */
+
+    CHECK(arena_state.heroes[0].alive, "sanity: the hero actually respawned");
+    CHECK(arena_state.heroes[0].flow == flow_before_death, "Flow survives death -- earned across the whole match, not reset by dying");
+    CHECK(arena_state.heroes[0].flow_earned == 999, "flow_earned survives death");
+    CHECK(arena_state.heroes[0].xp == 321, "XP survives death");
+    CHECK(arena_state.heroes[0].kills == 3 && arena_state.heroes[0].deaths == 1, "kills and deaths both survive a respawn cycle unchanged");
+    CHECK(arena_state.heroes[0].equipped_item[ARENA_ITEM_SLOT_WEAPON] == 0, "equipped items survive death -- dying doesn't unequip you");
+    CHECK(arena_state.heroes[0].max_hp == 100 + ARENA_ITEMS[0].bonus_max_hp,
+          "item stat bonuses are correctly re-applied after the respawn clear resets max_hp to the flat base");
+}
+
 /* apply_damage/arena_tick_respawns are static to arena_game.c -- the three
  * tests below drive real kills entirely through the public arena_update_teams
  * loop (a lone, heavily-buffed enemy hero parked in melee range), the same
@@ -4103,6 +4340,19 @@ int main(void) {
     test_tyler_q_projectile_misses_if_target_steps_off_line();
     test_tyler_r_spawns_clones_linked_to_caster();
     test_tyler_w_teleports_the_whole_clone_army();
+    test_shop_buy_deducts_flow_and_equips_item();
+    test_shop_buy_fails_outside_shop_radius();
+    test_shop_buy_fails_insufficient_flow();
+    test_shop_buy_auto_sells_occupied_slot();
+    test_shop_sell_refunds_partial_flow_and_clears_slot();
+    test_shop_sell_fails_on_empty_slot();
+    test_item_stats_apply_to_hp_mp_armor_ad_speed();
+    test_jungle_creep_kill_grants_flow_and_xp();
+    test_lane_creep_kill_grants_flow_and_xp();
+    test_hero_kill_grants_flow_xp_kills_and_deaths();
+    test_ability_kill_grants_no_flow();
+    test_flow_earned_does_not_decrease_on_purchase();
+    test_respawn_preserves_economy_and_equipped_items();
     test_tyler_clones_mirror_move_target_and_fight();
     test_tyler_shared_fate_clone_death_kills_tyler_and_siblings();
     test_tyler_death_kills_his_clones_too();
