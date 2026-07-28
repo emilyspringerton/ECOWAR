@@ -2,6 +2,29 @@
 
 ## 2026-07-28 (continued)
 
+- feat(arena): click-to-attack system (NORTHSTAR §17) + Gary's homing auto-attack + draft
+  randomization fix (S170-162/163/164). Founder: "gary auto attacks are projetiles that always
+  hit (visually projectile) they can still miss or crit as normal but you cant juke them" ->
+  "implement that with the click to auto attack northstar" -> "and the bots will need to be
+  updated so they choose their auto attack targets etc in their brain" -> "up our visual
+  affordances for auto attacks so its readable." Built §17.4's real target design (team mode
+  only): new `PACKET_ARENA_ATTACK` wire command + `ArenaHero.attack_target` persistent lock,
+  pure-pursuit chase toward an out-of-range target every tick (the literal "does it follow a
+  fleeing target: yes, automatically, no re-click" answer), and a new homing `ArenaProjectile`
+  variant (`homing_target`) for Gary's basic auto-attack — re-aims at its live target every tick,
+  connects regardless of movement, not a skillshot. This engine has no miss/crit RNG at all
+  (confirmed before building), so that part of the ask is a no-op against a mechanic that doesn't
+  exist. Gary excluded from every flat-melee auto-attack path (heroes, jungle creeps, lane
+  creeps) so his damage comes exclusively through the homing shot. Wire-synced per-hero so the
+  lock is visible to every hero watching (pulsing amber outline on the current target's health
+  bar); homing shots render through the existing ability-projectile pipeline with no client
+  changes needed. `apps/arena_bot` now sends an attack command every decision tick, the actual
+  mechanism that makes a bot-piloted Gary deal damage at all. Also fixed a real bug found in the
+  same code path: "ensure auto draft is random i keep always drafting flutedebt first on a new
+  client" — the human client's auto-draft offset was port-derived only, not actually random;
+  now mixes in `rand()`. 17 new tests, full suite green, live-verified via an isolated 20-bot
+  match with no crashes.
+
 - feat(arena): jungle creeps use the "dynamic creep ecosystem" direction (NORTHSTAR §8) -- 
   graveyard spawn + march/fan-out + toned-down team strength (S170-161). Founder: "add jungle
   creeps use the redgarden dynamic creep ecosystem something simple to start," refined with:
