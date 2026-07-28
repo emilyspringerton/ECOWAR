@@ -2,6 +2,12 @@
 
 ## 2026-07-28 (continued)
 
+- docs(arena): NORTHSTAR §19 status update — economy shipped, structures still spec-only. Found
+  via proactive audit: the section header still read "spec only, no code yet" even though the
+  economy half (Flow/XP, item shop, character pane, bot AI shopping, assists) has been fully
+  built and shipped this session. Added a status callout and marked §19.5 (structures)
+  explicitly as still unbuilt. Docs only.
+
 - fix(arena): Tyler clone kills now credit Tyler, not the disposable clone slot (S170-188).
   Found via proactive audit (no fresh backlog item queued). Real bug: a Tyler puppet clone
   landing the actual killing blow credited Flow/XP/kills to the clone's own disposable
