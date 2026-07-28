@@ -2,6 +2,46 @@
 
 ## 2026-07-28 (continued)
 
+- fix(arena): a jungle creep no longer attacks its own owning team, so capturing/holding your
+  own node doesn't damage you (S170-152). Founder, real-time: "capturing node should not make
+  the user take damage." Root cause: `arena_tick_creeps()` had no team check at all -- a
+  team-flavored creep attacked ANY hero in its aggro radius, including its own owning team.
+  Since `ARENA_NODE_CAPTURE_RADIUS` (5.0) comfortably overlaps `ARENA_CREEP_AGGRO_RADIUS`
+  (4.0), any hero who stood still to channel-capture (or simply defend/hold) their own
+  already-owned node got attacked by their own "home-turf resupply" creep -- thematically
+  backwards, real home turf doesn't hurt you for standing on it. Fixed: a team-flavored creep
+  now only ever targets the OPPOSING team, matching the counter-play framing its own kill-
+  reward already carries ("farming an enemy's own jungle creep helps flip their node"). A
+  NEUTRAL/contested creep is unchanged -- still attacks anyone regardless of team, the actual
+  "fight through the prize" challenge that flavor is meant to be. 3 new headless tests (own
+  team unharmed, opposing team still takes damage, neutral creep regression check). Full suite
+  green (468 checks, up from 465).
+
+- feat(arena): ability tiles moved bottom-center, new font glyphs, and a real H-key ability-
+  description overlay (S170-151). Founder, real-time, three related HUD requests:
+  - **"move the cast frames bottom center"**: the Q/W/E ability tiles (`apps/arena/src/main.c`)
+    moved from their old top-left placement to bottom-center, the same anchor point real MOBAs
+    (LoL, Dota) use for their own ability bars. The existing retime countdown (radial cooldown
+    wipe + seconds-remaining text) and mana-blocked dark/"MP" state were already built
+    (S170-127/137) -- this was a pure reposition, not new tile behavior, confirmed unchanged
+    by reading the code before touching it.
+  - **"ensure our font has all necessary glyphs"**: this client's hand-drawn line-font
+    (`draw_char()`) was missing `%`, `?`, `;`, `/`, and `&` -- found ahead of the ability-
+    description overlay below, since real ability text (percentages, semicolons in lists,
+    question marks) would have silently fallen through to the generic missing-glyph box, the
+    same class of gap this font's own comment already flagged once before for hero names.
+  - **"H should show an overlay with character ability descriptions"**: a real toggleable
+    panel (H key, works in any mode), showing the local player's current hero's Q/W/E names
+    (already available via the existing `arena_ability_name()`) plus a new
+    `arena_ability_description()` (`packages/simulation/arena_ai_bridge.c`/`.h`) -- a full
+    26-hero x 3-slot table of short, plain-language mechanical blurbs (what the ability
+    actually does in this arena, not the full `docs/HEROES_VS0.md` lore prose), same
+    "short enough to read at a glance" bar the name tiles already set.
+  Verified live: a real Xvfb screenshot confirms the repositioned tiles and the overlay panel
+  both rendering correctly, including every new glyph (colon, comma, apostrophe, and the newly
+  added set all visible and correct in real ability description text). Client-only /
+  string-table changes; full headless suite unaffected (465 checks before the creep fix above).
+
 - fix(arena): mana always trickles 1/sec even in combat, and a real latent bug fixed where
   mana regen had silently never worked in actual gameplay (S170-150). Founder, real-time:
   "have mana tic up slowly 1 per second always." New `ARENA_MP_REGEN_IN_COMBAT_PER_SEC` (1) --

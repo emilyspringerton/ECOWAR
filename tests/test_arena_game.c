@@ -3416,6 +3416,57 @@ static void test_combat_timer_counts_down_to_zero(void) {
     CHECK(arena_state.heroes[0].combat_timer_ms == 0, "the combat timer counts down and pins at 0, doesn't go negative");
 }
 
+/* S170-152: "capturing node should not make the user take damage" -- a team-flavored jungle
+ * creep no longer attacks its own owning team, only the opposing one. */
+
+static void test_team_creep_does_not_attack_own_owning_team(void) {
+    arena_init_teams();
+    for (int i = 1; i < ARENA_MAX_HEROES; i++) arena_state.heroes[i].active = 0;
+    arena_state.nodes[0].owner = 1; /* team 0's own node -- creep flavor becomes TEAM0 */
+    arena_state.heroes[0].team = 0;
+    arena_state.heroes[0].x = arena_state.nodes[0].x;
+    arena_state.heroes[0].z = arena_state.nodes[0].z;
+    arena_state.heroes[0].hp = arena_state.heroes[0].max_hp = 100;
+
+    arena_tick_creeps(16); /* spawn */
+    arena_tick_creeps(ARENA_CREEP_ATTACK_COOLDOWN_MS); /* long enough for one attack, if it were going to land */
+
+    CHECK(arena_state.heroes[0].hp == 100,
+          "a team-flavored creep does not attack a hero of its own owning team standing at/capturing its node");
+}
+
+static void test_team_creep_still_attacks_opposing_team(void) {
+    arena_init_teams();
+    for (int i = 1; i < ARENA_MAX_HEROES; i++) arena_state.heroes[i].active = 0;
+    arena_state.nodes[0].owner = 1; /* team 0's own node -- creep flavor becomes TEAM0 */
+    arena_state.heroes[0].team = 1; /* the enemy, trying to flip it */
+    arena_state.heroes[0].x = arena_state.nodes[0].x;
+    arena_state.heroes[0].z = arena_state.nodes[0].z;
+    arena_state.heroes[0].hp = arena_state.heroes[0].max_hp = 100;
+
+    arena_tick_creeps(16); /* spawn */
+    arena_tick_creeps(ARENA_CREEP_ATTACK_COOLDOWN_MS);
+
+    CHECK(arena_state.heroes[0].hp == 100 - ARENA_CREEP_DAMAGE,
+          "a team-flavored creep still attacks the OPPOSING team -- the real counter-play, unchanged");
+}
+
+static void test_neutral_creep_still_attacks_anyone(void) {
+    arena_init_teams();
+    for (int i = 1; i < ARENA_MAX_HEROES; i++) arena_state.heroes[i].active = 0;
+    arena_state.nodes[0].owner = 0; /* neutral/contested -- creep flavor stays NEUTRAL */
+    arena_state.heroes[0].team = 0;
+    arena_state.heroes[0].x = arena_state.nodes[0].x;
+    arena_state.heroes[0].z = arena_state.nodes[0].z;
+    arena_state.heroes[0].hp = arena_state.heroes[0].max_hp = 100;
+
+    arena_tick_creeps(16); /* spawn */
+    arena_tick_creeps(ARENA_CREEP_ATTACK_COOLDOWN_MS);
+
+    CHECK(arena_state.heroes[0].hp == 100 - ARENA_CREEP_DAMAGE,
+          "a NEUTRAL/contested creep still attacks anyone regardless of team -- the real 'fight through the prize' challenge, unchanged");
+}
+
 int main(void) {
     printf("RED GARDEN arena_game headless smoke test\n\n");
     test_movement_reaches_target();
@@ -3616,6 +3667,9 @@ int main(void) {
     test_mana_regen_accumulates_correctly_across_many_small_ticks();
     test_taking_damage_rearms_the_combat_timer();
     test_combat_timer_counts_down_to_zero();
+    test_team_creep_does_not_attack_own_owning_team();
+    test_team_creep_still_attacks_opposing_team();
+    test_neutral_creep_still_attacks_anyone();
     printf("\n%s\n", failures == 0 ? "ALL PASS" : "SOME FAILED");
     return failures == 0 ? 0 : 1;
 }

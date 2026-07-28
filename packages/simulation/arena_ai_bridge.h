@@ -32,6 +32,14 @@ const char *arena_hero_name(ArenaHeroID hero_id);
  * Returns "?" for an out-of-range hero_id or slot rather than garbage. */
 const char *arena_ability_name(ArenaHeroID hero_id, int slot);
 
+/* arena_ability_description (S170-151, "H should show an overlay with
+ * character ability descriptions"): a short, plain-language blurb of what
+ * hero_id's Q/W/R slot actually does mechanically in this arena (not the
+ * full docs/HEROES_VS0.md lore prose -- a quick in-match reference, same
+ * "short enough to actually read at a glance" bar as arena_ability_name's
+ * own tiles). Returns "?" for an out-of-range hero_id or slot. */
+const char *arena_ability_description(ArenaHeroID hero_id, int slot);
+
 /* arena_serialize_state writes a stable, natural-language state token
  * string for the match as seen from owner's point of view ("self" =
  * owner's hero, "foe" = the other) into out (NUL-terminated, truncated to

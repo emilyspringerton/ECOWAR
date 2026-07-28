@@ -843,11 +843,28 @@ void arena_tick_creeps(unsigned int dt_ms) {
 
         if (creep->attack_cooldown_ms > 0) creep->attack_cooldown_ms -= (int)dt_ms;
 
+        /* S170-152 bugfix, founder: "capturing node should not make the
+           user take damage." A team-flavored creep (ARENA_CREEP_TEAM0/1)
+           previously attacked ANY hero in radius, including its own
+           OWNING team -- and since ARENA_NODE_CAPTURE_RADIUS (5.0)
+           comfortably overlaps ARENA_CREEP_AGGRO_RADIUS (4.0), any hero
+           who stood still to channel-capture (or simply defend/hold)
+           their own already-owned node got attacked by their own
+           "home-turf resupply" creep, which makes no thematic sense --
+           real home turf doesn't hurt you for standing on it. Fixed:
+           a team-flavored creep now only ever targets the OPPOSING
+           team, matching the counter-play framing its own kill-reward
+           already carries ("farming an enemy's own jungle creep helps
+           flip their node"). A NEUTRAL (contested) creep is unchanged --
+           still attacks anyone regardless of team, the actual
+           "fight through the prize" challenge that flavor is meant to be. */
+        int owning_team = creep->flavor - 1; /* -1 for ARENA_CREEP_NEUTRAL (flavor 0); never read when flavor is neutral, see below */
         ArenaHero *target = NULL;
         float best_dist = 0.0f;
         for (int h = 0; h < ARENA_MAX_HEROES; h++) {
             ArenaHero *cand = &arena_state.heroes[h];
             if (!cand->active || !hero_is_hittable(cand)) continue;
+            if (creep->flavor != ARENA_CREEP_NEUTRAL && cand->team == owning_team) continue;
             float dx = cand->x - creep->x, dz = cand->z - creep->z;
             float dist = sqrtf(dx * dx + dz * dz);
             if (dist > ARENA_CREEP_AGGRO_RADIUS) continue;

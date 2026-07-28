@@ -53,6 +53,7 @@ static int my_owner = 0; /* which arena_state.heroes[] slot is "me" -- 0 in loca
  * running-average-since-launch. */
 #define APM_RING_CAP 512
 static int show_apm = 0;
+static int show_ability_help = 0; /* S170-151, founder: "H should show an overlay with character ability descriptions" */
 static uint32_t apm_ring[APM_RING_CAP];
 static int apm_ring_head = 0;
 static int apm_ring_count = 0;
@@ -1131,6 +1132,34 @@ static void draw_char(char c, float x, float y, float s) {
     } else if (c == ')') {
         glVertex2f(x + s * 0.3f, y + s); glVertex2f(x + s * 0.7f, y + s * 0.5f);
         glVertex2f(x + s * 0.7f, y + s * 0.5f); glVertex2f(x + s * 0.3f, y);
+    /* S170-151, founder: "ensure our font has all necessary glyphs" --
+       found live ahead of the H-overlay ability-description panel: real
+       ability text (percentages, semicolons in lists, question marks)
+       would have silently fallen through to the generic missing-glyph box
+       below, the same class of gap this font's own comment already
+       flagged once before for hero names. Same simple GL_LINES stroke
+       style as every other glyph here, not a real font. */
+    } else if (c == '%') {
+        glVertex2f(x, y); glVertex2f(x + s, y + s); /* the diagonal stroke */
+        glVertex2f(x + s * 0.15f, y + s * 0.85f); glVertex2f(x + s * 0.15f, y + s * 0.7f); /* top-left ring, drawn as a short stroke */
+        glVertex2f(x + s * 0.85f, y + s * 0.3f); glVertex2f(x + s * 0.85f, y + s * 0.15f); /* bottom-right ring */
+    } else if (c == '?') {
+        glVertex2f(x + s * 0.15f, y + s * 0.8f); glVertex2f(x + s * 0.5f, y + s);
+        glVertex2f(x + s * 0.5f, y + s); glVertex2f(x + s * 0.85f, y + s * 0.8f);
+        glVertex2f(x + s * 0.85f, y + s * 0.8f); glVertex2f(x + s * 0.5f, y + s * 0.55f);
+        glVertex2f(x + s * 0.5f, y + s * 0.55f); glVertex2f(x + s * 0.5f, y + s * 0.35f);
+        glVertex2f(x + s * 0.4f, y); glVertex2f(x + s * 0.6f, y); /* the dot */
+    } else if (c == ';') {
+        glVertex2f(x + s * 0.4f, y + s * 0.7f); glVertex2f(x + s * 0.6f, y + s * 0.7f); /* the dot, same as ':' */
+        glVertex2f(x + s * 0.5f, y); glVertex2f(x + s * 0.3f, y - s * 0.25f); /* the tail, same as ',' */
+    } else if (c == '/') {
+        glVertex2f(x, y); glVertex2f(x + s, y + s);
+    } else if (c == '&') {
+        glVertex2f(x + s, y); glVertex2f(x + s * 0.3f, y + s * 0.55f);
+        glVertex2f(x + s * 0.3f, y + s * 0.55f); glVertex2f(x + s * 0.65f, y + s * 0.8f);
+        glVertex2f(x + s * 0.65f, y + s * 0.8f); glVertex2f(x + s * 0.4f, y + s);
+        glVertex2f(x + s * 0.4f, y + s); glVertex2f(x + s * 0.1f, y + s * 0.75f);
+        glVertex2f(x + s * 0.1f, y + s * 0.75f); glVertex2f(x + s * 0.75f, y);
     } else {
         glVertex2f(x, y); glVertex2f(x + s, y);
         glVertex2f(x + s, y); glVertex2f(x + s, y + s);
@@ -1782,6 +1811,9 @@ int main(int argc, char *argv[]) {
             }
             if (e.type == SDL_KEYDOWN && e.key.keysym.sym == SDLK_F11) {
                 show_apm = !show_apm; /* S170-71: works in any mode, not gated on net_mode/observing */
+            }
+            if (e.type == SDL_KEYDOWN && e.key.keysym.sym == SDLK_h) {
+                show_ability_help = !show_ability_help; /* same "works in any mode" precedent as F11 above */
             }
             /* Everything below drives a live match (movement clicks, kit
              * casts, restart-into-a-new-match) -- none of it applies while
@@ -2535,12 +2567,65 @@ int main(int argc, char *argv[]) {
                forever in net_mode, so each tile can flag "off cooldown but can't actually
                afford it" against this slot's own flat ARENA_MP_COST_*. */
             ArenaHero *h = &arena_state.heroes[my_owner];
-            draw_ability_tile(20.0f, win_h - 168.0f, 56.0f, h->q_cooldown_ms, &q_cooldown_peak_ms,
+            /* S170-151, founder: "move the cast frames bottom center" --
+               same real MOBA convention (LoL/Dota both anchor the ability
+               bar bottom-center) this HUD's old top-left placement didn't
+               follow. Retime countdown (the radial wipe + seconds-remaining
+               text) and the mana_blocked dark/"MP" state are unchanged --
+               both already existed (S170-127/137), this is a pure
+               reposition, not new tile behavior. */
+            float tile_size = 56.0f;
+            float tile_pitch = 66.0f; /* size + 10px gap, unchanged from before */
+            float tiles_total_w = tile_pitch * 2.0f + tile_size;
+            float tiles_x0 = win_w / 2.0f - tiles_total_w / 2.0f;
+            float tiles_y = 90.0f; /* near the bottom edge, leaving room below for the keybind/name labels */
+            draw_ability_tile(tiles_x0, tiles_y, tile_size, h->q_cooldown_ms, &q_cooldown_peak_ms,
                                0, h->mp < ARENA_MP_COST_Q, "Q", arena_ability_name(h->hero_id, 0), 0.3f, 0.7f, 1.0f);
-            draw_ability_tile(86.0f, win_h - 168.0f, 56.0f, h->w_cooldown_ms, &w_cooldown_peak_ms,
+            draw_ability_tile(tiles_x0 + tile_pitch, tiles_y, tile_size, h->w_cooldown_ms, &w_cooldown_peak_ms,
                                h->w_active, (!h->w_active && h->mp < ARENA_MP_COST_W), "W", arena_ability_name(h->hero_id, 1), 0.7f, 0.3f, 1.0f);
-            draw_ability_tile(152.0f, win_h - 168.0f, 56.0f, h->r_cooldown_ms, &r_cooldown_peak_ms,
+            draw_ability_tile(tiles_x0 + tile_pitch * 2.0f, tiles_y, tile_size, h->r_cooldown_ms, &r_cooldown_peak_ms,
                                h->r_active_ms > 0, h->mp < ARENA_MP_COST_R, "E", arena_ability_name(h->hero_id, 2), 1.0f, 0.85f, 0.2f);
+
+            /* Ability-help overlay (S170-151, "H should show an overlay with
+               character ability descriptions"): a real quick-reference panel,
+               not just the tiles' own terse ability-name labels -- the
+               description text (arena_ability_description) needed the S170-151
+               font-glyph pass right above this feature specifically so it
+               wouldn't fall through to the missing-glyph box mid-panel. Drawn
+               above the ability tiles it documents, toggled by H, works in any
+               mode (net or local) since it's read-only against the local
+               player's own already-known hero_id. */
+            if (show_ability_help) {
+                float panel_w = 640.0f, panel_h = 190.0f;
+                float panel_x = win_w / 2.0f - panel_w / 2.0f;
+                float panel_y = tiles_y + tile_size + 30.0f;
+                glEnable(GL_BLEND);
+                glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+                glColor4f(0.05f, 0.08f, 0.1f, 0.88f);
+                glRectf(panel_x, panel_y, panel_x + panel_w, panel_y + panel_h);
+                glColor4f(0.4f, 0.55f, 0.65f, 0.9f);
+                glLineWidth(2.0f);
+                glBegin(GL_LINE_LOOP);
+                glVertex2f(panel_x, panel_y); glVertex2f(panel_x + panel_w, panel_y);
+                glVertex2f(panel_x + panel_w, panel_y + panel_h); glVertex2f(panel_x, panel_y + panel_h);
+                glEnd();
+                glLineWidth(1.0f);
+                glDisable(GL_BLEND);
+
+                glColor3f(0.9f, 0.95f, 1.0f);
+                draw_string(arena_hero_name(h->hero_id), panel_x + 16.0f, panel_y + panel_h - 26.0f, 14);
+                const char *slot_labels[3] = {"Q", "W", "E"};
+                float row_y = panel_y + panel_h - 60.0f;
+                for (int slot = 0; slot < 3; slot++) {
+                    glColor3f(0.55f, 0.85f, 1.0f);
+                    draw_string(slot_labels[slot], panel_x + 16.0f, row_y, 10);
+                    glColor3f(0.85f, 0.9f, 0.7f);
+                    draw_string(arena_ability_name(h->hero_id, slot), panel_x + 42.0f, row_y, 9);
+                    glColor3f(0.8f, 0.82f, 0.85f);
+                    draw_string(arena_ability_description(h->hero_id, slot), panel_x + 42.0f, row_y - 16.0f, 8);
+                    row_y -= 44.0f;
+                }
+            }
         }
 
         if (show_apm) {
