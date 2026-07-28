@@ -517,6 +517,18 @@ static void net_poll_snapshots(uint32_t now_ms) {
                         dst->equipped_item[s] = msg->heroes[i].equipped_item[s];
                     }
                     dst->w_active = msg->heroes[i].w_active; /* S170-180 bugfix: was never synced, so the W tile's "active" highlight was always wrong in net_mode */
+                    /* S170-184 bugfix: status effects were never synced either -- the status
+                       label above the health bar (hero_status_label) has been silently
+                       non-functional in every net_mode match, same class of bug as w_active
+                       just above. */
+                    dst->silenced_ms = msg->heroes[i].silenced_ms;
+                    dst->rooted_ms = msg->heroes[i].rooted_ms;
+                    dst->intangible_ms = msg->heroes[i].intangible_ms;
+                    dst->burning_ms = msg->heroes[i].burning_ms;
+                    dst->survive_floor_ms = msg->heroes[i].survive_floor_ms;
+                    dst->stunned_ms = msg->heroes[i].stunned_ms;
+                    dst->slowed_ms = msg->heroes[i].slowed_ms;
+                    dst->slow_pct = (float)msg->heroes[i].slow_pct_x100 / 100.0f;
                     if (msg->heroes[i].cast_flash_slot > 0) {
                         spawn_spell_flash(dst->x, dst->z, msg->heroes[i].cast_flash_slot, dst->hero_id);
                         trigger_squish(i);
@@ -1272,11 +1284,12 @@ static void draw_string(const char *str, float x, float y, float size) {
 
 /* hero_status_label (S170-133, founder: "text label above health bar above hero shows status
  * effects like stun silence root slow etc"): composes a short space-separated tag string from
- * whichever generic status-effect fields are currently active on this hero. "Stun" and "slow"
- * aren't modeled as their own generic fields yet (only silenced_ms/rooted_ms/intangible_ms/
- * burning_ms/survive_floor_ms exist on ArenaHero today) -- this surfaces what the sim actually
- * tracks rather than inventing new effect types as a UI-only side effect; adding a real stun/slow
- * mechanic is separate kit work, not a HUD task. Returns 1 if buf has anything to draw. */
+ * whichever generic status-effect fields are currently active on this hero. Stun and slow
+ * (S170-184, founder: "add more status effects use GFD [as a reference]") now have real generic
+ * fields (stunned_ms/slowed_ms) closing the exact gap this function's own comment used to flag
+ * here -- no kit applies them yet (arena_apply_stun/arena_apply_slow are the wiring hooks for a
+ * future pass), but the HUD affordance is real infrastructure now, not aspirational. Returns 1
+ * if buf has anything to draw. */
 static int hero_status_label(const ArenaHero *h, char *buf, size_t bufsize) {
     buf[0] = '\0';
     size_t used = 0;
@@ -1289,6 +1302,8 @@ static int hero_status_label(const ArenaHero *h, char *buf, size_t bufsize) {
     if (h->intangible_ms > 0) APPEND_TAG("INTANGIBLE");
     if (h->burning_ms > 0) APPEND_TAG("BURNING");
     if (h->survive_floor_ms > 0) APPEND_TAG("UNKILLABLE");
+    if (h->stunned_ms > 0) APPEND_TAG("STUNNED");
+    if (h->slowed_ms > 0) APPEND_TAG("SLOWED");
 #undef APPEND_TAG
     return used > 0;
 }

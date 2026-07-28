@@ -296,6 +296,27 @@ void arena_set_attack_target(int owner, int target) {
     arena_state.heroes[owner].attack_target = target;
 }
 
+/* arena_apply_stun/arena_apply_slow (S170-184): see header declarations' own doc comments.
+ * Both take the max of the existing remaining duration and the new one -- a real hard-CC
+ * refresh shouldn't ever SHORTEN what's already active (e.g. a weaker follow-up stun landing
+ * on top of a stronger one already ticking), same "longer wins" simplification GFD's own
+ * Potency-stacking rule approximates for a same-Kind reapply, without needing this codebase to
+ * track a separate Potency field just for stun (stun has no potency axis to begin with -- it's
+ * binary, on or off). Slow's pct is simply overwritten by the newer application regardless of
+ * duration, since a slow's THIS-frame speed effect is what matters, not accumulated history. */
+void arena_apply_stun(int owner, int duration_ms) {
+    if (owner < 0 || owner >= ARENA_MAX_HEROES) return;
+    ArenaHero *h = &arena_state.heroes[owner];
+    if (duration_ms > h->stunned_ms) h->stunned_ms = duration_ms;
+}
+
+void arena_apply_slow(int owner, int duration_ms, float pct) {
+    if (owner < 0 || owner >= ARENA_MAX_HEROES) return;
+    ArenaHero *h = &arena_state.heroes[owner];
+    if (duration_ms > h->slowed_ms) h->slowed_ms = duration_ms;
+    h->slow_pct = pct;
+}
+
 void arena_bot_tick(unsigned int dt_ms) {
     (void)dt_ms;
     ArenaHero *bot = &arena_state.heroes[1];
@@ -346,10 +367,13 @@ static void resolve_hero_obstacle_collision(ArenaHero *h) {
 }
 
 static void update_hero_motion(ArenaHero *h, float dt_sec) {
-    /* rooted_ms (S170-46): a queued move command is preserved (not
-       cancelled) but doesn't advance while rooted -- matches how silence
-       blocks casting without clearing the ability off cooldown. */
-    if (!h->alive || !h->moving || h->rooted_ms > 0) return;
+    /* rooted_ms (S170-46)/stunned_ms (S170-184): a queued move command is preserved (not
+       cancelled) but doesn't advance while either is active -- matches how silence blocks
+       casting without clearing the ability off cooldown. Stun is the stronger of the two
+       generic movement-blockers (it also blocks casts/attacks, root only blocks movement),
+       but there's no meaningful difference in what THIS function does for either -- both just
+       mean "don't advance position this tick." */
+    if (!h->alive || !h->moving || h->rooted_ms > 0 || h->stunned_ms > 0) return;
     float dx = h->target_x - h->x;
     float dz = h->target_z - h->z;
     float dist = sqrtf(dx * dx + dz * dz);
@@ -357,7 +381,13 @@ static void update_hero_motion(ArenaHero *h, float dt_sec) {
         h->moving = 0;
         return;
     }
-    float step = (ARENA_HERO_SPEED + h->item_bonus_move_speed) * dt_sec; /* S170-175: items (e.g. Rootrunner Treads, Creek F. Boots) */
+    /* slowed_ms/slow_pct (S170-184, GFD's Slow): a proportional multiplier on top of the base
+       speed + item bonus, so it scales correctly regardless of how much flat item speed a hero
+       already has (a slow that just subtracted a flat amount could go negative against a
+       heavily-itemized hero; a percentage never can). */
+    float speed_mult = (h->slowed_ms > 0) ? (1.0f - h->slow_pct) : 1.0f;
+    if (speed_mult < 0.0f) speed_mult = 0.0f;
+    float step = (ARENA_HERO_SPEED + h->item_bonus_move_speed) * speed_mult * dt_sec; /* S170-175: items (e.g. Rootrunner Treads, Creek F. Boots) */
     if (step >= dist) {
         h->x = h->target_x;
         h->z = h->target_z;
@@ -988,7 +1018,7 @@ void arena_tick_attack_targets(unsigned int dt_ms) {
            tick (he's excluded from that loop entirely, see the team-mode
            melee loop's own comment). */
         if (h->hero_id == ARENA_HERO_GARY) {
-            if (h->attack_cooldown_ms <= 0) {
+            if (h->attack_cooldown_ms <= 0 && h->stunned_ms <= 0) { /* S170-184 */
                 ArenaProjectile *shot = arena_spawn_projectile(i, h->team, ARENA_HERO_GARY,
                     h->x, h->z, foe->x, foe->z, ARENA_GARY_ATTACK_SPEED, 0.6f,
                     ARENA_GARY_ATTACK_DAMAGE + h->item_bonus_ad, ARENA_GARY_ATTACK_RANGE * 3.0f);
@@ -1295,7 +1325,7 @@ void arena_hero_attack_creeps(unsigned int dt_ms) {
     (void)dt_ms; /* attack_cooldown_ms is ticked in tick_hero_kit/resolve_combat already; this only spends it */
     for (int i = 0; i < ARENA_MAX_HEROES; i++) {
         ArenaHero *h = &arena_state.heroes[i];
-        if (!h->active || !h->alive || h->attack_cooldown_ms > 0) continue;
+        if (!h->active || !h->alive || h->attack_cooldown_ms > 0 || h->stunned_ms > 0) continue; /* S170-184 */
         /* S170-163: Gary's basic attack is exclusively his ranged homing
            shot (arena_tick_attack_targets) -- excluded here too, same
            reasoning as the hero-vs-hero melee loop, so he can't
@@ -1466,7 +1496,7 @@ void arena_hero_attack_lane_creeps(unsigned int dt_ms) {
     (void)dt_ms; /* attack_cooldown_ms is ticked in tick_hero_kit/resolve_combat already; this only spends it, same idiom as arena_hero_attack_creeps */
     for (int i = 0; i < ARENA_MAX_HEROES; i++) {
         ArenaHero *h = &arena_state.heroes[i];
-        if (!h->active || !h->alive || h->attack_cooldown_ms > 0) continue;
+        if (!h->active || !h->alive || h->attack_cooldown_ms > 0 || h->stunned_ms > 0) continue; /* S170-184 */
         /* S170-163: same exclusion as arena_hero_attack_creeps above -- see
            that function's own comment. */
         if (h->hero_id == ARENA_HERO_GARY) continue;
@@ -2314,7 +2344,7 @@ void arena_cast_q(int owner) {
     if (owner < 0 || owner >= ARENA_MAX_HEROES) return;
     ArenaHero *h = &arena_state.heroes[owner];
     ArenaHero *foe = arena_nearest_enemy(owner);
-    if (!h->alive || h->silenced_ms > 0 || h->q_cooldown_ms > 0 || h->mp < ARENA_MP_COST_Q) return;
+    if (!h->alive || h->silenced_ms > 0 || h->stunned_ms > 0 || h->q_cooldown_ms > 0 || h->mp < ARENA_MP_COST_Q) return; /* S170-184: stun blocks all three action types, silence just casting */
     h->cast_flash_slot = 1;
 
     switch (h->hero_id) {
@@ -2489,7 +2519,7 @@ void arena_cast_q(int owner) {
 void arena_toggle_w(int owner) {
     if (owner < 0 || owner >= ARENA_MAX_HEROES) return;
     ArenaHero *h = &arena_state.heroes[owner];
-    if (!h->alive || h->silenced_ms > 0) return;
+    if (!h->alive || h->silenced_ms > 0 || h->stunned_ms > 0) return; /* S170-184: stun blocks all three action types, silence just casting */
     /* w_cooldown_ms is 0 (and never touched) for the pure-toggle heroes
        below, so this passes for them unconditionally -- correctly gates
        only the instant-cast-with-cooldown heroes (Ghost, Tyler, Paimon,
@@ -2703,7 +2733,7 @@ void arena_cast_r(int owner) {
     if (owner < 0 || owner >= ARENA_MAX_HEROES) return;
     ArenaHero *h = &arena_state.heroes[owner];
     ArenaHero *foe = arena_nearest_enemy(owner);
-    if (!h->alive || h->silenced_ms > 0 || h->r_cooldown_ms > 0 || h->mp < ARENA_MP_COST_R) return;
+    if (!h->alive || h->silenced_ms > 0 || h->stunned_ms > 0 || h->r_cooldown_ms > 0 || h->mp < ARENA_MP_COST_R) return; /* S170-184: stun blocks all three action types, silence just casting */
     h->cast_flash_slot = 3;
 
     switch (h->hero_id) {
@@ -3043,6 +3073,19 @@ static void tick_hero_kit(ArenaHero *h, ArenaHero *foe, ArenaHero *ally, unsigne
     if (h->survive_floor_ms > 0) {
         h->survive_floor_ms -= (int)dt_ms;
         if (h->survive_floor_ms < 0) h->survive_floor_ms = 0;
+    }
+    /* stunned_ms/slowed_ms (S170-184): same generic tick-down idiom as every other status
+       effect above. slow_pct isn't reset when slowed_ms hits 0 -- update_hero_motion only ever
+       reads slow_pct while slowed_ms > 0, so a stale nonzero value sitting there between
+       applications is inert, same "don't bother clearing what's already unreachable" precedent
+       burn_dps below takes with burning_ms. */
+    if (h->stunned_ms > 0) {
+        h->stunned_ms -= (int)dt_ms;
+        if (h->stunned_ms < 0) h->stunned_ms = 0;
+    }
+    if (h->slowed_ms > 0) {
+        h->slowed_ms -= (int)dt_ms;
+        if (h->slowed_ms < 0) h->slowed_ms = 0;
     }
     /* burning_ms/burn_dps (S170-46, Pizza's Q): fixed-interval DoT tick,
        same 1000ms-accumulator pattern as Ghost's R zone. burn_tick_ms
@@ -3970,6 +4013,7 @@ void arena_update_teams(unsigned int dt_ms) {
            same idiom), just the damage-dealing half of this loop skips
            him. */
         if (h->hero_id == ARENA_HERO_GARY) continue;
+        if (h->stunned_ms > 0) continue; /* S170-184 */
         ArenaHero *foe = arena_nearest_enemy(i);
         if (!foe) continue;
         float dx = foe->x - h->x, dz = foe->z - h->z;

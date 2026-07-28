@@ -1063,6 +1063,29 @@ typedef struct {
      * it's the entire point of the ability, using the same centralized
      * apply_damage() every damage call site already routes through. */
     int survive_floor_ms;
+    /* stunned_ms (S170-184, founder: "add more status effects use GFD [as a reference]" --
+     * GoblinFoxDragon's server/status package, Paralyze). > 0: cannot move, cannot cast
+     * Q/W/R, cannot auto-attack -- the generic "hard CC" hero_status_label's own doc comment
+     * already flagged as missing ("'Stun' and 'slow' aren't modeled as their own generic
+     * fields yet ... adding a real stun/slow mechanic is separate kit work, not a HUD task").
+     * Distinct from rooted_ms (movement-only) and silenced_ms (casting-only): stun blocks all
+     * three action types at once, GFD's own "hard CC" category (GFD models it as a
+     * probabilistic per-action-fail-chance roll; this is a hard block for the whole duration
+     * instead, simpler and matching this repo's existing `_ms` timer convention for every
+     * other status effect above). No kit applies this yet -- arena_apply_stun() is the hook a
+     * future ability-kit pass wires up, same "generic infrastructure first, hero-specific kit
+     * wiring later" precedent silenced_ms/rooted_ms/burning_ms themselves were built under. */
+    int stunned_ms;
+    /* slowed_ms/slow_pct (S170-184, GFD's Slow -- there, a negative-haste-percentage stacked
+     * against a Haste buff; no generic Haste field exists here yet, out of scope for this pass,
+     * flagged not faked, so this is debuff-only). > 0 ms: move speed multiplied by
+     * (1.0 - slow_pct) for that duration, read in update_hero_motion. slow_pct is 0.0-1.0 (a
+     * fraction, not a flat unit reduction like item_bonus_move_speed) so it scales
+     * proportionally regardless of a hero's current speed, including any item bonus already
+     * applied. arena_apply_slow() is the kit-wiring hook, same "no kit uses it yet" scope as
+     * stunned_ms above. */
+    int slowed_ms;
+    float slow_pct;
     /* aura_tick_ms (S170-46, Pizza's always-on burn aura passive): generic
      * fixed-interval accumulator for a passive that ticks independently of
      * any cast, distinct from r_zone_tick_ms (which is cast-scoped). */
@@ -1419,6 +1442,22 @@ void arena_set_hover_target(int owner, int target);
  * (e.g. dies mid-chase) self-heals on the very next tick without needing a
  * second code path here. */
 void arena_set_attack_target(int owner, int target);
+
+/* arena_apply_stun (S170-184, founder: "add more status effects use GFD [as a reference]" --
+ * GoblinFoxDragon's server/status package, Paralyze): the kit-wiring hook for the generic
+ * stunned_ms field (see its own doc comment on ArenaHero). Blocks movement, casting, and
+ * auto-attacks for duration_ms. No hero kit calls this yet -- infrastructure first, same
+ * precedent silenced_ms/rooted_ms/burning_ms were built under before any kit used them. Takes
+ * the max of the existing remaining duration and duration_ms (a refresh never shortens what's
+ * already active). No-op if owner is out of range. */
+void arena_apply_stun(int owner, int duration_ms);
+
+/* arena_apply_slow (S170-184, GFD's Slow): the kit-wiring hook for the generic slowed_ms/
+ * slow_pct pair. pct is a 0.0-1.0 fraction of move speed removed (proportional, not a flat
+ * unit reduction, so it scales correctly against any item move-speed bonus already applied).
+ * Same "max of existing/new duration" refresh rule as arena_apply_stun; pct is always
+ * overwritten by the newer application. No-op if owner is out of range. */
+void arena_apply_slow(int owner, int duration_ms, float pct);
 
 /* arena_tick_attack_targets (S170-162, NORTHSTAR §17's click-to-attack
  * system, team mode only): for every active/alive hero with a valid

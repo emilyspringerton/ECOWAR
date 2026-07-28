@@ -315,6 +315,17 @@ static void server_broadcast(void) {
             msg.heroes[i].equipped_item[s] = (int8_t)h->equipped_item[s];
         }
         msg.heroes[i].w_active = (uint8_t)h->w_active; /* S170-180 bugfix */
+        /* S170-184 bugfix: status effects were never synced at all, see ArenaHeroSnapshot's
+           own doc comment. Clamp before the signed->unsigned narrowing, same convention as
+           cooldowns' own clamp above (these can dip transiently negative between ticks too). */
+        msg.heroes[i].silenced_ms = (uint16_t)(h->silenced_ms > 0 ? h->silenced_ms : 0);
+        msg.heroes[i].rooted_ms = (uint16_t)(h->rooted_ms > 0 ? h->rooted_ms : 0);
+        msg.heroes[i].intangible_ms = (uint16_t)(h->intangible_ms > 0 ? h->intangible_ms : 0);
+        msg.heroes[i].burning_ms = (uint16_t)(h->burning_ms > 0 ? h->burning_ms : 0);
+        msg.heroes[i].survive_floor_ms = (uint16_t)(h->survive_floor_ms > 0 ? h->survive_floor_ms : 0);
+        msg.heroes[i].stunned_ms = (uint16_t)(h->stunned_ms > 0 ? h->stunned_ms : 0);
+        msg.heroes[i].slowed_ms = (uint16_t)(h->slowed_ms > 0 ? h->slowed_ms : 0);
+        msg.heroes[i].slow_pct_x100 = (uint8_t)(h->slow_pct * 100.0f);
         msg.picked[i] = (uint8_t)hero_picked[i];
     }
     msg.winner = (uint8_t)arena_state.winner;

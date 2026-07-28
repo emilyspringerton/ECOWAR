@@ -1380,6 +1380,129 @@ static void test_rooted_hero_cannot_move(void) {
           "a rooted hero does not move even with a move command queued");
 }
 
+/* S170-184, founder: "add more status effects use GFD [as a reference]" (GoblinFoxDragon's
+ * server/status package) -- generic stun (hard CC: blocks movement, casting, and auto-attack)
+ * and slow (proportional move-speed debuff), the exact gap hero_status_label's own doc comment
+ * used to flag as missing. */
+
+static void test_stunned_hero_cannot_move(void) {
+    arena_init();
+    arena_apply_stun(0, 1000);
+    arena_set_move_target(0, 5.0f, 5.0f);
+    float x0 = arena_state.heroes[0].x, z0 = arena_state.heroes[0].z;
+
+    arena_update(16);
+
+    CHECK(arena_state.heroes[0].x == x0 && arena_state.heroes[0].z == z0,
+          "a stunned hero does not move even with a move command queued");
+}
+
+static void test_stunned_hero_cannot_cast(void) {
+    arena_init();
+    ArenaHero *h = &arena_state.heroes[0];
+    h->mp = h->max_mp;
+    arena_apply_stun(0, 1000);
+
+    arena_cast_q(0);
+    CHECK(h->q_cooldown_ms == 0, "a stunned hero's Q cast is blocked entirely, never starts its cooldown");
+
+    arena_toggle_w(0);
+    CHECK(h->w_active == 0, "a stunned hero's W toggle is blocked entirely");
+
+    arena_cast_r(0);
+    CHECK(h->r_cooldown_ms == 0, "a stunned hero's R cast is blocked entirely, never starts its cooldown");
+}
+
+static void test_stunned_hero_cannot_auto_attack(void) {
+    arena_init_teams();
+    for (int i = 2; i < ARENA_MAX_HEROES; i++) arena_state.heroes[i].active = 0;
+    arena_state.heroes[ARENA_TEAM_SIZE].active = 1;
+    arena_state.heroes[ARENA_TEAM_SIZE].alive = 1;
+    arena_state.heroes[0].x = arena_state.heroes[ARENA_TEAM_SIZE].x;
+    arena_state.heroes[0].z = arena_state.heroes[ARENA_TEAM_SIZE].z;
+    int foe_hp_before = arena_state.heroes[ARENA_TEAM_SIZE].hp;
+    arena_apply_stun(0, 5000);
+
+    for (int i = 0; i < 100; i++) arena_update_teams(16); /* well past ARENA_ATTACK_COOLDOWN_MS if it were going to land */
+
+    CHECK(arena_state.heroes[ARENA_TEAM_SIZE].hp == foe_hp_before, "a stunned hero lands no auto-attacks, melee range notwithstanding");
+}
+
+static void test_stun_ticks_down_and_expires(void) {
+    arena_init();
+    arena_apply_stun(0, 500);
+
+    arena_update(400);
+    CHECK(arena_state.heroes[0].stunned_ms == 100, "stun ticks down like every other status effect");
+
+    arena_update(200);
+    CHECK(arena_state.heroes[0].stunned_ms == 0, "stun expires (clamped at 0, not negative) once its duration elapses");
+    arena_set_move_target(0, 5.0f, 5.0f);
+    arena_update(16);
+    CHECK(arena_state.heroes[0].x != 0.0f || arena_state.heroes[0].z != 0.0f, "movement resumes once stun expires");
+}
+
+static void test_apply_stun_refresh_never_shortens(void) {
+    arena_init();
+    arena_apply_stun(0, 3000);
+    arena_apply_stun(0, 500); /* weaker, shorter follow-up */
+
+    CHECK(arena_state.heroes[0].stunned_ms == 3000, "a shorter stun application never shortens an already-longer remaining duration");
+
+    arena_apply_stun(0, 5000); /* longer, real refresh */
+    CHECK(arena_state.heroes[0].stunned_ms == 5000, "a longer stun application does extend the duration");
+}
+
+static void test_slowed_hero_moves_proportionally_slower(void) {
+    /* Team mode, not the 1v1 local demo (arena_init/arena_update) -- that path has its own
+       "close enough to the bot, treat the move as an attack-move" special case (arena_update's
+       own comment) that overrides a move target near an opponent, which would confound this
+       test's distance measurement. arena_update_teams has no such override. */
+    arena_init_teams();
+    for (int i = 1; i < ARENA_MAX_HEROES; i++) arena_state.heroes[i].active = 0;
+    ArenaHero *h = &arena_state.heroes[0];
+    float x0 = h->x, z0 = h->z;
+    arena_set_move_target(0, x0 + 100.0f, z0);
+    arena_update_teams(1000);
+    float unslowed_dist = h->x - x0;
+
+    arena_init_teams();
+    for (int i = 1; i < ARENA_MAX_HEROES; i++) arena_state.heroes[i].active = 0;
+    h = &arena_state.heroes[0];
+    x0 = h->x; z0 = h->z;
+    arena_apply_slow(0, 2000, 0.5f);
+    arena_set_move_target(0, x0 + 100.0f, z0);
+    arena_update_teams(1000);
+    float slowed_dist = h->x - x0;
+
+    CHECK(slowed_dist > 0.0f && slowed_dist < unslowed_dist, "a 50%% slow covers real but reduced ground versus the unslowed baseline");
+    CHECK(fabsf(slowed_dist - unslowed_dist * 0.5f) < 0.01f, "the reduction matches the applied slow_pct proportionally");
+}
+
+static void test_slow_ticks_down_and_expires(void) {
+    arena_init();
+    arena_apply_slow(0, 500, 0.5f);
+
+    arena_update(400);
+    CHECK(arena_state.heroes[0].slowed_ms == 100, "slow ticks down like every other status effect");
+
+    arena_update(200);
+    CHECK(arena_state.heroes[0].slowed_ms == 0, "slow expires (clamped at 0, not negative) once its duration elapses");
+}
+
+static void test_respawn_clears_stun_and_slow(void) {
+    arena_init_teams();
+    arena_apply_stun(0, 5000);
+    arena_apply_slow(0, 5000, 0.5f);
+    arena_state.heroes[0].alive = 0;
+
+    for (int i = 0; i < 2000 && !arena_state.heroes[0].alive; i++) arena_update_teams(16);
+
+    CHECK(arena_state.heroes[0].alive, "sanity: the hero actually respawned");
+    CHECK(arena_state.heroes[0].stunned_ms == 0, "stun does not survive a respawn");
+    CHECK(arena_state.heroes[0].slowed_ms == 0, "slow does not survive a respawn");
+}
+
 /* S170-47: Morrigan (TYLER #68) and Dagda (TYLER #69). */
 
 static void test_morrigan_passive_grants_armor_on_contested_node(void) {
@@ -4254,6 +4377,14 @@ int main(void) {
     test_flamel_r_roots_enemies_and_heals_allies_in_zone();
     test_flamel_r_mass_marks_nodes_in_radius();
     test_rooted_hero_cannot_move();
+    test_stunned_hero_cannot_move();
+    test_stunned_hero_cannot_cast();
+    test_stunned_hero_cannot_auto_attack();
+    test_stun_ticks_down_and_expires();
+    test_apply_stun_refresh_never_shortens();
+    test_slowed_hero_moves_proportionally_slower();
+    test_slow_ticks_down_and_expires();
+    test_respawn_clears_stun_and_slow();
     test_morrigan_passive_grants_armor_on_contested_node();
     test_morrigan_q_executes_harder_at_low_hp();
     test_morrigan_w_teleports_and_roots_nearest_enemy();

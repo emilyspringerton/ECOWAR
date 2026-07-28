@@ -222,6 +222,20 @@ typedef struct {
     // was, not a toggle-logic bug. Synced for every hero, not just the local player's,
     // same "the whole battlefield should read clearly" convention as attack_target above.
     uint8_t w_active;
+    // Status effects (S170-184 bugfix, found while adding stunned_ms/slowed_ms: NONE of these
+    // fields were ever on the wire, the same class of bug w_active's own doc comment above
+    // just described -- the client's "status label above the health bar" HUD feature
+    // (hero_status_label, S170-133) has been silently non-functional in every real networked
+    // match this whole time, since its local ArenaHero copy never received these from the
+    // server. Fixed the same way: synced for every hero, not just the local player's own.
+    uint16_t silenced_ms;
+    uint16_t rooted_ms;
+    uint16_t intangible_ms;
+    uint16_t burning_ms;
+    uint16_t survive_floor_ms;
+    uint16_t stunned_ms;   // S170-184: new generic hard-CC field, see ArenaHero's own doc comment
+    uint16_t slowed_ms;    // S170-184: new generic move-speed debuff
+    uint8_t slow_pct_x100; // 0-100, slow_pct*100 -- quantized same "lossy is fine" precedent as mp (uint8_t)
 } ArenaHeroSnapshot;
 
 // ARENA_SNAPSHOT_MAX_HEROES must match packages/simulation/arena_game.h's
