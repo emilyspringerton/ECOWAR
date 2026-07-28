@@ -448,24 +448,12 @@ static int net_lobby_size = 2; /* set from the server's own msg->count once a sn
 static uint8_t net_phase = ARENA_PHASE_WAITING;
 static int net_picked = 0; /* have we sent our PACKET_ARENA_PICK for the current draft yet */
 static uint32_t net_last_pick_send_ms = 0; /* for retry -- see net_poll_snapshots' resend logic */
-/* net_draft_offset (S170-105, real bug found live): ARENA_HERO_COUNT (21) now exceeds
-   ARENA_MAX_HEROES (20) -- a bare `owner % hero_count` in a full 20-player lobby can never reach
-   the last hero in the roster, a permanent exclusion, not a rare miss (same finding as
-   apps/arena_bot's own fix). Re-rolled every time net_picked resets to 0 (a fresh draft is about
-   to start), so which hero ends up excluded varies match to match instead of always being the
-   same one hero nobody can ever pick.
-
-   S170-166 fix, founder: "ensure auto draft is random i keep always drafting flutedebt first on
-   a new client." The port-only version below was deterministic, not actually random -- the
-   matchmaker hands out ports sequentially (next_game_port++), and a human player is very often
-   owner 0 (first/only real client in a match, as opposed to the bot pool's always-full 20), so
-   (my_owner + port) % ARENA_HERO_COUNT landed on the same residue, and therefore the same hero,
-   across most real test sessions in a row -- a real bug, not a misperception. rand() is mixed in
-   now (this file's own srand(time(NULL)) already runs at startup, see main()) so a fresh client
-   actually rolls a fresh hero; the port term is kept alongside it rather than dropped outright,
-   preserving the original zero-coordination-needed exclusion-avoidance property this field's
-   very first sentence documents, just no longer the ONLY source of entropy. */
-static int net_draft_offset = 0;
+/* net_picked_hero_id (S170-182): which hero_id the player actually clicked on the draft
+ * screen, so the resend-on-no-progress safety net below can resend the SAME real pick rather
+ * than recomputing one -- replaces the old auto-draft's net_draft_offset (S170-105/166), which
+ * only ever existed to derive a hero_id with no human input at all; a real click already gives
+ * one directly. Reset to -1 whenever net_picked resets to 0 (a fresh draft is about to start). */
+static int net_picked_hero_id = -1;
 
 /* Defined further down alongside the other particle-effect state
    (spawn_ring/AttackFlash) -- forward-declared here so net_poll_snapshots
@@ -488,27 +476,19 @@ static void net_poll_snapshots(uint32_t now_ms) {
                 ArenaSnapshotMsg *msg = (ArenaSnapshotMsg *)(rbuf + sizeof(NetHeader));
                 net_lobby_size = msg->count;
                 net_phase = msg->phase;
-                if (net_phase == ARENA_PHASE_DRAFT && !net_picked) {
-                    /* Auto-draft (S170-66/68): the client has no pick UI yet, and the
-                       founder confirmed auto-draft is fine for now -- same roster-spread
-                       rule apps/arena_bot already uses, so the human doesn't get stuck
-                       in ARENA_PHASE_DRAFT forever waiting on input that never comes. */
-                    /* Derived from the connected server's own port, not rand() -- every client in
-                       this match (bots included, see apps/arena_bot's identical fix) already
-                       knows this same port, so it's a real shared value with zero coordination
-                       needed, not an independent per-client random roll that could collide with
-                       someone else's pick on the same hero. See net_draft_offset's own doc
-                       comment for the full "why not rand()" reasoning. */
-                    net_draft_offset = (rand() + (int)ntohs(net_server_addr.sin_port)) % ARENA_HERO_COUNT;
-                    int hero_id = (my_owner + net_draft_offset) % ARENA_HERO_COUNT;
-                    net_send_pick(hero_id);
-                    net_picked = 1;
-                    net_last_pick_send_ms = now_ms;
-                    printf("[arena client] auto-drafted hero_id=%d for slot %d\n", hero_id, my_owner);
-                    fflush(stdout);
-                } else if (net_phase != ARENA_PHASE_DRAFT) {
+                if (net_phase != ARENA_PHASE_DRAFT) {
                     net_picked = 0; /* reset so the next draft (after a requeue) picks again */
+                    net_picked_hero_id = -1;
                 }
+                /* S170-182: draft used to auto-pick the instant ARENA_PHASE_DRAFT started (no
+                   pick UI existed yet, S170-66/68's own "fine for now" call) -- now a real
+                   click-to-pick screen (draw_draft_screen, rendered from the main loop whenever
+                   net_phase == ARENA_PHASE_DRAFT && !net_picked) drives net_send_pick instead.
+                   No auto-fallback-on-timeout yet if the player never clicks; a real human
+                   present to see the screen is the whole point of building it, and this repo's
+                   own convention is to scope an ask to what was actually asked rather than
+                   inventing a timeout nobody requested -- flagged as a real, deliberate gap for
+                   a future pass if AFK-in-draft turns out to matter in practice. */
                 for (int i = 0; i < msg->count && i < ARENA_SNAPSHOT_MAX_HEROES; i++) {
                     ArenaHero *dst = &arena_state.heroes[i];
                     dst->x = msg->heroes[i].x;
@@ -634,9 +614,8 @@ static void net_poll_snapshots(uint32_t now_ms) {
      * meant it would never be resent. Resend every 1s while still in draft and not yet live --
      * harmless if the original arrived (server's own PACKET_ARENA_PICK handling just re-records
      * the same hero_id), the actual fix if it didn't. */
-    if (net_phase == ARENA_PHASE_DRAFT && net_picked && now_ms - net_last_pick_send_ms > 1000) {
-        int hero_id = (my_owner + net_draft_offset) % ARENA_HERO_COUNT; /* same offset as the original pick -- resend must match, not re-roll */
-        net_send_pick(hero_id);
+    if (net_phase == ARENA_PHASE_DRAFT && net_picked && net_picked_hero_id >= 0 && now_ms - net_last_pick_send_ms > 1000) {
+        net_send_pick(net_picked_hero_id); /* resend the SAME real pick, not a recomputed one */
         net_last_pick_send_ms = now_ms;
     }
 }
@@ -1341,6 +1320,76 @@ static void draw_queuing_screen(SDL_Window *win, int win_w, int win_h) {
     SDL_GL_SwapWindow(win);
 }
 
+/* Draft/pick screen (S170-182, split out from the old S170-69 northstar item -- "a real draft
+ * hero-select UI" replacing the pure auto-pick that shipped instead, S170-66/68). One shared
+ * grid layout, computed identically here and in draft_screen_hero_at() below, so a click always
+ * lands on the tile it's visually over -- same "compute the same formula in both places" idiom
+ * as the shop panel's own layout. */
+#define DRAFT_GRID_COLS 6
+#define DRAFT_CELL_W 190.0f
+#define DRAFT_CELL_H 56.0f
+static void draft_grid_origin(int win_w, int win_h, float *gx0, float *gy_top) {
+    *gx0 = win_w / 2.0f - (DRAFT_GRID_COLS * DRAFT_CELL_W) / 2.0f;
+    *gy_top = win_h - 130.0f;
+}
+
+/* draft_screen_hero_at: hit-test a screen-space point (SDL's top-down mouse coords, NOT this
+ * HUD's own bottom-up ortho space -- callers pass raw e.button.x/y) against the draft grid.
+ * Returns the hero_id under that point, or -1 if none. */
+static int draft_screen_hero_at(int mouse_x, int mouse_y, int win_w, int win_h) {
+    float bx = (float)mouse_x, by = (float)(win_h - mouse_y);
+    float gx0, gy_top;
+    draft_grid_origin(win_w, win_h, &gx0, &gy_top);
+    for (int hero_id = 0; hero_id < ARENA_HERO_COUNT; hero_id++) {
+        int col = hero_id % DRAFT_GRID_COLS, row = hero_id / DRAFT_GRID_COLS;
+        float cell_x = gx0 + (float)col * DRAFT_CELL_W;
+        float cell_top = gy_top - (float)row * DRAFT_CELL_H;
+        float cell_bottom = cell_top - (DRAFT_CELL_H - 6.0f);
+        if (bx >= cell_x + 3.0f && bx <= cell_x + DRAFT_CELL_W - 3.0f && by >= cell_bottom && by <= cell_top) {
+            return hero_id;
+        }
+    }
+    return -1;
+}
+
+static void draw_draft_screen(SDL_Window *win, int win_w, int win_h, int hover_hero_id) {
+    glClearColor(0.03f, 0.05f, 0.04f, 1.0f);
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+    glDisable(GL_DEPTH_TEST);
+    glMatrixMode(GL_PROJECTION);
+    glLoadIdentity();
+    glOrtho(0, win_w, 0, win_h, -1, 1);
+    glMatrixMode(GL_MODELVIEW);
+    glLoadIdentity();
+
+    glColor3f(0.6f, 1.0f, 0.7f);
+    draw_string("PICK YOUR HERO", win_w / 2.0f - 150.0f, win_h - 60.0f, 18);
+    glColor3f(0.6f, 0.7f, 0.65f);
+    draw_string("CLICK A TILE TO DRAFT IT", win_w / 2.0f - 160.0f, win_h - 90.0f, 10);
+
+    float gx0, gy_top;
+    draft_grid_origin(win_w, win_h, &gx0, &gy_top);
+    for (int hero_id = 0; hero_id < ARENA_HERO_COUNT; hero_id++) {
+        int col = hero_id % DRAFT_GRID_COLS, row = hero_id / DRAFT_GRID_COLS;
+        float cell_x = gx0 + (float)col * DRAFT_CELL_W;
+        float cell_top = gy_top - (float)row * DRAFT_CELL_H;
+        float cell_bottom = cell_top - (DRAFT_CELL_H - 6.0f);
+        int hovered = (hero_id == hover_hero_id);
+        glColor4f(hovered ? 0.2f : 0.1f, hovered ? 0.45f : 0.18f, hovered ? 0.25f : 0.16f, 0.9f);
+        glRectf(cell_x + 3.0f, cell_bottom, cell_x + DRAFT_CELL_W - 3.0f, cell_top);
+        glColor3f(hovered ? 0.6f : 0.35f, hovered ? 1.0f : 0.55f, hovered ? 0.7f : 0.5f);
+        glLineWidth(hovered ? 2.0f : 1.0f);
+        glBegin(GL_LINE_LOOP);
+        glVertex2f(cell_x + 3.0f, cell_bottom); glVertex2f(cell_x + DRAFT_CELL_W - 3.0f, cell_bottom);
+        glVertex2f(cell_x + DRAFT_CELL_W - 3.0f, cell_top); glVertex2f(cell_x + 3.0f, cell_top);
+        glEnd();
+        glLineWidth(1.0f);
+        glColor3f(hovered ? 0.9f : 0.75f, hovered ? 1.0f : 0.85f, hovered ? 0.95f : 0.8f);
+        draw_string(arena_hero_name(hero_id), cell_x + 12.0f, cell_bottom + (DRAFT_CELL_H - 6.0f) / 2.0f - 4.0f, 9);
+    }
+    SDL_GL_SwapWindow(win);
+}
+
 /* ---------------- placement rings ---------------- */
 #define MAX_RINGS 6
 #define RING_LIFETIME_MS 500.0f
@@ -1820,11 +1869,7 @@ static void play_cast_tone(int slot) {
 int main(int argc, char *argv[]) {
     /* No srand() call existed anywhere in this file before -- mint_ticket_fallback's own
        rand()-based nonce (used only when IDUNA isn't reachable) was silently using the default
-       seed=1 sequence, identical every single launch, a real if minor pre-existing weakness found
-       while adding this call for an unrelated reason (net_draft_offset originally used rand()
-       too, before being switched to a deterministic port-derived value instead -- see its own
-       doc comment). Left in: real randomness for the ticket nonce is still worth having even
-       though the offset itself no longer needs it. */
+       seed=1 sequence, identical every single launch, a real if minor pre-existing weakness. */
     srand((unsigned int)time(NULL));
     /* squish_age_ms[] zero-initializes with the rest of static storage, but 0.0f reads as
        "animation just started" (compute_squish's own neutral sentinel is anything >=
@@ -2093,6 +2138,22 @@ int main(int argc, char *argv[]) {
                     }
                 }
             }
+            /* Draft pick-screen click (S170-182): only meaningful while the draft screen is
+               actually showing (draw_draft_screen's own gate above, net_phase==DRAFT &&
+               !net_picked) -- picking twice can't happen since net_picked flips true on the
+               very first valid click. */
+            if (net_mode && !observing && net_phase == ARENA_PHASE_DRAFT && !net_picked &&
+                e.type == SDL_MOUSEBUTTONDOWN && e.button.button == SDL_BUTTON_LEFT) {
+                int hero_id = draft_screen_hero_at(e.button.x, e.button.y, win_w, win_h);
+                if (hero_id >= 0) {
+                    net_send_pick(hero_id);
+                    net_picked = 1;
+                    net_picked_hero_id = hero_id;
+                    net_last_pick_send_ms = now;
+                    printf("[arena client] drafted hero_id=%d for slot %d\n", hero_id, my_owner);
+                    fflush(stdout);
+                }
+            }
             /* Requeue-after-win OK button (S170-66/68: "we need to requeue after
              * a game after an ok button"). Only meaningful in net_mode -- local
              * practice mode already has its own R-to-restart below. Click box
@@ -2197,6 +2258,21 @@ int main(int argc, char *argv[]) {
             arena_log_win(arena_state.winner);
             win_logged = 1;
         }
+
+        /* S170-182: heroes[] isn't meaningful during ARENA_PHASE_DRAFT (protocol.h's own
+           ArenaHeroSnapshot doc comment already says so) -- render the pick screen instead of
+           the normal match view for as long as the draft is still waiting on this client's own
+           pick, same "replace the frame's content entirely" idiom draw_queuing_screen already
+           uses for its own blocking wait. */
+        if (net_mode && !observing && net_phase == ARENA_PHASE_DRAFT && !net_picked) {
+            int mx, my;
+            SDL_GetMouseState(&mx, &my);
+            int hover_hero_id = draft_screen_hero_at(mx, my, win_w, win_h);
+            draw_draft_screen(win, win_w, win_h, hover_hero_id);
+            SDL_Delay(16);
+            continue;
+        }
+
         for (int i = 0; i < MAX_RINGS; i++) {
             if (!rings[i].active) continue;
             rings[i].age_ms += dt;
