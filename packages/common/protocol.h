@@ -19,6 +19,8 @@
 #define PACKET_ARENA_SNAPSHOT 8 /* arena_server -> client: both heroes' state */
 #define PACKET_ARENA_PICK 9     /* client -> arena_server: hero pick during draft */
 #define PACKET_ARENA_ATTACK 10  /* client -> arena_server: lock onto and auto-attack a specific hero slot, S170-162 */
+#define PACKET_ARENA_SHOP_BUY 11  /* client -> arena_server: buy an item by catalog index, S170-175 */
+#define PACKET_ARENA_SHOP_SELL 12 /* client -> arena_server: sell an equipped item by slot, S170-175 */
 
 #define ARENA_PHASE_WAITING 0 /* fewer than 2 real players connected yet */
 #define ARENA_PHASE_DRAFT   1 /* both connected, waiting on hero picks */
@@ -125,6 +127,29 @@ typedef struct {
     uint8_t target_owner;
 } ArenaAttackCmd;
 
+// PACKET_ARENA_SHOP_BUY payload (S170-175, NORTHSTAR §19's shop system):
+// which item (index into packages/simulation/arena_game.c's ARENA_ITEMS
+// catalog) the sending client's own hero wants to buy. Server validates
+// shop-proximity + Flow balance (arena_shop_buy) -- same trust model as
+// every other Arena*Cmd, the server infers "which hero" from the sending
+// client's own slot.
+typedef struct {
+    uint8_t item_id;
+} ArenaShopBuyCmd;
+
+// PACKET_ARENA_SHOP_SELL payload: which equip slot (ArenaItemSlot) to sell
+// back. No bag -- selling just empties the slot (arena_shop_sell).
+typedef struct {
+    uint8_t slot;
+} ArenaShopSellCmd;
+
+// ARENA_SNAPSHOT_ITEM_SLOT_COUNT must match packages/simulation/arena_game.h's
+// ARENA_ITEM_SLOT_COUNT (S170-175), same duplication reasoning as every
+// other ARENA_SNAPSHOT_* size constant in this file. Needed ahead of
+// ArenaHeroSnapshot below since it sizes a fixed array member, unlike the
+// others which only size top-level ArenaSnapshotMsg arrays.
+#define ARENA_SNAPSHOT_ITEM_SLOT_COUNT 11
+
 // Per-hero state broadcast in PACKET_ARENA_SNAPSHOT. Originally minimal
 // (position/HP/alive/hero_id only, no ability-state sync) -- enough for a
 // human to see and fight a real remote hero; full status-effect sync
@@ -171,6 +196,23 @@ typedef struct {
     // just the local player's, so the lock reads clearly to any hero
     // watching the fight -- not just the two heroes actually involved.
     int8_t attack_target;
+    // Economy/equipment fields (S170-175, NORTHSTAR §19's Flow/XP + item
+    // shop). flow is the current spendable balance; flow_earned only ever
+    // increases (the character pane's own lifetime-earned stat, distinct
+    // from the spendable balance -- see ArenaHero.flow_earned's own doc
+    // comment in packages/simulation/arena_game.h). kills/deaths are hero
+    // kills only, same real-MOBA KDA convention. equipped_item is
+    // ARENA_SNAPSHOT_ITEM_SLOT_COUNT slots, -1 (int8_t sentinel, same
+    // convention as attack_target/hover_target above) if that slot is
+    // empty, else an index into the ARENA_ITEMS catalog -- not synced
+    // itself, since it's static roster-wide data both sides already build
+    // from the same source, same reasoning as max_mp above.
+    uint16_t flow;
+    uint16_t flow_earned;
+    uint16_t xp;
+    uint8_t kills;
+    uint8_t deaths;
+    int8_t equipped_item[ARENA_SNAPSHOT_ITEM_SLOT_COUNT];
 } ArenaHeroSnapshot;
 
 // ARENA_SNAPSHOT_MAX_HEROES must match packages/simulation/arena_game.h's

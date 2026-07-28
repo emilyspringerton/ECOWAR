@@ -305,6 +305,14 @@ static void server_broadcast(void) {
         msg.heroes[i].r_cooldown_ms = (uint16_t)(h->r_cooldown_ms > 0 ? h->r_cooldown_ms : 0);
         msg.heroes[i].mp = (uint8_t)(h->mp > 0 ? h->mp : 0);
         msg.heroes[i].attack_target = (int8_t)h->attack_target; /* S170-162 */
+        msg.heroes[i].flow = (uint16_t)(h->flow > 0 ? h->flow : 0); /* S170-175 */
+        msg.heroes[i].flow_earned = (uint16_t)h->flow_earned;
+        msg.heroes[i].xp = (uint16_t)h->xp;
+        msg.heroes[i].kills = (uint8_t)h->kills;
+        msg.heroes[i].deaths = (uint8_t)h->deaths;
+        for (int s = 0; s < ARENA_SNAPSHOT_ITEM_SLOT_COUNT; s++) {
+            msg.heroes[i].equipped_item[s] = (int8_t)h->equipped_item[s];
+        }
         msg.picked[i] = (uint8_t)hero_picked[i];
     }
     msg.winner = (uint8_t)arena_state.winner;
@@ -473,6 +481,17 @@ static void server_handle_packet(struct sockaddr_in *sender, char *buffer, int s
         if (size < (int)(sizeof(NetHeader) + sizeof(ArenaAttackCmd))) return;
         ArenaAttackCmd *cmd = (ArenaAttackCmd *)(buffer + sizeof(NetHeader));
         arena_set_attack_target(client_id, cmd->target_owner);
+    } else if (head->type == PACKET_ARENA_SHOP_BUY) {
+        if (size < (int)(sizeof(NetHeader) + sizeof(ArenaShopBuyCmd))) return;
+        ArenaShopBuyCmd *cmd = (ArenaShopBuyCmd *)(buffer + sizeof(NetHeader));
+        /* arena_shop_buy itself validates range/proximity/Flow -- the
+           server just forwards the sending client's own owner slot, same
+           trust model as every other Arena*Cmd handler above. */
+        arena_shop_buy(client_id, cmd->item_id);
+    } else if (head->type == PACKET_ARENA_SHOP_SELL) {
+        if (size < (int)(sizeof(NetHeader) + sizeof(ArenaShopSellCmd))) return;
+        ArenaShopSellCmd *cmd = (ArenaShopSellCmd *)(buffer + sizeof(NetHeader));
+        arena_shop_sell(client_id, (ArenaItemSlot)cmd->slot);
     }
 }
 
