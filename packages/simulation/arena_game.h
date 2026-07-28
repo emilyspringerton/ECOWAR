@@ -91,12 +91,27 @@ typedef enum {
 } ArenaCreepFlavor;
 #define ARENA_MAX_CREEPS ARENA_NODE_COUNT /* one creep per node, index-matched */
 #define ARENA_CREEP_NEUTRAL_HP              80
-#define ARENA_CREEP_TEAM_HP                 40
+#define ARENA_CREEP_TEAM_HP                 26 /* S170-161, founder: "tone down the strength of the team creeps just a bit they are so strong" -- was 40. Neutral untouched (still the rare, deliberately-tanky contested prize). */
 #define ARENA_CREEP_NEUTRAL_RESPAWN_MS       30000 /* the rare prize -- slow cadence */
 #define ARENA_CREEP_TEAM_RESPAWN_MS          12000 /* home-turf resupply -- fast cadence, rewards holding ground */
 #define ARENA_CREEP_AGGRO_RADIUS             4.0f  /* passive-until-approached, same spirit as GFD's Rabbit */
-#define ARENA_CREEP_DAMAGE                   6
+#define ARENA_CREEP_NEUTRAL_DAMAGE           6
+#define ARENA_CREEP_TEAM_DAMAGE              4 /* S170-161: same "tone down team creeps" pass as ARENA_CREEP_TEAM_HP above -- split out from the old single ARENA_CREEP_DAMAGE so neutral stays untouched */
 #define ARENA_CREEP_ATTACK_COOLDOWN_MS       1500
+/* ARENA_CREEP_MARCH_SPEED (S170-161), founder: "have the team creeps spawn and fan out from
+ * owned nodes marching towards unowned nodes." A team-flavored creep is no longer a stationary
+ * camp -- it continuously walks toward whichever node its own team doesn't currently own
+ * (nearest one, recomputed live every tick so it reacts to ownership changing mid-march),
+ * starting from its team's own graveyard rather than the node it's nominally attached to
+ * (founder: "initially they spawn from the graveyards behind the nodes not the center"). Each
+ * owned node's creep picks its own nearest target independently -- no coordination between
+ * creeps needed for the aggregate effect to read as a real fan-out across the map. Slower than
+ * ARENA_LANE_CREEP_SPEED (2.5) -- these are still meant to feel like a home-turf presence
+ * projecting outward, not a lane-pushing wave. Idles in place once its own team owns every
+ * node (nothing left to march toward). Neutral creeps are unaffected -- no home team to push
+ * outward from, they stay put at their own node exactly as before. */
+#define ARENA_CREEP_MARCH_SPEED              1.5f
+#define ARENA_CREEP_MARCH_STOP_EPSILON       0.5f
 #define ARENA_CREEP_NEUTRAL_KILL_CAPTURE_BONUS_MS 5000 /* big swing for winning the contested prize */
 #define ARENA_CREEP_TEAM_KILL_HEAL                20   /* home-turf resupply, owning team only */
 #define ARENA_CREEP_TEAM_KILL_DENY_CAPTURE_BONUS_MS 1500 /* counter-play: farming an enemy's own jungle creep helps flip their node */

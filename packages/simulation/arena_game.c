@@ -836,13 +836,26 @@ void arena_tick_projectiles(unsigned int dt_ms) {
 }
 
 /* creep_spawn: (re)rolls flavor/HP from the creep's own node's CURRENT
- * owner and places it at the node's position -- the "jungle reacts to who
- * controls the ground under it" half of S170-51's design. */
+ * owner -- the "jungle reacts to who controls the ground under it" half of
+ * S170-51's design. Spawn POSITION (S170-161, founder: "initially they
+ * spawn from the graveyards behind the nodes not the center") now depends
+ * on that same flavor: a NEUTRAL/contested creep still spawns at its own
+ * node's position, unchanged -- it has no team, nowhere else to come from.
+ * A team-flavored creep instead spawns at its owning team's graveyard
+ * (arena_graveyard_position) and marches out from there (see
+ * arena_tick_creeps' march step below) -- the actual "spawn and fan out
+ * from owned nodes" behavior, since a creep that always sat exactly on
+ * the node it belongs to had nowhere to fan out FROM. */
 static void creep_spawn(ArenaCreep *creep, const ArenaNode *node) {
     creep->flavor = (ArenaCreepFlavor)node->owner; /* owner 0/1/2 map directly onto the flavor enum */
     creep->max_hp = creep->hp = (creep->flavor == ARENA_CREEP_NEUTRAL) ? ARENA_CREEP_NEUTRAL_HP : ARENA_CREEP_TEAM_HP;
-    creep->x = node->x;
-    creep->z = node->z;
+    if (creep->flavor == ARENA_CREEP_NEUTRAL) {
+        creep->x = node->x;
+        creep->z = node->z;
+    } else {
+        int owning_team = creep->flavor - 1; /* ARENA_CREEP_TEAM0=1/TEAM1=2 -> team 0/1 */
+        arena_graveyard_position(owning_team, &creep->x, &creep->z);
+    }
     creep->alive = 1;
     creep->attack_cooldown_ms = 0;
     creep->last_attacked_by_owner = -1;
@@ -890,8 +903,47 @@ void arena_tick_creeps(unsigned int dt_ms) {
             if (!target || dist < best_dist) { target = cand; best_dist = dist; }
         }
         if (target && creep->attack_cooldown_ms <= 0) {
-            apply_damage(target, ARENA_CREEP_DAMAGE);
+            apply_damage(target, (creep->flavor == ARENA_CREEP_NEUTRAL) ? ARENA_CREEP_NEUTRAL_DAMAGE : ARENA_CREEP_TEAM_DAMAGE);
             creep->attack_cooldown_ms = ARENA_CREEP_ATTACK_COOLDOWN_MS;
+        }
+
+        /* S170-161, founder: "have the team creeps spawn and fan out from
+           owned nodes marching towards unowned nodes." A team-flavored
+           creep continuously walks toward whichever node its own team
+           doesn't currently own -- nearest one, recomputed fresh every
+           tick (not a target locked in once at spawn), so it naturally
+           redirects if that target node gets captured by its own team
+           mid-march, or if a formerly-owned node gets lost and becomes a
+           closer option instead. Each owned node's creep only ever knows
+           about its own position and the current node layout -- no
+           coordination between creeps -- but since they each independently
+           pick their OWN nearest unowned node, the aggregate effect across
+           several owned nodes reads as a real fan-out across the map.
+           Idles in place (this branch simply finds nothing and does
+           nothing) once its own team already owns every node. Neutral
+           creeps never reach this branch at all -- no team, no home to
+           push outward from, exactly the static camp they've always
+           been. */
+        if (creep->flavor != ARENA_CREEP_NEUTRAL) {
+            ArenaNode *march_target = NULL;
+            float march_best_dist = 0.0f;
+            for (int n = 0; n < ARENA_NODE_COUNT; n++) {
+                ArenaNode *candidate = &arena_state.nodes[n];
+                if (candidate->owner == (int)creep->flavor) continue; /* already owned by this creep's own team */
+                float dx = candidate->x - creep->x, dz = candidate->z - creep->z;
+                float dist = dx * dx + dz * dz;
+                if (!march_target || dist < march_best_dist) { march_target = candidate; march_best_dist = dist; }
+            }
+            if (march_target) {
+                float dx = march_target->x - creep->x, dz = march_target->z - creep->z;
+                float dist = sqrtf(dx * dx + dz * dz);
+                if (dist > ARENA_CREEP_MARCH_STOP_EPSILON) {
+                    float step = ARENA_CREEP_MARCH_SPEED * ((float)dt_ms / 1000.0f);
+                    if (step > dist) step = dist;
+                    creep->x += (dx / dist) * step;
+                    creep->z += (dz / dist) * step;
+                }
+            }
         }
     }
 }

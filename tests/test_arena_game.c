@@ -451,14 +451,20 @@ static void test_ghost_r_zone_damages_enemy_jungle_creep(void) {
     arena_init_teams();
     for (int i = 1; i < ARENA_MAX_HEROES; i++) arena_state.heroes[i].active = 0;
     arena_state.heroes[0].hero_id = ARENA_HERO_GHOST;
-    arena_state.nodes[0].owner = 2; /* team 1's own jungle creep -- a valid target for team 0's zone */
+    /* S170-161: team creeps now spawn at their team's graveyard and march
+       toward any node their team doesn't own -- team 1 owns every node
+       here so its creep has nowhere to march, staying put at the
+       graveyard for the whole test. */
+    for (int n = 0; n < ARENA_NODE_COUNT; n++) arena_state.nodes[n].owner = 2; /* team 1 owns everything */
     arena_tick_creeps(16); /* spawn */
+    float gx, gz;
+    arena_graveyard_position(1, &gx, &gz);
     /* Within zone radius but outside melee attack range -- isolates this to
        the zone-damage path, distinct from the existing, separate
        arena_hero_attack_creeps melee mechanic (see the sibling
        "does not damage own team" test's own comment for why this matters). */
-    arena_state.heroes[0].x = arena_state.nodes[0].x + 3.0f;
-    arena_state.heroes[0].z = arena_state.nodes[0].z;
+    arena_state.heroes[0].x = gx + 3.0f;
+    arena_state.heroes[0].z = gz;
     int hp_before = arena_state.creeps[0].hp;
 
     arena_cast_r(0);
@@ -471,16 +477,20 @@ static void test_ghost_r_zone_does_not_damage_own_team_jungle_creep(void) {
     arena_init_teams();
     for (int i = 1; i < ARENA_MAX_HEROES; i++) arena_state.heroes[i].active = 0;
     arena_state.heroes[0].hero_id = ARENA_HERO_GHOST;
-    arena_state.nodes[0].owner = 1; /* team 0's OWN jungle creep -- not a valid target */
+    /* S170-161: team 0 owns everything -- its creep has nowhere to march,
+       stays at its graveyard spawn for the whole test. */
+    for (int n = 0; n < ARENA_NODE_COUNT; n++) arena_state.nodes[n].owner = 1; /* team 0 owns everything */
     arena_tick_creeps(16);
+    float gx, gz;
+    arena_graveyard_position(0, &gx, &gz);
     /* Positioned within the zone radius (ARENA_GHOST_R_RADIUS) but OUTSIDE
        melee attack range (ARENA_ATTACK_RANGE) of the creep -- isolates this
        to the zone-damage path specifically, since a hero standing directly
        on top of a jungle creep would also melee-auto-attack it via the
        existing, separate arena_hero_attack_creeps mechanic (which lets any
        hero attack any creep regardless of flavor; only the reward differs). */
-    arena_state.heroes[0].x = arena_state.nodes[0].x + 3.0f;
-    arena_state.heroes[0].z = arena_state.nodes[0].z;
+    arena_state.heroes[0].x = gx + 3.0f;
+    arena_state.heroes[0].z = gz;
     int hp_before = arena_state.creeps[0].hp;
 
     arena_cast_r(0);
@@ -511,13 +521,16 @@ static void test_pizza_aura_damages_enemy_jungle_creep(void) {
     arena_init_teams();
     for (int i = 1; i < ARENA_MAX_HEROES; i++) arena_state.heroes[i].active = 0;
     arena_state.heroes[0].hero_id = ARENA_HERO_PIZZA;
-    arena_state.nodes[0].owner = 2;
+    /* S170-161: team 1 owns everything -- its creep has nowhere to march. */
+    for (int n = 0; n < ARENA_NODE_COUNT; n++) arena_state.nodes[n].owner = 2;
     arena_tick_creeps(16);
+    float gx, gz;
+    arena_graveyard_position(1, &gx, &gz);
     /* Within the aura radius (ARENA_PIZZA_AURA_RADIUS) but outside melee
        attack range -- isolates this to the aura-damage path, distinct from
        arena_hero_attack_creeps. */
-    arena_state.heroes[0].x = arena_state.nodes[0].x + 3.0f;
-    arena_state.heroes[0].z = arena_state.nodes[0].z;
+    arena_state.heroes[0].x = gx + 3.0f;
+    arena_state.heroes[0].z = gz;
     int hp_before = arena_state.creeps[0].hp;
 
     arena_update_teams(1000); /* Pizza's aura is always-on, no cast needed */
@@ -1656,6 +1669,89 @@ static void test_creep_spawns_on_first_tick_with_flavor_from_node_owner(void) {
           "a creep on a contested node spawns as the tougher neutral flavor");
 }
 
+/* S170-161: "add jungle creeps use the redgarden dynamic creep ecosystem
+ * something simple to start" -- graveyard spawn + march/fan-out toward
+ * unowned nodes for team-flavored creeps specifically. */
+
+static void test_team_creep_spawns_at_graveyard_not_node_position(void) {
+    arena_init_teams();
+    arena_state.nodes[0].owner = 1; /* team 0's node -- creep flavor becomes TEAM0 */
+
+    arena_tick_creeps(16); /* spawn */
+
+    float gx, gz;
+    arena_graveyard_position(0, &gx, &gz);
+    CHECK(arena_state.creeps[0].x == gx && arena_state.creeps[0].z == gz,
+          "a team-flavored creep spawns at its team's graveyard, not its node's own position");
+    CHECK(arena_state.creeps[0].x != arena_state.nodes[0].x || arena_state.creeps[0].z != arena_state.nodes[0].z,
+          "the graveyard and the node are genuinely different points");
+}
+
+static void test_neutral_creep_still_spawns_at_node_position(void) {
+    arena_init_teams();
+    arena_state.nodes[0].owner = 0; /* neutral/contested -- no team, no graveyard to spawn from */
+
+    arena_tick_creeps(16);
+
+    CHECK(arena_state.creeps[0].x == arena_state.nodes[0].x && arena_state.creeps[0].z == arena_state.nodes[0].z,
+          "a NEUTRAL creep is unaffected by the graveyard-spawn change -- still spawns at its own node's position");
+}
+
+static void test_team_creep_marches_toward_nearest_unowned_node(void) {
+    arena_init_teams();
+    arena_state.nodes[0].owner = 1; /* team 0 owns only node 0 -- nodes 1..4 stay neutral/unowned */
+
+    arena_tick_creeps(16); /* spawn at the graveyard */
+    float gx, gz;
+    arena_graveyard_position(0, &gx, &gz);
+    float start_dist_sq = (arena_state.creeps[0].x - gx) * (arena_state.creeps[0].x - gx)
+                         + (arena_state.creeps[0].z - gz) * (arena_state.creeps[0].z - gz);
+    CHECK(start_dist_sq == 0.0f, "sanity: the creep starts exactly at the graveyard");
+
+    arena_tick_creeps(2000); /* two real seconds of marching */
+
+    float moved_dist_sq = (arena_state.creeps[0].x - gx) * (arena_state.creeps[0].x - gx)
+                         + (arena_state.creeps[0].z - gz) * (arena_state.creeps[0].z - gz);
+    CHECK(moved_dist_sq > 0.01f,
+          "a team-flavored creep marches away from its graveyard spawn toward an unowned node -- 'fan out' from owned nodes");
+}
+
+static void test_team_creep_idles_once_its_team_owns_every_node(void) {
+    arena_init_teams();
+    for (int n = 0; n < ARENA_NODE_COUNT; n++) arena_state.nodes[n].owner = 1; /* team 0 owns everything */
+
+    arena_tick_creeps(16); /* spawn */
+    float x_after_spawn = arena_state.creeps[0].x, z_after_spawn = arena_state.creeps[0].z;
+
+    arena_tick_creeps(5000); /* five real seconds -- plenty of time to march if it were going to */
+
+    CHECK(arena_state.creeps[0].x == x_after_spawn && arena_state.creeps[0].z == z_after_spawn,
+          "a team-flavored creep idles in place once its own team already owns every node -- nothing left to fan out into");
+}
+
+static void test_team_creep_march_redirects_when_target_node_gets_captured(void) {
+    /* The march target is recomputed live every tick, not locked in once at
+       spawn -- if the node a creep was heading toward becomes owned by its
+       own team mid-march, it should stop closing on that now-owned node
+       (there's nothing further to gain by continuing toward a point that's
+       already been resolved), matching S170-161's "recomputed live, reacts
+       to ownership changing mid-march" design. */
+    arena_init_teams();
+    arena_state.nodes[0].owner = 1; /* team 0's home node */
+    for (int n = 1; n < ARENA_NODE_COUNT; n++) arena_state.nodes[n].owner = 0; /* all others neutral/unowned */
+
+    arena_tick_creeps(16); /* spawn at the graveyard */
+    arena_tick_creeps(2000); /* march partway toward whichever unowned node is nearest */
+    float x_partway = arena_state.creeps[0].x, z_partway = arena_state.creeps[0].z;
+
+    /* Team 0 suddenly captures every remaining node -- nothing left unowned. */
+    for (int n = 0; n < ARENA_NODE_COUNT; n++) arena_state.nodes[n].owner = 1;
+    arena_tick_creeps(2000); /* the creep should now hold its ground, not keep closing on a node that's already theirs */
+
+    CHECK(arena_state.creeps[0].x == x_partway && arena_state.creeps[0].z == z_partway,
+          "a marching creep stops advancing the instant its own team ends up owning every node, mid-march");
+}
+
 static void test_creep_attacks_nearby_hero(void) {
     arena_init_teams();
     for (int i = 1; i < ARENA_MAX_HEROES; i++) arena_state.heroes[i].active = 0;
@@ -1666,7 +1762,7 @@ static void test_creep_attacks_nearby_hero(void) {
     arena_tick_creeps(16); /* spawn */
     arena_tick_creeps(ARENA_CREEP_ATTACK_COOLDOWN_MS); /* long enough for one attack */
 
-    CHECK(arena_state.heroes[0].hp == 100 - ARENA_CREEP_DAMAGE,
+    CHECK(arena_state.heroes[0].hp == 100 - ARENA_CREEP_NEUTRAL_DAMAGE,
           "a jungle creep auto-attacks a hero standing within its aggro radius");
 }
 
@@ -1694,9 +1790,14 @@ static void test_hero_does_not_attack_creep_while_an_enemy_hero_is_in_range(void
 static void test_hero_kills_creep_and_queues_correct_respawn_timer(void) {
     arena_init_teams();
     for (int i = 1; i < ARENA_MAX_HEROES; i++) arena_state.heroes[i].active = 0;
-    arena_state.heroes[0].x = arena_state.nodes[0].x;
-    arena_state.heroes[0].z = arena_state.nodes[0].z;
-    arena_state.nodes[0].owner = 1; /* team-flavored, so ARENA_CREEP_TEAM_RESPAWN_MS applies */
+    /* S170-161: team-flavored creeps spawn at their team's graveyard, not
+       the node's own position -- team 0 owns everything so it has nowhere
+       to march, staying exactly at the graveyard. */
+    for (int n = 0; n < ARENA_NODE_COUNT; n++) arena_state.nodes[n].owner = 1; /* team-flavored, so ARENA_CREEP_TEAM_RESPAWN_MS applies */
+    float gx, gz;
+    arena_graveyard_position(0, &gx, &gz);
+    arena_state.heroes[0].x = gx;
+    arena_state.heroes[0].z = gz;
 
     arena_tick_creeps(16); /* spawn */
     arena_state.creeps[0].hp = ARENA_ATTACK_DAMAGE; /* one hit from death */
@@ -1740,9 +1841,11 @@ static void test_neutral_creep_kill_grants_capture_bonus_only_while_channeling(v
 static void test_team_creep_kill_by_owning_team_heals(void) {
     arena_init_teams();
     for (int i = 1; i < ARENA_MAX_HEROES; i++) arena_state.heroes[i].active = 0;
-    arena_state.nodes[0].owner = 1; /* team 0's own node */
-    arena_state.heroes[0].x = arena_state.nodes[0].x;
-    arena_state.heroes[0].z = arena_state.nodes[0].z;
+    for (int n = 0; n < ARENA_NODE_COUNT; n++) arena_state.nodes[n].owner = 1; /* team 0 owns everything -- creep has nowhere to march */
+    float gx, gz;
+    arena_graveyard_position(0, &gx, &gz);
+    arena_state.heroes[0].x = gx;
+    arena_state.heroes[0].z = gz;
     arena_state.heroes[0].hp = 50; arena_state.heroes[0].max_hp = 100;
 
     arena_tick_creeps(16);
@@ -1762,9 +1865,14 @@ static void test_team_creep_kill_by_enemy_team_helps_flip_the_node(void) {
     arena_state.heroes[ARENA_TEAM_SIZE].active = 1;
     arena_state.heroes[ARENA_TEAM_SIZE].alive = 1;
     arena_state.heroes[1].active = 0;
-    arena_state.nodes[0].owner = 1; /* team 0's own node */
-    arena_state.heroes[ARENA_TEAM_SIZE].x = arena_state.nodes[0].x;
-    arena_state.heroes[ARENA_TEAM_SIZE].z = arena_state.nodes[0].z;
+    for (int n = 0; n < ARENA_NODE_COUNT; n++) arena_state.nodes[n].owner = 1; /* team 0 owns everything -- its creep has nowhere to march */
+    /* S170-161: node[0] still needs to be the one actually captured below
+       (capturing_team/capture_progress_ms live per-node), but the creep
+       itself now spawns at team 0's graveyard, not node[0]'s position. */
+    float gx, gz;
+    arena_graveyard_position(0, &gx, &gz);
+    arena_state.heroes[ARENA_TEAM_SIZE].x = gx;
+    arena_state.heroes[ARENA_TEAM_SIZE].z = gz;
     arena_state.heroes[ARENA_TEAM_SIZE].hp = arena_state.heroes[ARENA_TEAM_SIZE].max_hp = 100;
 
     arena_tick_creeps(16);
@@ -3531,32 +3639,48 @@ static void test_combat_timer_counts_down_to_zero(void) {
 static void test_team_creep_does_not_attack_own_owning_team(void) {
     arena_init_teams();
     for (int i = 1; i < ARENA_MAX_HEROES; i++) arena_state.heroes[i].active = 0;
-    arena_state.nodes[0].owner = 1; /* team 0's own node -- creep flavor becomes TEAM0 */
+    /* S170-161: team 0 owns everything -- its creep has nowhere to march,
+       staying at its graveyard spawn for the whole test. */
+    for (int n = 0; n < ARENA_NODE_COUNT; n++) arena_state.nodes[n].owner = 1; /* creep flavor becomes TEAM0 */
     arena_state.heroes[0].team = 0;
-    arena_state.heroes[0].x = arena_state.nodes[0].x;
-    arena_state.heroes[0].z = arena_state.nodes[0].z;
+    float gx, gz;
+    arena_graveyard_position(0, &gx, &gz);
+    arena_state.heroes[0].x = gx;
+    arena_state.heroes[0].z = gz;
     arena_state.heroes[0].hp = arena_state.heroes[0].max_hp = 100;
 
     arena_tick_creeps(16); /* spawn */
     arena_tick_creeps(ARENA_CREEP_ATTACK_COOLDOWN_MS); /* long enough for one attack, if it were going to land */
 
     CHECK(arena_state.heroes[0].hp == 100,
-          "a team-flavored creep does not attack a hero of its own owning team standing at/capturing its node");
+          "a team-flavored creep does not attack a hero of its own owning team standing at its graveyard spawn");
 }
 
 static void test_team_creep_still_attacks_opposing_team(void) {
     arena_init_teams();
     for (int i = 1; i < ARENA_MAX_HEROES; i++) arena_state.heroes[i].active = 0;
-    arena_state.nodes[0].owner = 1; /* team 0's own node -- creep flavor becomes TEAM0 */
+    for (int n = 0; n < ARENA_NODE_COUNT; n++) arena_state.nodes[n].owner = 1; /* team 0 owns everything -- creep has nowhere to march */
     arena_state.heroes[0].team = 1; /* the enemy, trying to flip it */
-    arena_state.heroes[0].x = arena_state.nodes[0].x;
-    arena_state.heroes[0].z = arena_state.nodes[0].z;
+    float gx, gz;
+    arena_graveyard_position(0, &gx, &gz);
+    arena_state.heroes[0].x = gx;
+    arena_state.heroes[0].z = gz;
     arena_state.heroes[0].hp = arena_state.heroes[0].max_hp = 100;
 
-    arena_tick_creeps(16); /* spawn */
+    arena_tick_creeps(16); /* spawn -- all 5 nodes are team 0's, so all 5 creeps spawn at the same graveyard point */
+    /* Unlike arena_hero_attack_creeps (one hero-initiated hit per tick,
+       first in-range creep wins via its own `break`), arena_tick_creeps'
+       creep-initiated attack loop has no such per-tick cap -- every alive
+       creep independently checks and can attack. With all 5 creeps
+       stacked on the same graveyard tile this tick, the hero would take
+       5x the intended single-creep hit. Isolate the one creep this test
+       actually cares about by killing the other 4 off before the attack
+       tick -- same "reduce the moving parts to what's actually being
+       tested" convention this file already uses elsewhere. */
+    for (int i = 1; i < ARENA_MAX_CREEPS; i++) { arena_state.creeps[i].alive = 0; arena_state.creeps[i].respawn_ms_remaining = ARENA_CREEP_TEAM_RESPAWN_MS * 10; }
     arena_tick_creeps(ARENA_CREEP_ATTACK_COOLDOWN_MS);
 
-    CHECK(arena_state.heroes[0].hp == 100 - ARENA_CREEP_DAMAGE,
+    CHECK(arena_state.heroes[0].hp == 100 - ARENA_CREEP_TEAM_DAMAGE,
           "a team-flavored creep still attacks the OPPOSING team -- the real counter-play, unchanged");
 }
 
@@ -3572,7 +3696,7 @@ static void test_neutral_creep_still_attacks_anyone(void) {
     arena_tick_creeps(16); /* spawn */
     arena_tick_creeps(ARENA_CREEP_ATTACK_COOLDOWN_MS);
 
-    CHECK(arena_state.heroes[0].hp == 100 - ARENA_CREEP_DAMAGE,
+    CHECK(arena_state.heroes[0].hp == 100 - ARENA_CREEP_NEUTRAL_DAMAGE,
           "a NEUTRAL/contested creep still attacks anyone regardless of team -- the real 'fight through the prize' challenge, unchanged");
 }
 
@@ -3674,6 +3798,11 @@ int main(void) {
     test_courier_r_drains_life_from_nearest_enemy();
     test_courier_r_out_of_range_whiffs();
     test_creep_spawns_on_first_tick_with_flavor_from_node_owner();
+    test_team_creep_spawns_at_graveyard_not_node_position();
+    test_neutral_creep_still_spawns_at_node_position();
+    test_team_creep_marches_toward_nearest_unowned_node();
+    test_team_creep_idles_once_its_team_owns_every_node();
+    test_team_creep_march_redirects_when_target_node_gets_captured();
     test_creep_attacks_nearby_hero();
     test_hero_does_not_attack_creep_while_an_enemy_hero_is_in_range();
     test_hero_kills_creep_and_queues_correct_respawn_timer();
