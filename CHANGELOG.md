@@ -2,6 +2,21 @@
 
 ## 2026-07-28 (continued)
 
+- feat(arena): boids flocking (alignment/cohesion/separation) in the networked bot AI
+  (S170-160). Founder: "add boyds to the ai brain[,] check GFD apps2 crystal for a reference if
+  you need it" — GoblinFoxDragon/apps2/crystal/main.go's own working Reynolds boids
+  implementation (`Boid` struct, `boidForces()`) used as the structural reference, ported to
+  `apps/arena_bot`'s plain-float style and to hero positions. Every bot previously picked its
+  own move target completely independently (chase nearest enemy or capture nearest un-owned
+  node); new `flock_offset()` adds a small steering perturbation from nearby living teammates
+  only — alignment (toward their average recent heading, inferred from this tick vs the
+  previous snapshot since the wire format carries position only), cohesion (toward their average
+  position), separation (push away from anyone actually crowding) — layered on top of, not
+  replacing, the real objective-seeking target. Weights are separation-heavy so this reinforces
+  rather than reintroduces the "bots bunch up" bug S170-90 already fixed separately. Live-
+  verified via an isolated 20-bot match: no crashes, teammates visibly clustering as loose
+  squads. Full suite green (bot-client-only, no sim/protocol changes).
+
 - fix(arena): resource-race bar color was absolute, not viewer-relative (S170-159). Founder,
   real-time, live: "check the win cons i think it shows the wrong team winning" -> "i think the
   color of the bar ticking up may just be wrong." Verified the win-condition logic itself first,
