@@ -1613,15 +1613,25 @@ actual next buildable step once someone picks this up -- it slots directly in fr
 E's own already-specced Milestone 7, not after it, and needs nothing from §18.5/Tier 2 to be
 useful on its own.
 
-## 19. Gold/XP economy + structures (2026-07-28, S170-174) -- spec only, no code yet
+## 19. Gold/XP economy + structures (2026-07-28, S170-174)
+
+**Status update (2026-07-28, S170-175/180-188): the economy half of this spec is built and
+shipped.** Renamed Flow (not gold, founder real-time correction, caught before any code shipped
+under the old name) -- per-hero currency + XP, sourced from kills exactly as §19.2 below
+specced, spent in a real two-shop item system (§19.3, generic/weird/specific tiers, 11-slot
+FFXI+WoW equip system), with a character stat pane and shop panel affordance, bot AI shop
+interaction, and hero-kill assists (§19.2's own "fed by kills" extended to whoever contributed,
+not just the killing blow, S170-187) all live. Full sprint history: `EMILY/BACKLOG.md` S170-175
+(sprints 1-5) and S170-187. **§19.5 (structures) is still spec only, no code yet** -- the
+"push payoff" gap it names is still real and still open; nothing below has changed that half.
 
 Founder, real-time: **"continue the backlog for redgarden."** Picks up the earlier sprint plan's
 own items 4 and 5, both explicitly flagged as needing "a real design pass of its own before any
 single feature... gets built against a placeholder" -- named separately there but designed together
 here on purpose: item 5's own text already says structures are "the actual 'push' payoff lane creep
 waves are currently missing," and a payoff needs something to pay out *into*, which is exactly what
-item 4's gold economy is. Same "spec only, no code yet" treatment as §15-§18 -- this pins down the
-shape before either gets built.
+item 4's gold economy is. Same "spec only, no code yet" treatment as §15-§18 -- this pinned down the
+shape before either got built; item 4 (gold/Flow) now has, item 5 (structures) still doesn't.
 
 ### 19.1 A real conflict this design has to resolve first
 
@@ -1706,7 +1716,7 @@ choose a build path via level-up screen." A real ability-point system is a legit
 expansion once this simpler shape is live and proven fun, not a prerequisite for shipping *an*
 economy at all.
 
-### 19.5 Structures: single-lane, matching the map this actually is
+### 19.5 Structures: single-lane, matching the map this actually is -- still spec only, no code yet
 
 REDGARDEN's map is Arathi-Basin-shaped -- open field, 5 nodes, **no 3-lane structure** the way a
 classic MOBA base has. Lane creep waves (S170-139) already march a single lane: each team's own
