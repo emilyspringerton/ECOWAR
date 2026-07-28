@@ -42,6 +42,20 @@ static inline Mat4 mat4_scale(float sx, float sy, float sz) {
     return r;
 }
 
+/* mat4_rotate_y (S170-171, founder: "heroes and creeps should rotate to show
+ * what direction they are facing currently they just float around there is
+ * no front of the model"): rotation about the vertical (Y) axis by angle_rad
+ * -- the only rotation this renderer has ever needed a real front to face.
+ * Right-handed, matching this file's existing column-major/OpenGL
+ * convention (same layout mat4_translate/mat4_scale already use). */
+static inline Mat4 mat4_rotate_y(float angle_rad) {
+    Mat4 r = mat4_identity();
+    float c = cosf(angle_rad), s = sinf(angle_rad);
+    r.m[0] = c;  r.m[2] = -s;
+    r.m[8] = s;  r.m[10] = c;
+    return r;
+}
+
 static inline Mat4 mat4_perspective(float fov_deg, float aspect, float znear, float zfar) {
     Mat4 r = {0};
     float f = 1.0f / tanf(fov_deg * 0.5f * (float)M_PI / 180.0f);

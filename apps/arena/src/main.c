@@ -853,18 +853,41 @@ static void draw_mesh(const Mesh *m) {
  * floor or floating above it. X/Z get the inverse relationship (a squashed hero reads wider,
  * a stretched one reads thinner) for a cheap volume-preserving cartoon feel, not physically
  * exact but the "charming" part of squash-and-stretch was never about being exact. */
-static void draw_hero_box(float hero_x, float hero_z, float dx, float dy, float dz,
-                           float sx, float sy, float sz, float squish, const Mat4 *vp,
-                           GLint loc_mvp, GLint loc_model, const Mesh *cube_mesh) {
+/* draw_hero_box_facing (S170-171): see hero_facing_rad's own doc comment.
+ * dx/dy/dz are still hero-LOCAL offsets (unchanged meaning from
+ * draw_hero_box below), now rotated by facing_rad about the hero's own
+ * origin before translating out to hero_x/hero_z in world space -- a
+ * silhouette's asymmetric pieces (a horn, a bill, a front nub) sweep
+ * around together as one rigid shape instead of staying frozen pointing
+ * at a fixed +Z regardless of which way the hero's actually walking.
+ * squish is still applied in hero-local space first (unchanged behavior
+ * from draw_hero_box), so a squashed/stretched hero still rotates as
+ * itself, not stretched along the world axes. facing_rad=0.0f is
+ * identical to the old draw_hero_box behavior exactly (mat4_rotate_y(0)
+ * is the identity), so draw_hero_box below keeps every existing call site
+ * working unchanged via a thin wrapper. */
+static void draw_hero_box_facing(float hero_x, float hero_z, float facing_rad, float dx, float dy, float dz,
+                                  float sx, float sy, float sz, float squish, const Mat4 *vp,
+                                  GLint loc_mvp, GLint loc_model, const Mesh *cube_mesh) {
     float squish_xz = 2.0f - squish;
     if (squish_xz < 0.4f) squish_xz = 0.4f;
-    Mat4 t = mat4_translate(hero_x + dx * squish_xz, dy * squish, hero_z + dz * squish_xz);
-    Mat4 s = mat4_scale(sx * squish_xz, sy * squish, sz * squish_xz);
-    Mat4 model = mat4_multiply(&t, &s);
+    Mat4 local_t = mat4_translate(dx * squish_xz, dy * squish, dz * squish_xz);
+    Mat4 local_s = mat4_scale(sx * squish_xz, sy * squish, sz * squish_xz);
+    Mat4 local = mat4_multiply(&local_t, &local_s);
+    Mat4 world_t = mat4_translate(hero_x, 0.0f, hero_z);
+    Mat4 rot = mat4_rotate_y(facing_rad);
+    Mat4 world = mat4_multiply(&world_t, &rot);
+    Mat4 model = mat4_multiply(&world, &local);
     Mat4 mvp = mat4_multiply(vp, &model);
     glUniformMatrix4fv_(loc_mvp, 1, GL_FALSE, mvp.m);
     glUniformMatrix4fv_(loc_model, 1, GL_FALSE, model.m);
     draw_mesh(cube_mesh);
+}
+
+static void draw_hero_box(float hero_x, float hero_z, float dx, float dy, float dz,
+                           float sx, float sy, float sz, float squish, const Mat4 *vp,
+                           GLint loc_mvp, GLint loc_model, const Mesh *cube_mesh) {
+    draw_hero_box_facing(hero_x, hero_z, 0.0f, dx, dy, dz, sx, sy, sz, squish, vp, loc_mvp, loc_model, cube_mesh);
 }
 
 /* S170-118 -- real per-hero silhouette instead of one generic cube for all 18.
@@ -873,12 +896,18 @@ static void draw_hero_box(float hero_x, float hero_z, float dx, float dy, float 
    never overridden by per-hero identity; only SHAPE encodes which hero this is.
    Reuses the silhouette concepts already designed for the 7 SHANKPIT skins
    (apps/lobby/src/main.c draw_player_skin_*) where a hero overlaps one, expressed
-   here as axis-aligned draw_mesh() boxes since this renderer has no mat4_rotate
-   and SHANKPIT's immediate-mode glPushMatrix/glRotatef code can't port verbatim. */
-static void draw_hero_model(ArenaHeroID hero_id, float hero_x, float hero_z, float squish, const Mat4 *vp,
+   here as axis-aligned draw_mesh() boxes -- originally couldn't rotate to
+   face movement direction at all (this renderer had no mat4_rotate and
+   SHANKPIT's immediate-mode glPushMatrix/glRotatef code can't port
+   verbatim); mat4_rotate_y (S170-171) closed that gap, so every box below
+   now rotates together as one rigid silhouette via facing_rad instead of
+   staying frozen pointing at a fixed +Z regardless of which way the hero's
+   actually walking -- see hero_facing_rad's own doc comment for how
+   facing_rad itself gets computed. */
+static void draw_hero_model(ArenaHeroID hero_id, float hero_x, float hero_z, float facing_rad, float squish, const Mat4 *vp,
                              GLint loc_mvp, GLint loc_model, const Mesh *cube_mesh) {
 #define BOX(dx, dy, dz, sx, sy, sz) \
-    draw_hero_box(hero_x, hero_z, dx, dy, dz, sx, sy, sz, squish, vp, loc_mvp, loc_model, cube_mesh)
+    draw_hero_box_facing(hero_x, hero_z, facing_rad, dx, dy, dz, sx, sy, sz, squish, vp, loc_mvp, loc_model, cube_mesh)
     switch (hero_id) {
         case ARENA_HERO_UNICORN: /* SHANKPIT SKIN_UNICORN: body + tapered horn */
             BOX(0.0f, 0.55f, 0.0f, 0.85f, 1.1f, 0.85f);
@@ -1354,6 +1383,60 @@ static void spawn_attack_flash(float x, float z) {
 static float squish_age_ms[ARENA_MAX_HEROES];
 static int prev_hero_moving[ARENA_MAX_HEROES];
 static int prev_hero_moving_valid[ARENA_MAX_HEROES];
+
+/* hero_facing_rad/prev_hero_x/prev_hero_z (S170-171, founder: "heroes and
+ * creeps should rotate to show what direction they are facing currently
+ * they just float around there is no front of the model"): facing is
+ * derived purely from observed motion -- how far a hero's own position
+ * moved since last frame -- rather than needing target_x/target_z wired
+ * over the wire (net_mode's ArenaHeroSnapshot never carried a remote
+ * hero's move destination, only its current x/z, and adding that would be
+ * a wire-protocol change this doesn't need). Persists the last known
+ * facing when a hero is stationary (fighting in place, dead-stopped at its
+ * target) rather than snapping to some default -- a hero that just
+ * stopped should still visibly be looking at whatever it was walking
+ * toward, not spinning back to face +Z. */
+static float hero_facing_rad[ARENA_MAX_HEROES];
+static float prev_hero_facing_x[ARENA_MAX_HEROES];
+static float prev_hero_facing_z[ARENA_MAX_HEROES];
+static int prev_hero_facing_valid[ARENA_MAX_HEROES];
+#define ARENA_FACING_MOVE_EPSILON 0.01f /* ignore sub-pixel jitter, only turn to face real movement */
+
+/* Same facing-from-motion idiom as heroes above, applied to jungle/lane
+ * creeps too (S170-171: "heroes AND creeps should rotate"). Both creep
+ * pools are entirely client-computed already (jungle creeps march now,
+ * S170-161; lane creeps always have) -- no wire changes needed, same
+ * "derive from observed position deltas" trick, just indexed by creep
+ * slot instead of hero owner. */
+static float creep_facing_rad[ARENA_MAX_CREEPS];
+static float prev_creep_facing_x[ARENA_MAX_CREEPS];
+static float prev_creep_facing_z[ARENA_MAX_CREEPS];
+static int prev_creep_facing_valid[ARENA_MAX_CREEPS];
+
+static float lane_creep_facing_rad[ARENA_MAX_LANE_CREEPS];
+static float prev_lane_creep_facing_x[ARENA_MAX_LANE_CREEPS];
+static float prev_lane_creep_facing_z[ARENA_MAX_LANE_CREEPS];
+static int prev_lane_creep_facing_valid[ARENA_MAX_LANE_CREEPS];
+
+/* update_facing_from_motion: shared helper -- if the entity moved more
+ * than ARENA_FACING_MOVE_EPSILON since the position stored in *prev_x/*prev_z,
+ * updates *facing to the new movement direction; otherwise leaves *facing
+ * untouched (holds the last real heading through a stop, doesn't snap to
+ * a default). Always refreshes *prev_x/*prev_z to the current position for
+ * next frame's comparison. */
+static void update_facing_from_motion(float cur_x, float cur_z, float *prev_x, float *prev_z,
+                                       int *valid, float *facing) {
+    if (*valid) {
+        float mdx = cur_x - *prev_x;
+        float mdz = cur_z - *prev_z;
+        if (mdx * mdx + mdz * mdz > ARENA_FACING_MOVE_EPSILON * ARENA_FACING_MOVE_EPSILON) {
+            *facing = atan2f(mdx, mdz);
+        }
+    }
+    *prev_x = cur_x;
+    *prev_z = cur_z;
+    *valid = 1;
+}
 
 static void trigger_squish(int owner) {
     if (owner < 0 || owner >= ARENA_MAX_HEROES) return;
@@ -2001,8 +2084,13 @@ int main(int argc, char *argv[]) {
             if (!h->active || !h->alive) {
                 prev_hero_hp_valid[i] = 0;
                 prev_hero_moving_valid[i] = 0;
+                prev_hero_facing_valid[i] = 0;
                 continue;
             }
+            /* S170-171: update facing from observed movement this frame,
+               before anything below reads hero_facing_rad[i] for drawing. */
+            update_facing_from_motion(h->x, h->z, &prev_hero_facing_x[i], &prev_hero_facing_z[i],
+                                       &prev_hero_facing_valid[i], &hero_facing_rad[i]);
             /* Movement-start squish (S170-128, "for movement also spell casts"):
                same transition-detection idiom as the HP-delta check just below,
                fired once per departure, not every frame spent moving. */
@@ -2043,6 +2131,7 @@ int main(int argc, char *argv[]) {
             ArenaCreep *cr = &arena_state.creeps[i];
             if (!cr->alive) {
                 prev_creep_hp_valid[i] = 0;
+                prev_creep_facing_valid[i] = 0;
                 continue;
             }
             if (prev_creep_hp_valid[i] && cr->hp < prev_creep_hp[i]) {
@@ -2050,11 +2139,14 @@ int main(int argc, char *argv[]) {
             }
             prev_creep_hp[i] = cr->hp;
             prev_creep_hp_valid[i] = 1;
+            update_facing_from_motion(cr->x, cr->z, &prev_creep_facing_x[i], &prev_creep_facing_z[i],
+                                       &prev_creep_facing_valid[i], &creep_facing_rad[i]);
         }
         for (int i = 0; i < ARENA_MAX_LANE_CREEPS; i++) {
             ArenaLaneCreep *lc = &arena_state.lane_creeps[i];
             if (!lc->active || !lc->alive) {
                 prev_lane_creep_hp_valid[i] = 0;
+                prev_lane_creep_facing_valid[i] = 0;
                 continue;
             }
             if (prev_lane_creep_hp_valid[i] && lc->hp < prev_lane_creep_hp[i]) {
@@ -2062,6 +2154,8 @@ int main(int argc, char *argv[]) {
             }
             prev_lane_creep_hp[i] = lc->hp;
             prev_lane_creep_hp_valid[i] = 1;
+            update_facing_from_motion(lc->x, lc->z, &prev_lane_creep_facing_x[i], &prev_lane_creep_facing_z[i],
+                                       &prev_lane_creep_facing_valid[i], &lane_creep_facing_rad[i]);
         }
         for (int i = 0; i < MAX_ATTACK_FLASHES; i++) {
             if (!attack_flashes[i].active) continue;
@@ -2235,7 +2329,7 @@ int main(int argc, char *argv[]) {
             }
             /* S170-118: per-hero_id silhouette (multi-box), not one generic cube --
                relationship color above still wins for self/team/enemy legibility. */
-            draw_hero_model(h->hero_id, h->x, h->z, compute_squish(i), &vp, loc_mvp, loc_model, &cube_mesh);
+            draw_hero_model(h->hero_id, h->x, h->z, hero_facing_rad[i], compute_squish(i), &vp, loc_mvp, loc_model, &cube_mesh);
             if (is_intangible) {
                 glDepthMask(GL_TRUE);
                 glDisable(GL_BLEND);
@@ -2258,18 +2352,24 @@ int main(int argc, char *argv[]) {
         for (int i = 0; i < ARENA_MAX_CREEPS; i++) {
             ArenaCreep *cr = &arena_state.creeps[i];
             if (!cr->alive) continue;
+            float cr_r, cr_g, cr_b;
             switch (cr->flavor) {
-                case ARENA_CREEP_TEAM0: glUniform4f_(loc_color, 0.15f, 0.35f, 0.95f, 1.0f); break;
-                case ARENA_CREEP_TEAM1: glUniform4f_(loc_color, 0.95f, 0.25f, 0.15f, 1.0f); break;
-                default: glUniform4f_(loc_color, 0.85f, 0.7f, 0.1f, 1.0f); break; /* neutral -- matches node coloring */
+                case ARENA_CREEP_TEAM0: cr_r = 0.15f; cr_g = 0.35f; cr_b = 0.95f; break;
+                case ARENA_CREEP_TEAM1: cr_r = 0.95f; cr_g = 0.25f; cr_b = 0.15f; break;
+                default: cr_r = 0.85f; cr_g = 0.7f; cr_b = 0.1f; break; /* neutral -- matches node coloring */
             }
-            Mat4 t = mat4_translate(cr->x, 0.45f, cr->z);
-            Mat4 s = mat4_scale(0.75f, 0.75f, 0.75f);
-            Mat4 model = mat4_multiply(&t, &s);
-            Mat4 mvp = mat4_multiply(&vp, &model);
-            glUniformMatrix4fv_(loc_mvp, 1, GL_FALSE, mvp.m);
-            glUniformMatrix4fv_(loc_model, 1, GL_FALSE, model.m);
-            draw_mesh(&cube_mesh);
+            /* S170-171: body + a small forward-facing nub, same asymmetric-
+               silhouette idiom as hero models -- a plain cube reads
+               identically from every angle, so rotating it toward its
+               march direction (S170-161's team creeps genuinely march now)
+               would have been invisible without something off-center to
+               actually show the turn. */
+            glUniform4f_(loc_color, cr_r, cr_g, cr_b, 1.0f);
+            draw_hero_box_facing(cr->x, cr->z, creep_facing_rad[i], 0.0f, 0.45f, 0.0f, 0.75f, 0.75f, 0.75f, 1.0f,
+                                  &vp, loc_mvp, loc_model, &cube_mesh);
+            glUniform4f_(loc_color, cr_r * 0.6f, cr_g * 0.6f, cr_b * 0.6f, 1.0f); /* darker nub, same hue -- reads as a "front," not a second creep */
+            draw_hero_box_facing(cr->x, cr->z, creep_facing_rad[i], 0.0f, 0.45f, 0.5f, 0.22f, 0.22f, 0.22f, 1.0f,
+                                  &vp, loc_mvp, loc_model, &cube_mesh);
         }
 
         /* Lane creeps (S170-138): only ever populated client-side in the
@@ -2285,18 +2385,22 @@ int main(int argc, char *argv[]) {
         for (int i = 0; i < ARENA_MAX_LANE_CREEPS; i++) {
             ArenaLaneCreep *lc = &arena_state.lane_creeps[i];
             if (!lc->active || !lc->alive) continue;
+            float lc_r, lc_g, lc_b;
             if (lc->team == arena_state.heroes[my_owner].team) {
-                glUniform4f_(loc_color, 0.15f, 0.35f, 0.95f, 1.0f); /* friendly wave: blue */
+                lc_r = 0.15f; lc_g = 0.35f; lc_b = 0.95f; /* friendly wave: blue */
             } else {
-                glUniform4f_(loc_color, 0.95f, 0.25f, 0.15f, 1.0f); /* enemy wave: red */
+                lc_r = 0.95f; lc_g = 0.25f; lc_b = 0.15f; /* enemy wave: red */
             }
-            Mat4 t = mat4_translate(lc->x, 0.35f, lc->z);
-            Mat4 s = mat4_scale(0.55f, 0.55f, 0.55f);
-            Mat4 model = mat4_multiply(&t, &s);
-            Mat4 mvp = mat4_multiply(&vp, &model);
-            glUniformMatrix4fv_(loc_mvp, 1, GL_FALSE, mvp.m);
-            glUniformMatrix4fv_(loc_model, 1, GL_FALSE, model.m);
-            draw_mesh(&cube_mesh);
+            /* S170-171: same body + forward-nub idiom as jungle creeps above
+               -- a lane creep marching its waypoint route (arena_game.c's
+               lane_creep_waypoint) now visibly faces the way it's actually
+               walking instead of floating along sideways. */
+            glUniform4f_(loc_color, lc_r, lc_g, lc_b, 1.0f);
+            draw_hero_box_facing(lc->x, lc->z, lane_creep_facing_rad[i], 0.0f, 0.35f, 0.0f, 0.55f, 0.55f, 0.55f, 1.0f,
+                                  &vp, loc_mvp, loc_model, &cube_mesh);
+            glUniform4f_(loc_color, lc_r * 0.6f, lc_g * 0.6f, lc_b * 0.6f, 1.0f);
+            draw_hero_box_facing(lc->x, lc->z, lane_creep_facing_rad[i], 0.0f, 0.35f, 0.35f, 0.16f, 0.16f, 0.16f, 1.0f,
+                                  &vp, loc_mvp, loc_model, &cube_mesh);
         }
 
         /* projectiles (S170-136): the first travelling skill-shot in this
