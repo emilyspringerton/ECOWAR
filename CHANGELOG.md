@@ -1,5 +1,30 @@
 # Changelog
 
+## 2026-07-28 (continued 8)
+
+- feat(arena): Gary W -> Aimed Shot, a real cast-time ability (S170-203). Founder: "switch gary w
+  to aimed shot just like wow hunter cast time big damage for now movement interrupts cast damage
+  does not interrupt cast silence does" -> "ensure cast bar affordance shown to user." Gary's W
+  was a free toggle extending Q's own range; it's now a real WoW Hunter-style cast-time nuke on
+  its own cooldown. New generic cast-time infrastructure on `ArenaHero` (`casting_slot`/
+  `cast_time_remaining_ms`/`cast_total_ms`/`cast_anchor_x,z`/`cast_target`) -- Aimed Shot is the
+  first ability to use it, not the only one this is meant to support later. Needs a hittable foe
+  in range to even begin (no target = no-op, no cost spent). Movement interrupts: live position
+  checked every tick against where the cast began -- a fresh move command OR a forced
+  displacement both catch uniformly via one position check. Silence interrupts, checked right
+  after `silenced_ms` ticks down each frame. Damage does NOT interrupt -- no HP/combat-timer
+  check anywhere in the logic, deliberately. Target re-validated only at completion, not
+  continuously -- stepping out of range mid-cast without the caster moving still costs the cast.
+  `casting_slot`/`cast_time_remaining_ms`/`cast_total_ms` synced on the wire and rendered as a
+  real progress bar under every casting hero's health bar, visible to everyone watching, not just
+  the caster. Ability tile highlights while mid-cast too. `gary_cast_q`, the toggle-hero list/
+  ability name/blurb, the internal bot AI's Gary heuristic, and `docs/HEROES_VS0.md` all updated
+  to match. 6 new tests (cast begins/no-op/completes/movement-interrupts/damage-does-not/
+  silence-interrupts), build clean, full suite green (613/613). Live-verified: GUI client ran 6s
+  under Xvfb with the new render code active, no crash. The external networked bot AI never casts
+  W at all (pre-existing, unrelated) so live-match verification of the mechanic is
+  unit-test-covered rather than bot-observed this pass — flagged, not faked.
+
 ## 2026-07-28 (continued 7)
 
 - feat(arena): bot node-capture fix + fractal-boids squad splitting (S170-201, S170-202).
