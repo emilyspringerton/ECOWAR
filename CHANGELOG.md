@@ -2,6 +2,21 @@
 
 ## 2026-07-28 (continued)
 
+- feat(arena): map widened + corner graveyards; fix: sudden-death fallback closes a real
+  zombie-match gap (S170-155/156/157). Founder, real-time: "the map should be a little bigger
+  and the graveyards behind 2 of the corners not in the middle of the map." `ARENA_HALF_EXTENT`
+  28->32; `arena_graveyard_position()` moved from dead-center-behind-spawn (x=+-9, z=0) to the
+  two map corners the fountains don't already occupy, so respawning reads as coming back to a
+  real corner base instead of a mid-line marker. Separately, founder flagged a suspicion ("i
+  think there may be zombie games with infinite win cons") that turned out to be a real gap:
+  removing the team-wipe win condition for S170-153's resource race also removed the only
+  mechanism that guaranteed a live match eventually ends, and `apps/arena_server`'s LIVE-phase
+  loop had no timeout of its own at all. Added a sudden-death fallback -- after
+  `ARENA_MATCH_MAX_DURATION_MS` (12 real minutes) without either team reaching the resource
+  cap, whoever's ahead on resources wins outright, tiebroken by nodes currently owned. 4 new
+  tests. Live-verified via an isolated 20-bot match confirming the wider map bounds show up in
+  real hero movement. Full suite green.
+
 - feat(arena): permanent graveyards, Arathi-Basin resource-race win condition, and 30-second
   wave respawns (S170-153/154). Founder, real-time: "add graveyards behind the spawns that
   never despawn so there is always a place to respawn and add true arathi basin node control
