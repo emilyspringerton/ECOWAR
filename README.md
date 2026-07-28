@@ -25,15 +25,6 @@ lobby (`docs/HEROES_VS0.md` documents every hero's kit if you want to know what 
 play before the match starts). Team matches are **10v10** (`ARENA_TEAM_SIZE`, S170-183 —
 briefly 7v7 under S170-178, reverted).
 
-### Fog of war (NORTHSTAR §15.2)
-
-Enemy heroes outside a fixed radius of your own hero simply don't render — no model, no health
-bar, no name, and you can't hover or click-target them. Allies and jungle creeps are always
-visible. This is a **client-side visual pass only**, not real server-side vision culling — the
-server still sends every hero's position to every client every tick, this only changes what the
-stock client chooses to draw. There's no minimap, so fog only ever hides/reveals the main 3D
-view.
-
 ### Flow, XP, and the item shop (S170-175)
 
 Every hero earns two currencies from kills — jungle creeps, lane creeps, and enemy heroes, melee

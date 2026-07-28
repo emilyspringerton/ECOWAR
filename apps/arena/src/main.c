@@ -2629,19 +2629,6 @@ int main(int argc, char *argv[]) {
         for (int i = 0; i < ARENA_MAX_HEROES; i++) {
             ArenaHero *h = &arena_state.heroes[i];
             if (!h->alive) continue;
-            /* Fog of war (NORTHSTAR §15.2, client-side-visual-only first pass, explicitly not
-               real server-side vision culling -- a modified client could still see everything,
-               named and accepted in the spec, not hidden). Allies (including self) are always
-               visible, matching every real MOBA's "you always see your own team" convention --
-               only an enemy beyond ARENA_VISION_RADIUS of my_owner's own hero gets skipped, and
-               skipped ENTIRELY (no model, no health bar, no name, below) rather than dimmed --
-               this map has no terrain/occlusion geometry to justify a soft fade, so a hard
-               cutoff is the honest match for what the data actually supports. */
-            if (i != my_owner && h->team != arena_state.heroes[my_owner].team) {
-                float vdx = h->x - arena_state.heroes[my_owner].x;
-                float vdz = h->z - arena_state.heroes[my_owner].z;
-                if (vdx * vdx + vdz * vdz > ARENA_VISION_RADIUS * ARENA_VISION_RADIUS) continue;
-            }
             /* intangible_ms (Ghost's Not a Ghost, Frog's R vanish, Bacon Puck's Q, etc. --
                any kit that grants the shared can't-be-hit status) reads as the skinmodel
                going see-through for its duration, same "can't touch this" read a real MOBA
@@ -2885,16 +2872,6 @@ int main(int argc, char *argv[]) {
         for (int i = 0; i < ARENA_MAX_HEROES; i++) {
             ArenaHero *h = &arena_state.heroes[i];
             if (!h->alive) continue;
-            /* Fog of war (NORTHSTAR §15.2) -- same rule and radius as the 3D model pass above:
-               an out-of-vision enemy's health bar/name/status label/hover-tooltip are all part
-               of "seeing" them, so they're skipped here too, not just their 3D model. Skipping
-               before the hover-distance check below also means an out-of-vision enemy can't be
-               hovered/targeted at all, the correct behavior for something the player can't see. */
-            if (i != my_owner && h->team != arena_state.heroes[my_owner].team) {
-                float vdx = h->x - arena_state.heroes[my_owner].x;
-                float vdz = h->z - arena_state.heroes[my_owner].z;
-                if (vdx * vdx + vdz * vdz > ARENA_VISION_RADIUS * ARENA_VISION_RADIUS) continue;
-            }
             float sx, sy;
             if (!world_to_screen(&vp, h->x, 1.6f, h->z, win_w, win_h, &sx, &sy)) continue;
             if (sx < -40 || sx > win_w + 40 || sy < -20 || sy > win_h + 20) continue;
