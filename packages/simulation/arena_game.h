@@ -13,6 +13,15 @@
 #define ARENA_ATTACK_RANGE 1.6f
 #define ARENA_ATTACK_DAMAGE 8
 #define ARENA_ATTACK_COOLDOWN_MS 700
+/* ARENA_ATTACK_WINDUP_MS (S170-204, NORTHSTAR §17.1's real League parity target: "the champion
+ * cannot move during windup... issuing a move command mid-windup cancels the swing outright").
+ * §17.5's own open-questions section names this exact ratio ("e.g. 25% windup / 75% backswing
+ * of the existing 700ms ARENA_ATTACK_COOLDOWN_MS") as a reasonable first-pass approximation,
+ * not confirmed final tuning -- used verbatim rather than inventing a different split. The
+ * remaining ~75% ("backswing") needs no separate field: movement is already free the instant
+ * this reaches 0 and attack_cooldown_ms starts counting down, which is exactly backswing's real
+ * behavior (cancelable, doesn't undo the hit that already landed) with zero new state. */
+#define ARENA_ATTACK_WINDUP_MS (ARENA_ATTACK_COOLDOWN_MS / 4)
 /* Gary's ranged basic auto-attack (S170-162/163, NORTHSTAR §17's
  * click-to-attack system, team mode only): the first hero on this roster
  * whose plain auto-attack is a real homing projectile instead of the flat
@@ -27,6 +36,7 @@
 #define ARENA_GARY_ATTACK_SPEED 14.0f
 #define ARENA_GARY_ATTACK_DAMAGE 7
 #define ARENA_GARY_ATTACK_COOLDOWN_MS 900
+#define ARENA_GARY_ATTACK_WINDUP_MS (ARENA_GARY_ATTACK_COOLDOWN_MS / 4) /* S170-204: same 25% ratio as the flat melee windup */
 #define ARENA_NODE_COUNT 5 /* S170-119: was 2 -- real Arathi Basin has 5 (Stables/Farm/Blacksmith/Lumber Mill/Gold Mine) */
 
 /* Static jungle terrain (NORTHSTAR §8, "add rocks and trees so we naturally
@@ -1083,6 +1093,21 @@ typedef struct {
     int mp;
     int max_mp;
     int attack_cooldown_ms;
+    /* attack_windup_ms_remaining (S170-204, NORTHSTAR §17, founder: real-time request for exact
+     * League of Legends auto-attack parity -- "does the champion stop when auto-attacking,"
+     * confirmed yes). >0 while a basic attack (melee or Gary's ranged homing shot) is mid-windup
+     * -- movement is frozen the same way rooted_ms/stunned_ms already freeze it
+     * (update_hero_motion), and a genuinely new move command (arena_set_move_target, not the
+     * attack-target chase system's own internal re-affirmation) cancels the swing outright: no
+     * damage, no cooldown spent, free to reattempt immediately -- the literal §17.1 "canceling
+     * the attack outright" behavior. Damage/the projectile only fires once this reaches 0, at
+     * which point attack_cooldown_ms is set for real (the backswing + ready window is free
+     * movement, no separate field needed -- see this field's own arena_game.c doc comment for
+     * why). Not wire-synced/rendered as a cast bar -- unlike Gary's W (a rare, deliberate,
+     * multi-second commitment), a basic-attack windup fires constantly in any real fight
+     * (~175ms every ~700ms), and a UI bar for every single swing would be noise, not signal;
+     * flagged as a deliberate scope decision, not an oversight. */
+    int attack_windup_ms_remaining;
     int owner; /* 0 = player, 1 = bot in the 1v1 local demo; a slot index 0..ARENA_MAX_HEROES-1 in team mode */
     int alive;
     int team;   /* 2026-07-24: which side, for team-mode nearest-enemy targeting. 1v1 local demo sets 0/1 explicitly. */

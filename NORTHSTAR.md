@@ -1247,16 +1247,29 @@ technically ship early as a stock owner-piloted kit, but that would mean buildin
 branch against a Donkey `airborne` flag that doesn't exist yet, the kind of "papers over a real gap"
 shortcut this doc's own Donkey entry already explicitly declined to take.
 
-## 17. Auto-attack movement model — League of Legends parity (2026-07-28, S170-158) -- spec only, no code yet
+## 17. Auto-attack movement model — League of Legends parity (2026-07-28, S170-158)
 
 Founder, real-time: a request for a detailed northstar on exactly how League of Legends' click-based
 auto-attacking works with respect to movement -- does the champion stop when auto-attacking, does it
 follow a target that runs away, and how ranged auto-attacks are similar to and different from melee --
 with LoL treated as the literal gold standard to hit exact parity against. This section is that
-reference, plus the honest gap between it and REDGARDEN's current combat model (`resolve_combat` /
-`arena_hero_attack_creeps` in `packages/simulation/arena_game.c`), which today is a fully passive,
-proximity-only system with no concept of an attack command at all. Spec only, same treatment as §15/§16
--- nothing in this section is built yet.
+reference, plus the honest gap between it and REDGARDEN's actual combat model.
+
+**Status update (2026-07-28, S170-204):** §17.4's first three bullets are now built, in two passes.
+S170-162/163 (landed the same day this section was originally written, but never reflected back into
+it until now) shipped the distinct attack command (`PACKET_ARENA_ATTACK`/`arena_set_attack_target`),
+the persistent attack-target lock with pure-pursuit chase (`arena_tick_attack_targets`), and Gary's own
+real homing ranged basic attack (`ArenaProjectile.homing_target`) -- §17.3's own gap analysis below was
+already stale about all three before S170-204 even started. S170-204 then built the actual core "does
+the champion stop" mechanic neither of those touched: a real windup/backswing state machine
+(`attack_windup_ms_remaining`) applied to both the flat melee loop and Gary's ranged attack --
+movement freezes during windup, a genuine reposition (or a stun) cancels it outright with no damage/no
+cooldown spent, and a completed windup fires the hit/projectile with the target re-validated only at
+that moment, not continuously. Still genuinely unbuilt: a per-hero `is_ranged` flag/homing basic
+attack for anyone besides Gary (every other hero's plain auto-attack is still the flat melee tick,
+regardless of lore), and attack-move ("A" + click) -- both explicitly lower-priority in §17.4's own
+original ordering. §17.3's gap analysis below is kept as originally written, for the historical record
+of what motivated this section, not edited to retroactively look prescient.
 
 ### 17.1 League of Legends' actual model (the gold standard)
 
@@ -1368,40 +1381,26 @@ dodgeable by stepping off the line afterward (see that struct's own doc comment 
 ranged basic auto-attack needs (§17.1's homing/tracking behavior) -- reusing `ArenaProjectile` as-is for
 basic attacks would get the auto-attack feel backwards, not just approximately right.
 
-### 17.4 Target design for parity (not built)
+### 17.4 Target design for parity
 
-- **A distinct attack command.** A new packet, e.g. `PACKET_ARENA_ATTACK` carrying a target hero slot
-  (not an x/z point), alongside the existing `PACKET_ARENA_MOVE` -- the literal wire-level expression of
-  §17.1's "right-click ground vs right-click unit" split. `PACKET_ARENA_MOVE` continues to mean "walk
-  here, ignore everything," unchanged.
-- **Windup/backswing state on `ArenaHero`.** Something like `attack_windup_ms_remaining` /
-  `attack_backswing_ms_remaining` / an `is_attacking` flag, replacing today's flat "just count the
-  cooldown down, check distance every tick" shape. While `attack_windup_ms_remaining > 0`, movement
-  toward the hero's own move target is frozen (facing can still update); when it reaches 0, damage
-  applies (or, for ranged, a projectile spawns -- see below) and `attack_backswing_ms_remaining` starts;
-  a fresh `PACKET_ARENA_MOVE` received during backswing zeroes it immediately and resumes movement, with
-  no penalty to the attack that already landed -- the literal §17.1 kiting mechanic.
-- **Persistent attack-target lock.** An `attack_target` slot field on `ArenaHero`, set by
-  `PACKET_ARENA_ATTACK`, cleared by any subsequent `PACKET_ARENA_MOVE`/`PACKET_ARENA_ATTACK` to a
-  different target, or by the target dying/becoming unhittable (reusing whatever `hero_is_hittable`-style
-  gate already exists for this). Every tick, while `attack_target` is set and valid: if out of range,
-  path toward the target's *current* x/z (pure pursuit, recomputed every tick -- no intercept
-  prediction, matching §17.1 exactly) instead of any stored move target; once in range, freeze and begin
-  windup. This is the direct, literal answer to "if auto attacking and a character runs away do you
-  follow it" -- yes, automatically, every tick, until the lock clears, with no re-click required, the
-  same as real League.
-- **Ranged vs melee split.** A per-hero `is_ranged` flag (or a real per-hero `attack_range` value once
-  one exists, rather than the single flat `ARENA_ATTACK_RANGE` constant) plus, for ranged heroes, a
-  **second, distinct projectile kind for basic attacks** that homes/tracks its live target position each
-  tick until it connects or the target dies/becomes unhittable mid-flight -- structurally a new,
-  smaller variant alongside `ArenaProjectile`, not a retrofit of the existing skillshot physics (which
-  must stay non-homing, since ability casts genuinely need to stay dodgeable). Per-hero travel speed
-  (§17.2's ~1300-2200+ units/sec range in real League) would need its own per-hero or per-archetype
-  tuning value, the same way ability damage/range already vary per hero.
-- **Attack-move command** (LoL's "A" + click), lower priority than the above: moves toward a point,
-  auto-diverting to attack the first valid enemy in range along the way, target-lock re-acquiring
-  automatically on a kill rather than clearing. A natural follow-on once direct-unit attack-locking
-  (the actual founder ask) exists, not required for a first pass.
+- [x] **A distinct attack command.** `PACKET_ARENA_ATTACK` carrying a target hero slot, alongside
+  `PACKET_ARENA_MOVE` -- shipped S170-162.
+- [x] **Windup/backswing state on `ArenaHero`.** `attack_windup_ms_remaining` -- shipped S170-204.
+  Movement freezes while it's active (`update_hero_motion`); a genuinely new move command (not the
+  attack-target chase's own internal re-affirmation, and not the bot AI's noisy ~100ms re-send of
+  "stay roughly here") or a stun cancels it outright, no damage/no cooldown spent; when it reaches 0,
+  damage applies (or, for Gary, a projectile spawns) and the existing flat `attack_cooldown_ms` starts
+  -- which already behaves exactly like backswing (free movement, doesn't undo the hit that already
+  landed), so no second field was needed for that half.
+- [x] **Persistent attack-target lock.** `attack_target` on `ArenaHero`, pure-pursuit chase
+  (`arena_tick_attack_targets`) -- shipped S170-162.
+- [ ] **Ranged vs melee split, roster-wide.** Only Gary has a real homing ranged basic attack
+  (S170-163) and his own longer `ARENA_GARY_ATTACK_RANGE`. Every other hero's plain auto-attack is
+  still the flat `ARENA_ATTACK_RANGE` melee tick regardless of lore (gun-wielders, casters, etc.) --
+  a per-hero `is_ranged` flag/second homing-projectile-for-basic-attacks system generalizing what
+  Gary already has is real, scoped, future work, not done.
+- [ ] **Attack-move command** (LoL's "A" + click). Still not built, still explicitly lower priority
+  than the above in this section's own original ordering.
 
 ### 17.5 Open questions, not resolved here
 
@@ -1424,10 +1423,11 @@ basic attacks would get the auto-attack feel backwards, not just approximately r
   happened)? Yes by construction of the design above -- called out here as confirmed-by-design, not an
   open question, so a future implementer doesn't second-guess it.
 
-Nothing built this pass. This section exists purely to pin down *exact target behavior* (per the
-founder's explicit "exact parity with LoL, LoL as the gold standard" framing) before any of §17.4's
-structural additions -- a new packet type, a windup/backswing state machine, persistent attack-target
-locking, a homing auto-attack projectile variant -- get implemented against a moving target.
+This section's own job -- pin down *exact target behavior* before building against a moving target,
+per the founder's "exact parity with LoL, LoL as the gold standard" framing -- is done. All of §17.4's
+structural additions except the roster-wide ranged split and attack-move have since shipped (S170-162,
+S170-163, S170-204; see this section's own status update near the top), built against the behavior
+pinned down here rather than guessed at.
 
 ## 18. Unsupervised learning for the bot AI — general + per-hero, cross-hero transfer (2026-07-28, S170-167) -- spec only, no code yet
 

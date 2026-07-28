@@ -768,10 +768,128 @@ static void test_team_melee_converges_multiple_attackers_on_one_target(void) {
     arena_state.heroes[ARENA_TEAM_SIZE].x = 0.5f; arena_state.heroes[ARENA_TEAM_SIZE].z = 0;
     arena_state.heroes[ARENA_TEAM_SIZE].hp = arena_state.heroes[ARENA_TEAM_SIZE].max_hp = 100;
 
+    /* S170-204: a first tick only BEGINS the windup now (no more instant damage on the tick
+       range/cooldown are first satisfied) -- a second tick worth the full windup duration
+       actually lands the hit. */
     arena_update_teams(16);
+    arena_update_teams((unsigned int)ARENA_ATTACK_WINDUP_MS);
 
     CHECK(arena_state.heroes[ARENA_TEAM_SIZE].hp < 100,
           "the lone enemy hero takes damage from being in melee range of two attackers at once");
+}
+
+/* S170-204, NORTHSTAR §17.1 -- LoL parity for auto-attacks: "does the champion stop when
+ * auto-attacking? yes." These tests exercise the windup/backswing state machine directly: no
+ * instant damage the moment range+cooldown are satisfied, damage lands only once the windup
+ * genuinely elapses, a real reposition cancels it outright (no damage, no cooldown spent), and
+ * the bot AI's own noisy re-affirmation of "stay roughly here" does NOT spuriously cancel it
+ * (the whole reason the cancel check compares against the hero's own attack range, not a bare
+ * position-changed flag -- see arena_set_move_target's own doc comment). */
+
+static void test_melee_windup_begins_with_no_instant_damage(void) {
+    arena_init_teams();
+    for (int i = 2; i < ARENA_MAX_HEROES; i++) arena_state.heroes[i].active = 0;
+    arena_state.heroes[ARENA_TEAM_SIZE].active = 1;
+    arena_state.heroes[ARENA_TEAM_SIZE].alive = 1;
+    arena_state.heroes[0].x = arena_state.heroes[ARENA_TEAM_SIZE].x;
+    arena_state.heroes[0].z = arena_state.heroes[ARENA_TEAM_SIZE].z;
+    int foe_hp_before = arena_state.heroes[ARENA_TEAM_SIZE].hp;
+
+    arena_update_teams(16);
+
+    CHECK(arena_state.heroes[0].attack_windup_ms_remaining > 0, "a fresh attack begins a real windup, not an instant hit");
+    CHECK(arena_state.heroes[ARENA_TEAM_SIZE].hp == foe_hp_before, "no damage yet -- the swing hasn't landed");
+}
+
+static void test_melee_windup_completes_and_deals_damage(void) {
+    arena_init_teams();
+    for (int i = 2; i < ARENA_MAX_HEROES; i++) arena_state.heroes[i].active = 0;
+    arena_state.heroes[ARENA_TEAM_SIZE].active = 1;
+    arena_state.heroes[ARENA_TEAM_SIZE].alive = 1;
+    arena_state.heroes[ARENA_TEAM_SIZE].hero_id = ARENA_HERO_DUCK; /* 0 base armor -- exact hit-damage math */
+    arena_state.heroes[0].x = arena_state.heroes[ARENA_TEAM_SIZE].x;
+    arena_state.heroes[0].z = arena_state.heroes[ARENA_TEAM_SIZE].z;
+    int foe_hp_before = arena_state.heroes[ARENA_TEAM_SIZE].hp;
+
+    arena_update_teams(16);
+    arena_update_teams((unsigned int)ARENA_ATTACK_WINDUP_MS);
+
+    CHECK(arena_state.heroes[0].attack_windup_ms_remaining == 0, "the windup clears itself once it completes");
+    CHECK(arena_state.heroes[ARENA_TEAM_SIZE].hp == foe_hp_before - ARENA_ATTACK_DAMAGE,
+          "the full windup elapsing with nothing interrupting it lands the hit");
+    CHECK(arena_state.heroes[0].attack_cooldown_ms == ARENA_ATTACK_COOLDOWN_MS, "the full cooldown starts only once the swing actually fires");
+}
+
+static void test_melee_windup_canceled_by_a_real_reposition(void) {
+    arena_init_teams();
+    for (int i = 2; i < ARENA_MAX_HEROES; i++) arena_state.heroes[i].active = 0;
+    arena_state.heroes[ARENA_TEAM_SIZE].active = 1;
+    arena_state.heroes[ARENA_TEAM_SIZE].alive = 1;
+    arena_state.heroes[0].x = arena_state.heroes[ARENA_TEAM_SIZE].x;
+    arena_state.heroes[0].z = arena_state.heroes[ARENA_TEAM_SIZE].z;
+    int foe_hp_before = arena_state.heroes[ARENA_TEAM_SIZE].hp;
+
+    arena_update_teams(16);
+    CHECK(arena_state.heroes[0].attack_windup_ms_remaining > 0, "sanity: windup is in progress");
+
+    /* A real retreat -- well beyond the hero's own attack range of where it's currently
+       standing, the same "genuinely asking to go somewhere else" test NORTHSTAR §17.1 calls
+       for. Checked immediately, not after further ticking: walking the full 20 units away takes
+       real simulated time (ARENA_HERO_SPEED is finite), so the hero would still be in range for
+       a few more ticks and could legitimately start a brand-new attack cycle against the same
+       foe in the meantime -- a separate, correct behavior this test isn't trying to exercise.
+       What this test checks is narrower and unambiguous: the ORIGINAL canceled swing itself
+       cost nothing. */
+    arena_set_move_target(0, arena_state.heroes[0].x + 20.0f, arena_state.heroes[0].z);
+    CHECK(arena_state.heroes[0].attack_windup_ms_remaining == 0, "a real move command cancels the windup outright");
+    CHECK(arena_state.heroes[ARENA_TEAM_SIZE].hp == foe_hp_before, "a canceled swing deals no damage");
+    CHECK(arena_state.heroes[0].attack_cooldown_ms == 0, "no cooldown penalty for a canceled swing -- free to reattempt immediately");
+}
+
+static void test_melee_windup_survives_bot_ai_noise(void) {
+    arena_init_teams();
+    for (int i = 2; i < ARENA_MAX_HEROES; i++) arena_state.heroes[i].active = 0;
+    arena_state.heroes[ARENA_TEAM_SIZE].active = 1;
+    arena_state.heroes[ARENA_TEAM_SIZE].alive = 1;
+    arena_state.heroes[ARENA_TEAM_SIZE].hero_id = ARENA_HERO_DUCK; /* 0 base armor -- exact hit-damage math */
+    arena_state.heroes[0].x = arena_state.heroes[ARENA_TEAM_SIZE].x;
+    arena_state.heroes[0].z = arena_state.heroes[ARENA_TEAM_SIZE].z;
+    int foe_hp_before = arena_state.heroes[ARENA_TEAM_SIZE].hp;
+
+    arena_update_teams(16);
+    CHECK(arena_state.heroes[0].attack_windup_ms_remaining > 0, "sanity: windup is in progress");
+
+    /* apps/arena_bot's own engage branch re-sends a move command every ~100ms decision tick
+       even while already in melee range, as part of its approach-angle positioning -- a target
+       barely within the hero's own attack range of where it's ALREADY standing, not a genuine
+       "go elsewhere." Without the range-gated comparison in arena_set_move_target, this exact
+       pattern would cancel every windup before it could ever complete, silently breaking melee
+       damage for every bot-controlled hero in a real match. */
+    arena_set_move_target(0, arena_state.heroes[0].x + 0.1f, arena_state.heroes[0].z);
+    CHECK(arena_state.heroes[0].attack_windup_ms_remaining > 0, "a move command that barely differs from the hero's own current position does not cancel the windup");
+
+    arena_update_teams((unsigned int)ARENA_ATTACK_WINDUP_MS);
+    CHECK(arena_state.heroes[ARENA_TEAM_SIZE].hp == foe_hp_before - ARENA_ATTACK_DAMAGE,
+          "the swing still completes and lands normally despite the bot AI's own repeated noisy move commands");
+}
+
+static void test_melee_windup_canceled_by_stun(void) {
+    arena_init_teams();
+    for (int i = 2; i < ARENA_MAX_HEROES; i++) arena_state.heroes[i].active = 0;
+    arena_state.heroes[ARENA_TEAM_SIZE].active = 1;
+    arena_state.heroes[ARENA_TEAM_SIZE].alive = 1;
+    arena_state.heroes[0].x = arena_state.heroes[ARENA_TEAM_SIZE].x;
+    arena_state.heroes[0].z = arena_state.heroes[ARENA_TEAM_SIZE].z;
+    int foe_hp_before = arena_state.heroes[ARENA_TEAM_SIZE].hp;
+
+    arena_update_teams(16);
+    CHECK(arena_state.heroes[0].attack_windup_ms_remaining > 0, "sanity: windup is in progress");
+
+    arena_state.heroes[0].stunned_ms = 500;
+    arena_update_teams((unsigned int)ARENA_ATTACK_WINDUP_MS);
+
+    CHECK(arena_state.heroes[0].attack_windup_ms_remaining == 0, "a stun landing mid-windup interrupts it");
+    CHECK(arena_state.heroes[ARENA_TEAM_SIZE].hp == foe_hp_before, "an interrupted swing deals no damage");
 }
 
 static void test_team_wipe_alone_does_not_win_the_match(void) {
@@ -2601,7 +2719,11 @@ static void test_gary_fires_homing_shot_at_locked_target_in_range(void) {
     arena_state.heroes[ARENA_TEAM_SIZE].z = 0.0f;
 
     arena_set_attack_target(0, ARENA_TEAM_SIZE);
+    /* S170-204: begins windup on the first tick, fires on a second tick worth the full
+       ARENA_GARY_ATTACK_WINDUP_MS duration -- Gary's homing shot no longer fires instantly the
+       moment he's in range. */
     arena_update_teams(16);
+    arena_update_teams((unsigned int)ARENA_GARY_ATTACK_WINDUP_MS);
 
     int found = 0;
     for (int p = 0; p < ARENA_MAX_PROJECTILES; p++) {
@@ -3967,12 +4089,15 @@ static void test_hero_kill_awards_assist_to_recent_damager(void) {
     arena_state.heroes[0].x = arena_state.heroes[1].x = arena_state.heroes[ARENA_TEAM_SIZE].x;
     arena_state.heroes[0].z = arena_state.heroes[1].z = arena_state.heroes[ARENA_TEAM_SIZE].z;
 
-    /* Both owner 0 and owner 1 are in melee range from tick 1 -- each lands one hit this same
-       tick (the victim survives owner 0's hit, so owner 1's own attack still finds it as a
-       valid target in the same pass), leaving 1 hit's worth of HP and both attackers on
-       cooldown. Both are now real, ticked-in recent damagers. */
+    /* Both owner 0 and owner 1 are in melee range from tick 1 -- S170-204: a first tick only
+       BEGINS both windups now (no more instant damage the moment range/cooldown are satisfied),
+       a second tick worth the full windup duration lands both hits together (the victim
+       survives owner 0's hit, so owner 1's own attack still finds it as a valid target in the
+       same completion pass), leaving 1 hit's worth of HP and both attackers on cooldown. Both
+       are now real, ticked-in recent damagers. */
     arena_update_teams(16);
-    CHECK(arena_state.heroes[ARENA_TEAM_SIZE].hp == ARENA_ATTACK_DAMAGE, "sanity: both landed exactly one hit this tick");
+    arena_update_teams((unsigned int)ARENA_ATTACK_WINDUP_MS);
+    CHECK(arena_state.heroes[ARENA_TEAM_SIZE].hp == ARENA_ATTACK_DAMAGE, "sanity: both landed exactly one hit once their windups completed");
     CHECK(arena_state.heroes[ARENA_TEAM_SIZE].alive, "sanity: the victim survived that first exchange");
 
     /* Move owner 1 far away -- it played a real part in the fight but won't land the actual
@@ -4413,7 +4538,9 @@ static void test_berserker_buff_adds_bonus_damage(void) {
     arena_state.heroes[0].z = arena_state.heroes[ARENA_TEAM_SIZE].z;
     arena_state.heroes[0].berserker_ms = ARENA_POWERUP_BUFF_MS;
 
-    arena_update_teams(16); /* one real melee tick */
+    /* S170-204: first tick begins windup, second (a full windup duration) lands the hit. */
+    arena_update_teams(16);
+    arena_update_teams((unsigned int)ARENA_ATTACK_WINDUP_MS);
 
     int expected_dmg = ARENA_ATTACK_DAMAGE + ARENA_BERSERKER_BONUS_AD;
     CHECK(arena_state.heroes[ARENA_TEAM_SIZE].hp == 1000 - expected_dmg,
@@ -4529,7 +4656,10 @@ static void test_taking_damage_rearms_the_combat_timer(void) {
     arena_state.heroes[ARENA_TEAM_SIZE].x = 0.5f; arena_state.heroes[ARENA_TEAM_SIZE].z = 0;
     arena_state.heroes[ARENA_TEAM_SIZE].attack_cooldown_ms = 0;
 
-    arena_update_teams(16); /* one tick -- enough for the enemy's melee auto-attack to land */
+    /* S170-204: first tick begins the enemy's windup, second (a full windup duration) lands
+       their hit. */
+    arena_update_teams(16);
+    arena_update_teams((unsigned int)ARENA_ATTACK_WINDUP_MS);
 
     CHECK(arena_state.heroes[0].combat_timer_ms > 0, "taking damage re-arms the combat timer, gating mana regen again");
 }
@@ -4658,6 +4788,11 @@ int main(void) {
     test_nearest_enemy_finds_closest_on_other_team();
     test_nearest_enemy_ignores_teammates_and_dead_heroes();
     test_team_melee_converges_multiple_attackers_on_one_target();
+    test_melee_windup_begins_with_no_instant_damage();
+    test_melee_windup_completes_and_deals_damage();
+    test_melee_windup_canceled_by_a_real_reposition();
+    test_melee_windup_survives_bot_ai_noise();
+    test_melee_windup_canceled_by_stun();
     test_team_wipe_alone_does_not_win_the_match();
     test_nearest_ally_finds_closest_teammate();
     test_nearest_ally_ignores_enemies_and_dead_teammates();

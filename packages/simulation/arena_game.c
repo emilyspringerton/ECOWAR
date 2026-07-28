@@ -325,14 +325,33 @@ void arena_set_move_target(int owner, float x, float z) {
     if (x > ARENA_HALF_EXTENT) x = ARENA_HALF_EXTENT;
     if (z < -ARENA_HALF_EXTENT) z = -ARENA_HALF_EXTENT;
     if (z > ARENA_HALF_EXTENT) z = ARENA_HALF_EXTENT;
-    arena_state.heroes[owner].target_x = x;
-    arena_state.heroes[owner].target_z = z;
-    arena_state.heroes[owner].moving = 1;
+    ArenaHero *mh = &arena_state.heroes[owner];
+    /* attack_windup_ms_remaining (S170-204, NORTHSTAR §17.1): "issuing a move command mid-windup
+       cancels the swing entirely." Only a command asking the hero to go somewhere it isn't
+       already effectively standing cancels the windup -- comparing the new target against the
+       hero's OWN current position (not the previous target, which can drift arbitrarily as a
+       chased enemy moves) and gating on its own attack range is what tells a genuine reposition/
+       retreat apart from the bot AI's own ~100ms decision loop continuously re-affirming
+       "stay roughly here and keep fighting" with a slightly different approach-angle offset
+       every tick -- without this distinction, that harmless re-affirmation would cancel every
+       single windup before it could ever complete, silently breaking melee damage for every
+       bot-controlled hero. A real human re-click during windup, or a bot genuinely disengaging,
+       both still exceed this radius and correctly cancel. */
+    if (mh->attack_windup_ms_remaining > 0) {
+        float wdx = x - mh->x, wdz = z - mh->z;
+        float range = (mh->hero_id == ARENA_HERO_GARY) ? ARENA_GARY_ATTACK_RANGE : ARENA_ATTACK_RANGE;
+        if (wdx * wdx + wdz * wdz > range * range) {
+            mh->attack_windup_ms_remaining = 0;
+        }
+    }
+    mh->target_x = x;
+    mh->target_z = z;
+    mh->moving = 1;
     /* S170-162, NORTHSTAR §17.1: "a fresh move command...immediately
        clears the lock" -- a real move command always wins over a stale
        attack-target chase, matching real League's own right-click-ground
        behavior exactly. */
-    arena_state.heroes[owner].attack_target = -1;
+    mh->attack_target = -1;
 }
 
 /* arena_set_attack_target (S170-162): see header declaration's doc
@@ -418,8 +437,10 @@ static void update_hero_motion(ArenaHero *h, float dt_sec) {
        casting without clearing the ability off cooldown. Stun is the stronger of the two
        generic movement-blockers (it also blocks casts/attacks, root only blocks movement),
        but there's no meaningful difference in what THIS function does for either -- both just
-       mean "don't advance position this tick." */
-    if (!h->alive || !h->moving || h->rooted_ms > 0 || h->stunned_ms > 0) return;
+       mean "don't advance position this tick."
+       attack_windup_ms_remaining (S170-204, NORTHSTAR §17.1): same "don't advance position"
+       treatment -- a champion mid-windup stands still, full stop, same as real League. */
+    if (!h->alive || !h->moving || h->rooted_ms > 0 || h->stunned_ms > 0 || h->attack_windup_ms_remaining > 0) return;
     float dx = h->target_x - h->x;
     float dz = h->target_z - h->z;
     float dist = sqrtf(dx * dx + dz * dz);
@@ -1197,21 +1218,78 @@ void arena_tick_attack_targets(unsigned int dt_ms) {
            their real damage still comes from the existing proximity-based
            combat loops (resolve_combat / the team-mode melee loop), chase
            above just gets them close enough for those to naturally fire,
-           unchanged. Gary: fires his homing basic auto-attack directly at
-           this lock instead of ever falling through to the flat melee
-           tick (he's excluded from that loop entirely, see the team-mode
-           melee loop's own comment). */
+           unchanged. Gary: begins his own windup here instead of ever
+           falling through to the flat melee tick (he's excluded from that
+           loop entirely, see the team-mode melee loop's own comment) --
+           arena_tick_attack_windups (called after this function) fires the
+           actual homing shot once it completes, same S170-204 shape the
+           flat melee loop now uses. */
         if (h->hero_id == ARENA_HERO_GARY) {
-            if (h->attack_cooldown_ms <= 0 && h->stunned_ms <= 0) { /* S170-184 */
-                ArenaProjectile *shot = arena_spawn_projectile(i, h->team, ARENA_HERO_GARY,
-                    h->x, h->z, foe->x, foe->z, ARENA_GARY_ATTACK_SPEED, 0.6f,
-                    ARENA_GARY_ATTACK_DAMAGE + arena_hero_bonus_ad(h), ARENA_GARY_ATTACK_RANGE * 3.0f); /* S170-190 */
-                if (shot) shot->homing_target = target;
-                h->attack_cooldown_ms = ARENA_GARY_ATTACK_COOLDOWN_MS;
+            if (h->attack_cooldown_ms <= 0 && h->stunned_ms <= 0 && h->attack_windup_ms_remaining <= 0) { /* S170-184/S170-204 */
+                h->attack_windup_ms_remaining = ARENA_GARY_ATTACK_WINDUP_MS;
             }
         }
     }
     (void)dt_ms; /* attack_cooldown_ms is ticked in the team-mode melee loop already; this only spends it */
+}
+
+/* arena_tick_attack_windups (S170-204, NORTHSTAR §17.1's "does the champion stop when
+ * auto-attacking? yes" -- the flat melee loop and arena_tick_attack_targets's Gary branch
+ * above both begin a windup instead of dealing damage/firing instantly now; this is where it
+ * actually resolves. Stun landing mid-windup interrupts it (same as it already blocks starting
+ * a new one) -- movement-lock CC canceling an in-progress swing is the natural analog to
+ * Gary's Aimed Shot silence-interrupt (S170-203). A genuinely new move command interrupts it
+ * too, but that's handled in arena_set_move_target itself, not here (the windup is already
+ * cleared to 0 by the time this runs, so there's nothing left for this function to do for that
+ * case). The target is re-validated HERE, at completion, not continuously during the windup --
+ * a target that stepped out of range or became unhittable while the caster stood still still
+ * costs the swing (cooldown spent either way, once windup completes -- the swing physically
+ * happened, whether or not it connected), same "real commitment" shape every other timed
+ * ability in this file already holds itself to. */
+static void arena_tick_attack_windups(unsigned int dt_ms) {
+    for (int i = 0; i < ARENA_HEROES_ARRAY_SIZE; i++) {
+        ArenaHero *h = &arena_state.heroes[i];
+        if (!h->active || !h->alive) continue;
+        if (h->attack_windup_ms_remaining <= 0) continue;
+        if (h->stunned_ms > 0) {
+            h->attack_windup_ms_remaining = 0; /* stun interrupts -- no damage, no cooldown spent */
+            continue;
+        }
+        h->attack_windup_ms_remaining -= (int)dt_ms;
+        if (h->attack_windup_ms_remaining > 0) continue;
+        h->attack_windup_ms_remaining = 0;
+
+        if (h->hero_id == ARENA_HERO_GARY) {
+            int target = h->attack_target;
+            if (target >= 0 && target < ARENA_MAX_HEROES) {
+                ArenaHero *foe = &arena_state.heroes[target];
+                if (hero_is_hittable(foe)) {
+                    float dx = foe->x - h->x, dz = foe->z - h->z;
+                    if (sqrtf(dx * dx + dz * dz) <= ARENA_GARY_ATTACK_RANGE) {
+                        ArenaProjectile *shot = arena_spawn_projectile(i, h->team, ARENA_HERO_GARY,
+                            h->x, h->z, foe->x, foe->z, ARENA_GARY_ATTACK_SPEED, 0.6f,
+                            ARENA_GARY_ATTACK_DAMAGE + arena_hero_bonus_ad(h), ARENA_GARY_ATTACK_RANGE * 3.0f); /* S170-190 */
+                        if (shot) shot->homing_target = target;
+                    }
+                }
+            }
+            h->attack_cooldown_ms = ARENA_GARY_ATTACK_COOLDOWN_MS;
+        } else {
+            ArenaHero *foe = arena_nearest_enemy(i);
+            if (foe && hero_is_hittable(foe)) {
+                float dx = foe->x - h->x, dz = foe->z - h->z;
+                if (sqrtf(dx * dx + dz * dz) <= ARENA_ATTACK_RANGE) {
+                    /* S170-175/S170-188: same kill-attribution shape the old instant-damage
+                       melee loop always used, unchanged. */
+                    int reward_owner = arena_reward_owner(i);
+                    foe->last_attacked_by_owner = reward_owner;
+                    record_assist_damage(foe, reward_owner); /* S170-187 */
+                    apply_damage(foe, apply_armor(ARENA_ATTACK_DAMAGE + arena_hero_bonus_ad(h), arena_hero_armor(foe))); /* S170-190 */
+                }
+            }
+            h->attack_cooldown_ms = ARENA_ATTACK_COOLDOWN_MS;
+        }
+    }
 }
 
 /* arena_spawn_projectile (S170-136, returns a pointer S170-140): see header doc comment. */
@@ -4321,26 +4399,19 @@ void arena_update_teams(unsigned int dt_ms) {
            him. */
         if (h->hero_id == ARENA_HERO_GARY) continue;
         if (h->stunned_ms > 0) continue; /* S170-184 */
+        if (h->attack_windup_ms_remaining > 0) continue; /* already mid-windup -- arena_tick_attack_windups below owns it from here */
+        if (h->attack_cooldown_ms > 0) continue;
         ArenaHero *foe = arena_nearest_enemy(i);
         if (!foe) continue;
         float dx = foe->x - h->x, dz = foe->z - h->z;
         if (sqrtf(dx * dx + dz * dz) > ARENA_ATTACK_RANGE) continue;
-        if (h->attack_cooldown_ms > 0) continue;
-        if (hero_is_hittable(foe)) {
-            /* S170-175: kill attribution, set before the damage that might
-               actually land the kill -- apply_damage's own death branch
-               reads this. S170-188: routed through arena_reward_owner so a
-               Tyler clone landing the hit credits Tyler himself, not the
-               clone's own disposable slot -- this is the ONE call site a
-               clone can ever reach (arena_tick_attack_targets, Gary's own
-               homing-shot path, is bounded to ARENA_MAX_HEROES and never
-               sees clones at all). */
-            int reward_owner = arena_reward_owner(i);
-            foe->last_attacked_by_owner = reward_owner;
-            record_assist_damage(foe, reward_owner); /* S170-187 */
-            apply_damage(foe, apply_armor(ARENA_ATTACK_DAMAGE + arena_hero_bonus_ad(h), arena_hero_armor(foe))); /* S170-190 */
-        }
-        h->attack_cooldown_ms = ARENA_ATTACK_COOLDOWN_MS;
+        if (!hero_is_hittable(foe)) continue;
+        /* S170-204, NORTHSTAR §17.1: begin windup instead of dealing damage instantly -- "does
+           the champion stop when auto-attacking? yes." arena_tick_attack_windups (called after
+           this loop) fires the actual hit once the windup completes, re-validating the target
+           is still there and in range -- exactly the same "committed at windup start, target
+           re-checked only at completion" shape Gary's Aimed Shot (S170-203) already uses. */
+        h->attack_windup_ms_remaining = ARENA_ATTACK_WINDUP_MS;
     }
 
     /* S170-162: attack-target chase + Gary's homing-shot firing -- see this
@@ -4348,6 +4419,9 @@ void arena_update_teams(unsigned int dt_ms) {
        Gary's attack_cooldown_ms (decremented in that same loop) reflects
        this tick before being checked here. */
     arena_tick_attack_targets(dt_ms);
+    /* S170-204: resolves any windup begun above (melee loop) or just above (Gary) -- see its
+       own doc comment for why it runs last. */
+    arena_tick_attack_windups(dt_ms);
 
     /* Deliberately NOT widened to ARENA_HEROES_ARRAY_SIZE (S170-141): Tyler's
        puppet clones are melee-only auto-fighters, not independent casters --
