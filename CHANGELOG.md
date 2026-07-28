@@ -1,6 +1,39 @@
 # Changelog
 
-## 2026-07-28 (continued)
+## 2026-07-28 (continued 2)
+
+- feat(arena): unsupervised-learning prep, end to end (S170-194, S170-195). Founder: "do the work
+  to prepare for unsupervised learning" -> "target torch training on colab." Two commits, one
+  deliverable:
+  - **S170-194 (C side, `6743964`)**: fixed `arena_serialize_state`'s real, load-bearing "owner
+    must be 0 or 1" restriction (a direct blocker for team-mode corpus, which is now the primary
+    game mode) — bounds check is now any real active hero slot, foe resolved via
+    `arena_nearest_enemy` instead of a hardcoded opposite index. Added a 26-hero kit-shape tag
+    table (`ranged`/`melee`, `has_homing_attack`, `has_knockback`, `has_heal`, `has_dash`,
+    `has_stealth` — NORTHSTAR §18.6's own "stronger lever" for cross-hero transfer) and
+    `arena_hero_tags_string()`, spliced into both self and foe blocks. New
+    `arena_corpus_record()` writes one `{"text": "..."}` JSONL line per active hero per tick
+    (state + the same move/cast_q/cast_w/cast_r action format `arena_decode_action` already
+    parses — one format serves both training-label and future policy-output duty). Wired live
+    into `apps/arena_server` via `corpus_log_tick`, alongside the existing match logger. Also
+    fixed `scripts/build.sh` never linking `arena_ai_bridge.c` into the server build (a real
+    "undefined reference" bug, not caught until live-verifying with an actual match). 10 new
+    tests, 607/607 green. Verified live: an isolated 2-bot match produced 38 valid corpus
+    records.
+  - **S170-195 (Python/Colab side, `2aa464d`)**: `scripts/build_ai_corpus.py` aggregates
+    `var/corpus/arena-corpus-*.jsonl` into one combined file; `scripts/colab_train.py` ports
+    `gpt2-alpine-c`'s own proven GPT-2-small next-token-prediction pretrain pattern (same
+    `{"text": ...}` shape, zero conversion needed); `notebooks/redgarden_gpt2_pretrain_colab.ipynb`
+    is the one-cell bootstrap (mount Drive, git clone/pull, run the script) — training logic
+    lives in the versioned script, not notebook cells, so a `git pull` picks up future changes
+    with no re-pasting.
+
+  This is genuinely NORTHSTAR §18.4's unsupervised pretraining stage — next-token prediction,
+  no win/loss label — not §12 Phase E's later supervised, NORN-graded fine-tune; the resulting
+  checkpoint is meant as that later stage's starting weights, not a finished policy. The Python/
+  Colab half can't be run end-to-end in this sandbox (needs a real corpus from played matches
+  plus an actual Colab GPU) — flagged, not faked; only the C-side corpus pipeline was verified
+  against a real live match.
 
 - fix(arena): CRITICAL -- fixed-size 2048B receive buffer silently truncated every real
   snapshot (S170-192). Found live while smoke-testing the map expansion below: an isolated
