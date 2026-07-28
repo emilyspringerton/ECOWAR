@@ -2,6 +2,21 @@
 
 ## 2026-07-28 (continued)
 
+- docs(arena): NORTHSTAR §19 — gold/XP economy + structures, resolving a real resources[]
+  conflict (S170-174). Founder: "continue the backlog for redgarden." Picks up sprint plan
+  items 4/5, designed together since structures' gold-bounty payoff needs gold to exist first.
+  Found and resolved a real conflict: `docs/CONSUMABLES_AND_COOKING.md` (written before the
+  resource-race win condition existed) assumed cooking spends from the same `resources[]` pool
+  that's now the win-condition meter — spending team resources on personal items would slow your
+  own team's progress toward winning. Resolved with two separate currencies: `resources[team]`
+  stays win-condition-only, a new per-hero gold currency (fed by kills) handles personal power
+  progression, matching how LoL/Dota split objectives from per-player gold. Grounds the spend
+  target in `docs/HEROES_VS0.md`'s existing 12-item Starting Item Roster instead of designing
+  new items from scratch, names the concrete mechanical work each item category needs, and
+  scopes XP down to a flat power curve rather than a full leveling system. Structures follow the
+  map's real single-lane geometry, closing the "push payoff" gap S170-139/Duck's W have both
+  been blocked on. Spec only, same "no code yet" treatment as §15-§18.
+
 - feat(arena): bot AI seeks out healing fountains when critically low on HP (S170-173).
   Founder: "add healing fountains to bot awairness brain and heuristics whatever makes sense
   bots seek out fountains when super low." New top-priority check in the bot decision loop,
