@@ -2,6 +2,19 @@
 
 ## 2026-07-28 (continued)
 
+- feat(arena): shop panel + character pane + scoreboard, Sprint 4 of NORTHSTAR §19 (S170-175).
+  Shop structures rendered at each `arena_shop_position()` (team-relative colored trim). An
+  always-visible character stat pane (local hero's HP/MP/AD/Armor/Flow/Flow-earned/XP/K-D). A
+  shop panel (`B` to toggle) with instant one-click buy/sell and `1`-`9` quick-buy — no confirm
+  step, per this repo's own "high-APM... instantly resolve, no menu-diving" cross-cutting
+  constraint. A held-`TAB` scoreboard: per-hero and team-aggregate K/D/Flow/XP. `net_poll_snapshots`
+  now copies the Sprint-3-synced economy fields into local hero state so the client has real data
+  to show. Build clean, full suite green (client-only change). Visual verification hit a real but
+  pre-existing Xvfb/software-GL coordinate quirk in this sandbox that also reproduces against
+  already-shipped HUD code this change never touched (the 3D pass, including the new shop
+  structures, rendered correctly in every screenshot) — flagged, not faked; real-desktop
+  verification still open.
+
 - feat(arena): shop wire protocol, Sprint 3 of NORTHSTAR §19 (S170-175). `PACKET_ARENA_SHOP_BUY`/
   `PACKET_ARENA_SHOP_SELL` + `ArenaShopBuyCmd`/`ArenaShopSellCmd`, dispatched in
   `server_handle_packet` the same shape as the existing `PACKET_ARENA_ATTACK` handler.
