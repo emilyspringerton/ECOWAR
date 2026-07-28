@@ -2,6 +2,26 @@
 
 ## 2026-07-28 (continued)
 
+- feat(arena): permanent graveyards, Arathi-Basin resource-race win condition, and 30-second
+  wave respawns (S170-153/154). Founder, real-time: "add graveyards behind the spawns that
+  never despawn so there is always a place to respawn and add true arathi basin node control
+  resource management as a win con instead of team wipe" and "respawns happen in 30 second
+  waves." A team wipe no longer ends the match -- teams that own no node now respawn at a
+  fixed, permanent graveyard behind their spawn instead of staying dead for the rest of the
+  game. The match itself is now decided by `arena_tick_resources()`: each team's resource
+  meter (capped at `ARENA_RESOURCE_CAP`) fills every `ARENA_RESOURCE_TICK_MS` based on how
+  many of the 5 nodes it currently owns, first team to fill it wins. Respawns no longer count
+  down per-hero from their own death -- every dead hero on both teams comes back together the
+  instant the global `respawn_wave_timer_ms` wraps at `ARENA_RESPAWN_WAVE_MS` (30s), so dying
+  right before a wave is nearly free and dying right after costs nearly the full 30s. Also:
+  the networked bot AI gets a first-pass node-capping heuristic (walks to and holds the
+  nearest un-owned node when no enemy is within real engagement range, since node control is
+  now what actually wins), and the arena client HUD gets a resource-race tug-of-war bar
+  (wire-synced via a new `resources[2]` field on `ArenaSnapshotMsg`). 4 invalidated
+  team-wipe/per-hero-respawn tests rewritten, 4 new tests added (graveyard fallback, wave
+  respawn syncing multiple deaths, resource accumulation scaling with nodes owned, resource-cap
+  win condition). Full suite green.
+
 - fix(arena): a jungle creep no longer attacks its own owning team, so capturing/holding your
   own node doesn't damage you (S170-152). Founder, real-time: "capturing node should not make
   the user take damage." Root cause: `arena_tick_creeps()` had no team check at all -- a
