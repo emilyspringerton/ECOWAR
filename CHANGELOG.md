@@ -2,6 +2,33 @@
 
 ## 2026-07-28 (continued)
 
+- fix(arena): CRITICAL -- fixed-size 2048B receive buffer silently truncated every real
+  snapshot (S170-192). Found live while smoke-testing the map expansion below: an isolated
+  bot-vs-bot match got stuck at "entering draft" forever. `apps/arena`'s and `apps/arena_bot`'s
+  own `net_poll_snapshots` both used a fixed `char rbuf[2048]` to receive
+  `PACKET_ARENA_SNAPSHOT` — every field this session added to `ArenaHeroSnapshot`/
+  `ArenaSnapshotMsg` grew the real wire packet to 2072 bytes, past that fixed size, without
+  anyone checking the receive side's own headroom. `recvfrom` silently truncates a UDP datagram
+  larger than the buffer, so every snapshot was truncated and correctly rejected by the
+  existing size check — no client (bot or human) could ever see valid state. Fixed by sizing
+  both buffers to the real, current struct size instead of a magic literal, so this can't
+  silently drift again. Re-verified the same isolated match: draft, live play, and a clean
+  match end, all working. Plausibly explains part of the "frozen 1v1" reported earlier this
+  session (a separate, already-fixed live-pool stale-binary mismatch was the other confirmed
+  cause).
+
+- feat(arena): golden ratio map expansion + more jungle obstacles (S170-191). Founder: "use
+  golden ratio to expand map size and add more jungle obstacles." `ARENA_HALF_EXTENT` now
+  `32.0 * phi` (was 32.0, itself 20→28→32 through earlier passes) — left as a real expression,
+  not a pre-computed literal. Node layout, jungle obstacles, and the S170-190 powerup layout all
+  scaled by the same phi factor (written as original-coordinate-times-phi for traceability).
+  `arena_fountain_position` converted from a hardcoded literal — found already stale before this
+  pass, per `arena_graveyard_position`'s own comment — to a real formula that can't drift again.
+  10 new jungle obstacles fill the substantial new outer margin. `apps/arena_bot`'s own
+  duplicated fountain/shop literals updated to match. 1v1 local demo spawns deliberately left
+  unscaled (separate, always-compact practice pairing). Build clean, full suite green (597/597,
+  audited beforehand — no test hardcodes a position literal).
+
 - feat(arena): Berserker + Regen powerups, Warsong Gulch-style (S170-190). Founder: "add
   berserker and health regen powerups like from warsong gulch in between the nodes." New
   `ArenaPowerup` entity, two neutral pickups positioned at the midpoints between the node
