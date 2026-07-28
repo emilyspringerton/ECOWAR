@@ -2,6 +2,17 @@
 
 ## 2026-07-28 (continued)
 
+- feat(arena): generic Stun + Slow status effects, using GoblinFoxDragon's `server/status`
+  package as reference (S170-184). Closes a gap `hero_status_label`'s own doc comment already
+  flagged. New `stunned_ms` (hard CC — blocks movement/casting/auto-attack, gated at every
+  action call site) and `slowed_ms`/`slow_pct` (proportional move-speed reduction) fields on
+  `ArenaHero`, plus `arena_apply_stun()`/`arena_apply_slow()` kit-wiring hooks (no kit uses them
+  yet, infrastructure first). Real bugfix found along the way: none of the five existing
+  status-effect fields were ever synced over the wire — the status label HUD has been silently
+  non-functional in every networked match, same class of bug as S170-180's `w_active` fix. Fixed
+  for all seven fields (5 existing + 2 new). 9 new tests, build clean, full suite green
+  (568/568).
+
 - feat(arena): bot AI shop interaction, Sprint 5 of S170-175. Closes the last explicitly-deferred
   gap from the shop/economy pass. Simple first pass: when no enemy is within a safety radius and
   the bot can afford the next item in catalog order, it detours to its own team's shop and buys —
