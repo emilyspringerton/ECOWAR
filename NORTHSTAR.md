@@ -1612,3 +1612,148 @@ Nothing built this pass. §18.4 (unsupervised pretraining on the existing replay
 actual next buildable step once someone picks this up -- it slots directly in front of §12 Phase
 E's own already-specced Milestone 7, not after it, and needs nothing from §18.5/Tier 2 to be
 useful on its own.
+
+## 19. Gold/XP economy + structures (2026-07-28, S170-174) -- spec only, no code yet
+
+Founder, real-time: **"continue the backlog for redgarden."** Picks up the earlier sprint plan's
+own items 4 and 5, both explicitly flagged as needing "a real design pass of its own before any
+single feature... gets built against a placeholder" -- named separately there but designed together
+here on purpose: item 5's own text already says structures are "the actual 'push' payoff lane creep
+waves are currently missing," and a payoff needs something to pay out *into*, which is exactly what
+item 4's gold economy is. Same "spec only, no code yet" treatment as §15-§18 -- this pins down the
+shape before either gets built.
+
+### 19.1 A real conflict this design has to resolve first
+
+`resources[2]` (S170-153, `packages/simulation/arena_game.c`'s `arena_tick_resources`) is **the win
+condition** -- first team to `ARENA_RESOURCE_CAP` wins outright. `docs/CONSUMABLES_AND_COOKING.md`
+(written 2026-07-23, before the resource-race win condition existed) assumed cooking would spend
+from "the same resource/influence economy §3 of NORTHSTAR.md already tracks" -- i.e., the exact same
+pool. That assumption is now stale and, if followed literally, actively harmful: spending team
+resources on personal items/cooking would directly slow down your own team's progress toward
+*winning the match*, an odd and probably-unfun coupling nobody actually designed on purpose (it's an
+artifact of the cooking doc predating the win-condition redesign by exactly one session).
+
+**Resolution: two separate currencies, real MOBA precedent.** `resources[team]` stays exactly what
+it is today -- a team-level, win-condition-only meter, untouched by anything below. A **new,
+separate, per-hero currency (gold)** is introduced for personal power progression, fed by kills, not
+by node control -- matching how LoL/Dota already separate "objectives" (turrets, dragons/Roshan --
+team-wide advantages) from "gold" (per-player, spent on items) instead of taxing one pool for both
+jobs. `docs/CONSUMABLES_AND_COOKING.md`'s own worked example ("holding an orange grove node grants
+Oranges over time") still works fine under this split -- it was never actually describing
+`resources[team]` mechanically, just informally reusing that section number; §19.6 below updates it
+to point at gold explicitly instead of the win-condition meter.
+
+### 19.2 Gold: sources
+
+- **Jungle creep kills** (S170-51): `ArenaCreep.last_attacked_by_owner` already exists and already
+  correctly attributes the killing blow -- `creep_die()` already reads it for the existing
+  heal/capture-bonus rewards. Awarding a flat gold amount to that same owner on top is additive, no
+  new attribution plumbing needed.
+- **Lane creep kills** (S170-139): explicitly named in that section's own doc comment as rewarding
+  "nothing" today -- "lane creep kills (by heroes or by each other) remove a threat and nothing
+  more; wiring them into a future economy is a natural follow-on once one exists, not invented here
+  as a standalone reward just for this pass." This is that follow-on. `ArenaLaneCreep` doesn't
+  currently track a last-attacker field the way jungle creeps do -- needs the same field added
+  before this can attribute kills correctly (small, mechanical, same pattern already proven).
+- **Hero kills**: the obvious real-MOBA source, not currently rewarded at all beyond Duck's
+  E ("Chosen One") which is a stat buff, not currency. A flat or HP%-scaled bounty on the killing
+  blow, same `apply_damage`'s-death-branch attribution point jungle creeps already use.
+- **Structures** (§19.5): a real gold payout on destruction is what makes a lane creep wave's
+  eventual push actually matter economically, not just territorially.
+
+Deliberately **not** a passive per-second gold trickle (unlike LoL's own base gold-over-time) --
+this map has no "laning phase" concept to protect with passive income; every source above is
+earned through actual map presence/combat, matching the roster's existing "no free stat gains,
+everything ties to doing something" pattern (mana trickles slowly even out of combat, but that's
+a *resource*, not power progression).
+
+### 19.3 Gold: what it buys
+
+`docs/HEROES_VS0.md`'s **Starting Item Roster** (12 items, written 2026-07-23) is already a
+complete, real, LoL-Season-3-archetype-styled stat-line spec -- crit carry, on-hit carry, burst
+mage, DPS/utility mage, tank initiator, tank/MR, lifesteal duelist, physical/magic penetration,
+mobility, support aura -- flagged in its own "Open/Deferred" section as "placeholder numbers... to
+be tuned once wired in," never actually connected to any code. This is that wiring's target, not a
+new item design pass: gold buys from this existing 12-item list, prices to be assigned when this
+gets built (not decided here).
+
+Mechanically, most of these stat lines land on hooks that already exist or are trivial extensions
+of ones that do -- `arena_hero_armor()` already exists as a per-hero armor lookup (currently a flat
+function of hero_id only; would need to become `base_armor + item_bonus_armor` instead of purely
+hero_id-driven), `ARENA_ATTACK_DAMAGE`/`ARENA_ATTACK_COOLDOWN_MS` are currently flat roster-wide
+constants (Gary is the one exception now, S170-163's own `ARENA_GARY_ATTACK_DAMAGE`/
+`ARENA_GARY_ATTACK_COOLDOWN_MS`, carved out this same session for his homing auto-attack) that a
+real AD/attack-speed item needs to become per-hero variables instead of shared `#define`s for
+everyone else too (a real, nontrivial refactor, not a one-line change -- the other 25 heroes still
+share identical base auto-attack numbers). Crit chance/damage, lifesteal, and penetration are
+genuinely new mechanics this engine has never needed before (no RNG at all exists yet, per §17.2's
+own finding while researching the auto-attack northstar) -- a real scope item for whoever builds
+this, not hand-waved here.
+
+### 19.4 XP and leveling: deliberately not over-built
+
+A full per-level ability-point allocation system (the other half of a "real MOBA" reading of
+"economy") is **explicitly out of scope for a first pass** -- this roster already has exactly one
+kit slot per Q/W/R (no rank-up choices anywhere in `docs/HEROES_VS0.md`), and building a leveling
+system this map/roster was never designed around risks the same "papers over a real gap" shortcut
+§16's own Donkey entry already declined to take. First-pass shape instead: a flat, roster-wide power
+curve keyed to elapsed match time + personal kill count (both already computable -- match time from
+`match_elapsed_ms`, S170-157; kills from the same attribution points gold already uses) feeding a
+small, generic stat multiplier (a scalar on top of `ARENA_ATTACK_DAMAGE`/HP/armor, same shape
+attack-speed items in §19.3 already need) -- "you get stronger by playing and fighting," not "you
+choose a build path via level-up screen." A real ability-point system is a legitimate future
+expansion once this simpler shape is live and proven fun, not a prerequisite for shipping *an*
+economy at all.
+
+### 19.5 Structures: single-lane, matching the map this actually is
+
+REDGARDEN's map is Arathi-Basin-shaped -- open field, 5 nodes, **no 3-lane structure** the way a
+classic MOBA base has. Lane creep waves (S170-139) already march a single lane: each team's own
+spawn line to the contested center node to the enemy's spawn line. Structures follow that same
+single-lane geometry rather than inventing a 3-lane map layout this game was never built around --
+one structure per team, placed roughly where each team's spawn line meets the open field (the
+natural "last line of defense before the enemy reaches your base" position, same real-MOBA identity
+a tower has, just one lane instead of three).
+
+- **What it does**: blocks/slows enemy lane-creep advance (a real reason for a wave that wins its
+  clash to keep pushing, S170-139's own "the actual 'push' payoff... is currently missing" gap,
+  finally closed), attacks enemy heroes that linger in range (own HP/armor/attack-damage stats,
+  same generic hero-adjacent-entity shape jungle creeps already established), and pays a real gold
+  bounty on destruction (§19.2) -- the concrete "held ground matters beyond the resource-race meter
+  at the top of the screen" identity both S170-139 and Duck's own W ("Government Clearance,"
+  blocked on this exact gap since S170-31) were separately waiting on.
+- **Not decided**: exact HP/damage/gold-bounty numbers; whether destroying a structure also affects
+  `resources[team]` in any way (leaning toward *no*, keeping §19.1's separation clean -- a
+  structure's payoff is gold + tempo, not a shortcut into the win-condition meter) or stays purely
+  gold/tempo; whether a destroyed structure ever respawns (real MOBA precedent says no, permanent
+  loss of that lane's defense) or this map's own graveyard/wave-respawn conventions suggest
+  otherwise.
+
+### 19.6 Cooking direction, updated
+
+`docs/CONSUMABLES_AND_COOKING.md`'s own worked example ("orange grove node → Oranges over time →
+cooked into a mana-regen consumable") should be read as spending **gold** (§19.2), not
+`resources[team]` -- the node-control-flavored *sourcing* (which specific node you hold determines
+which raw ingredient you passively accumulate) can stay exactly as originally envisioned; only the
+*currency* changes from the now-repurposed win-condition meter to the new per-hero gold pool. Not a
+redesign of that doc's actual direction, just a currency correction now that §19.1's conflict is
+resolved.
+
+### 19.7 Sequencing and open questions
+
+Gold (§19.2/19.3) is the real prerequisite -- structures' own gold-bounty-on-destruction payoff
+(§19.5) needs gold to exist first to pay into, same dependency direction the original sprint-plan
+item 5 already named ("the same blocker already named for Duck's W since S170-31... two independent
+asks now point at the same missing system"). Recommended build order once someone picks this up:
+gold sources/sinks (lane creep last-attacker attribution, hero-kill bounty, at least a handful of
+the 12 items wired to real stats) before structures, structures before or alongside the XP power
+curve (§19.4, lower-stakes, additive on top of whichever hero-power hooks item-stats end up using
+anyway).
+
+Not resolved here: exact gold values per source/item; which of the 12 items are simplest to wire
+first (Seedling Charm -- flat +AD/+AP/+HP/+HP5 -- has no new mechanic at all and is the obvious
+first item, unlike crit/lifesteal/penetration which each need real new mechanics this engine has
+never had); whether structures get their own NORTHSTAR-numbered constants file section or fold into
+the existing jungle/lane-creep constant blocks given how structurally similar they are to those
+entities already.
