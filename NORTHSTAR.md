@@ -1246,3 +1246,185 @@ hero can be wired in for real -- Weatherman alone (without the Donkey-specific h
 technically ship early as a stock owner-piloted kit, but that would mean building W's ally/enemy
 branch against a Donkey `airborne` flag that doesn't exist yet, the kind of "papers over a real gap"
 shortcut this doc's own Donkey entry already explicitly declined to take.
+
+## 17. Auto-attack movement model — League of Legends parity (2026-07-28, S170-158) -- spec only, no code yet
+
+Founder, real-time: a request for a detailed northstar on exactly how League of Legends' click-based
+auto-attacking works with respect to movement -- does the champion stop when auto-attacking, does it
+follow a target that runs away, and how ranged auto-attacks are similar to and different from melee --
+with LoL treated as the literal gold standard to hit exact parity against. This section is that
+reference, plus the honest gap between it and REDGARDEN's current combat model (`resolve_combat` /
+`arena_hero_attack_creeps` in `packages/simulation/arena_game.c`), which today is a fully passive,
+proximity-only system with no concept of an attack command at all. Spec only, same treatment as §15/§16
+-- nothing in this section is built yet.
+
+### 17.1 League of Legends' actual model (the gold standard)
+
+**Two distinct commands, not one.** Right-click empty ground is a pure **move command** -- it never
+initiates combat, even if the resulting path crosses an enemy champion. Right-click *on* an enemy unit
+(champion, minion, monster, ward, structure) is a distinct **attack command**. This split is the whole
+foundation of everything below -- REDGARDEN currently has no equivalent distinction (§17.2).
+
+**Does the champion stop to auto-attack? Yes.** Every basic attack is a three-phase sequence, not an
+instant tick:
+
+1. **Windup (a.k.a. "cast time")**: the moment an attack command is issued against a target in range,
+   the champion instantly snaps to face the target (no turn-rate delay, unlike movement, which does have
+   a turn radius) and stands still for a fixed fraction of the total attack-time. The champion **cannot
+   move during windup without canceling the attack outright** -- issuing a move command mid-windup
+   cancels the swing entirely (no damage, but no cooldown penalty either; the attack simply didn't
+   happen and can be re-attempted immediately).
+2. **The attack fires** at the end of windup -- for melee this is effectively instant/hitscan; for
+   ranged this is when the projectile actually leaves the champion (see §17.2 on travel time). Damage
+   application timing differs between the two for exactly this reason.
+3. **Backswing (recovery)**: the remaining portion of the attack animation after the hit/projectile has
+   already been committed. Critically, **a move command issued during backswing cancels the recovery
+   animation but does NOT undo the attack that already fired** -- the champion is free to reposition
+   immediately. This is the mechanical basis of **kiting** / **orb-walking**: alternate attack commands
+   and move commands so that only the (uncancellable) windup ever costs you movement, never the
+   (cancellable) backswing. A perfectly executed kite pattern loses zero attacks compared to standing
+   still, while still moving during roughly the backswing fraction of every attack cycle.
+
+Total time between the start of one windup and the next = `1 / attack speed` (attacks per second). The
+windup fraction of that total is fixed per champion (a base "attack cast time" ratio) and does not
+shrink as attack speed increases -- only the backswing fraction compresses, which is *why* kiting has a
+practical ceiling (very high attack speed compresses backswing toward zero, leaving almost the whole
+cycle as uncancellable windup). REDGARDEN does not need to reproduce this exact ratio-based formula for
+a first pass (§17.5), but the *shape* -- windup is stop-and-commit, backswing is cancel-free -- is the
+actual parity target, not a cosmetic detail.
+
+**If the target runs away, do you follow it? Yes, automatically, indefinitely.** A single attack-command
+click is not "attack once" -- it sets a **persistent attack-target lock**. Every subsequent frame, while
+that lock is still valid, the client automatically re-evaluates: if the target is out of attack range,
+walk toward the target's *current* live position (recomputed continuously -- this is **pure pursuit**,
+not intercept/lead pursuit; League does not predict where the target will be, it always paths at where
+the target currently is, same simplification a naive chase-AI would use); the instant the target is back
+in range, movement stops and the windup/fire/backswing cycle above begins again, with zero need to
+re-click. This chase-lock persists until exactly one of: the target dies, the target becomes
+untargetable (stealth, certain spell-shields, banished-type effects), or the player issues a **new**
+command -- a different attack-target, or any move command, which immediately clears the lock. Attack
+range, movement speed of both parties, and terrain are the only things that determine whether a chase
+actually lands a hit; there is no leash range or "give up chasing after N seconds" timeout in vanilla
+League.
+
+**Attack-move ("A" + click) is a third, related command**, distinct from a direct unit right-click:
+it moves toward a *location* (like a move command) but auto-diverts to attack the first valid enemy
+that comes within range along the way, without needing that enemy to have been the original target of
+anything. A direct right-click on a unit is a hard lock on *that* unit specifically (chases it even past
+closer, equally-valid targets); attack-move is opportunistic and re-targets to whatever's nearest/most
+threatening as it walks. Both commands share the exact same windup/backswing mechanics once an attack
+actually begins -- the difference is purely in *what* gets targeted and *whether* the lock survives a
+target dying (attack-move re-acquires a new target automatically; a direct unit-lock does not).
+
+### 17.2 Ranged auto-attacks: what's the same, what's different
+
+**Same as melee:** the champion still fully stops for the windup -- there is no "walk and shoot" for
+plain basic attacks in vanilla League regardless of range (a handful of champion passives grant this as
+an explicit exception, e.g. some abilities/traits that state "can move while attacking" -- the existence
+of those as *named exceptions* is itself confirmation that stopping is the baseline rule, not an
+oversight). Backswing-cancel kiting works identically for ranged and melee champions; only the practical
+value differs (a ranged champion kiting a melee chaser keeps them permanently out of *their* attack
+range, which is the single biggest reason ranged carries feel fundamentally different to play than melee
+bruisers, despite an identical underlying attack state machine).
+
+**Different:** a ranged basic attack fires a real **projectile with non-zero travel time** (typical
+values across the champion roster range from roughly 1300 to 2200+ units/second, versus melee's
+effectively-instant 0 travel time at point-blank range). That projectile **homes/tracks the target** --
+it is emphatically **not a skillshot**. Once fired, if the target was in range and targetable at the
+moment of firing, the shot will connect regardless of how the target moves afterward (short of the
+target becoming untargetable or leaving true unit-collision/vision in ways that matter only at the
+margins) -- this is the critical, easy-to-get-wrong detail: a ranged auto-attack behaves like a
+homing missile locked at launch, not like a projectile that can be dodged by strafing, the way a
+skillshot ability can be. The travel-time window is also exactly why a ranged champion can start moving
+the instant the projectile leaves (once it's fired, the champion's own subsequent movement has zero
+effect on whether it lands) -- the attack "landing" and the champion's own freedom to move again are
+decoupled by that flight time, on top of the ordinary backswing-cancel freedom every attack already has.
+
+### 17.3 REDGARDEN's current model (gap analysis, grounded in the actual code)
+
+None of the above exists today. Current combat (`resolve_combat`, `arena_hero_attack_creeps`,
+the team-mode melee loop in `arena_update_teams`) is a single, flat, always-on proximity check:
+every tick, for every pair of hittable opposing units, if `distance <= ARENA_ATTACK_RANGE` (1.6 units,
+one flat constant for the entire 26-hero roster, no ranged/melee distinction) and the attacker's
+`attack_cooldown_ms` has reached 0, damage is applied and the cooldown resets to
+`ARENA_ATTACK_COOLDOWN_MS` (700ms) -- completely decoupled from movement. There is no windup, no
+backswing, no "stop to attack" state of any kind: a hero can be actively walking toward a
+`PACKET_ARENA_MOVE` target and will keep dealing/taking auto-attack damage to/from anything that happens
+to be in range on the way past, with zero interruption to either the movement or the combat.
+
+There is also no attack command at all, distinct from move -- only `PACKET_ARENA_MOVE` (a raw x/z
+point) and `PACKET_ARENA_CAST` (an ability slot) exist on the wire (`packages/common/protocol.h`).
+"Chasing" a fleeing target today is not a server-side behavior at all -- it only happens if the client
+(a human re-clicking the fleeing hero's position, or a bot re-sending a fresh move target toward the
+enemy's last-known snapshot position on its own ~100ms decision loop, see `apps/arena_bot/src/main.c`'s
+`play_one_match`) keeps re-issuing move commands manually. There is no persistent target-lock of any
+kind server-side, and no ranged basic auto-attack at all -- every hero, regardless of lore/kit
+(gun-wielders, casters, melee brawlers alike) shares the identical 1.6-unit melee range for plain
+auto-attacks; only *ability* casts (Q/W/R) currently spawn real projectiles
+(`arena_spawn_projectile`/`ArenaProjectile`), and those are explicitly **non-homing skillshots** --
+fixed velocity computed once at cast time toward the target's position *at that instant*, genuinely
+dodgeable by stepping off the line afterward (see that struct's own doc comment in
+`packages/simulation/arena_game.h`). That skillshot physics model is the *opposite* of what a real
+ranged basic auto-attack needs (§17.1's homing/tracking behavior) -- reusing `ArenaProjectile` as-is for
+basic attacks would get the auto-attack feel backwards, not just approximately right.
+
+### 17.4 Target design for parity (not built)
+
+- **A distinct attack command.** A new packet, e.g. `PACKET_ARENA_ATTACK` carrying a target hero slot
+  (not an x/z point), alongside the existing `PACKET_ARENA_MOVE` -- the literal wire-level expression of
+  §17.1's "right-click ground vs right-click unit" split. `PACKET_ARENA_MOVE` continues to mean "walk
+  here, ignore everything," unchanged.
+- **Windup/backswing state on `ArenaHero`.** Something like `attack_windup_ms_remaining` /
+  `attack_backswing_ms_remaining` / an `is_attacking` flag, replacing today's flat "just count the
+  cooldown down, check distance every tick" shape. While `attack_windup_ms_remaining > 0`, movement
+  toward the hero's own move target is frozen (facing can still update); when it reaches 0, damage
+  applies (or, for ranged, a projectile spawns -- see below) and `attack_backswing_ms_remaining` starts;
+  a fresh `PACKET_ARENA_MOVE` received during backswing zeroes it immediately and resumes movement, with
+  no penalty to the attack that already landed -- the literal §17.1 kiting mechanic.
+- **Persistent attack-target lock.** An `attack_target` slot field on `ArenaHero`, set by
+  `PACKET_ARENA_ATTACK`, cleared by any subsequent `PACKET_ARENA_MOVE`/`PACKET_ARENA_ATTACK` to a
+  different target, or by the target dying/becoming unhittable (reusing whatever `hero_is_hittable`-style
+  gate already exists for this). Every tick, while `attack_target` is set and valid: if out of range,
+  path toward the target's *current* x/z (pure pursuit, recomputed every tick -- no intercept
+  prediction, matching §17.1 exactly) instead of any stored move target; once in range, freeze and begin
+  windup. This is the direct, literal answer to "if auto attacking and a character runs away do you
+  follow it" -- yes, automatically, every tick, until the lock clears, with no re-click required, the
+  same as real League.
+- **Ranged vs melee split.** A per-hero `is_ranged` flag (or a real per-hero `attack_range` value once
+  one exists, rather than the single flat `ARENA_ATTACK_RANGE` constant) plus, for ranged heroes, a
+  **second, distinct projectile kind for basic attacks** that homes/tracks its live target position each
+  tick until it connects or the target dies/becomes unhittable mid-flight -- structurally a new,
+  smaller variant alongside `ArenaProjectile`, not a retrofit of the existing skillshot physics (which
+  must stay non-homing, since ability casts genuinely need to stay dodgeable). Per-hero travel speed
+  (§17.2's ~1300-2200+ units/sec range in real League) would need its own per-hero or per-archetype
+  tuning value, the same way ability damage/range already vary per hero.
+- **Attack-move command** (LoL's "A" + click), lower priority than the above: moves toward a point,
+  auto-diverting to attack the first valid enemy in range along the way, target-lock re-acquiring
+  automatically on a kill rather than clearing. A natural follow-on once direct-unit attack-locking
+  (the actual founder ask) exists, not required for a first pass.
+
+### 17.5 Open questions, not resolved here
+
+- Attack-speed scaling (windup shrinks less than backswing, per-champion floor) is real League depth
+  this spec deliberately does not require for a first pass -- REDGARDEN has no attack-speed stat or item
+  economy at all yet (the same gold/XP-economy gap §12/§13's sprint-plan notes already flag elsewhere),
+  so a first pass should use one flat, non-scaling windup/backswing split per hero (or even roster-wide)
+  until an economy exists to meaningfully feed an attack-speed stat.
+- Exact windup:backswing ratio to use -- real League varies this per champion (roughly 10%-40% windup
+  depending on champion, "canceled" further compressed by attack speed) and isn't published as a single
+  universal number; REDGARDEN choosing one flat ratio (e.g. 25% windup / 75% backswing of the existing
+  700ms `ARENA_ATTACK_COOLDOWN_MS`) as a first-pass approximation is reasonable but not confirmed as
+  final tuning.
+- Whether a knocked-back/rooted/silenced hero's *movement*-based chase should be interrupted the same
+  way an active windup already must be, or whether status effects only ever gate the windup/cast itself
+  -- likely "yes, chase is just movement, and movement is already gated by root/knockback elsewhere," but
+  not confirmed against every existing status-effect interaction.
+- Does canceling backswing via a move command and then immediately re-issuing `PACKET_ARENA_ATTACK` on
+  the *same* target re-engage without walking back into range (since only a frame's worth of movement
+  happened)? Yes by construction of the design above -- called out here as confirmed-by-design, not an
+  open question, so a future implementer doesn't second-guess it.
+
+Nothing built this pass. This section exists purely to pin down *exact target behavior* (per the
+founder's explicit "exact parity with LoL, LoL as the gold standard" framing) before any of §17.4's
+structural additions -- a new packet type, a windup/backswing state machine, persistent attack-target
+locking, a homing auto-attack projectile variant -- get implemented against a moving target.
