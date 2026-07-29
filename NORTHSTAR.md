@@ -2111,10 +2111,27 @@ which is the wrong shape for a small fixed-size-vector policy net.
   bot AI only (matching SHANKPIT's own current precedent) -- training against a population of
   past policy checkpoints (real self-play, AlphaStar/OpenAI-Five-style) is real, valuable, later
   depth this section doesn't build.
-- **Team-mode (10v10) training.** §21.2's environment targets the 1v1 local-demo path first,
-  same "simplest real slice first" sequencing every phase in §12 already used -- multi-agent RL
-  (coordinating a full team) is a substantially harder problem than single-agent PPO against a
-  fixed opponent, deliberately out of scope for a first pass.
-- **Wiring the trained policy into a LIVE multiplayer match.** Same gap S170-220's own weight-embed
-  pipeline already flagged honestly -- this section's own pipeline trains, exports, and syncs a
-  policy; nothing here makes `apps/arena_server` actually call it during a real game yet.
+- **Team-mode (10v10) training.** §21.2's environment still targets 1v1 combat specifically
+  (one agent, one opponent, no nodes/squads/teammates in the observation or reward at all) --
+  multi-agent RL (coordinating a full team, objective-aware) is a substantially harder problem
+  than single-agent PPO against a fixed opponent, still out of scope. What DID land (2026-07-29):
+  the 1v1 training arena no longer always starts both heroes fixed near map-center
+  (`scripts/rl_env.py`'s `reset()` now calls the new `sim_set_hero_position()` to randomize both
+  spawns across the real map extent each episode, `MOVE_TARGET_RANGE` matching the real
+  `ARENA_HALF_EXTENT` instead of a conservative fixed 20.0) -- this closes the specific
+  coordinate-frame generalization gap found below, but the policy still has no concept of a
+  teammate, a node, or an objective; it only ever reasons about itself and one foe.
+- **Wiring the trained policy into a LIVE multiplayer match.** RESOLVED for the real networked
+  match bots (2026-07-29, REDGARDEN Apple #11301): `apps/arena_bot`'s 19 real bots now consult
+  `rl_policy_forward()` for a bounded movement nudge during close-range engagement (additive on
+  top of the existing hand-authored heuristic's anti-stack angle spread, not a full replacement
+  -- see that Apple's own doc comment for the full design). Real coordinate-frame mismatch found
+  in the process: the policy's own action output is an ABSOLUTE world-space target, clipped to a
+  range tuned for the small, always-near-origin 1v1 training arena; reusing it unmodified for a
+  hero anywhere on the much larger real map would aim at map-center nonsense. Worked around on
+  the C side with a nudge-not-teleport reinterpretation, and being fixed at the source by the
+  spawn-randomization/action-range change noted just above -- a policy trained under the new
+  environment should need that C-side workaround less, not more, once promoted. `apps/arena_server`
+  itself (the solo 1v1 local-practice mode, `arena_game.c`'s own `arena_bot_tick`) has called
+  `rl_policy_forward()` since S170-228 already; what was missing until now was the real
+  networked-match path.
