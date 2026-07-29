@@ -2152,6 +2152,15 @@ static void test_team_creep_kill_by_enemy_team_helps_flip_the_node(void) {
     arena_state.heroes[ARENA_TEAM_SIZE].active = 1;
     arena_state.heroes[ARENA_TEAM_SIZE].alive = 1;
     arena_state.heroes[1].active = 0;
+    /* 2026-07-29: hero[0] was never deactivated here, unlike this test's own sibling scenarios
+       just above (test_neutral_creep_kill_grants_capture_bonus_only_while_channeling,
+       test_team_creep_kill_by_owning_team_heals both deactivate every hero but the one actually
+       under test) -- harmless while hero[0]'s default spawn (the old map-center-ish spawn line)
+       sat far from team 0's graveyard, surfaced as a real collision once initial spawn moved
+       TO the graveyard (same commit): hero[0] now defaults to exactly the point this test
+       stages its farming scenario at, an uninvolved second attacker skewing the single-attacker
+       deny-bonus check below. */
+    arena_state.heroes[0].active = 0;
     for (int n = 0; n < ARENA_NODE_COUNT; n++) arena_state.nodes[n].owner = 1; /* team 0 owns everything -- its creep has nowhere to march */
     /* S170-161: node[0] still needs to be the one actually captured below
        (capturing_team/capture_progress_ms live per-node), but the creep

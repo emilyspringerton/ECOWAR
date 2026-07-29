@@ -2424,3 +2424,24 @@
   streak state. Full suite green (`scripts/build.sh`/`test_arena.sh`/`test_10_bots.sh`).
   Deliberately scoped to the reward economy only this pass -- no HUD/announcement text ("DOUBLE
   KILL!" banner), flagged not built, since no such notification system exists yet in this repo.
+
+- feat(arena): team-mode initial spawn moved to each team's graveyard. Founder, real-time:
+  "we just need to move the initial spawn at start of game to the 2 graveyards not center of the
+  map." `arena_init_teams()` previously spawned all 20 heroes on a fixed line near map center
+  (x=+-8) -- now spawns each team at its own `arena_graveyard_position()` corner instead, the
+  same point team-flavored creeps already spawn/march from (S170-161: "initially they spawn from
+  the graveyards behind the nodes not the center") and the same point a hero with no owned node
+  falls back to on death -- one coherent graveyard concept a team starts at, marches out from,
+  and (worst case) returns to, instead of two differently-positioned ones. Also fixed
+  `arena_find_owned_node_for_respawn`'s own "nearest owned node to home" heuristic to measure
+  from the graveyard (real 2D distance) instead of the stale x=+-8-only reference it used before.
+  Real bug caught before landing: the old +-9 z-fan (safe around a center-ish spawn line) pushed
+  several heroes clean past the map boundary once anchored at a corner already only ~4 units
+  from the true edge (measured live: one hero landed at z=-56.78 against a +-51.78 map) -- fixed
+  by fanning inward from the corner instead (`copysignf`-directed, always toward map center) so
+  the full team stays in bounds by construction, no clamping/stacking needed. One pre-existing
+  test gap surfaced and fixed: `test_team_creep_kill_by_enemy_team_helps_flip_the_node` never
+  deactivated hero[0] (unlike its own sibling tests just above it), harmless while hero[0]'s old
+  default spawn sat far from the action, a real collision once its default spawn became the
+  exact point the test stages its scenario at. Full suite green
+  (`scripts/build.sh`/`test_arena.sh`/`test_10_bots.sh`).

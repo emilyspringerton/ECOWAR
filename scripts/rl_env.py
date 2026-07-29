@@ -44,7 +44,9 @@ externally-managed) Python environment should `pip install gymnasium stable-base
 
 import argparse
 import ctypes
+import math
 import os
+import random
 
 ARENA_TRAINING_OBS_SIZE = 18
 
@@ -87,11 +89,31 @@ REWARD_LOSS = -10.0
 ARENA_HERO_UNICORN = 0
 ARENA_HERO_DUCK = 1
 
-# Move targets get clamped to this range before being passed to sim_step -- conservative vs. the
-# real map's own ARENA_HALF_EXTENT (packages/simulation/arena_game.h), not imported directly
-# (this file has no C header access) -- harmless if smaller than the real map, since a target
-# just outside a hero's own current reach is functionally identical to one at the true edge.
-MOVE_TARGET_RANGE = 20.0
+# ARENA_HALF_EXTENT (2026-07-29): hand-synced copy of packages/simulation/arena_game.h's own
+# real constant (this file has no C header access, same "duplicated by hand" reasoning
+# apps/arena_bot/src/main.c's own ARENA_HERO_COUNT copy already documents for itself) -- must be
+# bumped here too if that constant ever changes again (S170-191's own golden-ratio history is a
+# real precedent that it has). Needed for real this time (not just as a comment): spawn
+# randomization below picks positions relative to it.
+ARENA_HALF_EXTENT = 51.78
+
+# SPAWN_MARGIN keeps randomized spawns off the literal map edge (obstacles/geometry live out
+# there in the real game; the training sim doesn't model them, but there's no reason to spend
+# training time on positions no real fight would ever start at either).
+SPAWN_MARGIN = 0.85 * ARENA_HALF_EXTENT
+
+# Move targets get clamped to this range before being passed to sim_step. Originally a
+# conservative 20.0 against the training arena's old always-near-origin fixed spawns (-6/+6) --
+# found live (2026-07-29, wiring the trained policy into apps/arena_bot's real networked match
+# bots, REDGARDEN Apple #11301) to be a real bug once spawns are no longer fixed: the policy's
+# own action output is an ABSOLUTE world-space target, so clipping it to +-20 made it physically
+# unable to aim anywhere near a hero actually spawned out past that range -- exactly the
+# coordinate-frame mismatch that Apple's own doc comment flagged and worked around with a
+# nudge-not-teleport reinterpretation on the C side. Matching this to the real map's own reach
+# directly, rather than continuing to patch around it downstream, is the actual fix -- see
+# ArenaTrainingEnv.reset()'s own doc comment below for the matching spawn-randomization half of
+# this fix.
+MOVE_TARGET_RANGE = ARENA_HALF_EXTENT
 
 DEFAULT_LIB_PATH = os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "build", "libarena_training.so"
@@ -109,6 +131,8 @@ def load_lib(lib_path=None):
     lib.sim_init.restype = None
     lib.sim_reset.argtypes = [ctypes.c_int, ctypes.c_int]
     lib.sim_reset.restype = None
+    lib.sim_set_hero_position.argtypes = [ctypes.c_int, ctypes.c_float, ctypes.c_float]
+    lib.sim_set_hero_position.restype = None
     lib.sim_step.argtypes = [
         ctypes.c_float, ctypes.c_float, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_uint,
     ]
@@ -216,6 +240,28 @@ try:
         def reset(self, *, seed=None, options=None):
             super().reset(seed=seed)
             self.lib.sim_reset(self.hero0_id, self.hero1_id)
+            # Spawn-position randomization (2026-07-29, see MOVE_TARGET_RANGE's own doc comment
+            # above for the full "why" -- this is the other half of that same fix). Without
+            # this, sim_reset alone always leaves both heroes at arena_init_with_heroes' own
+            # fixed (-6,0)/(6,0) spawn, so nothing here would ever teach the policy what combat
+            # looks like anywhere else on the map. Picks a random engagement CENTER anywhere
+            # within SPAWN_MARGIN of map center, then places the two heroes a random distance
+            # apart (8-16 units, the same order of magnitude as the original fixed 12-unit
+            # separation) along a random facing -- varies both "where on the map" and "exactly
+            # how far apart," rather than only one or the other. Clamped back inside
+            # SPAWN_MARGIN afterward in case the offset would've pushed a hero past the edge.
+            center_x = random.uniform(-SPAWN_MARGIN, SPAWN_MARGIN)
+            center_z = random.uniform(-SPAWN_MARGIN, SPAWN_MARGIN)
+            angle = random.uniform(0.0, 2.0 * math.pi)
+            half_sep = random.uniform(8.0, 16.0) / 2.0
+            offset_x = math.cos(angle) * half_sep
+            offset_z = math.sin(angle) * half_sep
+            h0x = max(-SPAWN_MARGIN, min(SPAWN_MARGIN, center_x - offset_x))
+            h0z = max(-SPAWN_MARGIN, min(SPAWN_MARGIN, center_z - offset_z))
+            h1x = max(-SPAWN_MARGIN, min(SPAWN_MARGIN, center_x + offset_x))
+            h1z = max(-SPAWN_MARGIN, min(SPAWN_MARGIN, center_z + offset_z))
+            self.lib.sim_set_hero_position(0, h0x, h0z)
+            self.lib.sim_set_hero_position(1, h1x, h1z)
             self._tick = 0
             obs = self._read_obs()
             self._prev_obs = obs

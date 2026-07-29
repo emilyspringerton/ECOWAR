@@ -4870,11 +4870,29 @@ void arena_init_teams(void) {
         ArenaHero *h = &arena_state.heroes[i];
         int team = (i < ARENA_TEAM_SIZE) ? 0 : 1;
         int slot_in_team = (team == 0) ? i : (i - ARENA_TEAM_SIZE);
-        /* Two spread-out spawn lines, one per side, mirroring the 1v1
-           demo's -6/+6 split but fanned out along z so a full team doesn't
-           spawn stacked on one point. */
-        h->x = (team == 0) ? -8.0f : 8.0f;
-        h->z = (slot_in_team - (ARENA_TEAM_SIZE - 1) / 2.0f) * 2.0f;
+        /* 2026-07-29, founder: "move the initial spawn at start of game to the 2 graveyards
+           not center of the map." Was a fixed spawn LINE near map center (x=+-8) -- moved to
+           each team's own graveyard corner (arena_graveyard_position, same point creeps already
+           spawn/march from since S170-161: "initially they spawn from the graveyards behind the
+           nodes not the center," and the same point a dead hero without an owned node falls
+           back to -- a team now starts, marches out from, and (with nothing else owned) returns
+           to the exact same place, one coherent "graveyard" concept instead of two separate,
+           differently-positioned ones).
+
+           Real bug caught live before this landed: the old fan formula spread SYMMETRICALLY
+           around the anchor point (+-9 along z), which was safe when the anchor was map-center
+           spawn line (z=0, tons of room either way) but isn't at a graveyard corner -- a
+           corner sits only ARENA_HALF_EXTENT-corner (~4 units) from the true map edge on its
+           OWN outward side, so half the fanned slots landed past the boundary (measured: one
+           hero at z=-56.78 against a +-51.78 map). Fans inward from the graveyard's own corner
+           instead -- slot 0 sits exactly at the graveyard, each later slot steps further TOWARD
+           map center (copysignf gives the correct inward direction for either team's corner
+           sign) -- so the whole line of 10 stays safely inside the map by construction, no
+           clamping (which would just stack the overflow slots on the boundary instead) needed. */
+        float gx, gz;
+        arena_graveyard_position(team, &gx, &gz);
+        h->x = gx;
+        h->z = gz - copysignf(1.0f, gz) * (float)slot_in_team * 2.0f;
         h->target_x = h->x;
         h->target_z = h->z;
         h->hp = h->max_hp = 100;
@@ -4909,20 +4927,28 @@ static int arena_team_owns_any_node(int team) {
 }
 
 /* arena_find_owned_node_for_respawn (S170-121): among nodes this team
- * currently owns, picks the one closest to that team's original spawn line
- * (x=-8 for team 0, x=+8 for team 1, matching arena_init_teams) -- a simple
+ * currently owns, picks the one closest to that team's own home -- a simple
  * stand-in for a real "nearest owned outpost" choice without needing a
- * dedicated fixed-base concept this map doesn't otherwise have. Returns
- * NULL if the team owns nothing (caller must already have checked
- * arena_team_owns_any_node). */
+ * dedicated fixed-base concept this map doesn't otherwise have. "Home" is
+ * the team's graveyard corner (arena_graveyard_position, 2026-07-29) --
+ * used to be a hardcoded x=+-8-only distance matching the old central spawn
+ * line arena_init_teams itself used before that same commit moved initial
+ * spawn to the graveyard too; kept in sync here so this preference measures
+ * from wherever "home" actually is now, not a stale reference point, and
+ * uses real 2D distance since the graveyard sits on a diagonal, not the old
+ * spawn line's own z=0 axis where x-only distance was equivalent to full
+ * distance anyway. Returns NULL if the team owns nothing (caller must
+ * already have checked arena_team_owns_any_node). */
 static ArenaNode *arena_find_owned_node_for_respawn(int team) {
-    float home_x = (team == 0) ? -8.0f : 8.0f;
+    float home_x, home_z;
+    arena_graveyard_position(team, &home_x, &home_z);
     ArenaNode *best = NULL;
     float best_dist = 0.0f;
     for (int n = 0; n < ARENA_NODE_COUNT; n++) {
         ArenaNode *node = &arena_state.nodes[n];
         if (node->owner != team + 1) continue;
-        float dist = fabsf(node->x - home_x);
+        float ddx = node->x - home_x, ddz = node->z - home_z;
+        float dist = sqrtf(ddx * ddx + ddz * ddz);
         if (!best || dist < best_dist) {
             best = node;
             best_dist = dist;

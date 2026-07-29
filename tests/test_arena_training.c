@@ -19,6 +19,7 @@ void sim_step(float move_x, float move_z, int cast_q, int cast_w, int cast_r, un
 int sim_get_obs(int owner, float *out_obs);
 int sim_get_done(void);
 int sim_get_winner(void);
+void sim_set_hero_position(int owner, float x, float z);
 
 #define ARENA_TRAINING_OBS_SIZE 18
 
@@ -111,6 +112,28 @@ static void test_dx_dz_reflect_real_relative_position(void) {
     CHECK(fabsf(obs[17] - expect_dz) < 0.001f, "dz (index 17) is genuinely foe_z - self_z");
 }
 
+/* sim_set_hero_position (2026-07-29, NORTHSTAR §21 follow-up): scripts/rl_env.py's own reset()
+ * calls this right after sim_reset to randomize spawn positions across the real map, fixing the
+ * coordinate-frame mismatch found while wiring the first trained policy into apps/arena_bot's
+ * real networked bots (REDGARDEN Apple #11301) -- the old fixed -6/+6 spawns never taught the
+ * policy anything about combat away from map center. */
+static void test_sim_set_hero_position_relocates_and_updates_obs(void) {
+    sim_init(ARENA_HERO_UNICORN, ARENA_HERO_DUCK);
+    sim_set_hero_position(0, 30.0f, -20.0f);
+    sim_set_hero_position(1, 40.0f, -12.0f);
+
+    float obs[ARENA_TRAINING_OBS_SIZE];
+    sim_get_obs(0, obs);
+    CHECK(fabsf(obs[3] - 30.0f) < 0.001f, "sim_set_hero_position actually moves self x, not just target_x");
+    CHECK(fabsf(obs[4] - (-20.0f)) < 0.001f, "and self z");
+    CHECK(fabsf(obs[13] - 40.0f) < 0.001f, "and the foe's x, reflected through the same snapshot");
+    CHECK(fabsf(obs[14] - (-12.0f)) < 0.001f, "and the foe's z");
+
+    float expect_dx = 40.0f - 30.0f, expect_dz = -12.0f - (-20.0f);
+    CHECK(fabsf(obs[16] - expect_dx) < 0.001f, "dx recomputes correctly off the relocated positions, not a stale pre-move value");
+    CHECK(fabsf(obs[17] - expect_dz) < 0.001f, "and dz");
+}
+
 int main(void) {
     test_sim_init_sets_up_two_full_health_heroes();
     test_obs_is_symmetric_between_owner_0_and_1();
@@ -118,6 +141,7 @@ int main(void) {
     test_repeated_steps_produce_real_combat();
     test_sim_reset_restores_full_health_and_clears_winner();
     test_dx_dz_reflect_real_relative_position();
+    test_sim_set_hero_position_relocates_and_updates_obs();
 
     printf("\n%s\n", failures == 0 ? "ALL PASS" : "SOME FAILED");
     return failures == 0 ? 0 : 1;

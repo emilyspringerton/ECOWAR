@@ -73,6 +73,27 @@ void sim_reset(int hero0_id, int hero1_id) {
     arena_bot_enabled = 0; /* see sim_init's own comment */
 }
 
+/* sim_set_hero_position (2026-07-29, NORTHSTAR §21 follow-up): training-only, called from
+ * Python right after sim_reset to relocate a hero -- arena_init_with_heroes itself always
+ * spawns hero 0/1 at the fixed (-6,0)/(6,0) points (unchanged, still what the LIVE 1v1
+ * local-practice mode uses for real players), which is exactly why the first trained policy
+ * generalized poorly once reused for real networked matches: it had only ever seen combat
+ * near the map's own origin, but a real 20-player match happens anywhere across the full
+ * ~103-unit-wide map (packages/simulation/arena_game.h's own ARENA_HALF_EXTENT ~51.78, see
+ * scripts/rl_env.py's own hand-synced copy of that constant). Lets Python's own reset()
+ * randomize BOTH heroes' spawn positions across the real map extent each episode instead,
+ * teaching the policy "engage whoever's near you, wherever that is" rather than "engage
+ * whoever's near map-center." Sets target_x/target_z to match too, same as
+ * arena_init_with_heroes's own spawn-time convention, so a hero doesn't immediately start
+ * "moving" back toward whatever stale target a previous episode left behind. */
+void sim_set_hero_position(int owner, float x, float z) {
+    if (owner < 0 || owner >= ARENA_MAX_HEROES) return;
+    arena_state.heroes[owner].x = x;
+    arena_state.heroes[owner].z = z;
+    arena_state.heroes[owner].target_x = x;
+    arena_state.heroes[owner].target_z = z;
+}
+
 /* sim_step: applies the Agent's (hero 0's) action, drives hero 1 (the training opponent) with
  * the STABLE heuristic AI directly (see this file's own module doc comment for why it can't go
  * through arena_update's own automatic, now-RL-driven bot-tick path), then ticks the sim forward
