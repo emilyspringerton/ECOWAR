@@ -624,7 +624,7 @@ static void net_poll_snapshots(uint32_t now_ms) {
                         arena_state.projectiles[i].active = 0;
                     }
                 }
-                /* S170-146: jungle creeps -- always fully populated, same
+                /* S170-146: node-guardian creeps -- always fully populated, same
                    convention as heroes/nodes above (not sparse-packed like
                    projectiles/lane creeps below). */
                 {
@@ -640,8 +640,8 @@ static void net_poll_snapshots(uint32_t now_ms) {
                         dst->flavor = (ArenaCreepFlavor)msg->creeps[i].flavor;
                     }
                 }
-                /* S170-190: powerups -- always fully populated, same convention as jungle
-                   creeps just above. */
+                /* S170-190: powerups -- always fully populated, same convention as
+                   node-guardian creeps just above. */
                 {
                     int pcount2 = ARENA_SNAPSHOT_POWERUP_COUNT;
                     if (pcount2 > ARENA_POWERUP_COUNT) pcount2 = ARENA_POWERUP_COUNT;
@@ -1568,8 +1568,8 @@ static int prev_hero_hp_valid[ARENA_MAX_HEROES];
 /* S170-145 ("when auto attacks hit a creep or a hero it should show visual
  * indication of such"): the hero-side HP-delta flash already existed
  * (S170-122); creeps had none at all -- same idiom, mirrored for both
- * jungle and lane creep pools. Local-mode/1v1-demo only, same scope as
- * jungle/lane creeps' own sim-only (not wire-synced) status. */
+ * node-guardian and lane creep pools. Local-mode/1v1-demo only, same scope as
+ * node-guardian/lane creeps' own sim-only (not wire-synced) status. */
 static int prev_donkey_fold_active[ARENA_MAX_HEROES];
 static int prev_donkey_fold_valid[ARENA_MAX_HEROES];
 static int prev_creep_hp[ARENA_MAX_CREEPS];
@@ -1676,9 +1676,9 @@ static float prev_hero_facing_z[ARENA_MAX_HEROES];
 static int prev_hero_facing_valid[ARENA_MAX_HEROES];
 #define ARENA_FACING_MOVE_EPSILON 0.01f /* ignore sub-pixel jitter, only turn to face real movement */
 
-/* Same facing-from-motion idiom as heroes above, applied to jungle/lane
+/* Same facing-from-motion idiom as heroes above, applied to node-guardian/lane
  * creeps too (S170-171: "heroes AND creeps should rotate"). Both creep
- * pools are entirely client-computed already (jungle creeps march now,
+ * pools are entirely client-computed already (node-guardian creeps march now,
  * S170-161; lane creeps always have) -- no wire changes needed, same
  * "derive from observed position deltas" trick, just indexed by creep
  * slot instead of hero owner. */
@@ -2827,18 +2827,18 @@ int main(int argc, char *argv[]) {
             }
         }
 
-        /* Jungle creeps (S170-51, rendered for the first time S170-145 --
+        /* Node-guardian creeps (S170-51, rendered for the first time S170-145 --
            "when auto attacks hit a creep... show visual indication," which
            is moot on a creep nobody can see). Local-mode/1v1-demo only,
            same not-yet-networked scope as lane creeps below. A small
            diamond-oriented box (45-degree Y rotation via two half-scale
            overlapping boxes would need mat4_rotate this renderer doesn't
            have -- kept as an axis-aligned box, distinguished from a lane
-           creep instead by SIZE (bigger -- jungle creeps are the tougher,
+           creep instead by SIZE (bigger -- node-guardian creeps are the tougher,
            standalone objective) and by flavor-color matching the node
            ownership convention exactly (gold = neutral/contested, same
            blue/red team colors otherwise), not team-relative like heroes/
-           lane creeps -- a jungle creep's color tells you whose territory
+           lane creeps -- a node-guardian creep's color tells you whose territory
            it's tied to, the actual thing that matters about it. */
         for (int i = 0; i < ARENA_MAX_CREEPS; i++) {
             ArenaCreep *cr = &arena_state.creeps[i];
@@ -2880,7 +2880,7 @@ int main(int argc, char *argv[]) {
 
         /* Lane creeps (S170-138): only ever populated client-side in the
            local 1v1 demo, which simulates arena_update() directly -- not
-           synced over the wire yet (same not-yet-networked gap jungle
+           synced over the wire yet (same not-yet-networked gap node-guardian
            creeps already have; net_mode's arena_state.lane_creeps simply
            stays all-zeroed/inactive, so this loop harmlessly draws nothing
            there). Small flat-topped boxes (distinct silhouette from the
@@ -2897,7 +2897,7 @@ int main(int argc, char *argv[]) {
             } else {
                 lc_r = 0.95f; lc_g = 0.25f; lc_b = 0.15f; /* enemy wave: red */
             }
-            /* S170-171: same body + forward-nub idiom as jungle creeps above
+            /* S170-171: same body + forward-nub idiom as node-guardian creeps above
                -- a lane creep marching its waypoint route (arena_game.c's
                lane_creep_waypoint) now visibly faces the way it's actually
                walking instead of floating along sideways. */

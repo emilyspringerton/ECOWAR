@@ -2,6 +2,19 @@
 
 ## 2026-07-29
 
+- refactor(arena): S170-213, rename "jungle creep" terminology to "node-guardian creep"
+  throughout code. §20.2's own finding: they aren't League jungle camps at all (no buffs, no
+  epic-objective equivalent, tied to node ownership, actively march) -- the mismatch between
+  what "jungle creep" implies and what the entity actually does was itself likely part of "hard
+  to reason about," independent of any mechanical change. Scoped to the actual rename target
+  (identifiers, function/test names, comments describing this specific entity, one live README
+  line) while leaving two adjacent things untouched on purpose: the separate, correctly-named
+  "jungle obstacles/terrain" scenery system (rocks/trees/walls -- a different thing that happens
+  to share the word "jungle" as flavor, not the renamed entity), and direct founder quotes using
+  "jungle" in their own words (preserved verbatim as historical record, matching this repo's
+  established practice). `ARENA_JUNGLE_CREEP_KILL_FLOW`/`_XP` -> `ARENA_NODE_GUARDIAN_KILL_FLOW`/
+  `_XP`; 4 test function names renamed to match. Full test suite + test_10_bots.sh green.
+
 - feat(arena): S170-212, visible aggro-radius ring for node-guardian ("jungle") creeps. Same
   `ring_mesh`/annulus idiom the R-zone/cast-radius circles already use (S170-200), reusing the
   flavor color already computed for each creep's body (gold/neutral, blue/team0, red/team1) so a

@@ -71,7 +71,7 @@ typedef enum {
  * corners... across from each other" (a real map-geography placement), not
  * "one per team's base" (which real MOBA fountains usually are) -- read as
  * a genuinely contestable resource, matching this map's existing "structures
- * are neutral/contestable" pattern (nodes, jungle creeps) rather than
+ * are neutral/contestable" pattern (nodes, node-guardian creeps) rather than
  * guessing which team owns which corner. Flagged here as a real design
  * choice, not silently assumed, in case the founder actually meant
  * team-exclusive home-base fountains -- easy to flip later (gate the heal
@@ -116,10 +116,10 @@ typedef struct {
 #define ARENA_BERSERKER_BONUS_AD      15 /* flat, on top of item_bonus_ad -- same "flat bonus, not a multiplier" shape items already use */
 #define ARENA_POWERUP_REGEN_HP_PER_SEC 8 /* faster than fountain healing (15/sec) is close-range, deliberate -- this is a portable, weaker version you carry with you */
 
-/* Territorial dynamic jungle creeps (S170-51). Founder direction: territory
+/* Territorial dynamic node-guardian creeps (S170-51). Founder direction: territory
  * is the macro/economy layer, objectives (the team-wipe win condition) are
  * how the game is actually won, and gameplay should let territory control
- * shape what jungle creeps emerge -- "controlling the flavor and cadence of
+ * shape what node-guardian creeps emerge -- "controlling the flavor and cadence of
  * the jungle helps create the meta to counter certain comps or play
  * styles." One creep per node, tied to that node's `owner`, re-rolled on
  * every respawn rather than fixed at map-init -- the jungle's own
@@ -174,7 +174,7 @@ typedef enum {
 #define ARENA_CREEP_MARCH_STOP_EPSILON       0.5f
 #define ARENA_CREEP_NEUTRAL_KILL_CAPTURE_BONUS_MS 5000 /* big swing for winning the contested prize */
 #define ARENA_CREEP_TEAM_KILL_HEAL                20   /* home-turf resupply, owning team only */
-#define ARENA_CREEP_TEAM_KILL_DENY_CAPTURE_BONUS_MS 1500 /* counter-play: farming an enemy's own jungle creep helps flip their node */
+#define ARENA_CREEP_TEAM_KILL_DENY_CAPTURE_BONUS_MS 1500 /* counter-play: farming an enemy's own node-guardian creep helps flip their node */
 
 /* Team-scale arena (2026-07-24, NORTHSTAR §13 cont'd): the array grows from
  * 2 to ARENA_MAX_HEROES so a full 10v10 match fits in the same ArenaState
@@ -199,7 +199,7 @@ typedef enum {
  * into this range -- it exists purely for arena_state.heroes[]' own
  * simulation-side bookkeeping, not networking (ARENA_SNAPSHOT_MAX_HEROES in
  * protocol.h stays at ARENA_MAX_HEROES, unchanged; clones aren't wire-synced
- * yet, same "sim-only for now" precedent as jungle/lane creeps). Sized for
+ * yet, same "sim-only for now" precedent as node-guardian/lane creeps). Sized for
  * up to 4 simultaneous Tyler R casts' worth of clones -- generous headroom,
  * not a hard design target. */
 #define ARENA_MAX_CLONE_SLOTS 8
@@ -890,7 +890,7 @@ typedef enum {
 
 /* Lane creep waves (S170-139). Founder: "add subsystems needed to make
  * creeps a reality" -- clarified as classic MOBA lane-pushing waves,
- * distinct from S170-51's jungle creeps (per-node, stationary, aggro-only).
+ * distinct from S170-51's node-guardian creeps (per-node, stationary, aggro-only).
  * This arena's map has no lanes in the geometric sense (NORTHSTAR §8: "no
  * single chokepoint deciding the match," the whole point of the Arathi
  * Basin open-field design) -- rather than inventing a second map layout, the
@@ -1192,8 +1192,8 @@ extern const ArenaItemDef ARENA_ITEMS[];
  * 10x from all sources." All 4 Flow-earning constants below x10 (XP left untouched -- not
  * mentioned, and XP has no spend pressure the way Flow does, so slow XP was never the complaint).
  * Values were the original S170-175 amounts times 10, not independently re-tuned. */
-#define ARENA_JUNGLE_CREEP_KILL_FLOW  150
-#define ARENA_JUNGLE_CREEP_KILL_XP     10
+#define ARENA_NODE_GUARDIAN_KILL_FLOW  150
+#define ARENA_NODE_GUARDIAN_KILL_XP     10
 #define ARENA_LANE_CREEP_KILL_FLOW     80
 #define ARENA_LANE_CREEP_KILL_XP        6
 #define ARENA_HERO_KILL_FLOW         1000
@@ -1204,9 +1204,9 @@ extern const ArenaItemDef ARENA_ITEMS[];
  * hit. ARENA_ASSIST_WINDOW_MS mirrors League's own ~10s assist window. Reward is roughly a
  * third of the full kill bounty, same "meaningfully less than the kill, but a real reward, not
  * a token amount" shape ARENA_LANE_CREEP_KILL_FLOW already takes relative to
- * ARENA_JUNGLE_CREEP_KILL_FLOW. */
+ * ARENA_NODE_GUARDIAN_KILL_FLOW. */
 #define ARENA_ASSIST_WINDOW_MS       10000
-#define ARENA_HERO_ASSIST_FLOW        350 /* S170-197: x10, see ARENA_JUNGLE_CREEP_KILL_FLOW's own comment */
+#define ARENA_HERO_ASSIST_FLOW        350 /* S170-197: x10, see ARENA_NODE_GUARDIAN_KILL_FLOW's own comment */
 #define ARENA_HERO_ASSIST_XP           20
 #define ARENA_MAX_ASSIST_TRACK           4 /* how many distinct recent attackers a hero remembers at once -- LRU-evicts the oldest if a 5th lands a hit before this one expires */
 
@@ -1269,7 +1269,7 @@ typedef struct {
      * watches specifically for THIS hitting zero to fire the resurface eruption exactly
      * once, since intangible_ms/rooted_ms alone give no "did it just expire" edge of their
      * own once other kits are also free to set them. Also gates all three auto-attack loops
-     * (hero-vs-hero, jungle creep, lane creep) while > 0 -- he's literally not present on
+     * (hero-vs-hero, node-guardian creep, lane creep) while > 0 -- he's literally not present on
      * the battlefield surface to swing at anything until he resurfaces. */
     int mnm_burrow_ms;
     int owner; /* 0 = player, 1 = bot in the 1v1 local demo; a slot index 0..ARENA_MAX_HEROES-1 in team mode */
@@ -1408,7 +1408,7 @@ typedef struct {
     /* berserker_ms (S170-190, founder: "add berserker and health regen powerups like from
      * warsong gulch"): > 0 while the Berserker powerup buff is active, adding
      * ARENA_BERSERKER_BONUS_AD on top of item_bonus_ad at the same damage call sites items
-     * already flow through (melee, jungle/lane creeps, Gary's homing shot) -- same "flat bonus,
+     * already flow through (melee, node-guardian/lane creeps, Gary's homing shot) -- same "flat bonus,
      * not a new damage model" shape as items. regen_ms/regen_accum: the Restoration powerup's
      * HP-per-second buff, same fractional-accumulator idiom as mp_regen_accum just above (a
      * flat per-tick add would truncate to 0 at this game's real 16ms tick rate, same reasoning
@@ -1489,7 +1489,7 @@ typedef struct {
      * team's own shop (arena_shop_buy/sell) on equipped items
      * (equipped_item[] below); XP feeds a flat, roster-wide power curve
      * (§19.4, not a per-level ability-point system). Both start at 0 and
-     * only ever grow via real kills (jungle/lane creep, hero) -- no
+     * only ever grow via real kills (node-guardian/lane creep, hero) -- no
      * passive trickle, matching real MOBA "you earn it by doing
      * something" precedent, same reasoning §19.2 already gives for why
      * this isn't a LoL-style base-gold-over-time tick. */
@@ -1565,7 +1565,7 @@ typedef struct {
     int mark_ms_remaining;
 } ArenaNode;
 
-/* ArenaCreep (S170-51): one jungle creep per node, index-matched
+/* ArenaCreep (S170-51): one node-guardian creep per node, index-matched
  * (creeps[i] always belongs to nodes[i]). See the header comment above
  * ARENA_MAX_CREEPS for the full design. */
 typedef struct {
@@ -1931,7 +1931,7 @@ void arena_tick_resources(unsigned int dt_ms);
  * from both arena_update() and arena_update_teams(). */
 void arena_tick_fountains(unsigned int dt_ms);
 
-/* arena_tick_creeps (S170-51): advances every jungle creep by dt_ms --
+/* arena_tick_creeps (S170-51): advances every node-guardian creep by dt_ms --
  * respawns a dead creep once its timer elapses (re-rolling flavor/HP from
  * its node's CURRENT owner, not whatever it was when it last spawned),
  * ticks its attack cooldown, and has it auto-attack the nearest hittable
@@ -1994,7 +1994,7 @@ void arena_tick_lane_creeps(unsigned int dt_ms);
  * instead auto-attacks the nearest OPPOSING-team lane creep within
  * ARENA_ATTACK_RANGE if one's there. Shares the same attack_cooldown_ms gate
  * as arena_hero_attack_creeps (called immediately after it in both update
- * loops), so a hero that already spent this tick's attack on a jungle creep
+ * loops), so a hero that already spent this tick's attack on a node-guardian creep
  * does not also get a free hit on a lane creep the same tick. No kill
  * reward (see the ARENA_LANE_WAYPOINT_COUNT header comment on why). Called
  * from both arena_update() and arena_update_teams(). */

@@ -321,12 +321,12 @@ typedef struct {
 // ARENA_MAX_PROJECTILES, same duplication reasoning as the others above.
 #define ARENA_SNAPSHOT_MAX_PROJECTILES 32
 
-// Per-jungle-creep state (S170-146, "wire-sync jungle/lane creeps -- the
+// Per-node-guardian-creep state (S170-146, "wire-sync jungle/lane creeps -- the
 // single biggest 'looks unfinished in a live match' gap"). Always exactly
 // ARENA_SNAPSHOT_CREEP_COUNT entries, index-matched to nodes[] (one creep
 // per node, same convention arena_game.h's ArenaCreep already uses) -- a
 // fixed-size array like ArenaHeroSnapshot/ArenaNodeSnapshot, not a sparse
-// count+array like projectiles, since jungle creeps are always fully
+// count+array like projectiles, since node-guardian creeps are always fully
 // populated (dead ones still occupy their slot, just alive=0).
 typedef struct {
     float x, z;

@@ -490,9 +490,9 @@ static void test_intangible_hero_cannot_be_hit(void) {
     CHECK(ghost->hp == ghost_hp_before, "an intangible hero takes no auto-attack damage");
 }
 
-/* S170-144: "ensure aoe damage spells hit creeps" -- AoE zone/aura ticks now hit jungle and
+/* S170-144: "ensure aoe damage spells hit creeps" -- AoE zone/aura ticks now hit node-guardian and
  * lane creeps too, not just heroes. */
-static void test_ghost_r_zone_damages_enemy_jungle_creep(void) {
+static void test_ghost_r_zone_damages_enemy_node_guardian(void) {
     arena_init_teams();
     for (int i = 1; i < ARENA_MAX_HEROES; i++) arena_state.heroes[i].active = 0;
     arena_state.heroes[0].hero_id = ARENA_HERO_GHOST;
@@ -515,10 +515,10 @@ static void test_ghost_r_zone_damages_enemy_jungle_creep(void) {
     arena_cast_r(0);
     arena_update_teams(1000); /* one full zone tick */
 
-    CHECK(arena_state.creeps[0].hp < hp_before, "Ghost's R zone damages an enemy team-flavored jungle creep standing in it");
+    CHECK(arena_state.creeps[0].hp < hp_before, "Ghost's R zone damages an enemy team-flavored node-guardian creep standing in it");
 }
 
-static void test_ghost_r_zone_does_not_damage_own_team_jungle_creep(void) {
+static void test_ghost_r_zone_does_not_damage_own_team_node_guardian(void) {
     arena_init_teams();
     for (int i = 1; i < ARENA_MAX_HEROES; i++) arena_state.heroes[i].active = 0;
     arena_state.heroes[0].hero_id = ARENA_HERO_GHOST;
@@ -531,7 +531,7 @@ static void test_ghost_r_zone_does_not_damage_own_team_jungle_creep(void) {
     /* Positioned within the zone radius (ARENA_GHOST_R_RADIUS) but OUTSIDE
        melee attack range (ARENA_ATTACK_RANGE) of the creep -- isolates this
        to the zone-damage path specifically, since a hero standing directly
-       on top of a jungle creep would also melee-auto-attack it via the
+       on top of a node-guardian creep would also melee-auto-attack it via the
        existing, separate arena_hero_attack_creeps mechanic (which lets any
        hero attack any creep regardless of flavor; only the reward differs). */
     arena_state.heroes[0].x = gx + 3.0f;
@@ -541,7 +541,7 @@ static void test_ghost_r_zone_does_not_damage_own_team_jungle_creep(void) {
     arena_cast_r(0);
     arena_update_teams(1000);
 
-    CHECK(arena_state.creeps[0].hp == hp_before, "Ghost's R zone does not damage the caster's own team's jungle creep");
+    CHECK(arena_state.creeps[0].hp == hp_before, "Ghost's R zone does not damage the caster's own team's node-guardian creep");
 }
 
 static void test_ghost_r_zone_damages_enemy_lane_creep(void) {
@@ -562,7 +562,7 @@ static void test_ghost_r_zone_damages_enemy_lane_creep(void) {
     CHECK(lc->hp < ARENA_LANE_CREEP_HP, "Ghost's R zone damages an enemy lane creep standing in it");
 }
 
-static void test_pizza_aura_damages_enemy_jungle_creep(void) {
+static void test_pizza_aura_damages_enemy_node_guardian(void) {
     arena_init_teams();
     for (int i = 1; i < ARENA_MAX_HEROES; i++) arena_state.heroes[i].active = 0;
     arena_state.heroes[0].hero_id = ARENA_HERO_PIZZA;
@@ -580,7 +580,7 @@ static void test_pizza_aura_damages_enemy_jungle_creep(void) {
 
     arena_update_teams(1000); /* Pizza's aura is always-on, no cast needed */
 
-    CHECK(arena_state.creeps[0].hp < hp_before, "Pizza's always-on burn aura damages a nearby enemy jungle creep, not just heroes");
+    CHECK(arena_state.creeps[0].hp < hp_before, "Pizza's always-on burn aura damages a nearby enemy node-guardian creep, not just heroes");
 }
 
 static void test_ghost_r_zone_damages_foe_over_time(void) {
@@ -710,7 +710,7 @@ static void test_arena_bot_enabled_gates_kit_casts_too(void) {
     /* Put the Duck (owner 1) in range of the Unicorn (owner 0) with its Q
        off cooldown -- if kit-casting weren't gated, this alone would pull
        and damage owner 0 within a handful of ticks. z=15 keeps both heroes
-       clear of every ArenaNode's jungle-creep aggro radius (S170-119: the
+       clear of every ArenaNode's node-guardian-creep aggro radius (S170-119: the
        map's center node now sits at (0,0), which this test used to use
        directly -- a creep spawning on the hero would confound this test's
        own signal with an unrelated system). */
@@ -1938,7 +1938,7 @@ static void test_courier_r_out_of_range_whiffs(void) {
           "The Debt Collector's Due whiffs out of range -- cooldown is not consumed");
 }
 
-/* S170-51: territorial dynamic jungle creeps. */
+/* S170-51: territorial dynamic node-guardian creeps. */
 
 static void test_creep_spawns_on_first_tick_with_flavor_from_node_owner(void) {
     arena_init_teams();
@@ -1955,7 +1955,7 @@ static void test_creep_spawns_on_first_tick_with_flavor_from_node_owner(void) {
           "a creep on a contested node spawns as the tougher neutral flavor");
 }
 
-/* S170-161: "add jungle creeps use the redgarden dynamic creep ecosystem
+/* S170-161: "add node-guardian creeps use the redgarden dynamic creep ecosystem
  * something simple to start" -- graveyard spawn + march/fan-out toward
  * unowned nodes for team-flavored creeps specifically. */
 
@@ -2050,7 +2050,7 @@ static void test_creep_attacks_nearby_hero(void) {
     arena_tick_creeps(ARENA_CREEP_ATTACK_COOLDOWN_MS); /* long enough for one attack */
 
     CHECK(arena_state.heroes[0].hp == 100 - ARENA_CREEP_NEUTRAL_DAMAGE,
-          "a jungle creep auto-attacks a hero standing within its aggro radius");
+          "a node-guardian creep auto-attacks a hero standing within its aggro radius");
 }
 
 static void test_hero_does_not_attack_creep_while_an_enemy_hero_is_in_range(void) {
@@ -2140,11 +2140,11 @@ static void test_team_creep_kill_by_owning_team_heals(void) {
     arena_hero_attack_creeps(16);
 
     CHECK(arena_state.heroes[0].hp == 50 + ARENA_CREEP_TEAM_KILL_HEAL,
-          "killing your own team's jungle creep on your own territory heals you (home-turf resupply)");
+          "killing your own team's node-guardian creep on your own territory heals you (home-turf resupply)");
 }
 
 static void test_team_creep_kill_by_enemy_team_helps_flip_the_node(void) {
-    /* Team 1 farms team 0's own jungle creep while team 1 is mid-channel
+    /* Team 1 farms team 0's own node-guardian creep while team 1 is mid-channel
        trying to flip that node -- the counter-play tool against a
        turtling opponent. */
     arena_init_teams();
@@ -2170,7 +2170,7 @@ static void test_team_creep_kill_by_enemy_team_helps_flip_the_node(void) {
 
     CHECK(arena_state.heroes[ARENA_TEAM_SIZE].hp == 100, "the enemy killer gets no heal -- that reward is owning-team-only");
     CHECK(arena_state.nodes[0].capture_progress_ms == ARENA_CREEP_TEAM_KILL_DENY_CAPTURE_BONUS_MS,
-          "farming the enemy's own jungle creep while channeling their node grants the deny capture bonus");
+          "farming the enemy's own node-guardian creep while channeling their node grants the deny capture bonus");
 }
 
 /* S170-139: lane creep waves. */
@@ -2291,7 +2291,7 @@ static void test_hero_kills_lane_creep_in_range(void) {
     arena_hero_attack_lane_creeps(16);
 
     CHECK(!creep->alive, "a hero kills a lane creep within attack range");
-    CHECK(!creep->active, "a dead lane creep frees its pool slot immediately, unlike jungle creeps' delayed respawn");
+    CHECK(!creep->active, "a dead lane creep frees its pool slot immediately, unlike node-guardian creeps' delayed respawn");
 }
 
 static void test_hero_does_not_attack_own_team_lane_creep(void) {
@@ -3445,7 +3445,7 @@ static void test_beleth_r_detonates_after_fuse(void) {
     }
     arena_state.heroes[0].hero_id = ARENA_HERO_BELETH;
     /* z=15: off every node's aggro/capture footprint (the Blacksmith node sits at (0,0), same
-       real bug this session already hit once for a different hero's test -- a jungle creep
+       real bug this session already hit once for a different hero's test -- a node-guardian creep
        spawning on the node dealt real damage the strict-equality check misattributed to the
        ability itself). heroes[ARENA_TEAM_SIZE]: the enemy team, same convention as Vassago's/
        He Xiangu's own team-mode R tests (heroes[0]/[1] are the SAME team by default). 3.0
@@ -4564,7 +4564,7 @@ static void test_item_stats_apply_to_hp_mp_armor_ad_speed(void) {
           "equipped items' move-speed bonus is cached for update_hero_motion to read");
 }
 
-static void test_jungle_creep_kill_grants_flow_and_xp(void) {
+static void test_node_guardian_kill_grants_flow_and_xp(void) {
     arena_init_teams();
     arena_state.heroes[0].x = arena_state.nodes[0].x;
     arena_state.heroes[0].z = arena_state.nodes[0].z;
@@ -4574,9 +4574,9 @@ static void test_jungle_creep_kill_grants_flow_and_xp(void) {
     arena_hero_attack_creeps(16);
 
     CHECK(!arena_state.creeps[0].alive, "sanity: the creep actually died");
-    CHECK(arena_state.heroes[0].flow == ARENA_JUNGLE_CREEP_KILL_FLOW, "a jungle creep kill grants the documented Flow bounty");
-    CHECK(arena_state.heroes[0].flow_earned == ARENA_JUNGLE_CREEP_KILL_FLOW, "flow_earned tracks the same amount");
-    CHECK(arena_state.heroes[0].xp == ARENA_JUNGLE_CREEP_KILL_XP, "a jungle creep kill grants the documented XP");
+    CHECK(arena_state.heroes[0].flow == ARENA_NODE_GUARDIAN_KILL_FLOW, "a node-guardian creep kill grants the documented Flow bounty");
+    CHECK(arena_state.heroes[0].flow_earned == ARENA_NODE_GUARDIAN_KILL_FLOW, "flow_earned tracks the same amount");
+    CHECK(arena_state.heroes[0].xp == ARENA_NODE_GUARDIAN_KILL_XP, "a node-guardian creep kill grants the documented XP");
 }
 
 static void test_lane_creep_kill_grants_flow_and_xp(void) {
@@ -5220,8 +5220,8 @@ static void test_combat_timer_counts_down_to_zero(void) {
     CHECK(arena_state.heroes[0].combat_timer_ms == 0, "the combat timer counts down and pins at 0, doesn't go negative");
 }
 
-/* S170-152: "capturing node should not make the user take damage" -- a team-flavored jungle
- * creep no longer attacks its own owning team, only the opposing one. */
+/* S170-152: "capturing node should not make the user take damage" -- a team-flavored
+ * node-guardian creep no longer attacks its own owning team, only the opposing one. */
 
 static void test_team_creep_does_not_attack_own_owning_team(void) {
     arena_init_teams();
@@ -5321,10 +5321,10 @@ int main(void) {
     test_silenced_hero_cannot_cast();
     test_ghost_w_grants_intangibility_and_expires();
     test_intangible_hero_cannot_be_hit();
-    test_ghost_r_zone_damages_enemy_jungle_creep();
-    test_ghost_r_zone_does_not_damage_own_team_jungle_creep();
+    test_ghost_r_zone_damages_enemy_node_guardian();
+    test_ghost_r_zone_does_not_damage_own_team_node_guardian();
     test_ghost_r_zone_damages_enemy_lane_creep();
-    test_pizza_aura_damages_enemy_jungle_creep();
+    test_pizza_aura_damages_enemy_node_guardian();
     test_ghost_r_zone_damages_foe_over_time();
     test_ghost_r_zone_stays_fixed_when_foe_moves_away();
     test_frog_q_rewinds_position_and_hp();
@@ -5547,7 +5547,7 @@ int main(void) {
     test_weatherman_w_noop_when_nobody_airborne();
     test_weatherman_r_zone_damages_over_time();
     test_item_stats_apply_to_hp_mp_armor_ad_speed();
-    test_jungle_creep_kill_grants_flow_and_xp();
+    test_node_guardian_kill_grants_flow_and_xp();
     test_lane_creep_kill_grants_flow_and_xp();
     test_hero_kill_grants_flow_xp_kills_and_deaths();
     test_hero_kill_awards_assist_to_recent_damager();

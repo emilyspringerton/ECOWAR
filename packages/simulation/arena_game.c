@@ -1722,7 +1722,7 @@ void arena_tick_creeps(unsigned int dt_ms) {
            real home turf doesn't hurt you for standing on it. Fixed:
            a team-flavored creep now only ever targets the OPPOSING
            team, matching the counter-play framing its own kill-reward
-           already carries ("farming an enemy's own jungle creep helps
+           already carries ("farming an enemy's own node-guardian creep helps
            flip their node"). A NEUTRAL (contested) creep is unchanged --
            still attacks anyone regardless of team, the actual
            "fight through the prize" challenge that flavor is meant to be. */
@@ -1800,12 +1800,12 @@ static void creep_die(ArenaCreep *creep, ArenaNode *node) {
     if (creep->last_attacked_by_owner < 0) return;
     ArenaHero *killer = &arena_state.heroes[creep->last_attacked_by_owner];
 
-    /* S170-175: Flow/XP applies to any jungle creep kill, neutral or
+    /* S170-175: Flow/XP applies to any node-guardian creep kill, neutral or
        team-flavored alike -- unlike the capture-bonus/heal rewards below,
        which stay flavor-specific. */
-    killer->flow += ARENA_JUNGLE_CREEP_KILL_FLOW;
-    killer->flow_earned += ARENA_JUNGLE_CREEP_KILL_FLOW;
-    killer->xp += ARENA_JUNGLE_CREEP_KILL_XP;
+    killer->flow += ARENA_NODE_GUARDIAN_KILL_FLOW;
+    killer->flow_earned += ARENA_NODE_GUARDIAN_KILL_FLOW;
+    killer->xp += ARENA_NODE_GUARDIAN_KILL_XP;
 
     if (creep->flavor == ARENA_CREEP_NEUTRAL) {
         /* The contested prize: a big swing toward capturing THIS node,
@@ -1826,7 +1826,7 @@ static void creep_die(ArenaCreep *creep, ArenaNode *node) {
         killer->hp += ARENA_CREEP_TEAM_KILL_HEAL;
         if (killer->hp > killer->max_hp) killer->hp = killer->max_hp;
     } else if (node->capturing_team == killer->team) {
-        /* Counter-play: farming the enemy's own jungle creep helps flip
+        /* Counter-play: farming the enemy's own node-guardian creep helps flip
            their node, same "only if actually channeling it" gate as above. */
         node->capture_progress_ms += ARENA_CREEP_TEAM_KILL_DENY_CAPTURE_BONUS_MS;
     }
@@ -1843,9 +1843,9 @@ void arena_hero_attack_creeps(unsigned int dt_ms) {
         /* S170-163: Gary's basic attack is exclusively his ranged homing
            shot (arena_tick_attack_targets) -- excluded here too, same
            reasoning as the hero-vs-hero melee loop, so he can't
-           incidentally flat-melee a jungle creep he happens to be standing
+           incidentally flat-melee a node-guardian creep he happens to be standing
            next to and burn his shared attack_cooldown_ms on it. Real,
-           scoped gap: Gary can't auto-attack jungle creeps at all until a
+           scoped gap: Gary can't auto-attack node-guardian creeps at all until a
            future pass extends the homing system to creep targets too --
            flagged, not faked. */
         if (h->hero_id == ARENA_HERO_GARY) continue;
@@ -1939,7 +1939,7 @@ void arena_tick_lane_creeps(unsigned int dt_ms) {
            creep if that's closer -- a wave clash is the actual "push" this
            subsystem exists for, not just a hero-harassment tool. Stops to
            fight instead of marching past, same "passive-until-approached
-           becomes active-once-engaged" idiom as jungle creeps (S170-51),
+           becomes active-once-engaged" idiom as node-guardian creeps (S170-51),
            just with a real opposing target instead of only heroes. */
         ArenaHero *nearest_hero = NULL;
         float hero_dist = 0.0f;
@@ -1971,7 +1971,7 @@ void arena_tick_lane_creeps(unsigned int dt_ms) {
 
         if ((atk_hero || atk_creep) && creep->attack_cooldown_ms <= 0) {
             if (atk_hero) {
-                apply_damage(atk_hero, ARENA_LANE_CREEP_DAMAGE); /* no armor stat on lane-creep attacks, same as jungle creeps */
+                apply_damage(atk_hero, ARENA_LANE_CREEP_DAMAGE); /* no armor stat on lane-creep attacks, same as node-guardian creeps */
             } else {
                 atk_creep->hp -= ARENA_LANE_CREEP_DAMAGE;
                 if (atk_creep->hp <= 0) { atk_creep->hp = 0; atk_creep->alive = 0; atk_creep->active = 0; }
@@ -2028,7 +2028,7 @@ void arena_hero_attack_lane_creeps(unsigned int dt_ms) {
             float dx = creep->x - h->x, dz = creep->z - h->z;
             if (sqrtf(dx * dx + dz * dz) > ARENA_ATTACK_RANGE) continue;
 
-            creep->hp -= ARENA_ATTACK_DAMAGE + arena_hero_bonus_ad(h); /* no armor stat on lane creeps, same as jungle creeps; S170-190 */
+            creep->hp -= ARENA_ATTACK_DAMAGE + arena_hero_bonus_ad(h); /* no armor stat on lane creeps, same as node-guardian creeps; S170-190 */
             h->attack_cooldown_ms = apply_cdr(h, ARENA_ATTACK_COOLDOWN_MS); /* S170-207 */
             if (creep->hp <= 0) {
                 creep->hp = 0;
@@ -2038,18 +2038,18 @@ void arena_hero_attack_lane_creeps(unsigned int dt_ms) {
                    own AoE-vs-lane-creep branch deliberately doesn't award
                    this, same "not every damage source needs full reward
                    wiring" precedent that function's own doc comment
-                   already sets for jungle creeps. */
+                   already sets for node-guardian creeps. */
                 h->flow += ARENA_LANE_CREEP_KILL_FLOW;
                 h->flow_earned += ARENA_LANE_CREEP_KILL_FLOW;
                 h->xp += ARENA_LANE_CREEP_KILL_XP;
             }
-            break; /* one creep target per hero per attack, same as jungle creeps/hero-vs-hero */
+            break; /* one creep target per hero per attack, same as node-guardian creeps/hero-vs-hero */
         }
     }
 }
 
 /* arena_zone_damage_creeps (S170-144, "ensure aoe damage spells hit
- * creeps"): applies `dps` flat damage to every living jungle creep AND lane
+ * creeps"): applies `dps` flat damage to every living node-guardian creep AND lane
  * creep within `radius` of (x,z) -- AoE zone/aura ticks (Ghost's Recital,
  * Pizza's aura, Beleth's Detonation, Paimon's/NOOR-1's own R zones)
  * previously only ever checked the single nearest-enemy-HERO parameter
@@ -2058,11 +2058,11 @@ void arena_hero_attack_lane_creeps(unsigned int dt_ms) {
  * too" half specifically, not the "hits every hero in radius" half (still
  * out of scope, unchanged). Flat damage, no armor (same convention every
  * other creep-damage site in this file already uses). A team-flavored
- * jungle creep is only a valid target for the OPPOSING team's zone, same as
+ * node-guardian creep is only a valid target for the OPPOSING team's zone, same as
  * melee (arena_hero_attack_creeps); a neutral one is fair game for anyone.
  * Lane creeps: only the opposing team's wave is ever a valid target, same
  * as melee (arena_hero_attack_lane_creeps). Zone kills grant no kill-credit
- * reward (jungle creeps' capture-bonus/heal, same as every other "not every
+ * reward (node-guardian creeps' capture-bonus/heal, same as every other "not every
  * damage source needs full reward wiring" simplification already accepted
  * elsewhere in this file) -- flagged, not faked. */
 static void arena_zone_damage_creeps(float x, float z, float radius, int caster_team, int dps) {
@@ -4588,7 +4588,7 @@ void arena_update(unsigned int dt_ms) {
     update_hero_motion(&arena_state.heroes[1], dt_sec);
     arena_tick_creeps(dt_ms);
     arena_hero_attack_creeps(dt_ms);
-    /* Lane creep waves (S170-139) are team-mode only, unlike jungle creeps --
+    /* Lane creep waves (S170-139) are team-mode only, unlike node-guardian creeps --
        "pushing toward the enemy spawn" isn't a meaningful concept in this
        1v1 practice demo (no team-wide push objective exists here at all),
        and running them here would just be an unrequested third-party

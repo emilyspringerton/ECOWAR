@@ -34,7 +34,7 @@ briefly 7v7 under S170-178, reverted).
 
 ### Flow, XP, and the item shop (S170-175)
 
-Every hero earns two currencies from kills — jungle creeps, lane creeps, and enemy heroes, melee
+Every hero earns two currencies from kills — node-guardian creeps, lane creeps, and enemy heroes, melee
 or Gary's homing shot only, not ability-finished kills:
 
 - **Flow** — the spendable currency (this game's "gold"). Shown live in the always-on character

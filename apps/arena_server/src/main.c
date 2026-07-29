@@ -405,7 +405,7 @@ static void server_broadcast(void) {
         msg.projectiles[slot].owner = (uint8_t)p->owner;
         msg.projectiles[slot].hero_id = (uint8_t)p->hero_id;
     }
-    /* S170-146: jungle creeps are always fully populated (one per node,
+    /* S170-146: node-guardian creeps are always fully populated (one per node,
        dead ones just sit at alive=0), same convention as heroes/nodes --
        fixed-size array, not sparse-packed. */
     for (int i = 0; i < ARENA_SNAPSHOT_CREEP_COUNT; i++) {
@@ -418,7 +418,7 @@ static void server_broadcast(void) {
         msg.creeps[i].flavor = (uint8_t)cr->flavor;
     }
     /* S170-190: powerups are always fully populated (fixed at ARENA_POWERUP_COUNT), same
-       "not sparse-packed" convention as jungle creeps just above. */
+       "not sparse-packed" convention as node-guardian creeps just above. */
     for (int i = 0; i < ARENA_SNAPSHOT_POWERUP_COUNT; i++) {
         ArenaPowerup *pu = &arena_state.powerups[i];
         msg.powerups[i].x = pu->x;
