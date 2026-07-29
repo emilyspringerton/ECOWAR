@@ -2,6 +2,16 @@
 
 ## 2026-07-29
 
+- test(arena): S170-217, confirm last-hit already works for lane creeps. §20.3's own note:
+  lane-creep-vs-lane-creep damage (`arena_tick_lane_creeps`) and hero-vs-lane-creep damage
+  (`arena_hero_attack_lane_creeps`) are two independent sources converging on the same
+  `ArenaLaneCreep.hp` field, so a hero finishing off an already-weakened creep likely already
+  reproduces real last-hit behavior. No new code -- new test
+  `test_hero_last_hits_a_lane_creep_already_weakened_by_the_wave_clash` runs both real damage
+  paths for real (an actual wave clash weakens the creep, then a hero's real follow-up hit
+  finishes it) and confirms the finishing hero gets full Flow+XP kill credit regardless of who
+  dealt the earlier damage. Full suite green.
+
 - feat(arena): S170-216, XP-share radius on lane creep kills. Was killer-only
   (`h->xp += ARENA_LANE_CREEP_KILL_XP` on the single hero whose hit landed); now every OTHER
   allied hero within the new `ARENA_LANE_CREEP_XP_SHARE_RADIUS` (8.0, deliberately bigger than

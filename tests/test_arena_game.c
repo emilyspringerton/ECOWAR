@@ -2321,6 +2321,42 @@ static void test_lane_creeps_fight_each_other_when_opposing_teams_meet(void) {
     CHECK(b->hp == ARENA_LANE_CREEP_HP - ARENA_LANE_CREEP_DAMAGE, "both sides of a wave clash damage each other the same tick -- the actual push mechanic");
 }
 
+static void test_hero_last_hits_a_lane_creep_already_weakened_by_the_wave_clash(void) {
+    /* S170-217: lane-creep-vs-lane-creep damage (arena_tick_lane_creeps) and hero-vs-lane-creep
+       damage (arena_hero_attack_lane_creeps) are two entirely independent sources converging on
+       the same ArenaLaneCreep.hp field -- confirm a hero finishing off a creep the WAVE already
+       weakened still gets full kill credit, the real last-hit mechanic, not new code, just
+       proving the existing convergence already does the right thing. Uses both real damage
+       paths for real, not a hand-set hp shortcut. */
+    arena_init_teams();
+    for (int i = 1; i < ARENA_MAX_HEROES; i++) arena_state.heroes[i].active = 0;
+    arena_state.lane_wave_timer_ms[0] = 999999;
+    arena_state.lane_wave_timer_ms[1] = 999999;
+    arena_state.heroes[0].x = 100.0f; /* far away -- not yet in range for the wave-clash tick below */
+    arena_state.heroes[0].z = 100.0f;
+
+    ArenaLaneCreep *enemy = &arena_state.lane_creeps[0];
+    enemy->active = 1; enemy->alive = 1; enemy->team = 1; enemy->waypoint_index = 1;
+    enemy->hp = 10; enemy->max_hp = ARENA_LANE_CREEP_HP; /* already weak, well under ARENA_ATTACK_DAMAGE */
+    enemy->x = 0.0f; enemy->z = 0.0f;
+
+    ArenaLaneCreep *ally = &arena_state.lane_creeps[1];
+    ally->active = 1; ally->alive = 1; ally->team = 0; ally->waypoint_index = 1;
+    ally->hp = ally->max_hp = ARENA_LANE_CREEP_HP;
+    ally->x = 1.0f; ally->z = 0.0f; /* within ARENA_LANE_CREEP_AGGRO_RADIUS of enemy */
+
+    arena_tick_lane_creeps(16); /* real wave clash: enemy takes ARENA_LANE_CREEP_DAMAGE from ally */
+    CHECK(enemy->alive && enemy->hp == 10 - ARENA_LANE_CREEP_DAMAGE, "sanity: the wave clash weakened the enemy creep but didn't kill it");
+
+    arena_state.heroes[0].x = enemy->x; /* now move the hero in for the real finishing blow */
+    arena_state.heroes[0].z = enemy->z;
+    arena_hero_attack_lane_creeps(16);
+
+    CHECK(!enemy->alive, "the hero's follow-up hit finishes off the wave-weakened creep");
+    CHECK(arena_state.heroes[0].flow == ARENA_LANE_CREEP_KILL_FLOW, "last-hit: the finishing hero gets full kill credit even though the wave dealt some of the damage");
+    CHECK(arena_state.heroes[0].xp == ARENA_LANE_CREEP_KILL_XP, "last-hit: full XP credit too, not split by damage contribution");
+}
+
 static void test_hero_kills_lane_creep_in_range(void) {
     arena_init_teams();
     for (int i = 1; i < ARENA_MAX_HEROES; i++) arena_state.heroes[i].active = 0;
@@ -5512,6 +5548,7 @@ int main(void) {
     test_lane_creep_attacks_nearby_enemy_hero_and_does_not_advance();
     test_lane_creep_aggro_redirects_to_attacker_over_a_closer_bystander();
     test_lane_creeps_fight_each_other_when_opposing_teams_meet();
+    test_hero_last_hits_a_lane_creep_already_weakened_by_the_wave_clash();
     test_hero_kills_lane_creep_in_range();
     test_hero_does_not_attack_own_team_lane_creep();
     test_hero_can_deny_own_team_lane_creep_below_half_hp();
