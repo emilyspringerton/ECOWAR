@@ -41,6 +41,11 @@
 #define TICKET_TOTAL_LEN (TICKET_PAYLOAD_LEN + TICKET_MAC_LEN)
 #define ARENA_MATCHMAKER_PORT 7778 /* separate queue from the card-RTS matchmaker's 7777 */
 #define ARENA_BOT_LOW_HP_FRACTION 0.25f /* S170-173: "seek out fountains when super low" -- real-MOBA "go top off" threshold */
+/* ARENA_BOT_TOPPED_UP_FRACTION (2026-07-29, founder: "bots should consider healing more than
+   one tick at the fountain sometimes"): the EXIT threshold for a fountain retreat, deliberately
+   higher than ARENA_BOT_LOW_HP_FRACTION's own ENTRY threshold -- see the retreat decision's own
+   doc comment below for the flapping bug this hysteresis gap fixes. */
+#define ARENA_BOT_TOPPED_UP_FRACTION 0.9f
 /* Mirrors packages/simulation/arena_game.h's ARENA_HERO_COUNT -- this file is a pure network
    client and deliberately doesn't include the sim header (no direct ArenaState access, wire
    protocol only), so the roster size has to be kept in sync by hand here. Bump this alongside
@@ -723,6 +728,13 @@ static void play_one_match(int game_port) {
     int silent_ticks = 0;
     int shop_next_item_id = 0; /* S170-175 Sprint 5: cycles through ARENA_BOT_ITEM_COSTS in catalog order */
     uint32_t last_shop_buy_ms = 0;
+    /* retreating_to_fountain (2026-07-29, founder: "bots should consider healing more than one
+       tick at the fountain sometimes" -- see the actual retreat-decision block below for the
+       full bug this fixes: single-threshold flapping, no hysteresis). Persists across ticks
+       within this one match, same lifetime as picked/silent_ticks above -- the retreat decision
+       needs to remember "I'm already mid-heal" from one tick to the next, not just react to
+       this tick's HP fraction in isolation. */
+    int retreating_to_fountain = 0;
     /* draft_offset (S170-105, real bug found live, twice): ARENA_HERO_COUNT (21) now exceeds
        ARENA_MAX_HEROES (20) for the first time -- a full 20-player lobby only ever has owner
        slots 0..19, so a bare `owner % hero_count` always maps to hero_ids 0..19 and can NEVER
@@ -842,9 +854,31 @@ static void play_one_match(int game_port) {
                        uses for roster-size constants, see ARENA_HERO_COUNT's own
                        doc comment) -- mirrors arena_fountain_position()'s two fixed
                        points exactly, no wire sync needed since neither ever
-                       moves. */
-                    int retreating_to_fountain = last.heroes[my_owner].max_hp > 0
-                        && (float)last.heroes[my_owner].hp / (float)last.heroes[my_owner].max_hp < ARENA_BOT_LOW_HP_FRACTION;
+                       moves.
+
+                       2026-07-29 bug fix, founder: "bots should consider healing more than
+                       one tick at the fountain sometimes." This used to recompute the retreat
+                       decision from scratch every single tick off ONLY the current HP
+                       fraction (`local var < LOW_HP_FRACTION`, no memory of the previous
+                       tick) -- classic single-threshold flapping: a bot could dip to just
+                       under 25% HP, take one fountain tick of healing that ticks it to just
+                       OVER 25%, and immediately declare itself no longer low and dash back
+                       into a fight it had barely started healing for, then dip back under 25%
+                       a few ticks later and repeat, arriving at the fountain "sometimes" for
+                       one real heal-tick and then leaving. Now a real two-threshold state
+                       machine using the outer, per-match-persistent
+                       `retreating_to_fountain`: entering retreat still needs HP under the
+                       LOW threshold, but once retreating, a bot stays retreating until it's
+                       actually topped back up (ARENA_BOT_TOPPED_UP_FRACTION, 90%), not just
+                       barely above where it started. */
+                    if (last.heroes[my_owner].max_hp > 0) {
+                        float hp_frac = (float)last.heroes[my_owner].hp / (float)last.heroes[my_owner].max_hp;
+                        if (!retreating_to_fountain && hp_frac < ARENA_BOT_LOW_HP_FRACTION) {
+                            retreating_to_fountain = 1;
+                        } else if (retreating_to_fountain && hp_frac >= ARENA_BOT_TOPPED_UP_FRACTION) {
+                            retreating_to_fountain = 0;
+                        }
+                    }
                     if (retreating_to_fountain) {
                         static const float fountains[2][2] = { { -43.78f, -43.78f }, { 43.78f, 43.78f } }; /* S170-191: ARENA_HALF_EXTENT-8 against the golden-ratio-scaled 51.78 (was -24/24 against the old 32) -- kept in sync by hand, same idiom this file's own doc comment already flags for every other duplicated map constant */
                         int nearest = 0;

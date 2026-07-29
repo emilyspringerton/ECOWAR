@@ -2490,3 +2490,30 @@
   evaluated + exported the latest real checkpoint directly (same 50W/0L result), and fixed the
   root cause: `timesteps_done = model.num_timesteps` reads the authoritative counter instead of
   re-deriving a second copy of the same number that can drift. Full suite green.
+
+- fix(arena): fountain-retreat flapping -- real hysteresis instead of a single threshold.
+  Founder: "bots should consider healing more than one tick at the fountain sometimes."
+  `apps/arena_bot/src/main.c`'s retreat-to-fountain decision recomputed itself from scratch every
+  single ~100ms decision tick off ONLY the current HP fraction, with no memory of the previous
+  tick -- a bot could dip just under the 25% entry threshold, take one fountain heal-tick that
+  pushed it just back OVER 25%, and immediately declare itself no longer low and dash back into
+  the fight it had barely healed for, then dip under 25% again a few ticks later and repeat --
+  arriving at the fountain "sometimes" for one real heal-tick, exactly the founder's own
+  description. Fixed with a real two-threshold state machine: `retreating_to_fountain` is now a
+  per-match-persistent flag (was a fresh local every tick), entering retreat still needs HP under
+  `ARENA_BOT_LOW_HP_FRACTION` (25%, unchanged), but once retreating a bot now stays there until
+  it reaches a new, higher `ARENA_BOT_TOPPED_UP_FRACTION` (90%) exit threshold, not just barely
+  above where it started. Full suite green.
+
+- feat(arena): trained RL policy also drives casting, for the exact pairing it was trained on.
+  Same session, founder's own broader question ("how do we combine heuristics with the ml model
+  so we do a little fuzzy best of both worlds") prompted finishing what NORTHSTAR §21's own
+  movement-only scoping had deliberately left undone. New `arena_bot_tick_rl_cast()` applies the
+  same trained policy's `cast_q`/`cast_w`/`cast_r` outputs (same `>0 = attempt this tick`
+  threshold `scripts/rl_env.py`'s own `step()` already uses) -- but ONLY when the solo-practice
+  bot is actually playing Unicorn or Duck (`rl_train.py`'s own trained pairing); every other hero
+  still gets the existing hand-authored per-hero heuristic (`bot_cast_kit_if_ready`), unchanged.
+  This is the concrete instance of "combine heuristics with the model": hero-gated selection
+  between two whole decision-makers, not a blend within one decision -- see this session's own
+  design discussion for the fuller reasoning and what a real blended (not just gated) approach
+  would need. Full suite green.

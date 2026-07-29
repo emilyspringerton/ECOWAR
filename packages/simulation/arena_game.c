@@ -207,20 +207,16 @@ static void bot_brain_forward(const float in[4], float out[2]) {
  * generic packages/common/mlp_infer.c engine SHANKPIT's own precedent uses
  * for its (also trained) bot brain.
  *
- * Deliberately scoped to MOVEMENT only, same "which specific piece is 'the
- * net'" reading the founder's own phrasing ("the hand written net," not "the
- * hand written heuristic") implies -- bot_cast_kit_if_ready below (the
- * per-hero Q/W/R ability-casting logic, an if/else heuristic, never called a
- * "net" anywhere in this codebase) is untouched: it's hero-aware across the
- * full ~27-hero roster, while this trained policy only ever saw one specific
- * hero pairing (rl_train.py's own --hero0-id/--hero1-id, Unicorn vs Duck by
- * default) during training -- swapping it in for casting too would be a real
- * behavior regression for every other hero, not requested and not done here.
- *
- * The policy's own action space is [move_x, move_z, cast_q, cast_w, cast_r]
- * (scripts/rl_env.py's own ArenaTrainingEnv) -- only indices 0/1 are read
- * here; the cast_* outputs are computed by the forward pass but intentionally
- * ignored, for the same reason. */
+ * Movement always comes from this policy for the bot slot. Casting is a narrower call: the
+ * policy's own action space is [move_x, move_z, cast_q, cast_w, cast_r] (scripts/rl_env.py's
+ * own ArenaTrainingEnv), and 2026-07-29's spatial-generalization retrain still only ever saw
+ * ONE specific hero pairing (rl_train.py's own --hero0-id/--hero1-id, Unicorn vs Duck by
+ * default) -- using its cast_* outputs for any OTHER hero's kit would be a real behavior
+ * regression (Gary's Aimed Shot and Zagan's Conjunction have nothing in common with Unicorn's or
+ * Duck's abilities, the policy has no idea either exists). arena_bot_tick_rl_cast below applies
+ * the same trained cast_* outputs, but ONLY when the bot is actually playing Unicorn or Duck --
+ * bot_cast_kit_if_ready (the per-hero Q/W/R heuristic, hero-aware across the full ~28-hero
+ * roster) still drives every other hero's casting, unchanged, same as before this pass. */
 static void arena_bot_tick_rl_move(ArenaHero *bot, ArenaHero *foe) {
     /* Mirror correction: training (scripts/rl_train.py's own default
        --hero0-id/--hero1-id) always put the LEARNING side (the Agent, whose
@@ -266,6 +262,45 @@ static void arena_bot_tick_rl_move(ArenaHero *bot, ArenaHero *foe) {
        by rl_policy_forward itself -- un-mirror action[0] back to owner 1's
        real +6-side frame before applying it. z needs no such correction. */
     arena_set_move_target(bot->owner, -action[0], action[1]);
+}
+
+/* arena_bot_tick_rl_cast (2026-07-29): the casting half of the same trained policy
+ * arena_bot_tick_rl_move already uses for movement -- see that function's own doc comment for
+ * the full mirroring/observation-layout explanation, identical here. Only ever called for
+ * Unicorn or Duck (rl_train.py's own trained pairing, see the caller's own gating) -- calling
+ * this for any other hero would apply a Unicorn/Duck-shaped cast decision to a kit the policy
+ * has never seen, a real behavior regression this stays scoped away from.
+ *
+ * action[2]/action[3]/action[4] are cast_q/cast_w/cast_r, same ">0 = attempt this tick"
+ * threshold scripts/rl_env.py's own step() already uses -- matching the training-time
+ * interpretation exactly, rather than inventing a different one for live play. */
+static void arena_bot_tick_rl_cast(ArenaHero *bot, ArenaHero *foe) {
+    float obs[RL_POLICY_OBS_SIZE];
+    obs[0]  = (float)bot->hp;
+    obs[1]  = (float)bot->max_hp;
+    obs[2]  = (float)bot->mp;
+    obs[3]  = -bot->x;
+    obs[4]  = bot->z;
+    obs[5]  = (float)(bot->q_cooldown_ms > 0 ? bot->q_cooldown_ms : 0);
+    obs[6]  = (float)(bot->w_cooldown_ms > 0 ? bot->w_cooldown_ms : 0);
+    obs[7]  = (float)(bot->r_cooldown_ms > 0 ? bot->r_cooldown_ms : 0);
+    obs[8]  = (float)(bot->flow > 0 ? bot->flow : 0);
+    obs[9]  = (float)bot->xp;
+    obs[10] = bot->alive ? 1.0f : 0.0f;
+    obs[11] = (float)(foe->hp > 0 ? foe->hp : 0);
+    obs[12] = (float)foe->max_hp;
+    obs[13] = -foe->x;
+    obs[14] = foe->z;
+    obs[15] = foe->alive ? 1.0f : 0.0f;
+    obs[16] = (-foe->x) - (-bot->x);
+    obs[17] = foe->z - bot->z;
+
+    float action[RL_POLICY_ACTION_SIZE];
+    rl_policy_forward(obs, action);
+
+    if (action[2] > 0.0f) arena_cast_q(bot->owner);
+    if (action[3] > 0.0f) arena_toggle_w(bot->owner);
+    if (action[4] > 0.0f) arena_cast_r(bot->owner);
 }
 
 /* S170-119: Arathi Basin-style 5-node spread -- two flanking nodes near each
@@ -4841,7 +4876,19 @@ void arena_update(unsigned int dt_ms) {
        damage in a server with zero connected clients, because this call
        wasn't gated -- Duck's Q was yanking it every time it came off
        cooldown. */
-    if (arena_bot_enabled) bot_cast_kit_if_ready(&arena_state.heroes[1], &arena_state.heroes[0]);
+    if (arena_bot_enabled) {
+        /* 2026-07-29: the trained RL policy now drives casting too, but ONLY for the exact
+           pairing it was trained on (Unicorn/Duck, see arena_bot_tick_rl_cast's own doc
+           comment) -- every other hero still gets the hand-authored per-hero heuristic,
+           unchanged. arena_bot_tick above (movement) is unconditionally RL either way; this is
+           the one place hero identity actually branches which brain drives the bot. */
+        ArenaHeroID bot_hero = arena_state.heroes[1].hero_id;
+        if (bot_hero == ARENA_HERO_UNICORN || bot_hero == ARENA_HERO_DUCK) {
+            arena_bot_tick_rl_cast(&arena_state.heroes[1], &arena_state.heroes[0]);
+        } else {
+            bot_cast_kit_if_ready(&arena_state.heroes[1], &arena_state.heroes[0]);
+        }
+    }
     arena_tick_projectiles(dt_ms);
     arena_tick_fountains(dt_ms);
     arena_tick_powerups(dt_ms); /* S170-190 */
