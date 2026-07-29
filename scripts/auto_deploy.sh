@@ -95,6 +95,27 @@ for bin in red_garden_arena_server red_garden_arena_bot red_garden_matchmaker re
 done
 
 export XDG_RUNTIME_DIR="/run/user/$(id -u)"
+
+# Match-aware restart guard (2026-07-29, EMILY/BACKLOG.md follow-up to Apple #11297): restarting
+# the matchmaker/bot-pool units used to kill any currently-live match along with them -- spawned
+# `red_garden_arena_server` processes are forked children of the matchmaker, not their own
+# systemd units, so systemd's own control-group kill on restart took them out too. Real incident:
+# the founder got through a draft, the timer fired ~2 minutes later, and their just-started match
+# server died mid-game (Apple #11297) -- the timer was stopped afterward specifically because of
+# this, not re-enabled since. A spawned server process only exists between "lobby just filled"
+# and "match ended/timed out" (spawn_game_server/`running = 0`, apps/arena_server/src/main.c) --
+# checking for ANY of them is a simple, sufficient proxy for "is a real match plausibly in
+# progress right now," no new status endpoint needed. Binaries are already published above
+# regardless (harmless either way -- the matchmaker execs `server_bin` fresh per spawn, so a
+# future match picks up the new server binary without this restart at all); only the
+# bot-pool/matchmaker restart itself, and marking this SHA as deployed, are deferred. Not writing
+# STATE_FILE here means the next timer tick (5 min later) retries this whole check from scratch
+# until it lands in a genuinely idle window, rather than silently giving up after one skip.
+if pgrep -f "build/red_garden_arena_server --port" > /dev/null 2>&1; then
+    log "deferring restart for ${LATEST_GREEN_SHA} -- a match server is currently running (binaries published, will retry next cycle)"
+    exit 0
+fi
+
 systemctl --user restart redgarden-matchmaker-bots.service redgarden-matchmaker-players.service redgarden-bot-pool.service
 
 echo "${LATEST_GREEN_SHA}" > "${STATE_FILE}"

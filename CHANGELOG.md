@@ -2532,3 +2532,17 @@
   before this pass); a chaotic teamfight the model never trained on gets a heavily damped one
   instead of either fully trusting or fully ignoring the model based on a hard rule. Full suite
   green.
+
+- fix(ops): `auto_deploy.sh` is now match-aware -- backlog follow-up to Apple #11297. The
+  systemd timer has been stopped since that Apple (it used to restart the matchmaker/bot-pool
+  units unconditionally, which killed any currently-live match along with them -- spawned
+  `red_garden_arena_server` processes are forked children of the matchmaker, not their own
+  systemd units, so the restart's control-group kill took them out too). Added a guard right
+  before the restart step: `pgrep -f "build/red_garden_arena_server --port"` checks for any
+  currently-running match server (only ever exists between "lobby just filled" and "match
+  ended/timed out," a simple, sufficient proxy for "a real match might be in progress") and, if
+  found, defers the restart (and does NOT mark the SHA as deployed, so the next 5-minute timer
+  tick retries the whole check rather than silently giving up). Binaries are still published
+  either way -- harmless, since the matchmaker execs `server_bin` fresh per spawn regardless of
+  whether this restart happens. Timer intentionally still left stopped (not re-enabled as part of
+  this commit) pending a live verification pass.
