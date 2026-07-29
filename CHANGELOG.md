@@ -2,6 +2,22 @@
 
 ## 2026-07-29
 
+- fix(arena): S170-228 follow-up -- CI's Linux build was broken by the RL-policy wiring.
+  Founder: "the build is down when we wired the new ai brain in" -> "its an issue with the
+  linux bbuild." `scripts/build.sh` and `scripts/build_training.sh` had already picked up the
+  new `packages/common/mlp_infer.c` link dependency (`arena_game.c` now calls
+  `rl_policy_forward()` -> `mlp_forward()`), but two other places compiling `arena_game.c` were
+  missed: `scripts/build_arena.sh` (CI's "Build Linux arena client" step, an executable link --
+  unlike the training `.so`'s silent undefined-symbol case, this hard-fails at link time with
+  `undefined reference to mlp_forward`, which is exactly what broke CI) and the mingw Windows
+  cross-compile step in `.github/workflows/ci.yml`. Both fixed the same way: add
+  `packages/common/mlp_infer.c` to the link line. Also found and fixed two stale local checkouts
+  behind `origin/main` that compounded the confusion: `/home/fatbaby/REDGARDEN` (6 commits
+  behind, missing `rl_policy_weights.h` entirely) and `/home/fatbaby/redgarden-deploy` (3 commits
+  behind) -- both fast-forwarded and rebuilt clean. Verified: `scripts/build_arena.sh` and the
+  full `scripts/test_arena.sh` suite pass locally; mingw itself isn't available in this sandbox
+  to build-test the Windows fix directly, but it mirrors the identical, already-proven fix.
+
 - fix(arena): S170-229, buying/selling in the shop no longer also moves the player. Founder:
   "clicking on item in shop to buy should not cause playyer to move." The shop-click and
   movement-click handlers were two separate `if` blocks reacting to the same click event with no

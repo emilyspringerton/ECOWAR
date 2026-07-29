@@ -13,10 +13,15 @@ mkdir -p "${BUILD_DIR}"
 # -D_DEFAULT_SOURCE: needed by packages/common/http_client.h's getaddrinfo/
 # struct addrinfo/usleep under -std=c99 (same fix already applied to
 # scripts/build.sh for the same reason).
+# packages/common/mlp_infer.c (S170-228): arena_game.c's own arena_bot_tick now calls
+# rl_policy_forward() (packages/common/rl_policy_weights.h), which calls mlp_forward(),
+# defined in mlp_infer.c -- missing here broke CI's Linux build (undefined reference at
+# link time; scripts/build.sh and scripts/build_training.sh already had this fix).
 gcc -std=c99 -D_DEFAULT_SOURCE -O2 -Wall -Wextra -I"${ROOT_DIR}/packages" \
   -o "${BUILD_DIR}/red_garden_arena" \
   "${ROOT_DIR}/apps/arena/src/main.c" \
   "${ROOT_DIR}/packages/simulation/arena_game.c" \
   "${ROOT_DIR}/packages/simulation/arena_replay.c" \
   "${ROOT_DIR}/packages/simulation/arena_ai_bridge.c" \
+  "${ROOT_DIR}/packages/common/mlp_infer.c" \
   -lSDL2 -lGL -lm
