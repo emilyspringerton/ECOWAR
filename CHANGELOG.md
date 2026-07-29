@@ -2,6 +2,17 @@
 
 ## 2026-07-29
 
+- docs(arena): NORTHSTAR §21, reward-driven RL spec -- Unity ML-Agents shaped (S170-223).
+  Founder: "running training on a corpus of games is cool but thats not what i actually want
+  right now i want unsupervised learning with rewards like in the unity ml-agents plugin." Found
+  the right precedent already real in sibling SHANKPIT: `apps/training/headless.c` (a minimal
+  ctypes-callable C environment API) and `neural_net.h`/`brain_weights.h` (a small MLP, weights
+  as literal compiled-in C arrays -- the real "embed weights in C" pattern for a small policy
+  net, distinct from `gpt2_infer.c`'s wrong-shaped-for-this token-generation approach). Designed
+  the full reward function (dense per-tick shaping + dominant terminal win/loss term) and the
+  target architecture (new `apps/arena_training/headless.c`, a `gymnasium.Env`, Stable-
+  Baselines3's PPO, weight export to a small embedded-C MLP). Spec pass only, no code yet.
+
 - feat(arena): embed trained bot AI weights into C + auto git-sync from Colab (S170-220,
   S170-221). Founder: "we want to embed the weights right into the c code... we can do it all
   with colab scripts running python to do it all / i will put the keys in MyDrive/.ssh."
