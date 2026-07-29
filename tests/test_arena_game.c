@@ -4933,6 +4933,85 @@ static void test_hero_kill_grants_flow_xp_kills_and_deaths(void) {
     CHECK(arena_state.heroes[0].xp == ARENA_HERO_KILL_XP, "a hero kill grants the documented XP");
     CHECK(arena_state.heroes[0].kills == 1, "the killer's kill count increments");
     CHECK(arena_state.heroes[ARENA_TEAM_SIZE].deaths == 1, "the victim's death count increments");
+    CHECK(arena_state.heroes[0].multikill_count == 1, "a fresh kill starts a streak at count 1");
+}
+
+/* Multi-kill streak reward (2026-07-29, founder: "add exponential reward for double tripple
+ * penta kills etc" -> "like a double kill should give the reward of 3 kills and then use the
+ * fib"). Real kills are driven through actual arena_update_teams ticks, same convention every
+ * other kill test in this file already uses -- only the killer's PRE-EXISTING streak state
+ * (multikill_count/multikill_timer_ms) is set up directly rather than earned via a first real
+ * kill, same "simulate the setup, exercise the real path for what's actually under test"
+ * precedent test_assist_expires_outside_the_tracking_window's own doc comment above already
+ * uses for timer state. */
+static void test_second_kill_within_window_scales_by_fib_and_stacks_to_3x(void) {
+    arena_init_teams();
+    for (int i = 2; i < ARENA_MAX_HEROES; i++) arena_state.heroes[i].active = 0;
+    arena_state.heroes[ARENA_TEAM_SIZE].active = 1;
+    arena_state.heroes[ARENA_TEAM_SIZE].alive = 1;
+    arena_state.heroes[0].x = arena_state.heroes[ARENA_TEAM_SIZE].x;
+    arena_state.heroes[0].z = arena_state.heroes[ARENA_TEAM_SIZE].z;
+    arena_state.heroes[ARENA_TEAM_SIZE].hp = 1;
+
+    /* Owner 0 already has one kill 4s into its 10s window -- this next one is streak kill 2,
+       "Double Kill" in real-MOBA terms. */
+    arena_state.heroes[0].multikill_count = 1;
+    arena_state.heroes[0].multikill_timer_ms = ARENA_MULTIKILL_WINDOW_MS - 4000;
+    arena_state.heroes[0].flow = ARENA_HERO_KILL_FLOW; /* the first kill's own bounty, already banked */
+
+    for (int i = 0; i < 500 && arena_state.heroes[ARENA_TEAM_SIZE].alive; i++) arena_update_teams(16);
+
+    CHECK(!arena_state.heroes[ARENA_TEAM_SIZE].alive, "sanity: the second kill actually landed");
+    CHECK(arena_state.heroes[0].multikill_count == 2, "streak count advances to 2 (Double Kill)");
+    CHECK(arena_state.heroes[0].flow == ARENA_HERO_KILL_FLOW * 3,
+          "two kills forming a Double Kill total 1x + 2x (fib(1)+fib(2)) = 3x a normal kill's worth -- the founder's own stated example");
+}
+
+static void test_multikill_streak_resets_after_window_expires(void) {
+    arena_init_teams();
+    for (int i = 2; i < ARENA_MAX_HEROES; i++) arena_state.heroes[i].active = 0;
+    arena_state.heroes[ARENA_TEAM_SIZE].active = 1;
+    arena_state.heroes[ARENA_TEAM_SIZE].alive = 1;
+    arena_state.heroes[0].x = arena_state.heroes[ARENA_TEAM_SIZE].x;
+    arena_state.heroes[0].z = arena_state.heroes[ARENA_TEAM_SIZE].z;
+    arena_state.heroes[ARENA_TEAM_SIZE].hp = 1;
+
+    /* Owner 0 was mid-streak (count 3, as if Triple Kill already landed) but the window has
+       fully lapsed since -- same "age the timer out directly" idiom as the assist-expiry test
+       above. tick_hero_kit's own decrement path (exercised by every real tick below) must clear
+       multikill_count back to 0 once the timer actually hits 0, BEFORE the next kill lands, or
+       this next kill would wrongly continue the old streak as count 4 instead of starting a
+       fresh one at count 1. */
+    arena_state.heroes[0].multikill_count = 3;
+    arena_state.heroes[0].multikill_timer_ms = 0;
+
+    for (int i = 0; i < 500 && arena_state.heroes[ARENA_TEAM_SIZE].alive; i++) arena_update_teams(16);
+
+    CHECK(!arena_state.heroes[ARENA_TEAM_SIZE].alive, "sanity: the kill landed");
+    CHECK(arena_state.heroes[0].multikill_count == 1, "an expired window starts a brand new streak at 1, not a continuation at 4");
+    CHECK(arena_state.heroes[0].flow == ARENA_HERO_KILL_FLOW, "a fresh streak's first kill pays the normal, unscaled bounty");
+}
+
+static void test_dying_resets_own_multikill_streak(void) {
+    arena_init_teams();
+    for (int i = 2; i < ARENA_MAX_HEROES; i++) arena_state.heroes[i].active = 0;
+    arena_state.heroes[ARENA_TEAM_SIZE].active = 1;
+    arena_state.heroes[ARENA_TEAM_SIZE].alive = 1;
+    arena_state.heroes[0].x = arena_state.heroes[ARENA_TEAM_SIZE].x;
+    arena_state.heroes[0].z = arena_state.heroes[ARENA_TEAM_SIZE].z;
+    arena_state.heroes[ARENA_TEAM_SIZE].hp = 1;
+
+    /* The VICTIM here has its own in-progress streak (as killer of someone else, off-screen)
+       going into its own death -- dying should end that streak regardless of who did the
+       killing, a real-MOBA convention (see ARENA_MULTIKILL_WINDOW_MS's own doc comment). */
+    arena_state.heroes[ARENA_TEAM_SIZE].multikill_count = 4;
+    arena_state.heroes[ARENA_TEAM_SIZE].multikill_timer_ms = 5000;
+
+    for (int i = 0; i < 500 && arena_state.heroes[ARENA_TEAM_SIZE].alive; i++) arena_update_teams(16);
+
+    CHECK(!arena_state.heroes[ARENA_TEAM_SIZE].alive, "sanity: the victim died");
+    CHECK(arena_state.heroes[ARENA_TEAM_SIZE].multikill_count == 0, "dying clears the victim's own streak count");
+    CHECK(arena_state.heroes[ARENA_TEAM_SIZE].multikill_timer_ms == 0, "and its own streak timer");
 }
 
 /* S170-187, founder: "assists should gen flow" -- anyone who damaged the victim within the
@@ -5887,6 +5966,9 @@ int main(void) {
     test_lane_creep_kill_grants_flow_and_xp();
     test_lane_creep_kill_shares_xp_with_nearby_allies_but_not_far_ones();
     test_hero_kill_grants_flow_xp_kills_and_deaths();
+    test_second_kill_within_window_scales_by_fib_and_stacks_to_3x();
+    test_multikill_streak_resets_after_window_expires();
+    test_dying_resets_own_multikill_streak();
     test_hero_kill_awards_assist_to_recent_damager();
     test_assist_expires_outside_the_tracking_window();
     test_ability_kill_grants_no_flow();

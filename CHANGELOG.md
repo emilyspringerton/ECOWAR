@@ -2403,3 +2403,24 @@
   shape happens whenever a real player quits mid-queue before their client's own `PACKET_CONNECT`
   lands. `scripts/test_arena.sh`/`test_10_bots.sh` green; live-verified the fixed pool recovers
   and reaches a clean steady state after a restart.
+
+- feat(arena): exponential multi-kill streak reward, Fibonacci-scaled. Founder: "add exponential
+  reward for double tripple penta kills etc" -> "a penta kill gives a huge reward hit and a
+  double kill gives a little more than two normal kills would rewards wise" -> "like a double
+  kill should give the reward of 3 kills and then use the fib." New `ArenaHero.multikill_count`/
+  `multikill_timer_ms` (`packages/simulation/arena_game.h`) track each hero's current kill
+  streak, same `ARENA_ASSIST_WINDOW_MS`-style ~10s window (`ARENA_MULTIKILL_WINDOW_MS`) for
+  whether the next kill continues it or starts fresh. New `arena_multikill_fib()`
+  (`arena_game.c`) generates 1, 2, 3, 5, 8, 13, 21, ... (Fibonacci, 1-indexed so it doesn't
+  repeat its own leading 1) -- each kill's own Flow/XP bounty (`apply_damage`'s existing kill-
+  crediting block) is `ARENA_HERO_KILL_FLOW`/`XP` times the streak's current term, so the
+  CUMULATIVE total across a streak is that sequence's running sum: Double = 1+2 = 3x a normal
+  kill's worth (exactly the founder's own stated example), Triple = 1+2+3 = 6x, Quadra =
+  1+2+3+5 = 11x, Penta = 1+2+3+5+8 = 19x ("a huge reward hit," per the founder's own framing).
+  No explicit cap past Penta -- a longer streak keeps compounding. Dying clears a hero's own
+  streak (real-MOBA convention, and simply correct: a dead hero can't be mid-streak). 3 new
+  tests (`tests/test_arena_game.c`): the Double-kill 3x total, a fully-expired window starting a
+  fresh streak instead of wrongly continuing a stale one, and death clearing the victim's own
+  streak state. Full suite green (`scripts/build.sh`/`test_arena.sh`/`test_10_bots.sh`).
+  Deliberately scoped to the reward economy only this pass -- no HUD/announcement text ("DOUBLE
+  KILL!" banner), flagged not built, since no such notification system exists yet in this repo.

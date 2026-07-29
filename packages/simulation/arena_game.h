@@ -1285,6 +1285,29 @@ extern const ArenaItemDef ARENA_ITEMS[];
 #define ARENA_HERO_ASSIST_XP           20
 #define ARENA_MAX_ASSIST_TRACK           4 /* how many distinct recent attackers a hero remembers at once -- LRU-evicts the oldest if a 5th lands a hit before this one expires */
 
+/* Multi-kill streak bonus (2026-07-29, founder: "add exponential reward for double tripple
+ * penta kills etc" -> "a penta kill gives a huge reward hit and a double kill gives a little
+ * more than two normal kills would rewards wise" -> "like a double kill should give the reward
+ * of 3 kills and then use the fib[onacci sequence]"). ARENA_MULTIKILL_WINDOW_MS mirrors
+ * ARENA_ASSIST_WINDOW_MS's own real-MOBA ~10s precedent -- a hero's Nth kill only counts as
+ * part of the SAME streak if it lands within this many ms of their (N-1)th; otherwise the
+ * streak resets to 1 (a fresh kill, not a continuation).
+ *
+ * Growth: streak kill N pays ARENA_HERO_KILL_FLOW/XP times the Nth term of arena_multikill_fib
+ * (packages/simulation/arena_game.c) -- 1, 2, 3, 5, 8, 13, 21, ... (Fibonacci, conventionally
+ * indexed from N=1 so the sequence doesn't repeat its own leading 1 -- that repeat is exactly
+ * why plain 0-indexed Fibonacci wasn't used verbatim). Kills accumulate their own marginal bounty
+ * as they land, so the CUMULATIVE total across a streak is the running sum of that sequence:
+ * Double (1+2=3x a normal kill's worth -- "the reward of 3 kills," the founder's own example,
+ * confirming this exact indexing), Triple (1+2+3=6x), Quadra (1+2+3+5=11x), Penta
+ * (1+2+3+5+8=19x -- "a huge reward hit" per the founder's own framing above). No explicit cap: a
+ * streak beyond Penta (Hexa+) keeps compounding rather than flattening out, same "no hardcoded
+ * ceiling on how good a real teamfight can get" spirit as everything else scaling off game state
+ * here rather than a fixed table. Real MOBA naming for reference only (not wired into any
+ * HUD/announcement text this pass, flagged not built): 1 Single, 2 Double, 3 Triple, 4 Quadra,
+ * 5 Penta. */
+#define ARENA_MULTIKILL_WINDOW_MS    10000
+
 
 typedef struct {
     float x, z;
@@ -1605,6 +1628,13 @@ typedef struct {
      * synced field needed for that aggregate. */
     int kills;
     int deaths;
+    /* multikill_count/multikill_timer_ms (2026-07-29, see ARENA_MULTIKILL_WINDOW_MS's own doc
+     * comment for the full reward-curve design): how many kills long this hero's CURRENT streak
+     * is, and how much longer (ms) a fresh kill still counts as a continuation of it rather than
+     * starting a new streak. Reset to 0 whenever this hero itself dies -- a real MOBA convention
+     * (dying ends your own streak) and also just correct: a dead hero can't be mid-streak. */
+    int multikill_count;
+    int multikill_timer_ms;
     /* last_attacked_by_owner (S170-175): same "who gets credit on the
      * kill" idiom ArenaCreep already established -- -1 = never hit since
      * spawning/respawning, else the owner index of whoever last damaged

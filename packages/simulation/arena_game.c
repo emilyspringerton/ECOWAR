@@ -809,6 +809,22 @@ static void record_assist_damage(ArenaHero *victim, int attacker_owner) {
     victim->assist_ms[evict] = ARENA_ASSIST_WINDOW_MS;
 }
 
+/* arena_multikill_fib: Nth term (n>=1) of 1, 2, 3, 5, 8, 13, 21, ... -- see
+ * ARENA_MULTIKILL_WINDOW_MS's own doc comment in arena_game.h for why this exact,
+ * conventionally-1-indexed Fibonacci sequence (not plain 0-indexed Fibonacci, which repeats its
+ * own leading 1 and would make a Double kill only 1+1=2x instead of the founder's own specified
+ * 1+2=3x) is the per-kill multiplier a multi-kill streak scales by. */
+static int arena_multikill_fib(int n) {
+    if (n <= 1) return 1;
+    int a = 1, b = 2;
+    for (int i = 2; i < n; i++) {
+        int next = a + b;
+        a = b;
+        b = next;
+    }
+    return b;
+}
+
 /* apply_damage (S170-46): centralizes "subtract HP, clamp at 0, mark dead"
  * across every damage call site, so Pizza's R (a real damage floor, not a
  * simplified-away shield like Doc Wheel's) only needs one place to check
@@ -830,6 +846,11 @@ static void apply_damage(ArenaHero *target, int amount) {
             target->alive = 0;
             target->respawn_ms_remaining = ARENA_HERO_RESPAWN_MS;
             target->deaths++;
+            /* multikill_count/multikill_timer_ms (2026-07-29): dying always ends this hero's
+               OWN streak, whether or not it also just fed someone else's -- see
+               ARENA_MULTIKILL_WINDOW_MS's own doc comment in arena_game.h. */
+            target->multikill_count = 0;
+            target->multikill_timer_ms = 0;
             /* S170-175: hero-kill Flow/XP/kills bounty -- only ever set at
                the melee/homing-shot damage sites (resolve_combat, the
                team-mode melee loop, arena_tick_attack_targets's Gary
@@ -842,9 +863,19 @@ static void apply_damage(ArenaHero *target, int amount) {
             if (target->last_attacked_by_owner >= 0 && target->last_attacked_by_owner < ARENA_HEROES_ARRAY_SIZE) {
                 ArenaHero *killer = &arena_state.heroes[target->last_attacked_by_owner];
                 if (killer->active && killer != target) {
-                    killer->flow += ARENA_HERO_KILL_FLOW;
-                    killer->flow_earned += ARENA_HERO_KILL_FLOW;
-                    killer->xp += ARENA_HERO_KILL_XP;
+                    /* Multi-kill streak (2026-07-29, see ARENA_MULTIKILL_WINDOW_MS's own doc
+                       comment for the full design/founder-quote trail): a kill within the
+                       window of this killer's last one continues the streak; otherwise it
+                       starts a fresh one at count 1. Each kill's own bounty scales by
+                       arena_multikill_fib(streak count so far), so the cumulative total across
+                       a streak is that sequence's running sum (Double=3x, Triple=6x,
+                       Quadra=11x, Penta=19x a normal kill's worth). */
+                    killer->multikill_count = (killer->multikill_timer_ms > 0) ? killer->multikill_count + 1 : 1;
+                    killer->multikill_timer_ms = ARENA_MULTIKILL_WINDOW_MS;
+                    int multikill_mult = arena_multikill_fib(killer->multikill_count);
+                    killer->flow += ARENA_HERO_KILL_FLOW * multikill_mult;
+                    killer->flow_earned += ARENA_HERO_KILL_FLOW * multikill_mult;
+                    killer->xp += ARENA_HERO_KILL_XP * multikill_mult;
                     killer->kills++;
                 }
             }
@@ -3851,6 +3882,18 @@ static void tick_hero_kit(ArenaHero *h, ArenaHero *foe, ArenaHero *ally, unsigne
     if (h->combat_timer_ms > 0) {
         h->combat_timer_ms -= (int)dt_ms;
         if (h->combat_timer_ms < 0) h->combat_timer_ms = 0;
+    }
+    /* multikill_timer_ms (2026-07-29): same "ticks down every tick, generic across every hero"
+       shape as combat_timer_ms just above -- re-armed to ARENA_MULTIKILL_WINDOW_MS by
+       apply_damage() on each kill this hero lands. Once it actually reaches 0 with no new kill
+       in the meantime, the streak is over -- clear multikill_count so the NEXT kill starts a
+       fresh streak at 1 rather than silently continuing a stale one. */
+    if (h->multikill_timer_ms > 0) {
+        h->multikill_timer_ms -= (int)dt_ms;
+        if (h->multikill_timer_ms <= 0) {
+            h->multikill_timer_ms = 0;
+            h->multikill_count = 0;
+        }
     }
     /* Mana regen (S170-132, combat-gated S170-148, always-trickles S170-150:
        "have mana tic up slowly 1 per second always"). Two rates, not a hard
