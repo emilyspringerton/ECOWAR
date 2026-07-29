@@ -1,5 +1,27 @@
 # Changelog
 
+## 2026-07-29
+
+- feat(arena): Weatherman + Donkey, NORTHSTAR §16 (S170-206). Founder: "add the weatherman and
+  donkey" -> [clarified Donkey's "owner" ambiguity] -> "donkey should be an item" -> "3.2k flow"
+  -> "tilda should make the hero do the paper airplane glide thing" -> "longish range high speed
+  escape can move above obstacles" -> "long ish cooldown" -> "2 minute cooldown on paper plane
+  fly mode" -> "but the thing where it unfolds and fights for you thats a passive." §16.1's whole
+  premise -- a genuinely new non-piloted companion-unit system -- turned out avoidable: Donkey
+  ships as an equippable item (3200 Flow, Back slot) whose two procs trigger on whichever hero
+  wears it. Immortal's Fold (automatic): HP < 25% -> damage floor + periodic fight-back damage to
+  the nearest enemy, own proc cooldown. Paper Glide (tilde-activated, same key as Blink Dagger,
+  generalized via a new `arena_use_active_item` dispatcher): a real high-speed traversal (7x base
+  speed) away from the nearest enemy, flies over obstacles, untargetable for the window, 2-minute
+  cooldown. Weatherman ships as hero #27: Q (Barometric Shove, ranged knockback, no damage -- the
+  roster's first push-outward Q), W (Collects On What's Owed -- grounds an airborne enemy,
+  extends an airborne ally, reading the item's own `donkey_airborne_ms` field), R (The Debt
+  Compounds, AoE zone DPS), Passive (The Ledger, Dagda's Undry regen shape). 16 new tests, build
+  clean, full suite green (654/654). Live-verified: an isolated 10v10 match with the new 27-hero
+  roster, zero crashes, real HP changes across all 20 heroes in the match. `docs/HEROES_VS0.md`
+  updated (Donkey repointed to the item roster, Weatherman kit added); NORTHSTAR §16 status block
+  added.
+
 ## 2026-07-28 (continued 10)
 
 - feat(arena): Blink Dagger, item catalog's first real active ability (S170-205). Founder: "add
