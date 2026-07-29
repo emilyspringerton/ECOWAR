@@ -2252,10 +2252,28 @@ int main(int argc, char *argv[]) {
                render pass draws with, so a click always lands on the row it visually
                overlaps. SDL mouse Y is top-down, this HUD's ortho draw space is bottom-up --
                same flip the requeue OK-button hit-test above already uses. */
+            /* S170-229, founder real-time: "clicking on item in shop to buy should not cause
+               player to move" -- real bug: this block and the movement-click block below it are
+               two separate, sequential `if`s with no shared state, so a click that bought (or
+               sold, or simply landed on empty shop-panel space) fell straight through to the
+               ordinary move-command handler too, every time. shop_click_consumed is checked by
+               that later block below -- set true here whenever the shop is open AND the click
+               falls anywhere inside the panel's own bounding box (not just directly on a
+               buy/sell row), same rectangle the render pass itself draws
+               (sp_x-10..sp_x-10+panel_w, sp_y_top-panel_h..sp_y_top+26) -- clicking blank space
+               inside an open shop panel shouldn't move the player either, matching how any real
+               game UI panel blocks click-through to the world underneath it. */
+            int shop_click_consumed = 0;
             if (shop_open && !observing && e.type == SDL_MOUSEBUTTONDOWN && e.button.button == SDL_BUTTON_LEFT) {
                 float bx = (float)e.button.x, by = (float)(win_h - e.button.y);
                 float sp_x, sp_y_top;
                 shop_panel_origin(win_w, win_h, &sp_x, &sp_y_top);
+                float panel_w = (float)SHOP_BUY_COLS * SHOP_COL_W + SHOP_COL_W + 40.0f;
+                float panel_h = (float)SHOP_ITEMS_PER_COL * SHOP_ROW_H + 40.0f;
+                if (bx >= sp_x - 10.0f && bx <= sp_x - 10.0f + panel_w &&
+                    by >= sp_y_top - panel_h && by <= sp_y_top + 26.0f) {
+                    shop_click_consumed = 1;
+                }
                 int handled = 0;
                 for (int col = 0; col < SHOP_BUY_COLS && !handled; col++) {
                     float col_x = sp_x + (float)col * SHOP_COL_W;
@@ -2290,8 +2308,11 @@ int main(int argc, char *argv[]) {
             /* Everything below drives a live match (movement clicks, kit
              * casts, restart-into-a-new-match) -- none of it applies while
              * observing a logged one. Camera control above still works, so
-             * an observer can look around freely. */
-            if (!observing && e.type == SDL_MOUSEBUTTONDOWN && e.button.button == SDL_BUTTON_LEFT &&
+             * an observer can look around freely. S170-229: !shop_click_consumed
+             * -- see that variable's own doc comment above; a click the shop
+             * panel already handled (or that just landed on its own blank
+             * space) must not also fall through and move the player. */
+            if (!observing && !shop_click_consumed && e.type == SDL_MOUSEBUTTONDOWN && e.button.button == SDL_BUTTON_LEFT &&
                 arena_state.winner == 0) {
                 /* S170-162, NORTHSTAR SS17.1's "right-click ground vs
                    right-click a unit" split, on this game's own established
