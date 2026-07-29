@@ -1997,7 +1997,14 @@ void arena_tick_lane_creeps(unsigned int dt_ms);
  * loops), so a hero that already spent this tick's attack on a node-guardian creep
  * does not also get a free hit on a lane creep the same tick. No kill
  * reward (see the ARENA_LANE_WAYPOINT_COUNT header comment on why). Called
- * from both arena_update() and arena_update_teams(). */
+ * from both arena_update() and arena_update_teams().
+ *
+ * S170-215: a hero's OWN team's lane creeps are also a valid target once
+ * that creep drops below 50% HP -- deny, the real League mechanic where an
+ * ally can kill their own dying minion to keep the enemy from getting the
+ * reward. Same kill-reward path either way (no separate reduced-reward
+ * tuning here, matching this file's "spec the model, not the numbers"
+ * discipline elsewhere). */
 void arena_hero_attack_lane_creeps(unsigned int dt_ms);
 
 /* Kit casts dispatch on the hero's hero_id, not a hardcoded owner check

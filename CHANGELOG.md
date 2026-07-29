@@ -2,6 +2,17 @@
 
 ## 2026-07-29
 
+- feat(arena): S170-215, deny for lane creeps. `arena_hero_attack_lane_creeps` used to filter a
+  hero's own team's creeps out entirely; now an ally CAN target their own lane creep once it
+  drops below 50% HP, killing it to deny the enemy the reward -- the real League deny mechanic.
+  §20.3 flagged a sub-decision (build just "ally can kill their own" vs. also "enemy can't finish
+  it below 50%"): only the first half is built, since the second half isn't how the real
+  mechanic works (deny is a RACE, not a block on the enemy -- adding it would be an artificial
+  buff beyond what real deny does). Same kill-reward path either way, no separate reduced-reward
+  tuning (out of scope, matching this section's "spec the model, not the numbers" discipline).
+  New test confirms an ally can deny below the threshold; existing above-threshold test's message
+  updated for accuracy (behavior unchanged there). Full suite + test_10_bots.sh green.
+
 - feat(arena): S170-214, minion-aggro-redirect on lane creeps. NORTHSTAR §20.3's single biggest
   missing piece of real lane-trading risk -- lane creeps previously picked their target purely by
   distance, entirely independent of who was actually fighting whom. Now a hero attacking an enemy

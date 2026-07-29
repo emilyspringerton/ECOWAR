@@ -2050,7 +2050,15 @@ void arena_hero_attack_lane_creeps(unsigned int dt_ms) {
 
         for (int c = 0; c < ARENA_MAX_LANE_CREEPS; c++) {
             ArenaLaneCreep *creep = &arena_state.lane_creeps[c];
-            if (!creep->active || !creep->alive || creep->team == h->team) continue;
+            if (!creep->active || !creep->alive) continue;
+            /* S170-215: deny -- real League doesn't block the enemy from finishing a low-HP
+               minion, it's a RACE: once a minion drops below 50% HP, allies (normally excluded
+               entirely, see the OPPOSING-team-only rule below) gain the ability to kill their
+               own creep first and deny the enemy the reward. Only the "ally CAN kill their own
+               below 50%" half is built here -- the "enemy CAN'T finish it below 50%" half §20.3
+               separately floated isn't how the real mechanic works (it would be an artificial
+               buff beyond what deny actually does), so it's deliberately not added. */
+            if (creep->team == h->team && creep->hp * 2 > creep->max_hp) continue;
             float dx = creep->x - h->x, dz = creep->z - h->z;
             if (sqrtf(dx * dx + dz * dz) > ARENA_ATTACK_RANGE) continue;
 

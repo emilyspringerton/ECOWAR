@@ -2359,7 +2359,28 @@ static void test_hero_does_not_attack_own_team_lane_creep(void) {
 
     arena_hero_attack_lane_creeps(16);
 
-    CHECK(creep->hp == ARENA_LANE_CREEP_HP, "a hero never attacks its own team's lane creep");
+    CHECK(creep->hp == ARENA_LANE_CREEP_HP, "a hero does not attack its own team's lane creep above the deny threshold (50% HP)");
+}
+
+static void test_hero_can_deny_own_team_lane_creep_below_half_hp(void) {
+    arena_init_teams();
+    for (int i = 1; i < ARENA_MAX_HEROES; i++) arena_state.heroes[i].active = 0;
+    arena_state.lane_wave_timer_ms[0] = 999999;
+    arena_state.lane_wave_timer_ms[1] = 999999;
+
+    arena_state.heroes[0].x = 0.0f;
+    arena_state.heroes[0].z = 0.0f;
+    arena_state.heroes[0].attack_cooldown_ms = 0;
+
+    ArenaLaneCreep *creep = &arena_state.lane_creeps[0];
+    creep->active = 1; creep->alive = 1; creep->team = 0; /* SAME team as hero 0 */
+    creep->max_hp = ARENA_LANE_CREEP_HP;
+    creep->hp = ARENA_LANE_CREEP_HP / 2 - 1; /* just below the 50% deny threshold */
+    creep->x = 0.0f; creep->z = 0.0f;
+
+    arena_hero_attack_lane_creeps(16);
+
+    CHECK(creep->hp < ARENA_LANE_CREEP_HP / 2 - 1, "S170-215: a hero CAN deny its own team's lane creep once it's below 50% HP");
 }
 
 static void test_hero_does_not_attack_lane_creep_while_enemy_hero_in_range(void) {
@@ -5467,6 +5488,7 @@ int main(void) {
     test_lane_creeps_fight_each_other_when_opposing_teams_meet();
     test_hero_kills_lane_creep_in_range();
     test_hero_does_not_attack_own_team_lane_creep();
+    test_hero_can_deny_own_team_lane_creep_below_half_hp();
     test_hero_does_not_attack_lane_creep_while_enemy_hero_in_range();
     test_lane_creep_despawns_at_final_waypoint_with_no_reward();
     test_lane_creep_wave_respawns_after_the_interval();
