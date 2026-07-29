@@ -2,6 +2,20 @@
 
 ## 2026-07-29
 
+- feat(arena): S170-214, minion-aggro-redirect on lane creeps. NORTHSTAR §20.3's single biggest
+  missing piece of real lane-trading risk -- lane creeps previously picked their target purely by
+  distance, entirely independent of who was actually fighting whom. Now a hero attacking an enemy
+  hero within a lane creep's own aggro radius pulls that creep's aggro onto the attacker,
+  overriding the plain-nearest pick, the real "minion aggro" mechanic. Detected via the
+  defender-side `last_attacked_by_owner` + `combat_timer_ms > 0` signal (same fields
+  `arena_tick_attack_windups`/Gary's homing shot already set for kill-credit) rather than a true
+  same-tick attacker-side flag -- `arena_tick_lane_creeps` runs before hero-vs-hero combat
+  resolves each tick, and `damaged_this_tick` is cleared at the end of the *previous* tick by the
+  time it runs, so it isn't usable here (flagged honestly rather than reordering call sites for a
+  same-tick check, a bigger and riskier change). New test:
+  `test_lane_creep_aggro_redirects_to_attacker_over_a_closer_bystander` (attacker farther away
+  than a never-attacked bystander, still gets targeted). Full suite + test_10_bots.sh green.
+
 - refactor(arena): S170-213, rename "jungle creep" terminology to "node-guardian creep"
   throughout code. §20.2's own finding: they aren't League jungle camps at all (no buffs, no
   epic-objective equivalent, tied to node ownership, actively march) -- the mismatch between

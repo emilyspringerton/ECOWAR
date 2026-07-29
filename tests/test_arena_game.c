@@ -2253,6 +2253,54 @@ static void test_lane_creep_attacks_nearby_enemy_hero_and_does_not_advance(void)
     CHECK(creep->x == 0.0f, "a lane creep that stops to fight does not advance along its waypoint path this tick");
 }
 
+static void test_lane_creep_aggro_redirects_to_attacker_over_a_closer_bystander(void) {
+    arena_init_teams();
+    for (int i = 0; i < ARENA_MAX_HEROES; i++) arena_state.heroes[i].active = 0;
+    arena_state.lane_wave_timer_ms[0] = 999999;
+    arena_state.lane_wave_timer_ms[1] = 999999;
+
+    ArenaLaneCreep *creep = &arena_state.lane_creeps[0];
+    creep->active = 1;
+    creep->alive = 1;
+    creep->team = 1; /* enemy of team 0 */
+    creep->waypoint_index = 0;
+    creep->hp = creep->max_hp = ARENA_LANE_CREEP_HP;
+    creep->x = 0.0f;
+    creep->z = 0.0f;
+
+    /* The attacker: farther from the creep than the bystander below, but still within
+       ARENA_LANE_CREEP_AGGRO_RADIUS (3.5) -- just recently hit one of the creep's own team's
+       heroes (heroes[ARENA_TEAM_SIZE] below). Real minion aggro should pull onto this hero
+       regardless of the plain-nearest pick. */
+    arena_state.heroes[0].active = 1;
+    arena_state.heroes[0].alive = 1;
+    arena_state.heroes[0].x = 3.0f;
+    arena_state.heroes[0].z = 0.0f;
+    arena_state.heroes[0].hp = arena_state.heroes[0].max_hp = 100;
+
+    /* The bystander: geometrically nearer to the creep, never attacked anyone -- would win
+       the plain-nearest pick if aggro-redirect didn't exist. */
+    arena_state.heroes[1].active = 1;
+    arena_state.heroes[1].alive = 1;
+    arena_state.heroes[1].x = 1.0f;
+    arena_state.heroes[1].z = 0.0f;
+    arena_state.heroes[1].hp = arena_state.heroes[1].max_hp = 100;
+
+    /* The ally: on the creep's own team, just hit by the attacker (heroes[0], owner index 0). */
+    arena_state.heroes[ARENA_TEAM_SIZE].active = 1;
+    arena_state.heroes[ARENA_TEAM_SIZE].alive = 1;
+    arena_state.heroes[ARENA_TEAM_SIZE].hp = arena_state.heroes[ARENA_TEAM_SIZE].max_hp = 100;
+    arena_state.heroes[ARENA_TEAM_SIZE].last_attacked_by_owner = 0;
+    arena_state.heroes[ARENA_TEAM_SIZE].combat_timer_ms = 1000;
+
+    arena_tick_lane_creeps(16);
+
+    CHECK(arena_state.heroes[0].hp == 100 - ARENA_LANE_CREEP_DAMAGE,
+          "minion-aggro-redirect: the creep attacks the hero who just attacked its own ally");
+    CHECK(arena_state.heroes[1].hp == 100,
+          "the geometrically-nearer bystander who attacked nobody takes no damage");
+}
+
 static void test_lane_creeps_fight_each_other_when_opposing_teams_meet(void) {
     arena_init_teams();
     for (int i = 0; i < ARENA_MAX_HEROES; i++) arena_state.heroes[i].active = 0;
@@ -5415,6 +5463,7 @@ int main(void) {
     test_lane_creep_wave_spawns_for_both_teams_after_initial_delay();
     test_lane_creep_marches_toward_center_when_no_target();
     test_lane_creep_attacks_nearby_enemy_hero_and_does_not_advance();
+    test_lane_creep_aggro_redirects_to_attacker_over_a_closer_bystander();
     test_lane_creeps_fight_each_other_when_opposing_teams_meet();
     test_hero_kills_lane_creep_in_range();
     test_hero_does_not_attack_own_team_lane_creep();

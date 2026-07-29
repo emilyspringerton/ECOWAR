@@ -1964,9 +1964,35 @@ void arena_tick_lane_creeps(unsigned int dt_ms) {
             if (!nearest_creep || dist < creep_dist) { nearest_creep = cand; creep_dist = dist; }
         }
 
+        /* S170-214: minion-aggro-redirect -- a hero attacking an enemy hero within THIS
+           creep's own aggro radius draws the creep's aggro onto the attacker, overriding
+           the plain-nearest pick above, the real "minion aggro" mechanic real MOBA laning
+           depends on. Detected via the DEFENDER-side last_attacked_by_owner + combat_timer_ms
+           > 0 signal (same fields arena_tick_attack_windups/Gary's homing shot already set,
+           same sentinel-after-respawn idiom kill-credit already uses at arena_game.c:814) --
+           there's no true same-tick attacker-side flag available here: arena_tick_lane_creeps
+           runs BEFORE hero-vs-hero combat resolves this same tick (see arena_update_teams'
+           own call order), and damaged_this_tick is cleared at the END of the PREVIOUS tick
+           by the time this runs. combat_timer_ms's own ARENA_COMBAT_TIMEOUT_MS recency window
+           doubles as "how long ago still counts as currently fighting." */
+        ArenaHero *aggro_hero = NULL;
+        for (int h = 0; h < ARENA_MAX_HEROES; h++) {
+            ArenaHero *ally = &arena_state.heroes[h];
+            if (!ally->active || ally->team != creep->team) continue;
+            if (ally->combat_timer_ms <= 0 || ally->last_attacked_by_owner < 0 ||
+                ally->last_attacked_by_owner >= ARENA_HEROES_ARRAY_SIZE) continue;
+            ArenaHero *attacker = &arena_state.heroes[ally->last_attacked_by_owner];
+            if (!attacker->active || attacker->team == creep->team || !hero_is_hittable(attacker)) continue;
+            float adx = attacker->x - creep->x, adz = attacker->z - creep->z;
+            if (sqrtf(adx * adx + adz * adz) > ARENA_LANE_CREEP_AGGRO_RADIUS) continue;
+            aggro_hero = attacker;
+            break;
+        }
+
         ArenaHero *atk_hero = NULL;
         ArenaLaneCreep *atk_creep = NULL;
-        if (nearest_hero && (!nearest_creep || hero_dist <= creep_dist)) atk_hero = nearest_hero;
+        if (aggro_hero) atk_hero = aggro_hero;
+        else if (nearest_hero && (!nearest_creep || hero_dist <= creep_dist)) atk_hero = nearest_hero;
         else if (nearest_creep) atk_creep = nearest_creep;
 
         if ((atk_hero || atk_creep) && creep->attack_cooldown_ms <= 0) {
