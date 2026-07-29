@@ -138,6 +138,42 @@ bash scripts/test_10_bots.sh 4      # or pass a different bot count (must be eve
 `REDGARDEN_TICKET_SECRET` must be set for any client to connect (fails closed otherwise) — the
 test script sets a default automatically.
 
+### Arena Bot AI — Training on Colab
+
+NORTHSTAR §18's unsupervised-pretraining stage (S170-194/195): a real, working pipeline that
+turns actual match play into a fine-tuned GPT-2-small checkpoint, no local GPU needed. **You do
+NOT upload the repo to Drive** — the notebook clones REDGARDEN straight from GitHub inside
+Colab. Drive is only used to hold the training corpus (input) and the resulting checkpoint
+(output).
+
+1. **Collect real match data.** Play or run some bot matches (`scripts/test_10_bots.sh`, or a
+   real 10v10 via `scripts/launch_arena_pools.sh`) — every live `apps/arena_server` match writes
+   `var/corpus/arena-corpus-<port>-<ts>.jsonl` automatically (`packages/simulation/
+   arena_ai_bridge.c`'s `arena_corpus_record()`, wired into the server's own tick loop). More
+   matches, more corpus.
+2. **Aggregate it locally:**
+   ```bash
+   python3 scripts/build_ai_corpus.py --min-records 1000
+   ```
+   Combines every `var/corpus/arena-corpus-*.jsonl` into `var/corpus/combined.jsonl`.
+3. **Upload just that one file to Drive**, at `MyDrive/redgarden-training/redgarden-corpus.jsonl`
+   (the path `scripts/colab_train.py`'s defaults expect — override via the `DRIVE_FOLDER` env var
+   in the notebook's own bootstrap cell if you'd rather use a different Drive layout).
+4. **Open the notebook straight from GitHub** — in Colab: File → Open notebook → GitHub tab →
+   `emilyspringerton/REDGARDEN` → `notebooks/redgarden_gpt2_pretrain_colab.ipynb`. Run the single
+   bootstrap cell: it mounts Drive (approve the OAuth prompt), clones/pulls REDGARDEN fresh, and
+   runs `scripts/colab_train.py` — all real training logic lives in that script, in git, so a
+   future change ships as a commit and the same notebook cell just picks it up next run.
+5. **Result**: `checkpoint-unsupervised-pretrain.tar.gz` saved back to your `DRIVE_FOLDER` on
+   Drive — this is the STARTING WEIGHTS for §12 Phase E's later supervised, NORN-graded
+   fine-tune, not a finished playing policy by itself.
+
+**Not yet built:** embedding a trained checkpoint's weights directly into this repo's C code so
+`apps/arena_server`'s bot AI can actually run inference against it, and an automated git-sync
+step from Colab (writing back to `origin/main` using an SSH key kept in `MyDrive/.ssh`) so a
+training run's resulting artifact lands in git without a manual download/commit round-trip.
+Both are real, scoped future work — flagged here, not faked.
+
 ---
 
 ## RED GARDEN
