@@ -2,6 +2,15 @@
 
 ## 2026-07-29
 
+- feat(arena): S170-224, ctypes-callable RL environment API. NORTHSTAR §21's implementation
+  sprint, first item. `apps/arena_training/src/headless.c` mirrors sibling SHANKPIT's own
+  `apps/training/headless.c` shape (`sim_init`/`sim_step`) but exposes a small, fixed, documented
+  18-float observation array (`sim_get_obs`) instead of a raw struct pointer -- `ArenaState` is
+  large and still growing, so mirroring its exact layout in a Python `ctypes.Structure` would be
+  fragile ABI surface with no compiler to catch a future desync. New `scripts/build_training.sh`
+  builds `libarena_training.so`. Verified via a live ctypes round-trip (real movement/combat over
+  200 ticks, real reset) plus 6 new headless C tests. Full suite green.
+
 - docs(arena): NORTHSTAR §21, reward-driven RL spec -- Unity ML-Agents shaped (S170-223).
   Founder: "running training on a corpus of games is cool but thats not what i actually want
   right now i want unsupervised learning with rewards like in the unity ml-agents plugin." Found
