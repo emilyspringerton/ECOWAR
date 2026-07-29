@@ -2517,3 +2517,18 @@
   between two whole decision-makers, not a blend within one decision -- see this session's own
   design discussion for the fuller reasoning and what a real blended (not just gated) approach
   would need. Full suite green.
+
+- feat(arena): confidence-weighted RL engagement nudge. Follow-up, same thread ("how do we
+  combine heuristics with the ml model so we do a little fuzzy best of both worlds") -- the
+  hero-gated cast switch above is one blend pattern (pick a whole decision-maker); this is the
+  other (scale one decision-maker's contribution into another's). New
+  `rl_engage_confidence()` (`apps/arena_bot/src/main.c`) returns how much `rl_engage_nudge`'s
+  suggestion should actually be trusted this tick: the RL policy trained strictly 1v1 (itself and
+  exactly one foe, nobody else ever on the map), so its judgment is only really grounded when the
+  real fight looks like that. Counts living combatants (either team, excluding self and the
+  current target) within a 10-unit radius of the self/foe midpoint -- each one nearby halves the
+  confidence, geometric decay rather than a fitted curve, since no real confidence-vs-outcome
+  data exists yet to fit one against. A clean 1v1 stays at full nudge strength (unchanged from
+  before this pass); a chaotic teamfight the model never trained on gets a heavily damped one
+  instead of either fully trusting or fully ignoring the model based on a hard rule. Full suite
+  green.

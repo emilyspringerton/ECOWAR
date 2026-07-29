@@ -659,7 +659,44 @@ static void flock_offset(const BotSnapshotView *cur, const BotSnapshotView *prev
  * bug that spread was written to fix. Not independently playtested for feel (no display in this
  * environment) -- automated tests (scripts/test_arena.sh, scripts/test_10_bots.sh) only confirm
  * it compiles, produces bounded output, and doesn't crash a live match; a real read on whether
- * it actually plays better needs the founder's own eyes on it. */
+ * it actually plays better needs the founder's own eyes on it.
+ *
+ * Confidence-weighted (2026-07-29, founder: "how do we combine heuristics with the ml model so
+ * we do a little fuzzy best of both worlds"): the nudge is scaled by rl_engage_confidence()
+ * below before being returned -- a clean 1v1 duel gets the full nudge, a chaotic teamfight the
+ * model never trained on gets a heavily damped one, rather than either fully trusting or fully
+ * ignoring the model based on a hard rule. */
+/* rl_engage_confidence (2026-07-29, founder: "how do we combine heuristics with the ml model so
+ * we do a little fuzzy best of both worlds"): how much the RL policy's suggestion below should
+ * actually be trusted this tick, in (0, 1]. The policy trained strictly 1v1 -- itself and
+ * exactly one foe, nobody else anywhere on the map -- so its judgment is only really grounded
+ * when the real fight actually looks like that. Counts living combatants (either team, excluding
+ * self and the current target) within CONFIDENCE_RADIUS of the self/foe midpoint -- each one
+ * nearby halves the confidence. A simple geometric decay, not a fitted curve: there's no logged
+ * confidence-vs-outcome data yet to fit a better one against (see this session's own hero win-
+ * rate tracking work for the kind of real data that COULD inform this later), so this is an
+ * honest first pass, not a tuned final answer. A clean 1v1 (0 nearby others) stays at full
+ * confidence (1.0), same as before this function existed. */
+static float rl_engage_confidence(const BotSnapshotView *cur, int self_owner, int foe_owner) {
+    const ArenaHeroSnapshot *self_h = &cur->heroes[self_owner];
+    const ArenaHeroSnapshot *foe_h = &cur->heroes[foe_owner];
+    float mid_x = (self_h->x + foe_h->x) * 0.5f;
+    float mid_z = (self_h->z + foe_h->z) * 0.5f;
+    /* Order of magnitude between melee range (ARENA_ATTACK_RANGE, 1.6) and the full engage
+       range this file's own caller already gates on (15.0) -- "close enough to this fight to
+       plausibly join or interrupt it," not just anyone visible on the map. */
+    const float CONFIDENCE_RADIUS = 10.0f;
+    int nearby_others = 0;
+    for (int i = 0; i < cur->world.count; i++) {
+        if (i == self_owner || i == foe_owner || !cur->heroes[i].alive) continue;
+        float dx = cur->heroes[i].x - mid_x, dz = cur->heroes[i].z - mid_z;
+        if (dx * dx + dz * dz <= CONFIDENCE_RADIUS * CONFIDENCE_RADIUS) nearby_others++;
+    }
+    float confidence = 1.0f;
+    for (int i = 0; i < nearby_others; i++) confidence *= 0.5f;
+    return confidence;
+}
+
 static void rl_engage_nudge(const BotSnapshotView *cur, int self_owner, int foe_owner,
                              float *out_dx, float *out_dz) {
     const ArenaHeroSnapshot *self_h = &cur->heroes[self_owner];
@@ -699,8 +736,9 @@ static void rl_engage_nudge(const BotSnapshotView *cur, int self_owner, int foe_
         return;
     }
     const float RL_NUDGE_STEP = 3.0f; /* same order of magnitude as the angle-spread's own approach_radius */
-    *out_dx = (dir_x / mag) * RL_NUDGE_STEP;
-    *out_dz = (dir_z / mag) * RL_NUDGE_STEP;
+    float confidence = rl_engage_confidence(cur, self_owner, foe_owner);
+    *out_dx = (dir_x / mag) * RL_NUDGE_STEP * confidence;
+    *out_dz = (dir_z / mag) * RL_NUDGE_STEP * confidence;
 }
 
 // play_one_match runs the draft + live-play loop for a single match against
