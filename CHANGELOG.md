@@ -2,6 +2,18 @@
 
 ## 2026-07-29
 
+- fix(arena): shop panel showed only 24 of 27 items; Donkey fold proc affordance (S170-210).
+  Founder: "ensure the new items donkey and blink dagger are actually available in the shop ui"
+  -> "ensure donkey has affordances so its clear something is happening when it procs on the 25%
+  health thing." `SHOP_ITEMS_PER_COL` was a stale hardcoded 12 (2 cols x 12 = 24 slots), a
+  leftover from when the item catalog had exactly 24 entries -- both the render loop and the
+  click hit-test share that constant, so Blink Dagger (24), Donkey (25), and Haste Trinket (26)
+  rendered nowhere and couldn't be bought. Bumped to 15. Also added a gold-white FoldFlash burst,
+  a distinct proc tone, and a "DONKEY FOLD" status tag (replacing the generic UNKILLABLE one) so
+  Immortal's Fold reads as a clear, sourced event rather than a silent stat change -- reusing the
+  frame-delta reconstruction idiom the heal/attack flashes already use, no wire-protocol change
+  needed.
+
 - feat(arena): Haste Trinket, modest 6% CDR passive (S170-207). Founder: "add a haste trinket" ->
   "passive haste lowers cd and auto attack cd make it a modest improvement 6%." New Trinket-slot
   item (900 Flow) reducing ability cooldowns and auto-attack cooldown by 6%, via a new
