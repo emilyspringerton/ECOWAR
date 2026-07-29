@@ -2,6 +2,13 @@
 
 ## 2026-07-29
 
+- docs(arena): Colab training workflow instructions in README (S170-219). Founder: "put
+  instructions in the readme for that i assume i upload the repo to drive and then what."
+  Corrected that assumption -- the notebook clones REDGARDEN from GitHub inside Colab, no repo
+  upload needed. Documents the real flow (build_ai_corpus.py -> upload corpus to Drive -> open
+  notebook from GitHub -> run bootstrap cell -> checkpoint lands on Drive), and honestly flags
+  what's not built yet (weight-embed-into-C, automated git-sync from Colab).
+
 - fix(arena): split PACKET_ARENA_SNAPSHOT into world + hero-chunk packets (S170-193). Founder
   decision on the flagged MTU risk: split rather than accept fragmentation or trim the payload.
   `ArenaSnapshotMsg` had grown to 2460 bytes (heroes[20] alone was 1680 of that) -- comfortably
