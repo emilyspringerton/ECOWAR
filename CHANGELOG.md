@@ -2,6 +2,21 @@
 
 ## 2026-07-29
 
+- feat(arena): S170-227, weight export to embedded C MLP + git-sync. NORTHSTAR §21's sprint,
+  fourth and final item -- closes out the full reward-driven RL pipeline. New
+  `packages/common/mlp_infer.c`/`.h`: a small, generic, dependency-free dense-MLP forward pass
+  (SHANKPIT's own `neural_net.h` precedent, not `gpt2_infer.c` -- wrong shape for a small policy
+  net), 5 new tests with hand-computed expected outputs. New
+  `scripts/export_rl_policy_to_c.py` extracts a trained PPO policy's action-mean network (not
+  the value/critic net) and writes it as literal C float arrays + a clipped
+  `rl_policy_forward()` wrapper. Verified end to end: a hand-built PyTorch network shaped like
+  SB3's own policy net was exported, compiled, and its C output matched PyTorch to float32
+  precision. New `scripts/git_sync_utils.py` factors the SSH-push logic out of
+  `colab_train.py`'s own `git_sync_weights_to_repo()` into a shared, artifact-agnostic function.
+  `scripts/rl_train.py` now runs export + git-sync automatically after training. Full test suite
+  green -- the complete S170-223..227 reward-driven RL pipeline is built (training itself not
+  yet run against a real `gymnasium`/`stable_baselines3` install, flagged honestly).
+
 - feat(arena): S170-226, PPO training script (Stable-Baselines3). NORTHSTAR §21's sprint, third
   item. `scripts/rl_train.py` trains a small MLP policy (SB3's own default `net_arch=[64,64]`)
   via PPO against `scripts/rl_env.py`'s `ArenaTrainingEnv`, same CLI-args/env-var delivery
