@@ -2287,3 +2287,16 @@
   middle" design as real Arathi Basin). Verified: scripts/build.sh, scripts/build_arena.sh,
   scripts/test_arena.sh, scripts/test_10_bots.sh all pass; local mingw cross-compile (all 4
   source files) links clean.
+
+## 2026-07-29
+- fix(arena): stale bot-pool guard in scripts/run_bot_pool.sh. Founder, real-time: "check redgarden
+  game i cant get into a game the window popped up but no draft interface." Root cause: 19 orphaned
+  `red_garden_arena_bot` processes (PPID reparented to 1, stale since 05:55 -- parent shell died
+  without the script's own cleanup trap firing) were still alive alongside the current supervised
+  19-bot pool (from 10:10), putting 38 bots against the bot-pool matchmaker's 20-slot lobby. With
+  bots alone able to fill every batch, the one open human slot never got a real connection, so
+  `match_phase` never reached `ARENA_PHASE_DRAFT` and the client's draft screen (gated on that
+  phase, apps/arena/src/main.c) never rendered -- window opens, sits waiting, forever. Killed the
+  19 orphaned PIDs live (back to the intended 19 bots + 1 open slot); added a `pkill -f` guard at
+  the top of `run_bot_pool.sh` before it launches its own set, so a future unclean exit can't
+  double up the pool again.

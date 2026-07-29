@@ -22,6 +22,15 @@ if [ ! -x ./build/red_garden_arena_bot ]; then
     exit 1
 fi
 
+# Guard against orphaned bots from a prior unclean exit (e.g. a manual run whose
+# parent shell was SIGKILLed, bypassing the cleanup trap below) surviving alongside
+# a fresh launch. Found live 2026-07-29: 19 orphaned bots (PPID reparented to 1,
+# stale since 05:55) plus this script's own supervised 19 (from 10:10) put 38 bots
+# against the 20-slot lobby -- bots alone filled every match, so the one open human
+# slot never got a real connection and the draft screen never appeared.
+pkill -f "build/red_garden_arena_bot --host 127.0.0.1" 2>/dev/null || true
+sleep 1
+
 pids=()
 cleanup() {
     for pid in "${pids[@]}"; do kill "$pid" 2>/dev/null || true; done
