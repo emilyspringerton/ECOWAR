@@ -1976,19 +1976,22 @@ checklist) is separate, future work.
 ## 21. Reinforcement learning for the arena bot AI — reward-driven, Unity ML-Agents-shaped (2026-07-29, S170-223)
 
 **Status update (2026-07-29, S170-224/225/226/227): the full pipeline this section specs is now
-built and individually verified, end to end.** `apps/arena_training/src/headless.c` (the C
+built AND actually run, live, end to end.** `apps/arena_training/src/headless.c` (the C
 environment API) and `packages/common/mlp_infer.c`/`.h` (the embedded-MLP inference engine) are
-both real, compiled, and covered by hand-verifiable headless tests. `scripts/rl_env.py` (the
-`gymnasium.Env`) and `scripts/rl_train.py` (the PPO trainer) are written to their respective
-libraries' documented APIs but could NOT be run against real `gymnasium`/`stable_baselines3`
-installs in this environment (no venv module, externally-managed system Python, no sudo) --
-their own ctypes/observation/reward logic was verified directly instead (`python3
-scripts/rl_env.py --smoke-test`). `scripts/export_rl_policy_to_c.py`'s core array-writing logic
-WAS fully verified end to end: a hand-built `torch.nn.Sequential` shaped exactly like SB3's own
-policy network was exported, compiled against `mlp_infer.c`, and its C forward pass matched the
-original PyTorch output to float32 precision. Still not done, honestly: no real PPO training run
-has happened yet (needs `gymnasium`/`stable_baselines3` installed somewhere that has them), and
-wiring a trained policy into the LIVE bot AI decision loop is separate, future work -- this
+real, compiled, and covered by hand-verifiable headless tests. `gymnasium`/`stable-baselines3`
+(not installable via a normal `pip install` in this environment -- no venv module,
+externally-managed system Python, no sudo) were installed via `pip --break-system-packages` once
+the founder explicitly asked to actually run this here, closing the "written to spec, not run"
+gap every earlier verification note in this pipeline had flagged: a real 4000-timestep PPO smoke
+run trained cleanly against a real `gymnasium.Env` (`SubprocVecEnv`, real checkpointing, real
+evaluation -- 5W/0L/0D vs. the heuristic bot AI, too short a run to read much into that number
+itself). Exporting that REAL trained model caught a genuine bug the earlier hand-built synthetic
+test network never hit (exact-integer weight values -- real in an actual trained model's own
+untrained biases, essentially never in random synthetic test data -- produced invalid C float
+literals); fixed, and re-verified against the real model: PyTorch's own output and the compiled
+C header's forward pass match to float32 precision. Still not done, honestly: only a short smoke
+run has happened, not a real training run long enough to produce a meaningfully strong policy,
+and wiring a trained policy into the LIVE bot AI decision loop is separate, future work -- this
 pipeline trains, exports, and syncs weights; nothing in a real match calls them yet.
 
 Founder, real-time, immediately after S170-220's corpus-based unsupervised pretraining pipeline
