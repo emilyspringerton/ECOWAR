@@ -140,11 +140,11 @@ test script sets a default automatically.
 
 ### Arena Bot AI — Training on Colab
 
-NORTHSTAR §18's unsupervised-pretraining stage (S170-194/195): a real, working pipeline that
-turns actual match play into a fine-tuned GPT-2-small checkpoint, no local GPU needed. **You do
-NOT upload the repo to Drive** — the notebook clones REDGARDEN straight from GitHub inside
-Colab. Drive is only used to hold the training corpus (input) and the resulting checkpoint
-(output).
+NORTHSTAR §18's unsupervised-pretraining stage (S170-194/195/220): a real, working pipeline that
+turns actual match play into a trained checkpoint AND a C-embeddable weight file, no local GPU
+needed. **You do NOT upload the repo to Drive** — the notebook clones REDGARDEN straight from
+GitHub inside Colab. Drive is only used to hold the training corpus (input), the SSH key (for
+the git-sync step), and the full HF checkpoint (output).
 
 1. **Collect real match data.** Play or run some bot matches (`scripts/test_10_bots.sh`, or a
    real 10v10 via `scripts/launch_arena_pools.sh`) — every live `apps/arena_server` match writes
@@ -159,20 +159,40 @@ Colab. Drive is only used to hold the training corpus (input) and the resulting 
 3. **Upload just that one file to Drive**, at `MyDrive/redgarden-training/redgarden-corpus.jsonl`
    (the path `scripts/colab_train.py`'s defaults expect — override via the `DRIVE_FOLDER` env var
    in the notebook's own bootstrap cell if you'd rather use a different Drive layout).
-4. **Open the notebook straight from GitHub** — in Colab: File → Open notebook → GitHub tab →
+4. **(Optional, for git-sync) Put a real SSH deploy/personal key with push access to this repo
+   at `MyDrive/.ssh/id_ed25519`** (override the filename via `REDGARDEN_DRIVE_SSH_KEY`). No key
+   there → training and the C weight export still run, the git-push step just skips itself.
+5. **Open the notebook straight from GitHub** — in Colab: File → Open notebook → GitHub tab →
    `emilyspringerton/REDGARDEN` → `notebooks/redgarden_gpt2_pretrain_colab.ipynb`. Run the single
    bootstrap cell: it mounts Drive (approve the OAuth prompt), clones/pulls REDGARDEN fresh, and
    runs `scripts/colab_train.py` — all real training logic lives in that script, in git, so a
    future change ships as a commit and the same notebook cell just picks it up next run.
-5. **Result**: `checkpoint-unsupervised-pretrain.tar.gz` saved back to your `DRIVE_FOLDER` on
-   Drive — this is the STARTING WEIGHTS for §12 Phase E's later supervised, NORN-graded
-   fine-tune, not a finished playing policy by itself.
+6. **Result**: three artifacts. `checkpoint-unsupervised-pretrain.tar.gz` (the full HF
+   checkpoint — the STARTING WEIGHTS for §12 Phase E's later supervised, NORN-graded fine-tune,
+   not a finished playing policy by itself) saved to Drive; `weights/redgarden-arena-bot.bin`
+   (the flat binary format `packages/common/gpt2_infer.c`'s ported C inference engine loads via
+   `gpt2_model_load_weights`) committed and pushed straight to `origin/main` if step 4's SSH key
+   was present, otherwise also just saved to Drive alongside the checkpoint.
 
-**Not yet built:** embedding a trained checkpoint's weights directly into this repo's C code so
-`apps/arena_server`'s bot AI can actually run inference against it, and an automated git-sync
-step from Colab (writing back to `origin/main` using an SSH key kept in `MyDrive/.ssh`) so a
-training run's resulting artifact lands in git without a manual download/commit round-trip.
-Both are real, scoped future work — flagged here, not faked.
+**Why the model is small, trained from scratch, not a GPT-2-small fine-tune (S170-220):**
+GPT-2-small's real weights are ~497MB as raw float32 — too large to reasonably commit to this
+repo every training run, and almost certainly too slow for real-time CPU inference inside a game
+loop. `scripts/colab_train.py`'s default config (4 layers, 128 dim, 4 heads — override via
+`--n-layer`/`--n-embd`/`--n-head`/`--n-ctx`) is small enough for both, at the real cost of
+losing GPT-2's own public-English pretraining as a warm start (a from-scratch small model can't
+load a 768-dim/12-layer checkpoint's weights into a 128-dim/4-layer shape).
+
+`packages/common/gpt2_infer.c`/`.h` is a verbatim port of the sibling `gpt2-alpine-c` repo's own
+`src/gpt2.c` inference engine (fully parameterized by n_vocab/n_ctx/n_embd/n_layer/n_head, so the
+same file serves both repos' very different model sizes) — see `tests/test_gpt2_infer.c` for a
+headless smoke test against synthetic weights, and this pass's own commit message for an
+end-to-end verification (a real small model, exported by `scripts/colab_train.py`'s own export
+function, successfully loaded and forward-passed through this exact C engine).
+
+**Not yet built:** wiring this inference engine into the LIVE bot AI decision loop
+(`arena_game.c`'s `bot_cast_kit_if_ready` or a generalization of it) — this pipeline trains,
+exports, and syncs the weights; nothing in a real match actually calls them yet. Real, scoped
+future work — flagged here, not faked.
 
 ---
 

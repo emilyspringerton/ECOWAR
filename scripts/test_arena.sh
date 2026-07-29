@@ -39,7 +39,16 @@ gcc -std=c99 -O2 -Wall -Wextra -I"${ROOT_DIR}/packages" \
   "${ROOT_DIR}/packages/simulation/arena_ai_bridge.c" \
   -lm
 
+# gpt2_infer: ported GPT-2 C inference engine (S170-220) -- same headless-testable reasoning,
+# no trained checkpoint needed, just the ported math running against synthetic weights.
+gcc -std=c99 -O2 -Wall -Wextra -I"${ROOT_DIR}/packages" \
+  -o "${BUILD_DIR}/test_gpt2_infer" \
+  "${ROOT_DIR}/tests/test_gpt2_infer.c" \
+  "${ROOT_DIR}/packages/common/gpt2_infer.c" \
+  -lm
+
 "${BUILD_DIR}/test_arena_game"
 "${BUILD_DIR}/test_mat4"
 "${BUILD_DIR}/test_arena_replay"
 "${BUILD_DIR}/test_arena_ai_bridge"
+"${BUILD_DIR}/test_gpt2_infer"
