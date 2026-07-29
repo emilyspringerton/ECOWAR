@@ -2,6 +2,28 @@
 
 ## 2026-07-29
 
+- fix(arena): S170-229, buying/selling in the shop no longer also moves the player. Founder:
+  "clicking on item in shop to buy should not cause playyer to move." The shop-click and
+  movement-click handlers were two separate `if` blocks reacting to the same click event with no
+  shared state -- every shop click also fell through to the move-command handler. New
+  `shop_click_consumed` flag, set whenever the click lands anywhere inside the shop panel's own
+  bounding box, gates the movement handler.
+
+- feat(arena): S170-228, wire the trained RL policy into the live bot AI. Founder: "let it train
+  longer then dump the weights into c and commit" -> "update our bots to use it instead of the
+  hand written net." A real, fully-trained 1,000,000-timestep PPO run evaluated at 30W/0L/0D over
+  30 episodes against the heuristic bot AI. `arena_bot_tick`'s own movement now calls
+  `rl_policy_forward()` instead of the old hand-picked-weight `bot_brain_forward()` -- scoped to
+  movement only (the founder's own "hand written net," not the per-hero Q/W/R casting heuristic,
+  which stays untouched). Real circular-dependency bug caught and fixed before it could bite:
+  `arena_update()` auto-drives hero 1 through `arena_bot_tick` whenever `arena_bot_enabled` is
+  set, which would have made the training harness's own "opponent" driven by whatever policy is
+  currently compiled in -- unstable, and completely unbuildable on the first run. Fixed by
+  keeping the old logic alive as `arena_bot_tick_heuristic` specifically for training to call
+  directly, decoupled from the live game's own (now RL-driven) path. Fixed 5 existing tests that
+  assumed the old bot's fixed, predictable movement. Verified live twice under Xvfb: the trained
+  bot closes distance and engages in real mutual combat. Full test suite green.
+
 - fix(arena): S170-227 export bug -- exact-integer weights produced invalid C literals. Founder:
   "can we run the unsupervised stuff here" -> "reinforcement" -- installed `gymnasium` +
   `stable-baselines3` and ran the full RL pipeline for real for the first time, closing every
