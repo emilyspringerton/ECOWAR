@@ -75,6 +75,14 @@ const ArenaItemDef ARENA_ITEMS[ARENA_ITEM_COUNT] = {
        two procs (Immortal's Fold + Paper Glide). WEIRD tier, same "unusual mechanic, not just
        unusual stats" stretch as Blink Dagger. -- */
     { "Donkey",             ARENA_ITEM_SLOT_BACK,   ARENA_ITEM_TIER_WEIRD,   3200,  0,   0,   0,  0, 0.0f },
+    /* -- Haste Trinket (S170-207, founder: "add a haste trinket" -> "passive haste lowers cd
+       and auto attack cd make it a modest improvement 6%") -- pure passive, no active use and
+       deliberately no flat stat bonuses either (unlike Blink Dagger's own +6/+6) since the
+       founder's own framing was specifically "a modest improvement," not another mobility-tier
+       power item. Cost is a judgment call, not founder-specified -- priced as a cheap-ish,
+       early-buy utility item (well under Blink Dagger's 1400) matching that "modest" framing,
+       not confirmed final tuning. -- */
+    { "Haste Trinket",      ARENA_ITEM_SLOT_TRINKET, ARENA_ITEM_TIER_GENERIC,  900,  0,   0,   0,  0, 0.0f, 6 },
 };
 
 /* arena_creeps_reset (S170-51): shared init helper for both arena_init_*
@@ -1048,7 +1056,7 @@ void arena_shop_position(int team, float *x, float *z) {
 /* arena_recompute_item_stats (S170-175): see header declaration's doc
  * comment. */
 void arena_recompute_item_stats(ArenaHero *h) {
-    int bonus_hp = 0, bonus_mp = 0, bonus_armor = 0, bonus_ad = 0;
+    int bonus_hp = 0, bonus_mp = 0, bonus_armor = 0, bonus_ad = 0, bonus_cdr = 0;
     float bonus_speed = 0.0f;
     for (int s = 0; s < ARENA_ITEM_SLOT_COUNT; s++) {
         int item_id = h->equipped_item[s];
@@ -1059,6 +1067,7 @@ void arena_recompute_item_stats(ArenaHero *h) {
         bonus_armor += def->bonus_armor;
         bonus_ad += def->bonus_ad;
         bonus_speed += def->bonus_move_speed;
+        bonus_cdr += def->bonus_cdr_pct; /* S170-207 */
     }
 
     int old_max_hp = h->max_hp;
@@ -1076,6 +1085,7 @@ void arena_recompute_item_stats(ArenaHero *h) {
     h->item_bonus_armor = bonus_armor;
     h->item_bonus_ad = bonus_ad;
     h->item_bonus_move_speed = bonus_speed;
+    h->item_bonus_cdr_pct = bonus_cdr; /* S170-207 */
 }
 
 /* arena_shop_buy (S170-175): see header declaration's doc comment. */
@@ -1288,12 +1298,26 @@ void arena_tick_powerups(unsigned int dt_ms) {
  * h, else returns normal_ms unchanged. Every Q/W/R cooldown-assignment
  * site in this file routes through this so any future ally-buff kit gets
  * the same refund semantics for free. */
+/* apply_cdr (S170-207, Haste Trinket, founder: "add a haste trinket" -> "passive haste lowers cd
+ * and auto attack cd make it a modest improvement 6%"): the actual %-reduction math, shared by
+ * cast_cooldown (Q/W/R) below and the auto-attack cooldown assignment in
+ * arena_tick_attack_windups -- one formula, not two copies. Deliberately does NOT touch
+ * attack_windup_ms_remaining anywhere -- NORTHSTAR §17.1's own real-League note ("the windup
+ * fraction... does not shrink as attack speed increases -- only the backswing fraction
+ * compresses") means haste should compress the cooldown/backswing, not the windup itself; this
+ * function is only ever called on the cooldown, never on a windup duration, so that's already
+ * true by construction. */
+static int apply_cdr(const ArenaHero *h, int normal_ms) {
+    int reduced = normal_ms - (normal_ms * h->item_bonus_cdr_pct) / 100;
+    return reduced < 0 ? 0 : reduced;
+}
+
 static int cast_cooldown(ArenaHero *h, int normal_ms) {
     if (h->next_cast_refund) {
         h->next_cast_refund = 0;
         return 0;
     }
-    return normal_ms;
+    return apply_cdr(h, normal_ms);
 }
 
 /* hero_is_hittable: The Ghost's W (S170-32) is the first ability in this
@@ -1398,7 +1422,7 @@ static void arena_tick_attack_windups(unsigned int dt_ms) {
                     }
                 }
             }
-            h->attack_cooldown_ms = ARENA_GARY_ATTACK_COOLDOWN_MS;
+            h->attack_cooldown_ms = apply_cdr(h, ARENA_GARY_ATTACK_COOLDOWN_MS); /* S170-207 */
         } else {
             ArenaHero *foe = arena_nearest_enemy(i);
             if (foe && hero_is_hittable(foe)) {
@@ -1412,7 +1436,7 @@ static void arena_tick_attack_windups(unsigned int dt_ms) {
                     apply_damage(foe, apply_armor(ARENA_ATTACK_DAMAGE + arena_hero_bonus_ad(h), arena_hero_armor(foe))); /* S170-190 */
                 }
             }
-            h->attack_cooldown_ms = ARENA_ATTACK_COOLDOWN_MS;
+            h->attack_cooldown_ms = apply_cdr(h, ARENA_ATTACK_COOLDOWN_MS); /* S170-207 */
         }
     }
 }
@@ -1738,7 +1762,7 @@ void arena_hero_attack_creeps(unsigned int dt_ms) {
             /* Creeps have no armor stat -- flat damage, no apply_armor call needed. */
             creep->hp -= ARENA_ATTACK_DAMAGE + arena_hero_bonus_ad(h); /* S170-190 */
             creep->last_attacked_by_owner = i;
-            h->attack_cooldown_ms = ARENA_ATTACK_COOLDOWN_MS;
+            h->attack_cooldown_ms = apply_cdr(h, ARENA_ATTACK_COOLDOWN_MS); /* S170-207 */
             if (creep->hp <= 0) {
                 creep->hp = 0;
                 creep_die(creep, &arena_state.nodes[c]);
@@ -1901,7 +1925,7 @@ void arena_hero_attack_lane_creeps(unsigned int dt_ms) {
             if (sqrtf(dx * dx + dz * dz) > ARENA_ATTACK_RANGE) continue;
 
             creep->hp -= ARENA_ATTACK_DAMAGE + arena_hero_bonus_ad(h); /* no armor stat on lane creeps, same as jungle creeps; S170-190 */
-            h->attack_cooldown_ms = ARENA_ATTACK_COOLDOWN_MS;
+            h->attack_cooldown_ms = apply_cdr(h, ARENA_ATTACK_COOLDOWN_MS); /* S170-207 */
             if (creep->hp <= 0) {
                 creep->hp = 0;
                 creep->alive = 0;

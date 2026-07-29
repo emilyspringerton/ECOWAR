@@ -6,6 +6,7 @@
  * ever visually confirmed working. */
 #include <stdio.h>
 #include <math.h>
+#include <string.h>
 
 #include "../packages/simulation/arena_game.h"
 
@@ -4267,6 +4268,81 @@ static void test_donkey_catalog_entry_costs_3200(void) {
     CHECK(ARENA_ITEMS[ARENA_DONKEY_ITEM_ID].slot == ARENA_ITEM_SLOT_BACK, "Donkey occupies the Back slot");
 }
 
+/* S170-207, founder: "add a haste trinket" -> "passive haste lowers cd and auto attack cd make
+ * it a modest improvement 6%". Unlike Blink Dagger/Donkey, Haste Trinket is pure passive stats
+ * (no named ARENA_..._ITEM_ID constant, since nothing needs to check "is THIS SPECIFIC item
+ * equipped" -- arena_recompute_item_stats already sums bonus_cdr_pct generically for any item).
+ * find_haste_trinket_item_id searches by name rather than hardcoding an index (the catalog's
+ * own item count/order can and does keep changing as new items ship). */
+static int find_haste_trinket_item_id(void) {
+    for (int i = 0; i < ARENA_ITEM_COUNT; i++) {
+        if (strcmp(ARENA_ITEMS[i].name, "Haste Trinket") == 0) return i;
+    }
+    return -1;
+}
+
+static void test_haste_trinket_catalog_entry(void) {
+    int id = find_haste_trinket_item_id();
+    CHECK(id >= 0, "Haste Trinket exists in the catalog");
+    CHECK(ARENA_ITEMS[id].cost == 900, "Haste Trinket costs the documented judgment-call price");
+    CHECK(ARENA_ITEMS[id].bonus_cdr_pct == 6, "grants the documented modest 6% CDR");
+    CHECK(ARENA_ITEMS[id].bonus_ad == 0 && ARENA_ITEMS[id].bonus_max_hp == 0,
+          "no flat stat bonuses -- pure CDR, matching the founder's own \"modest improvement\" framing");
+}
+
+static void test_haste_trinket_reduces_ability_cooldown(void) {
+    arena_init_teams();
+    int id = find_haste_trinket_item_id();
+    arena_state.heroes[0].hero_id = ARENA_HERO_UNICORN;
+    arena_state.heroes[0].equipped_item[ARENA_ITEM_SLOT_TRINKET] = id;
+    arena_recompute_item_stats(&arena_state.heroes[0]);
+
+    arena_cast_q(0); /* Unicorn's own Q always lands -- no target/range gate to satisfy */
+
+    int expected = ARENA_UNICORN_Q_COOLDOWN_MS - (ARENA_UNICORN_Q_COOLDOWN_MS * 6) / 100;
+    CHECK(arena_state.heroes[0].q_cooldown_ms == expected, "a real 6% reduction applies to an ability cooldown");
+}
+
+static void test_haste_trinket_reduces_auto_attack_cooldown(void) {
+    arena_init_teams();
+    for (int i = 2; i < ARENA_MAX_HEROES; i++) arena_state.heroes[i].active = 0;
+    arena_state.heroes[ARENA_TEAM_SIZE].active = 1;
+    arena_state.heroes[ARENA_TEAM_SIZE].alive = 1;
+    int id = find_haste_trinket_item_id();
+    arena_state.heroes[0].equipped_item[ARENA_ITEM_SLOT_TRINKET] = id;
+    arena_recompute_item_stats(&arena_state.heroes[0]);
+    arena_state.heroes[0].x = arena_state.heroes[ARENA_TEAM_SIZE].x;
+    arena_state.heroes[0].z = arena_state.heroes[ARENA_TEAM_SIZE].z;
+
+    arena_update_teams(16); /* begins windup */
+    arena_update_teams((unsigned int)ARENA_ATTACK_WINDUP_MS); /* completes it, sets attack_cooldown_ms */
+
+    int expected = ARENA_ATTACK_COOLDOWN_MS - (ARENA_ATTACK_COOLDOWN_MS * 6) / 100;
+    CHECK(arena_state.heroes[0].attack_cooldown_ms == expected, "a real 6% reduction applies to the auto-attack cooldown too");
+}
+
+static void test_haste_trinket_does_not_shrink_windup(void) {
+    arena_init_teams();
+    for (int i = 2; i < ARENA_MAX_HEROES; i++) arena_state.heroes[i].active = 0;
+    arena_state.heroes[ARENA_TEAM_SIZE].active = 1;
+    arena_state.heroes[ARENA_TEAM_SIZE].alive = 1;
+    int id = find_haste_trinket_item_id();
+    arena_state.heroes[0].equipped_item[ARENA_ITEM_SLOT_TRINKET] = id;
+    arena_recompute_item_stats(&arena_state.heroes[0]);
+    arena_state.heroes[0].x = arena_state.heroes[ARENA_TEAM_SIZE].x;
+    arena_state.heroes[0].z = arena_state.heroes[ARENA_TEAM_SIZE].z;
+
+    arena_update_teams(16);
+
+    /* Windup begins AND ticks down by this same 16ms within the one combined call (the melee
+       loop that starts it runs before arena_tick_attack_windups, which decrements it, both
+       inside arena_update_teams) -- so after one tick it's ARENA_ATTACK_WINDUP_MS minus that
+       16ms, not the full untouched value. The real claim under test is narrower: that value is
+       NOT also reduced by the item's own 6% CDR on top of the normal per-tick decrement. */
+    CHECK(arena_state.heroes[0].attack_windup_ms_remaining == ARENA_ATTACK_WINDUP_MS - 16,
+          "NORTHSTAR SS17.1: real League's own windup fraction does not shrink as attack speed increases -- only the cooldown/backswing compresses");
+}
+
 static void test_weatherman_q_knocks_back_no_damage(void) {
     arena_init_teams();
     for (int i = 2; i < ARENA_MAX_HEROES; i++) arena_state.heroes[i].active = 0;
@@ -5350,6 +5426,10 @@ int main(void) {
     test_donkey_glide_grants_high_speed();
     test_donkey_glide_flies_over_obstacles();
     test_donkey_catalog_entry_costs_3200();
+    test_haste_trinket_catalog_entry();
+    test_haste_trinket_reduces_ability_cooldown();
+    test_haste_trinket_reduces_auto_attack_cooldown();
+    test_haste_trinket_does_not_shrink_windup();
     test_weatherman_q_knocks_back_no_damage();
     test_weatherman_q_out_of_range_whiffs();
     test_weatherman_w_grounds_airborne_enemy();

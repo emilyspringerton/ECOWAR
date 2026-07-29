@@ -1061,10 +1061,19 @@ typedef struct {
     int bonus_max_mp;
     int bonus_armor;
     float bonus_move_speed; /* units/sec, additive on top of ARENA_HERO_SPEED */
+    /* bonus_cdr_pct (S170-207, Haste Trinket, founder: "add a haste trinket" -> "passive haste
+     * lowers cd and auto attack cd make it a modest improvement 6%"): a %-reduction to both
+     * ability cooldowns (Q/W/R, via cast_cooldown/apply_cdr) and the auto-attack cooldown --
+     * the first cooldown-reduction stat this catalog has ever needed, every other stat above is
+     * a flat additive bonus, none of them compress time. Added at the end of the struct
+     * (positional initializers with fewer values than members zero-fill the rest in standard C)
+     * so none of the existing 26 items' own initializer rows needed touching -- only Haste
+     * Trinket's own entry sets it. */
+    int bonus_cdr_pct;
 } ArenaItemDef;
 
 extern const ArenaItemDef ARENA_ITEMS[];
-#define ARENA_ITEM_COUNT 26 /* S170-206: was 25 -- +1 for Donkey */
+#define ARENA_ITEM_COUNT 27 /* S170-207: was 26 -- +1 for Haste Trinket (no named ID constant needed, unlike Blink Dagger/Donkey -- it's pure passive stats, no per-item equipped-item index check anywhere) */
 /* ARENA_BLINK_DAGGER_ITEM_ID (S170-205, founder: "add blink dagger 1400 flow it gives a new
  * keybind on screen for tilda"): a named index into ARENA_ITEMS, not just a stat entry -- the
  * only item in the catalog whose value comes from an ACTIVE ability (arena_use_blink) rather
@@ -1513,12 +1522,14 @@ typedef struct {
      * stat bonuses, recomputed by arena_recompute_item_stats whenever the
      * loadout changes (buy/sell/respawn) rather than summed fresh every
      * tick -- max_hp/max_mp are applied directly at recompute time (see
-     * that function), these three are consumed elsewhere: item_bonus_armor
+     * that function), these four are consumed elsewhere: item_bonus_armor
      * by arena_hero_armor(), item_bonus_ad by the melee/homing-shot damage
-     * call sites, item_bonus_move_speed by update_hero_motion. */
+     * call sites, item_bonus_move_speed by update_hero_motion,
+     * item_bonus_cdr_pct (S170-207, Haste Trinket) by apply_cdr. */
     int item_bonus_armor;
     int item_bonus_ad;
     float item_bonus_move_speed;
+    int item_bonus_cdr_pct;
 } ArenaHero;
 
 typedef struct {
