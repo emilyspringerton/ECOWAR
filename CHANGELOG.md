@@ -2321,3 +2321,19 @@
   the other three). Rebuilt all binaries fresh from current `main` (`scripts/build.sh`, exit 0),
   restarted the matchmaker/bot-pool/player-pool trio live, confirmed a clean steady-state queue
   (19 bots + 1 open human slot, no partial-connect timeouts since).
+- observation(arena): auto_deploy.sh's live-restart kills in-progress matches; timer paused.
+  Founder, real-time, third pass: made it through draft this time, but ended up on the wrong
+  hero (Unicorn) and unable to move -- "the game is having trouble actually starting or
+  something." Root cause: `redgarden-auto-deploy.timer` fires every 5 minutes and unconditionally
+  `systemctl --user restart`s the matchmaker/bot-pool services on any new green CI build. Spawned
+  match servers are forked children of the matchmaker process, not their own systemd units, so
+  the restart's control-group kill takes out any currently-live match along with the matchmaker
+  itself. Timestamps line up exactly: the previous fix's manual restart landed ~17:31, the founder
+  got through a draft in the next couple minutes, and the timer fired again at 17:33:47 UTC
+  (`var/logs/auto-deploy.log`), silently killing the just-started match server out from under
+  them -- explains both symptoms (dead connection reads as "can't move," and being left on
+  whatever placeholder hero the new post-restart server defaulted to rather than the one really
+  picked). Paused the timer live (`systemctl --user stop redgarden-auto-deploy.timer`), NOT
+  re-enabled -- needs a real fix (skip the restart while a spawned match server child is still
+  alive / has connected players) before it's safe to leave running unattended again. Apple
+  #11297.
