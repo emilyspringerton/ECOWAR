@@ -2360,3 +2360,46 @@
   face-off itself (backlog item 6 / Apple #11297's follow-up item 2's sibling) remains unbuilt,
   superseded by this direct promotion per explicit founder instruction rather than left silently
   incomplete.
+
+- feat(arena): wire the trained RL policy into `apps/arena_bot`'s 19 real networked match bots.
+  Founder follow-up, same real-time thread: "and then once we get the new model installed lets
+  get all the 19 bots on it." Until now `rl_policy_forward()` only ever drove the solo 1v1
+  local-practice bot (`arena_game.c`) -- the 19 bots real players actually fight are a completely
+  separate, hand-authored heuristic client (`apps/arena_bot`) with zero connection to the RL
+  pipeline (flagged to the founder before starting this). New `rl_engage_nudge()` in
+  `apps/arena_bot/src/main.c`: feeds this bot (self) and its current nearest-enemy target (foe)
+  through the same trained network, same 18-float observation layout
+  `arena_bot_tick_rl_move()` already uses, but returns a small bounded STEP in the suggested
+  direction, not the network's raw output used as a literal world-space target -- two real
+  reasons, both documented inline: (1) the network only ever trained 1v1, in a small fixed-spawn
+  arena with no nodes/squads/teammates, so it can only meaningfully inform "which way to step
+  toward this one foe," not macro positioning; (2) a genuine coordinate-frame mismatch found
+  while wiring this up -- the policy's own action output is clipped to
+  `RL_POLICY_MOVE_TARGET_RANGE` (20.0, tuned for that small training arena) as an absolute
+  world-space target, but the live map's real `ARENA_HALF_EXTENT` is ~51.78 (S170-191's
+  golden-ratio expansion, landed after this training setup was fixed) -- taking the raw output
+  literally would send a bot toward map-center nonsense during any skirmish away from the middle,
+  i.e. most of them on a 5-node map. The nudge is additive on top of -- not a replacement for --
+  the existing S170-90 anti-stack angle-spread approach point, so several bots independently
+  consulting the same network can't reintroduce the exact "bots pile onto the same point" bug
+  that spread was written to fix. `scripts/build.sh` now links `packages/common/mlp_infer.c` into
+  `red_garden_arena_bot` too. Not independently playtested for feel (no display in this
+  environment) -- `scripts/build.sh`/`test_arena.sh`/`test_10_bots.sh` only confirm it compiles,
+  produces bounded output, and a live pool doesn't crash under it; a real read on whether it
+  actually plays smarter needs the founder's own eyes on it.
+
+- fix(arena_bot): dead-server detection was ~10x slower than intended. Found live while
+  verifying the RL-nudge change above: a scratch two-bot smoke test against the real production
+  matchmaker (since `apps/arena_bot` hardcodes port 7778, no way to point it at a sandboxed
+  matchmaker) left two never-connecting phantom entries in the matchmaker's queue, which got
+  matched into a real 20-slot batch alongside the live 19-bot pool -- the spawned server's own
+  60s no-progress timeout correctly killed itself once, but ALL 19 real, connected bots then sat
+  frozen, never detecting their server had died. Root cause: `play_one_match`'s own
+  `silent_ticks > 1000` giveup threshold (`apps/arena_bot/src/main.c`) assumed a ~10ms tick rate
+  -- the loop actually paces at 100ms/tick (`usleep(100000)` at the bottom of the same loop), so
+  100 * 1000 = ~100s of real hang before a bot notices and requeues, not the ~10s the code's own
+  comment claimed. Fixed the threshold to 100 (100 * 100ms = 10s, matching the comment).
+  Genuinely reachable outside any testing scenario too -- the exact same phantom-queue-entry
+  shape happens whenever a real player quits mid-queue before their client's own `PACKET_CONNECT`
+  lands. `scripts/test_arena.sh`/`test_10_bots.sh` green; live-verified the fixed pool recovers
+  and reaches a clean steady state after a restart.

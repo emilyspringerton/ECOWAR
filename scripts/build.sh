@@ -45,9 +45,14 @@ gcc "${COMMON_FLAGS[@]}" \
 
 # A real networked MOBA bot (not the sim's internal practice-mode brain) --
 # the "22 bots in the pool" requirement.
+# packages/common/mlp_infer.c (2026-07-29): rl_engage_nudge() in main.c now calls
+# rl_policy_forward() (packages/common/rl_policy_weights.h) the same way arena_game.c's
+# internal bot brain does -- this binary links mlp_infer.c directly for it, same reasoning
+# as the arena_server build below.
 gcc "${COMMON_FLAGS[@]}" \
   -o "${BUILD_DIR}/red_garden_arena_bot" \
   "${ROOT_DIR}/apps/arena_bot/src/main.c" \
+  "${ROOT_DIR}/packages/common/mlp_infer.c" \
   -lm
 
 # S170-186: this script never built apps/arena itself (the actual human SDL2/GL client --

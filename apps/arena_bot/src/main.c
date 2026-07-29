@@ -34,6 +34,7 @@
 #include "../../../packages/common/protocol.h"
 #include "../../../packages/common/hmac_sha256.h"
 #include "../../../packages/common/http_client.h"
+#include "../../../packages/common/rl_policy_weights.h"
 
 #define TICKET_PAYLOAD_LEN 20
 #define TICKET_MAC_LEN 16
@@ -623,6 +624,80 @@ static void flock_offset(const BotSnapshotView *cur, const BotSnapshotView *prev
     *out_dz = align_z * 0.3f + coh_z * 0.15f + sep_z * 1.2f;
 }
 
+/* rl_engage_nudge (2026-07-29, founder: "get all the 19 bots on it" -- the trained RL policy
+ * packages/common/rl_policy_weights.h's own rl_policy_forward(), same one arena_game.c's solo
+ * local-practice bot already uses, S170-228/promoted 5M-step run same day). Feeds this bot (self)
+ * and its current nearest-enemy target (foe) through the trained network using the exact same
+ * 18-float observation layout arena_game.c's arena_bot_tick_rl_move() builds (self hp/max_hp/mp/
+ * x/z/cooldowns/flow/xp/alive, foe hp/max_hp/x/z/alive, dx/dz -- mirrored the same "always look
+ * like the -6-side training agent" way, see that function's own doc comment for the full
+ * reasoning), then returns a small bounded step in the suggested direction -- NOT the network's
+ * raw output used as a literal world-space target.
+ *
+ * Two real reasons it's a nudge, not a full replacement of the existing angle-spread approach
+ * point below: (1) the network was trained one-on-one, in a small fixed-spawn arena with no
+ * nodes/squads/teammates -- it has zero notion of any of that, so it can only ever meaningfully
+ * inform the immediate "which way to step towards this one foe" question, not macro positioning;
+ * (2) a real, measured coordinate-frame mismatch -- the policy's own action output is clipped to
+ * +-RL_POLICY_MOVE_TARGET_RANGE (20.0, scripts/rl_env.py's own MOVE_TARGET_RANGE, tuned for that
+ * small training arena) as an ABSOLUTE world-space target, but the live map's real
+ * ARENA_HALF_EXTENT is ~51.78 (S170-191's golden-ratio expansion, landed well after this training
+ * setup was fixed) -- more than 2x the policy's own reachable range, so during any skirmish that
+ * happens away from map center (i.e. most of them, on a 5-node Arathi-sized map) its raw output
+ * would be a literal nonsense target, plausibly pulling a bot back toward the origin instead of
+ * toward the real nearby enemy. Reinterpreting the output as a DIRECTION (normalized, then
+ * stepped a small fixed distance) sidesteps that mismatch by construction -- safe regardless of
+ * where on the map the fight is happening -- at the cost of not being a literal port of what the
+ * network actually learned. Also deliberately additive on top of the existing S170-90 anti-stack
+ * angle spread (not a replacement for it): several bots independently computing this same nudge
+ * toward the same foe would otherwise reintroduce the exact "bots pile onto the same point"
+ * bug that spread was written to fix. Not independently playtested for feel (no display in this
+ * environment) -- automated tests (scripts/test_arena.sh, scripts/test_10_bots.sh) only confirm
+ * it compiles, produces bounded output, and doesn't crash a live match; a real read on whether
+ * it actually plays better needs the founder's own eyes on it. */
+static void rl_engage_nudge(const BotSnapshotView *cur, int self_owner, int foe_owner,
+                             float *out_dx, float *out_dz) {
+    const ArenaHeroSnapshot *self_h = &cur->heroes[self_owner];
+    const ArenaHeroSnapshot *foe_h = &cur->heroes[foe_owner];
+
+    float obs[RL_POLICY_OBS_SIZE];
+    obs[0]  = (float)self_h->hp;
+    obs[1]  = (float)self_h->max_hp;
+    obs[2]  = (float)self_h->mp;
+    obs[3]  = -self_h->x;
+    obs[4]  = self_h->z;
+    obs[5]  = (float)self_h->q_cooldown_ms;
+    obs[6]  = (float)self_h->w_cooldown_ms;
+    obs[7]  = (float)self_h->r_cooldown_ms;
+    obs[8]  = (float)self_h->flow;
+    obs[9]  = (float)self_h->xp;
+    obs[10] = self_h->alive ? 1.0f : 0.0f;
+    obs[11] = (float)foe_h->hp;
+    obs[12] = (float)foe_h->max_hp;
+    obs[13] = -foe_h->x;
+    obs[14] = foe_h->z;
+    obs[15] = foe_h->alive ? 1.0f : 0.0f;
+    obs[16] = (-foe_h->x) - (-self_h->x);
+    obs[17] = foe_h->z - self_h->z;
+
+    float action[RL_POLICY_ACTION_SIZE];
+    rl_policy_forward(obs, action);
+
+    /* action[0]/action[1]: un-mirror x back to this bot's real frame, treat as a direction
+       (not an absolute target -- see doc comment above), normalize, step a bounded distance. */
+    float dir_x = -action[0];
+    float dir_z = action[1];
+    float mag = sqrtf(dir_x * dir_x + dir_z * dir_z);
+    if (mag < 0.001f) {
+        *out_dx = 0.0f;
+        *out_dz = 0.0f;
+        return;
+    }
+    const float RL_NUDGE_STEP = 3.0f; /* same order of magnitude as the angle-spread's own approach_radius */
+    *out_dx = (dir_x / mag) * RL_NUDGE_STEP;
+    *out_dz = (dir_z / mag) * RL_NUDGE_STEP;
+}
+
 // play_one_match runs the draft + live-play loop for a single match against
 // the already-connected server. Returns once the match ends (winner != 0)
 // or the connection goes quiet for too long.
@@ -706,7 +781,16 @@ static void play_one_match(int game_port) {
             have_snapshot = 1;
         }
         silent_ticks = got_one ? 0 : silent_ticks + 1;
-        if (silent_ticks > 1000) { /* ~10s of nothing at all -- server's gone */
+        /* Found live 2026-07-29: this loop paces at 100ms/tick (the usleep(100000) at the
+           bottom of this same loop), not the ~10ms/tick the old threshold of 1000 assumed --
+           1000 * 100ms is really ~100s of hang before a bot notices its server died and
+           requeues, not the ~10s this comment originally claimed. Discovered when a dead
+           matchmaker-queue entry (a phantom/never-connected client counted toward a spawned
+           match's lobby_size) left all 19 real bots connected-but-stuck in draft for a full
+           ~100s after their match server's own 60s no-progress timeout killed it -- correct
+           self-healing behavior, just far slower than intended. 100 * 100ms = 10s, matching
+           what the message below actually says. */
+        if (silent_ticks > 100) { /* ~10s of nothing at all -- server's gone */
             fprintf(stderr, "[arena_bot %d] no snapshots for 10s -- giving up on this match\n", (int)getpid());
             return;
         }
@@ -914,8 +998,14 @@ static void play_one_match(int game_port) {
                                target, just not literally on top of each other or it. */
                             float approach_angle = (float)(my_owner % 8) * (2.0f * 3.14159265f / 8.0f);
                             float approach_radius = 2.0f;
-                            float tx = last.heroes[best].x + cosf(approach_angle) * approach_radius + flock_dx;
-                            float tz = last.heroes[best].z + sinf(approach_angle) * approach_radius + flock_dz;
+                            /* rl_engage_nudge (see its own doc comment): the trained RL policy's
+                               suggested step, added on top of -- not instead of -- the angle
+                               spread above, so S170-90's anti-stack guarantee still holds even
+                               with several bots independently consulting the same network. */
+                            float rl_dx, rl_dz;
+                            rl_engage_nudge(&last, my_owner, best, &rl_dx, &rl_dz);
+                            float tx = last.heroes[best].x + cosf(approach_angle) * approach_radius + flock_dx + rl_dx;
+                            float tz = last.heroes[best].z + sinf(approach_angle) * approach_radius + flock_dz + rl_dz;
                             send_move(tx, tz);
                             /* S170-162/165: sent AFTER send_move on purpose, see
                                send_attack's own doc comment -- this is what
