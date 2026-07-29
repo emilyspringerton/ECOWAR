@@ -259,6 +259,28 @@ static void match_log_win(int winner) {
     fflush(match_log_fp);
 }
 
+/* match_log_draft_complete (2026-07-29, founder: "can we start crunching the data on the heroes
+ * that are the strongest? does our match replay system let us start tracking stats like win
+ * rate etc?"). Answer at the time this was asked: no -- neither this log's own snapshot/
+ * match_end events nor report_match_result's IDUNA POST below ever recorded which hero_id a
+ * given owner actually played, only x/y/hp/alive and win/loss by player_id. 5,860 match logs
+ * already sitting in var/matches/ are unrecoverable for this because of that gap -- hero
+ * identity was simply never written down anywhere. This closes it going forward: one line per
+ * match, right when the draft actually finishes (same moment `match_phase` flips to
+ * ARENA_PHASE_LIVE), giving every later `match_end` in the same file a hero_id to join against
+ * without needing to reconstruct picks from the noisy per-tick snapshot stream. */
+static void match_log_draft_complete(void) {
+    if (!match_log_fp) return;
+    fprintf(match_log_fp, "{\"event\":\"draft_complete\",\"ts_ms\":%u,\"heroes\":[", get_server_time());
+    for (int i = 0; i < lobby_size; i++) {
+        ArenaHero *h = &arena_state.heroes[i];
+        fprintf(match_log_fp, "%s{\"owner\":%d,\"team\":%d,\"hero_id\":%d}",
+                i == 0 ? "" : ",", i, h->team, (int)h->hero_id);
+    }
+    fprintf(match_log_fp, "]}\n");
+    fflush(match_log_fp);
+}
+
 /* ---- AI training corpus log (S170-194, NORTHSTAR §18.4 -- founder: "do the work to prepare
  * for unsupervised learning" / "target torch training on colab"). Separate file from
  * match_log_fp above on purpose: that log is the observer/replay-viewer's own minimal x/z/hp
@@ -549,6 +571,7 @@ static void server_handle_packet(struct sockaddr_in *sender, char *buffer, int s
                assignment stand as-is. */
             match_phase = ARENA_PHASE_LIVE;
             printf("All %d heroes picked -- match live.\n", lobby_size);
+            match_log_draft_complete();
         }
         return;
     }

@@ -2445,3 +2445,23 @@
   default spawn sat far from the action, a real collision once its default spawn became the
   exact point the test stages its scenario at. Full suite green
   (`scripts/build.sh`/`test_arena.sh`/`test_10_bots.sh`).
+
+- feat(arena): hero win-rate tracking, from real match logs. Founder: "can we start crunching
+  the data on the heroes that are the strongest? does our match replay system let us start
+  tracking stats like win rate etc?" Answer at the time: no -- neither `var/matches/*.jsonl`
+  (x/z/hp/alive snapshots + a final winner) nor `report_match_result`'s separate IDUNA POST
+  (`player_game_stats`, win/loss per PLAYER) ever recorded which `hero_id` a given owner
+  actually played. Checked IDUNA's own schema directly rather than assume -- genuinely no
+  hero_id column there, and adding one would mean a cross-repo migration this pass doesn't take
+  on, since the whole analysis is answerable from REDGARDEN's own local logs alone. New
+  `match_log_draft_complete()` (`apps/arena_server/src/main.c`) writes one `draft_complete`
+  event per match, right when the draft actually finishes, recording `{owner, team, hero_id}`
+  for all 20 slots -- joins against the existing `match_end` event's `winner` field to compute
+  win rate per hero. New `scripts/hero_stats.py` walks `var/matches/*.jsonl`, aggregates
+  wins/games per hero, prints a sorted win-rate table, and honestly reports how many files it
+  had to skip (pre-fix logs with no `draft_complete`, or matches that never reached
+  `match_end` -- timed-out/phantom-queue matches are a real, common thing this exact session
+  already found several times). Flagged plainly, not glossed over: the 5,860 match logs already
+  sitting in `var/matches/` from before this fix are permanently unusable for this -- hero
+  identity was simply never written down, so hero stats start from zero real games, not from
+  this repo's actual match history. Full suite green.
