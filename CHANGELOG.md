@@ -2,6 +2,14 @@
 
 ## 2026-07-29
 
+- feat(arena): S170-226, PPO training script (Stable-Baselines3). NORTHSTAR §21's sprint, third
+  item. `scripts/rl_train.py` trains a small MLP policy (SB3's own default `net_arch=[64,64]`)
+  via PPO against `scripts/rl_env.py`'s `ArenaTrainingEnv`, same CLI-args/env-var delivery
+  pattern as `colab_train.py`. Parallel envs via `SubprocVecEnv`, periodic + final checkpoints,
+  a real evaluation pass reporting actual win/loss/draw rate against the heuristic bot AI. Same
+  honest gap as S170-225: `stable_baselines3` isn't installable in this environment, so the
+  actual training loop is written to spec but not live-tested -- flagged, not claimed.
+
 - feat(arena): S170-225, Python gymnasium.Env wrapper for the RL sim. NORTHSTAR §21's sprint,
   second item. `scripts/rl_env.py` wraps `apps/arena_training/src/headless.c`'s ctypes API: an
   18-float Box observation space (named indices mirroring `sim_get_obs()`'s own layout), a
