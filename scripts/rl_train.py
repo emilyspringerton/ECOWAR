@@ -66,6 +66,20 @@ def parse_args():
     p.add_argument("--eval-episodes", type=int, default=int(os.environ.get("RL_EVAL_EPISODES", 20)),
                    help="episodes to run for the final win-rate report against the same "
                         "heuristic opponent it trained against")
+    p.add_argument("--skip-export", action="store_true",
+                   help="skip converting the trained policy to the embedded-C header format "
+                        "(S170-227's own scripts/export_rl_policy_to_c.py)")
+    p.add_argument("--export-output", default=os.environ.get(
+        "RL_EXPORT_OUTPUT", "packages/common/rl_policy_weights.h"),
+        help="where the exported C header goes, relative to --repo-dir")
+    p.add_argument("--skip-git-sync", action="store_true",
+                   help="skip committing/pushing the exported header back to origin/main -- "
+                        "same convention scripts/colab_train.py's own flag already uses")
+    p.add_argument("--ssh-key-path", default=os.environ.get(
+        "REDGARDEN_DRIVE_SSH_KEY", "/content/drive/MyDrive/.ssh/id_ed25519"),
+        help="same founder-chosen path scripts/colab_train.py's own git-sync already uses")
+    p.add_argument("--repo-dir", default=os.environ.get("REPO_DIR", "/content/REDGARDEN"),
+                   help="same default scripts/colab_train.py's own git-sync already uses")
     return p.parse_args()
 
 
@@ -155,13 +169,29 @@ def main():
     print(f"Eval results: {wins}W {losses}L {draws}D over {args.eval_episodes} episodes "
           f"({100.0 * wins / args.eval_episodes:.1f}% win rate vs. the heuristic bot AI)")
 
+    header_path = None
+    if not args.skip_export:
+        from export_rl_policy_to_c import extract_layers_from_sb3_policy, write_c_header_from_layers
+        layers = extract_layers_from_sb3_policy(model)
+        header_path = os.path.join(args.output_dir, "rl_policy_weights.h")
+        write_c_header_from_layers(layers, header_path)
+
+    if header_path and not args.skip_git_sync:
+        from git_sync_utils import git_sync_file_to_repo
+        commit_message = "feat(arena): update trained RL policy weights from a PPO run\n\nbacklog: S170-227"
+        git_sync_file_to_repo(header_path, args.export_output, args.repo_dir,
+                               args.ssh_key_path, commit_message)
+
     print("=" * 60)
     print(f"DONE. Final policy: {final_path}.zip")
+    if header_path:
+        print(f"C inference header: {header_path} (packages/common/mlp_infer.h's own MlpModel "
+              f"format -- see that header's own doc comment, and rl_policy_forward() inside the "
+              f"generated file, for how to call it)")
     print("This is a trained PPO policy against the EXISTING heuristic bot AI only (NORTHSTAR")
     print("§21.3: self-play/curriculum explicitly out of scope for this first pass).")
-    print("Next: scripts/export_rl_policy_to_c.py (S170-227) extracts the policy network's own")
-    print("weights into the embedded-C format, then git-syncs them the same way S170-220's own")
-    print("git_sync_weights_to_repo() already does for the corpus-pretrained model.")
+    print("NOT done: wiring rl_policy_forward() into the LIVE bot AI decision loop -- this")
+    print("pipeline trains + exports + syncs the policy, nothing in a real match calls it yet.")
     print("File a completion Apple and mark the relevant EMILY/BACKLOG.md item done.")
     print("=" * 60)
 

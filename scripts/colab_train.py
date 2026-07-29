@@ -180,49 +180,18 @@ def export_weights_to_c_bin(model, output_bin_path):
 
 
 def git_sync_weights_to_repo(bin_path, repo_dir, ssh_key_path, backlog_id="S170-220"):
-    """S170-220, founder: 'i will put the keys in MyDrive/.ssh' / 'sync to git.' Copies the
-    exported .bin into <repo_dir>/weights/, then commits and pushes straight to origin/main --
-    same 'always commit and push, standing instruction' convention every other REDGARDEN change
-    this session followed, just automated here instead of a human running the commands. Returns
-    True if the push succeeded, False if skipped (no key found) or failed (logged, not raised --
-    a training run's own success/checkpoint-on-Drive shouldn't be undone by a git-sync failure
-    at the very end)."""
-    if not os.path.exists(ssh_key_path):
-        print(f"No SSH key at {ssh_key_path} -- skipping git-sync (checkpoint is still saved to "
-              f"Drive above; commit/push the exported weights by hand, or fix --ssh-key-path).")
-        return False
-
-    os.chmod(ssh_key_path, 0o600)  # git/ssh refuses to use a key with loose permissions
-    weights_dir = os.path.join(repo_dir, "weights")
-    os.makedirs(weights_dir, exist_ok=True)
-    dest = os.path.join(weights_dir, "redgarden-arena-bot.bin")
-    import shutil
-    shutil.copyfile(bin_path, dest)
-
-    ssh_cmd = f"ssh -i {ssh_key_path} -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=/content/.ssh_known_hosts"
-    env = dict(os.environ, GIT_SSH_COMMAND=ssh_cmd)
-
-    def run(cmd):
-        return subprocess.run(cmd, cwd=repo_dir, env=env, check=True,
-                               capture_output=True, text=True)
-
-    try:
-        run(["git", "remote", "set-url", "origin", "git@github.com:emilyspringerton/REDGARDEN.git"])
-        run(["git", "config", "user.email", "colab-training@einhorn-industrial.local"])
-        run(["git", "config", "user.name", "REDGARDEN Colab Training"])
-        run(["git", "add", "weights/redgarden-arena-bot.bin"])
-        status = run(["git", "status", "--porcelain"])
-        if not status.stdout.strip():
-            print("No change in exported weights vs. what's already committed -- nothing to push.")
-            return True
-        run(["git", "commit", "-m",
-             f"feat(arena): update trained bot AI weights from Colab run\n\nbacklog: {backlog_id}"])
-        run(["git", "push", "origin", "HEAD:main"])
-        print(f"Pushed {dest} to origin/main.")
-        return True
-    except subprocess.CalledProcessError as e:
-        print(f"git-sync FAILED (checkpoint is still safe on Drive): {e}\nstdout: {e.stdout}\nstderr: {e.stderr}")
-        return False
+    """S170-220, founder: 'i will put the keys in MyDrive/.ssh' / 'sync to git.' Delegates to
+    scripts/git_sync_utils.py's own git_sync_file_to_repo() (S170-227 factored the actual
+    copy+commit+push logic out into that shared module, since scripts/export_rl_policy_to_c.py
+    needed the exact same capability for a second, differently-shaped artifact -- a generated C
+    header, not a binary weights blob -- and duplicating it per-script would drift). Kept as a
+    thin wrapper under its original name/signature rather than deleted, so nothing calling it by
+    this name needs to change."""
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    from git_sync_utils import git_sync_file_to_repo
+    commit_message = f"feat(arena): update trained bot AI weights from Colab run\n\nbacklog: {backlog_id}"
+    return git_sync_file_to_repo(bin_path, "weights/redgarden-arena-bot.bin", repo_dir,
+                                  ssh_key_path, commit_message)
 
 
 def main():

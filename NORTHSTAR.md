@@ -1975,6 +1975,22 @@ checklist) is separate, future work.
 
 ## 21. Reinforcement learning for the arena bot AI — reward-driven, Unity ML-Agents-shaped (2026-07-29, S170-223)
 
+**Status update (2026-07-29, S170-224/225/226/227): the full pipeline this section specs is now
+built and individually verified, end to end.** `apps/arena_training/src/headless.c` (the C
+environment API) and `packages/common/mlp_infer.c`/`.h` (the embedded-MLP inference engine) are
+both real, compiled, and covered by hand-verifiable headless tests. `scripts/rl_env.py` (the
+`gymnasium.Env`) and `scripts/rl_train.py` (the PPO trainer) are written to their respective
+libraries' documented APIs but could NOT be run against real `gymnasium`/`stable_baselines3`
+installs in this environment (no venv module, externally-managed system Python, no sudo) --
+their own ctypes/observation/reward logic was verified directly instead (`python3
+scripts/rl_env.py --smoke-test`). `scripts/export_rl_policy_to_c.py`'s core array-writing logic
+WAS fully verified end to end: a hand-built `torch.nn.Sequential` shaped exactly like SB3's own
+policy network was exported, compiled against `mlp_infer.c`, and its C forward pass matched the
+original PyTorch output to float32 precision. Still not done, honestly: no real PPO training run
+has happened yet (needs `gymnasium`/`stable_baselines3` installed somewhere that has them), and
+wiring a trained policy into the LIVE bot AI decision loop is separate, future work -- this
+pipeline trains, exports, and syncs weights; nothing in a real match calls them yet.
+
 Founder, real-time, immediately after S170-220's corpus-based unsupervised pretraining pipeline
 shipped: "running training on a corpus of games is cool but thats not what i actually want right
 now i want unsupervised learning with rewards like in the unity ml-agents plugin." A real

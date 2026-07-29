@@ -57,9 +57,18 @@ gcc -std=c99 -D_DEFAULT_SOURCE -O2 -Wall -Wextra -I"${ROOT_DIR}/packages" \
   "${ROOT_DIR}/packages/simulation/arena_game.c" \
   -lm
 
+# mlp_infer: the small embedded-C MLP inference engine (S170-227) for the RL policy network --
+# hand-verifiable matmul/activation math, see that test file's own doc comment.
+gcc -std=c99 -O2 -Wall -Wextra -I"${ROOT_DIR}/packages" \
+  -o "${BUILD_DIR}/test_mlp_infer" \
+  "${ROOT_DIR}/tests/test_mlp_infer.c" \
+  "${ROOT_DIR}/packages/common/mlp_infer.c" \
+  -lm
+
 "${BUILD_DIR}/test_arena_game"
 "${BUILD_DIR}/test_mat4"
 "${BUILD_DIR}/test_arena_replay"
 "${BUILD_DIR}/test_arena_ai_bridge"
 "${BUILD_DIR}/test_gpt2_infer"
 "${BUILD_DIR}/test_arena_training"
+"${BUILD_DIR}/test_mlp_infer"
