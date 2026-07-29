@@ -271,6 +271,11 @@ typedef struct {
     // permanently-ready tile. Local player's own hero only really needs this, but synced for
     // every hero same as every other per-hero field on this struct, for consistency.
     uint16_t blink_cooldown_ms;
+    // donkey_glide_cooldown_ms (S170-206): same reasoning as blink_cooldown_ms just above, for
+    // Donkey's own tilde-bound active (Paper Glide) -- donkey_fold_ms/donkey_airborne_ms aren't
+    // synced, same "purely server-side bookkeeping the client's own rendering never needs" call
+    // r_zone_x's own doc comment already made for cast_anchor_x/cast_target.
+    uint16_t donkey_glide_cooldown_ms;
 } ArenaHeroSnapshot;
 
 // ARENA_SNAPSHOT_MAX_HEROES must match packages/simulation/arena_game.h's

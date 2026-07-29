@@ -68,6 +68,13 @@ const ArenaItemDef ARENA_ITEMS[ARENA_ITEM_COUNT] = {
        with a genuinely unusual MECHANIC," the more apt read for the one item in this catalog
        that isn't just stats at all. -- */
     { "Blink Dagger",       ARENA_ITEM_SLOT_TRINKET, ARENA_ITEM_TIER_WEIRD,   1400,  6,   6,   0,  0, 0.0f },
+    /* -- Donkey (S170-206, founder: "add the weatherman and donkey" -> "donkey should be an
+       item" -> "3.2k flow") -- see ARENA_DONKEY_FOLD_HP_FRACTION's own header doc comment for
+       the full mechanic. Back slot ("rides on your back"), no stat bonuses at all -- unlike
+       Blink Dagger, the founder didn't ask for stats on this one, and its value is entirely the
+       two procs (Immortal's Fold + Paper Glide). WEIRD tier, same "unusual mechanic, not just
+       unusual stats" stretch as Blink Dagger. -- */
+    { "Donkey",             ARENA_ITEM_SLOT_BACK,   ARENA_ITEM_TIER_WEIRD,   3200,  0,   0,   0,  0, 0.0f },
 };
 
 /* arena_creeps_reset (S170-51): shared init helper for both arena_init_*
@@ -460,9 +467,17 @@ static void update_hero_motion(ArenaHero *h, float dt_sec) {
     /* slowed_ms/slow_pct (S170-184, GFD's Slow): a proportional multiplier on top of the base
        speed + item bonus, so it scales correctly regardless of how much flat item speed a hero
        already has (a slow that just subtracted a flat amount could go negative against a
-       heavily-itemized hero; a percentage never can). */
-    float speed_mult = (h->slowed_ms > 0) ? (1.0f - h->slow_pct) : 1.0f;
-    if (speed_mult < 0.0f) speed_mult = 0.0f;
+       heavily-itemized hero; a percentage never can).
+       donkey_airborne_ms (S170-206, Paper Glide): overrides the slow check entirely rather than
+       stacking with it -- "flies over trees etc," off the ground and untouchable while airborne,
+       the same reasoning intangible_ms already grants CC-immunity for this exact window. */
+    float speed_mult;
+    if (h->donkey_airborne_ms > 0) {
+        speed_mult = ARENA_DONKEY_GLIDE_SPEED_MULT;
+    } else {
+        speed_mult = (h->slowed_ms > 0) ? (1.0f - h->slow_pct) : 1.0f;
+        if (speed_mult < 0.0f) speed_mult = 0.0f;
+    }
     float step = (ARENA_HERO_SPEED + h->item_bonus_move_speed) * speed_mult * dt_sec; /* S170-175: items (e.g. Rootrunner Treads, Creek F. Boots) */
     if (step >= dist) {
         h->x = h->target_x;
@@ -472,7 +487,10 @@ static void update_hero_motion(ArenaHero *h, float dt_sec) {
         h->x += dx / dist * step;
         h->z += dz / dist * step;
     }
-    resolve_hero_obstacle_collision(h);
+    /* Skipped while airborne (S170-206) -- "flies over trees etc," the founder's own original
+       2026-07-24 direction on Paper Glide, predating this whole item pivot. Every other hero's
+       movement still collides normally. */
+    if (h->donkey_airborne_ms <= 0) resolve_hero_obstacle_collision(h);
 }
 
 /* arena_hero_base_armor: every hero-specific armor rule (S170-175:
@@ -1152,6 +1170,62 @@ void arena_use_blink(int owner) {
     resolve_hero_obstacle_collision(h);
 
     h->blink_cooldown_ms = ARENA_BLINK_COOLDOWN_MS;
+}
+
+/* arena_use_donkey_glide (S170-206): see header declaration's doc comment. Direction is away
+ * from the nearest living enemy -- a real escape, not a general-purpose reposition like Blink
+ * Dagger's own toward-target direction -- falling back to the current move target only if
+ * there's no enemy nearby to escape from. */
+void arena_use_donkey_glide(int owner) {
+    if (owner < 0 || owner >= ARENA_MAX_HEROES) return;
+    ArenaHero *h = &arena_state.heroes[owner];
+    if (!h->active || !h->alive || h->stunned_ms > 0) return; /* not blocked by silenced_ms -- using an item isn't a cast */
+    if (h->equipped_item[ARENA_ITEM_SLOT_BACK] != ARENA_DONKEY_ITEM_ID) return;
+    if (h->donkey_glide_cooldown_ms > 0) return;
+
+    float dx, dz;
+    ArenaHero *foe = arena_nearest_enemy(owner);
+    if (foe) {
+        dx = h->x - foe->x; /* away from the foe, not toward it */
+        dz = h->z - foe->z;
+    } else if (h->moving) {
+        dx = h->target_x - h->x;
+        dz = h->target_z - h->z;
+    } else {
+        return; /* no enemy to flee, nowhere already headed -- nothing to glide toward */
+    }
+    float len = sqrtf(dx * dx + dz * dz);
+    if (len < 0.01f) return; /* standing exactly on top of the foe -- no meaningful escape direction */
+    dx /= len; dz /= len;
+
+    float nx = h->x + dx * ARENA_DONKEY_GLIDE_RANGE;
+    float nz = h->z + dz * ARENA_DONKEY_GLIDE_RANGE;
+    if (nx < -ARENA_HALF_EXTENT) nx = -ARENA_HALF_EXTENT;
+    if (nx > ARENA_HALF_EXTENT) nx = ARENA_HALF_EXTENT;
+    if (nz < -ARENA_HALF_EXTENT) nz = -ARENA_HALF_EXTENT;
+    if (nz > ARENA_HALF_EXTENT) nz = ARENA_HALF_EXTENT;
+    /* Unlike Blink Dagger, not an instant position swap -- a real move target the existing
+       motion integration carries the hero toward at a boosted speed (update_hero_motion reads
+       donkey_airborne_ms for both the speed multiplier and skipping obstacle collision, "flies
+       over trees etc"), so the glide plays out over ARENA_DONKEY_GLIDE_DURATION_MS instead of
+       teleporting on this exact tick. */
+    h->target_x = nx;
+    h->target_z = nz;
+    h->moving = 1;
+    h->donkey_airborne_ms = ARENA_DONKEY_GLIDE_DURATION_MS;
+    h->intangible_ms = ARENA_DONKEY_GLIDE_DURATION_MS; /* untargetable while airborne -- reuses hero_is_hittable's existing gate */
+    h->donkey_glide_cooldown_ms = ARENA_DONKEY_GLIDE_COOLDOWN_MS;
+}
+
+/* arena_use_active_item (S170-206): see header declaration's doc comment. */
+void arena_use_active_item(int owner) {
+    if (owner < 0 || owner >= ARENA_MAX_HEROES) return;
+    ArenaHero *h = &arena_state.heroes[owner];
+    if (h->equipped_item[ARENA_ITEM_SLOT_TRINKET] == ARENA_BLINK_DAGGER_ITEM_ID) {
+        arena_use_blink(owner);
+    } else if (h->equipped_item[ARENA_ITEM_SLOT_BACK] == ARENA_DONKEY_ITEM_ID) {
+        arena_use_donkey_glide(owner);
+    }
 }
 
 /* arena_tick_fountains (S170-147): see header declaration's doc comment. */
@@ -2645,6 +2719,78 @@ static int beleth_cast_w(ArenaHero *beleth, ArenaHero *foe) {
 }
 
 /* mnm_cast_q: a melee-range clamp+damage, same shape as Paimon's Q. Returns 1 if it landed. */
+/* weatherman_cast_q: Barometric Shove -- a ranged wind gust, displacement-only, no damage (the
+ * first push-outward Q on this roster; Duck's own Q/R pull inward). Same rooted_ms-immune-to-
+ * displacement precedent duck_pull_foe already established -- the push is skipped if the foe is
+ * rooted, but the cast still counts as landing (returns 1, cooldown spent) since it required a
+ * real target in range to fire at all. */
+static int weatherman_cast_q(ArenaHero *wm, ArenaHero *foe) {
+    if (!hero_is_hittable(foe)) return 0;
+    float dx = foe->x - wm->x, dz = foe->z - wm->z;
+    float dist = sqrtf(dx * dx + dz * dz);
+    if (dist > ARENA_WEATHERMAN_Q_RANGE) return 0;
+    if (dist > 0.01f && foe->rooted_ms <= 0) {
+        float push = ARENA_WEATHERMAN_Q_KNOCKBACK_DIST;
+        float nx = foe->x + dx / dist * push;
+        float nz = foe->z + dz / dist * push;
+        if (nx < -ARENA_HALF_EXTENT) nx = -ARENA_HALF_EXTENT;
+        if (nx > ARENA_HALF_EXTENT) nx = ARENA_HALF_EXTENT;
+        if (nz < -ARENA_HALF_EXTENT) nz = -ARENA_HALF_EXTENT;
+        if (nz > ARENA_HALF_EXTENT) nz = ARENA_HALF_EXTENT;
+        foe->x = nx;
+        foe->z = nz;
+    }
+    return 1;
+}
+
+/* weatherman_cast_w: Collects On What's Owed -- NORTHSTAR §16.3's own specific Donkey
+ * interaction, "same zone, opposite effect depending on team" precedent Ghost's Recital already
+ * set, applied to a targeted cast instead of a zone. Checks the nearest enemy first (grounds an
+ * airborne one -- "the debt catches up to you no matter how far you fly"), then the nearest
+ * ally (extends an already-gliding one instead -- a tailwind, not a headwind). Whiffs (no
+ * cooldown consumed) if neither is currently mid-glide at all, the overwhelmingly common case
+ * since Paper Glide is a rare escape trigger, not a constant state -- same "whiffed cast costs
+ * nothing" convention every other conditional W on this roster already follows. */
+static int weatherman_cast_w(ArenaHero *wm, ArenaHero *foe, ArenaHero *ally) {
+    if (foe && foe->donkey_airborne_ms > 0) {
+        float dx = foe->x - wm->x, dz = foe->z - wm->z;
+        if (sqrtf(dx * dx + dz * dz) <= ARENA_WEATHERMAN_W_RANGE) {
+            foe->donkey_airborne_ms = 0;
+            foe->intangible_ms = 0; /* grounded -- ends the untargetable glide window too */
+            return 1;
+        }
+    }
+    if (ally && ally->donkey_airborne_ms > 0) {
+        float dx = ally->x - wm->x, dz = ally->z - wm->z;
+        if (sqrtf(dx * dx + dz * dz) <= ARENA_WEATHERMAN_W_RANGE) {
+            ally->donkey_airborne_ms += ARENA_DONKEY_GLIDE_DURATION_MS;
+            ally->intangible_ms += ARENA_DONKEY_GLIDE_DURATION_MS;
+            /* "extends the glide's remaining airborne duration and travel distance" -- pushes
+               the ally's existing move target further along the same direction they're already
+               gliding, reusing ARENA_DONKEY_GLIDE_RANGE rather than a second, one-off distance
+               constant. If they've already physically arrived (moving == 0, e.g. the glide's
+               own duration outlasted the actual travel), only the duration half applies --
+               there's no remaining direction to extend a finished trip along. */
+            if (ally->moving) {
+                float gdx = ally->target_x - ally->x, gdz = ally->target_z - ally->z;
+                float glen = sqrtf(gdx * gdx + gdz * gdz);
+                if (glen > 0.01f) {
+                    float nx = ally->target_x + gdx / glen * ARENA_DONKEY_GLIDE_RANGE;
+                    float nz = ally->target_z + gdz / glen * ARENA_DONKEY_GLIDE_RANGE;
+                    if (nx < -ARENA_HALF_EXTENT) nx = -ARENA_HALF_EXTENT;
+                    if (nx > ARENA_HALF_EXTENT) nx = ARENA_HALF_EXTENT;
+                    if (nz < -ARENA_HALF_EXTENT) nz = -ARENA_HALF_EXTENT;
+                    if (nz > ARENA_HALF_EXTENT) nz = ARENA_HALF_EXTENT;
+                    ally->target_x = nx;
+                    ally->target_z = nz;
+                }
+            }
+            return 1;
+        }
+    }
+    return 0;
+}
+
 static int mnm_cast_q(ArenaHero *mnm, ArenaHero *foe) {
     if (!hero_is_hittable(foe)) return 0;
     float dx = foe->x - mnm->x, dz = foe->z - mnm->z;
@@ -2824,6 +2970,12 @@ void arena_cast_q(int owner) {
     case ARENA_HERO_MNM:
         if (mnm_cast_q(h, foe)) {
             h->q_cooldown_ms = cast_cooldown(h, ARENA_MNM_Q_COOLDOWN_MS);
+            h->mp -= ARENA_MP_COST_Q;
+        }
+        break;
+    case ARENA_HERO_WEATHERMAN:
+        if (weatherman_cast_q(h, foe)) {
+            h->q_cooldown_ms = cast_cooldown(h, ARENA_WEATHERMAN_Q_COOLDOWN_MS);
             h->mp -= ARENA_MP_COST_Q;
         }
         break;
@@ -3052,6 +3204,16 @@ void arena_toggle_w(int owner) {
            own -- arena_hero_armor() reads w_active directly for the bonus. */
         if (!h->w_active && h->mp <= 0) return; /* S170-181: same activation-gate change as every other true toggle above */
         h->w_active = !h->w_active;
+        break;
+    case ARENA_HERO_WEATHERMAN:
+        /* Collects On What's Owed: instant targeted cast, not a toggle -- see
+           weatherman_cast_w's own doc comment for the ally/enemy-airborne branching (NORTHSTAR
+           §16.3). */
+        if (h->w_cooldown_ms > 0 || h->mp < ARENA_MP_COST_W) return;
+        if (weatherman_cast_w(h, arena_nearest_enemy(owner), arena_nearest_ally(owner))) {
+            h->w_cooldown_ms = cast_cooldown(h, ARENA_WEATHERMAN_W_COOLDOWN_MS);
+            h->mp -= ARENA_MP_COST_W;
+        }
         break;
     default:
         /* No-op for any hero without a real W in this arena, not a crash
@@ -3330,6 +3492,19 @@ void arena_cast_r(int owner) {
         h->r_cooldown_ms = cast_cooldown(h, ARENA_MNM_R_COOLDOWN_MS);
         h->mp -= ARENA_MP_COST_R;
         break;
+    case ARENA_HERO_WEATHERMAN:
+        /* The Debt Compounds: fixed zone, same shape as Ghost's Recital/Paimon's Two Hundred
+           Legions/NOOR-1's Do Not Approach -- see tick_hero_kit's zone tick below. The literal
+           storm finally collecting, biggest and simplest ability on the kit by design (NORTHSTAR
+           §16.2), so the interesting design surface stays on W where the actual founder ask
+           was. */
+        h->r_zone_x = h->x;
+        h->r_zone_z = h->z;
+        h->r_zone_tick_ms = 0;
+        h->r_active_ms = ARENA_WEATHERMAN_R_DURATION_MS;
+        h->r_cooldown_ms = cast_cooldown(h, ARENA_WEATHERMAN_R_COOLDOWN_MS);
+        h->mp -= ARENA_MP_COST_R;
+        break;
     }
 }
 
@@ -3341,6 +3516,44 @@ static void tick_hero_kit(ArenaHero *h, ArenaHero *foe, ArenaHero *ally, unsigne
     if (h->w_cooldown_ms > 0) h->w_cooldown_ms -= (int)dt_ms;
     if (h->r_cooldown_ms > 0) h->r_cooldown_ms -= (int)dt_ms;
     if (h->blink_cooldown_ms > 0) h->blink_cooldown_ms -= (int)dt_ms; /* S170-205 -- generic same as the three above, independent track */
+    if (h->donkey_fold_proc_cooldown_ms > 0) h->donkey_fold_proc_cooldown_ms -= (int)dt_ms; /* S170-206 */
+    if (h->donkey_glide_cooldown_ms > 0) h->donkey_glide_cooldown_ms -= (int)dt_ms;
+    if (h->donkey_airborne_ms > 0) {
+        h->donkey_airborne_ms -= (int)dt_ms;
+        if (h->donkey_airborne_ms < 0) h->donkey_airborne_ms = 0;
+    }
+    /* Immortal's Fold (S170-206, Donkey's automatic passive -- "unfolds automatically... the
+       instant the wearer's HP crosses below ARENA_DONKEY_FOLD_HP_FRACTION"). Checked here,
+       generically, for ANY hero wearing Donkey -- not gated on hero_id at all, the whole point
+       of building this as an item rather than a hero-specific passive. donkey_fold_ms > 0 is
+       the re-entry guard (already folded, don't restack) on top of the proc's own cooldown. */
+    if (h->alive && h->equipped_item[ARENA_ITEM_SLOT_BACK] == ARENA_DONKEY_ITEM_ID &&
+        h->donkey_fold_ms <= 0 && h->donkey_fold_proc_cooldown_ms <= 0 &&
+        h->max_hp > 0 && (float)h->hp / (float)h->max_hp < ARENA_DONKEY_FOLD_HP_FRACTION) {
+        h->donkey_fold_ms = ARENA_DONKEY_FOLD_MS;
+        h->donkey_fight_tick_ms = 0;
+        h->survive_floor_ms = ARENA_DONKEY_FOLD_MS; /* simplified "flat damage shield," see header doc comment */
+        h->donkey_fold_proc_cooldown_ms = ARENA_DONKEY_FOLD_PROC_COOLDOWN_MS;
+    }
+    if (h->donkey_fold_ms > 0) {
+        h->donkey_fold_ms -= (int)dt_ms;
+        if (h->donkey_fold_ms < 0) h->donkey_fold_ms = 0;
+        /* "it unfolds and fights for you" -- periodic damage to the nearest enemy while
+           unfolded, same fixed-1000ms-interval accumulator idiom as every other DPS tick in
+           this file (e.g. r_zone_tick_ms). */
+        if (h->alive) {
+            h->donkey_fight_tick_ms += (int)dt_ms;
+            while (h->donkey_fight_tick_ms >= 1000) {
+                h->donkey_fight_tick_ms -= 1000;
+                if (foe && hero_is_hittable(foe)) {
+                    float dx = foe->x - h->x, dz = foe->z - h->z;
+                    if (sqrtf(dx * dx + dz * dz) <= ARENA_DONKEY_FOLD_FIGHT_RADIUS) {
+                        apply_damage(foe, ARENA_DONKEY_FOLD_FIGHT_DPS);
+                    }
+                }
+            }
+        }
+    }
     /* combat_timer_ms (S170-148): ticks down every tick regardless of kit,
        same generic "runs for every hero" reasoning as the cooldowns above --
        re-armed to ARENA_COMBAT_TIMEOUT_MS by apply_damage() whenever this
@@ -3852,6 +4065,33 @@ static void tick_hero_kit(ArenaHero *h, ArenaHero *foe, ArenaHero *ally, unsigne
             }
         }
         break;
+    case ARENA_HERO_WEATHERMAN:
+        /* The Ledger: passive self HP regen, always on -- reuses Dagda's own Undry shape
+           exactly (NORTHSTAR §16.2's own explicit call), flavor-only for this first pass rather
+           than a real alternating storm-debt buff/debuff cycle. */
+        if (h->alive) {
+            float regen = ARENA_WEATHERMAN_PASSIVE_REGEN_PER_SEC * ((float)dt_ms / 1000.0f);
+            h->hp += (int)regen;
+            if (h->hp > h->max_hp) h->hp = h->max_hp;
+        }
+        /* The Debt Compounds: fixed cold zone, damage-only tick -- same shape as NOOR-1's Do
+           Not Approach directly above, the literal storm finally collecting. */
+        if (h->r_active_ms > 0) {
+            h->r_active_ms -= (int)dt_ms;
+            if (h->r_active_ms < 0) h->r_active_ms = 0;
+            h->r_zone_tick_ms += (int)dt_ms;
+            while (h->r_zone_tick_ms >= 1000) {
+                h->r_zone_tick_ms -= 1000;
+                if (foe && hero_is_hittable(foe)) {
+                    float dx = foe->x - h->r_zone_x, dz = foe->z - h->r_zone_z;
+                    if (sqrtf(dx * dx + dz * dz) <= ARENA_WEATHERMAN_R_RADIUS) {
+                        apply_damage(foe, ARENA_WEATHERMAN_R_DPS);
+                    }
+                }
+                arena_zone_damage_creeps(h->r_zone_x, h->r_zone_z, ARENA_WEATHERMAN_R_RADIUS, h->team, ARENA_WEATHERMAN_R_DPS);
+            }
+        }
+        break;
     default:
         break;
     }
@@ -4136,6 +4376,18 @@ static void bot_cast_kit_if_ready(ArenaHero *bot, ArenaHero *foe) {
         } else if (!bot->w_active) {
             arena_toggle_w(bot->owner);
         } else if (bot->q_cooldown_ms <= 0 && dist <= ARENA_MNM_Q_RANGE) {
+            arena_cast_q(bot->owner);
+        }
+        break;
+    case ARENA_HERO_WEATHERMAN:
+        /* R when a foe is close enough to be worth the AoE zone's long cooldown, else Q
+           whenever in range and off cooldown for the poke/knockback -- W deliberately omitted,
+           same "leave a situational/conditional ability out of this simple heuristic" precedent
+           Frog's own case above already sets (its whole value depends on a Donkey-wearing ally
+           or enemy being mid-glide, not a general "use when off cooldown" heuristic). */
+        if (bot->r_cooldown_ms <= 0 && dist <= ARENA_WEATHERMAN_R_RADIUS) {
+            arena_cast_r(bot->owner);
+        } else if (bot->q_cooldown_ms <= 0 && dist <= ARENA_WEATHERMAN_Q_RANGE) {
             arena_cast_q(bot->owner);
         }
         break;

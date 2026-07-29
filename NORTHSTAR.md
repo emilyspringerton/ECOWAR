@@ -1133,7 +1133,7 @@ Nothing built this pass. If either half gets promoted to real work, the open que
 the actual design surface to resolve first -- not just "add camera lock" or "add fog of war" as
 originally framed.
 
-## 16. Weatherman + Donkey, and the non-piloted-unit gap (2026-07-25, S170-93) -- spec only, no code yet
+## 16. Weatherman + Donkey, and the non-piloted-unit gap (2026-07-25, S170-93)
 
 Founder, real-time, part of the same batched hero-wave as He Xiangu/Gunnr/Vassago/Beleth: "add the
 weatherman and donkey specific donkey paper airplane weatherman interractions." Scoped via
@@ -1141,6 +1141,24 @@ AskUserQuestion to spec-first, same treatment as §15 -- Donkey is not a stock k
 job like this session's other additions (Cain, Gunnr, Vassago, He Xiangu, Beleth all reuse the
 existing generic status-effect toolkit on an owner-piloted hero), and Weatherman has zero kit
 writeup at all yet, only TYLER lore.
+
+**Status update (2026-07-29, S170-206):** built, both halves. §16.1's whole premise -- that Donkey
+needs a genuinely new non-piloted-unit system -- turned out to be avoidable: asked to clarify the
+"owner" ambiguity in Donkey's own kit text, the founder's answer was "donkey should be an item."
+Shipped as an equippable item (3200 Flow, Back slot) instead of a hero: Immortal's Fold (automatic,
+HP < 25% -> damage floor + periodic fight-back damage) and Paper Glide (tilde-activated -- the same
+key Blink Dagger uses, generalized to `arena_use_active_item` -- a real high-speed traversal, flies
+over obstacles, untargetable for the window, 2-minute cooldown) both trigger on whichever hero
+wears it, no second targetable entity, no companion-slot system, no new render/collision path --
+every one of §16.1's stated requirements sidestepped, not solved. Weatherman shipped as a stock
+owner-piloted hero (#27) exactly as §16.2 specified, with §16.3's Donkey interaction on W working
+against the item's own `donkey_airborne_ms` field instead of a companion entity's state. §16.4's
+open questions: resolved in practice rather than left open -- Donkey stayed a single-item design,
+not generalized to a reusable companion-slot system (no second need has materialized); Weatherman's
+Q knockback vs. node capture channels wasn't specifically addressed (the generic "mixed presence
+interrupts" rule already covers displacement the same as any other movement); W's grounding effect
+ends the Donkey wearer's `intangible_ms` too, a beat of vulnerability, matching the stronger reading
+the open question already leaned toward.
 
 ### 16.1 The actual blocker: no non-piloted-unit system exists
 

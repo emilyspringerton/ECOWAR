@@ -237,8 +237,9 @@ typedef enum {
     ARENA_HERO_HE_XIANGU = 23, /* TYLER multiverse_heroes.md #39, "He Xiangu, Who Stopped Eating" (S170-93) */
     ARENA_HERO_BELETH = 24, /* TYLER multiverse_heroes.md #14, "Beleth, the Detonation" (S170-93) */
     ARENA_HERO_MNM = 25, /* TYLER multiverse_heroes.md #114, "MnM, the Shapeshifting Crab" (S170-134) */
+    ARENA_HERO_WEATHERMAN = 26, /* TYLER multiverse_heroes.md #45, "Ao Guang's Weather-Debt Collector" (S170-206, NORTHSTAR §16.2) */
 } ArenaHeroID;
-#define ARENA_HERO_COUNT 26
+#define ARENA_HERO_COUNT 27
 
 /* The Unicorn — first real hero kit wired in (S170-18). */
 #define ARENA_UNICORN_ARMOR         4    /* passive: Chassis Claim, flat dmg reduction */
@@ -854,6 +855,28 @@ typedef enum {
 #define ARENA_MNM_R_SURVIVE_FLOOR_MS        6000
 #define ARENA_MNM_R_COOLDOWN_MS            27000
 
+/* Weatherman (S170-206, TYLER multiverse_heroes.md #45, "Ao Guang's Weather-Debt Collector" --
+ * NORTHSTAR §16.2). Fighter/Support, the roster's first kit built around wind/displacement
+ * rather than direct damage. Passive (The Ledger) is flavor-only for a first pass, reusing
+ * Dagda's Undry regen shape exactly (ARENA_DAGDA_PASSIVE_REGEN_PER_SEC) rather than inventing a
+ * new oscillating storm-debt buff/debuff cycle -- a real, legitimate follow-on, not required to
+ * ship a first kit. Q (Barometric Shove) is a ranged wind gust, displacement-only, no damage --
+ * the first real push-outward Q on this roster (Duck's own Q/R pull inward). W (Collects On
+ * What's Owed) is the Donkey interaction -- see weatherman_cast_w's own doc comment for the
+ * ally/enemy-airborne branching logic (NORTHSTAR §16.3). R (The Debt Compounds) is a fixed AoE
+ * zone, same r_zone_x/r_zone_z/r_zone_tick_ms shape as Ghost's Recital/Paimon's Two Hundred
+ * Legions/NOOR-1's Do Not Approach -- values calibrated directly against NOOR-1's own R. */
+#define ARENA_WEATHERMAN_PASSIVE_REGEN_PER_SEC 3
+#define ARENA_WEATHERMAN_Q_RANGE            6.0f
+#define ARENA_WEATHERMAN_Q_KNOCKBACK_DIST   5.0f
+#define ARENA_WEATHERMAN_Q_COOLDOWN_MS      5500
+#define ARENA_WEATHERMAN_W_RANGE            8.0f
+#define ARENA_WEATHERMAN_W_COOLDOWN_MS      9000
+#define ARENA_WEATHERMAN_R_RADIUS           4.5f
+#define ARENA_WEATHERMAN_R_DURATION_MS      4500
+#define ARENA_WEATHERMAN_R_DPS              7
+#define ARENA_WEATHERMAN_R_COOLDOWN_MS     24000
+
 /* Lane creep waves (S170-139). Founder: "add subsystems needed to make
  * creeps a reality" -- clarified as classic MOBA lane-pushing waves,
  * distinct from S170-51's jungle creeps (per-node, stationary, aggro-only).
@@ -1041,16 +1064,23 @@ typedef struct {
 } ArenaItemDef;
 
 extern const ArenaItemDef ARENA_ITEMS[];
-#define ARENA_ITEM_COUNT 25 /* S170-205: was 24 -- +1 for Blink Dagger */
+#define ARENA_ITEM_COUNT 26 /* S170-206: was 25 -- +1 for Donkey */
 /* ARENA_BLINK_DAGGER_ITEM_ID (S170-205, founder: "add blink dagger 1400 flow it gives a new
  * keybind on screen for tilda"): a named index into ARENA_ITEMS, not just a stat entry -- the
  * only item in the catalog whose value comes from an ACTIVE ability (arena_use_blink) rather
  * than passive stats alone, so unlike every other item, code needs to check "is THIS SPECIFIC
  * item equipped" by index, not just sum stat fields generically the way
- * arena_recompute_item_stats already does for everyone. Placed last in the catalog (index 24)
- * so adding it didn't renumber any existing item's index (equipped_item[] wire values, shop
- * quick-buy 1-9 keys, and any other index-based reference all stay stable). */
-#define ARENA_BLINK_DAGGER_ITEM_ID (ARENA_ITEM_COUNT - 1)
+ * arena_recompute_item_stats already does for everyone. A fixed literal, not "last item in the
+ * catalog" (ARENA_ITEM_COUNT - 1) -- true when this was written, but S170-206 (Donkey) added a
+ * second active-ability item after it, so "last" stopped meaning Blink Dagger. Both items were
+ * appended in catalog-array order, so indices stay stable regardless of how many more items
+ * get added later (equipped_item[] wire values, shop quick-buy 1-9 keys, and any other
+ * index-based reference all stay correct either way). */
+#define ARENA_BLINK_DAGGER_ITEM_ID 24
+/* ARENA_DONKEY_ITEM_ID (S170-206, founder: "donkey should be an item" -> "3.2k flow" -> "tilda
+ * should make the hero do the paper airplane glide thing"): see ARENA_BLINK_DAGGER_ITEM_ID's own
+ * doc comment just above -- same reasoning, second (and currently last) fixed-index active item. */
+#define ARENA_DONKEY_ITEM_ID 25
 
 #define ARENA_ITEM_SELL_REFUND_PCT 50 /* founder: "sell it back for less" */
 #define ARENA_SHOP_RADIUS 3.0f /* same "stand near it" convention as ARENA_FOUNTAIN_RADIUS */
@@ -1076,6 +1106,60 @@ extern const ArenaItemDef ARENA_ITEMS[];
  * the two generic movement/action blockers everywhere else in this file). */
 #define ARENA_BLINK_RANGE 12.0f
 #define ARENA_BLINK_COOLDOWN_MS 15000
+
+/* Donkey (S170-206, NORTHSTAR §16, real TYLER lore/docs/HEROES_VS0.md kit -- founder direction
+ * across this whole arc: "add the weatherman and donkey" -> [asked to clarify the non-piloted-
+ * unit blocker] -> "donkey should be an item" -> "3.2k flow" -> "tilda should make the hero do
+ * the paper airplane glide thing" -> "longish range high speed escape can move above obstacles"
+ * -> "long ish cooldown" -> "2 minute cooldown on paper plane fly mode" -> "but the thing where
+ * it unfolds and fights for you thats a passive"). This single founder
+ * clarification ("should be an item") sidesteps NORTHSTAR §16.1's entire stated blocker -- a
+ * whole new non-piloted companion-entity system, with its own collision/targeting/rendering
+ * problems -- by making Donkey an equippable item whose effects trigger on whichever hero wears
+ * it, not a second targetable unit at all. No new entity, no new render path, no new
+ * collision/targeting rules: everything reuses generic per-hero status-effect fields, the exact
+ * "reused rather than invented from nothing" discipline this file's own doc comments repeat
+ * throughout.
+ *
+ * Two independent effects, two independent cooldowns, same item:
+ *   - Immortal's Fold (automatic passive -- confirmed explicitly, not player-activated): the
+ *     instant the wearer's HP crosses below ARENA_DONKEY_FOLD_HP_FRACTION, grants a temporary
+ *     damage floor (reusing the existing generic survive_floor_ms field -- a deliberate
+ *     simplification of the lore's own "flat damage shield," the same "no literal shield-absorb
+ *     mechanic exists yet, simplify to the floor mechanic that does" call this file already made
+ *     for Doc Wheel's own R) AND makes the unfolded Donkey itself fight back -- periodic damage
+ *     to the nearest enemy in range for the fold's own duration, "it unfolds and fights for you,"
+ *     not just a passive shield. Tracked on its own dedicated donkey_fold_ms field (distinct from
+ *     the shared survive_floor_ms it also sets) specifically so the fight-back damage only ever
+ *     fires from Donkey's own fold window, never from an unrelated hero's own survive_floor_ms-
+ *     granting ability (Pizza/Dagda/Cain/MnM's own R's all set that same shared field for
+ *     entirely different reasons). Gated by its own proc cooldown so it can't retrigger every
+ *     tick while still under the threshold.
+ *   - Paper Glide (tilde-activated, same key as Blink Dagger -- see arena_use_active_item):
+ *     unlike Blink Dagger's instant teleport, a brief high-speed traversal (ARENA_DONKEY_GLIDE_
+ *     SPEED_MULT on top of base move speed) toward a real destination point, covering
+ *     ARENA_DONKEY_GLIDE_RANGE -- longer reach than Blink Dagger's own 12.0, matching "longish
+ *     range" and Paper Glide's real lore identity as the bigger, slower-to-reset escape tool.
+ *     Obstacle collision is skipped for the glide's own duration ("flies over trees etc," the
+ *     founder's original 2026-07-24 direction on this ability, predating this whole item pivot)
+ *     and the wearer is untargetable the same way (donkey_airborne_ms doubles as intangible_ms
+ *     for the same window, reusing hero_is_hittable's existing gate rather than touching that
+ *     function). Direction is away from the nearest living enemy -- a real escape, matching the
+ *     lore's own "carry the owner clear of immediate danger" -- falling back to the current move
+ *     target if no enemy is nearby to escape from, or a no-op if neither gives a direction.
+ *     ARENA_DONKEY_GLIDE_COOLDOWN_MS is a real commitment (2 minutes, the founder's own explicit
+ *     number) -- meaningfully longer than Blink Dagger's 15s, matching "long ish cooldown" and
+ *     the fact that Paper Glide covers more ground and grants real untargetability, not just
+ *     Blink's instant reposition. */
+#define ARENA_DONKEY_FOLD_HP_FRACTION 0.25f
+#define ARENA_DONKEY_FOLD_MS 4000            /* how long the floor + fight-back window holds once triggered */
+#define ARENA_DONKEY_FOLD_PROC_COOLDOWN_MS 30000
+#define ARENA_DONKEY_FOLD_FIGHT_RADIUS 4.0f  /* "fights for you" -- same modest melee-adjacent scale as this file's other passive-aura radii */
+#define ARENA_DONKEY_FOLD_FIGHT_DPS 6
+#define ARENA_DONKEY_GLIDE_RANGE 16.0f
+#define ARENA_DONKEY_GLIDE_DURATION_MS 600   /* airborne/untargetable window -- real transit time, not an instant blink */
+#define ARENA_DONKEY_GLIDE_SPEED_MULT 7.0f   /* on top of ARENA_HERO_SPEED -- covers the full range comfortably inside the duration window above */
+#define ARENA_DONKEY_GLIDE_COOLDOWN_MS 120000
 
 /* Flow/XP kill rewards (S170-175). Melee/homing-shot kills only -- ability
  * casts don't set last_attacked_by_owner, so a kill finished by a spell
@@ -1143,6 +1227,22 @@ typedef struct {
      * q/w/r_cooldown_ms -- an item activation, not a kit ability, so it doesn't share or
      * interfere with the ability slots at all. */
     int blink_cooldown_ms;
+    /* Donkey fields (S170-206): see ARENA_DONKEY_FOLD_HP_FRACTION's own doc comment for the
+     * full design. donkey_fold_ms is the fold's own dedicated duration (distinct from the
+     * shared survive_floor_ms it also sets, so the fight-back DPS tick below can tell "is this
+     * MY fold" from "some other hero's own R just happens to be using the same generic field
+     * right now"); donkey_fight_tick_ms is its fixed-1000ms-interval accumulator, same idiom as
+     * every other DPS-zone tick in this file (e.g. r_zone_tick_ms). donkey_fold_proc_cooldown_ms
+     * and donkey_glide_cooldown_ms are the item's two independent internal cooldowns.
+     * donkey_airborne_ms doubles as this hero's own intangible_ms for the same window when
+     * Paper Glide is active (see arena_use_donkey_glide) -- kept as its own field anyway so
+     * Weatherman's W (NORTHSTAR §16.3) can specifically target "currently mid-glide," not just
+     * "intangible for any reason at all" (Ghost's Not a Ghost/Frog's R also set intangible_ms). */
+    int donkey_fold_ms;
+    int donkey_fight_tick_ms;
+    int donkey_fold_proc_cooldown_ms;
+    int donkey_glide_cooldown_ms;
+    int donkey_airborne_ms;
     int owner; /* 0 = player, 1 = bot in the 1v1 local demo; a slot index 0..ARENA_MAX_HEROES-1 in team mode */
     int alive;
     int team;   /* 2026-07-24: which side, for team-mode nearest-enemy targeting. 1v1 local demo sets 0/1 explicitly. */
@@ -1750,9 +1850,26 @@ int arena_shop_sell(int owner, ArenaItemSlot slot);
  * hero has ARENA_BLINK_DAGGER_ITEM_ID actually equipped, is alive, not stunned, and
  * blink_cooldown_ms has elapsed. Direction: toward the current move target if moving, else
  * toward the nearest living enemy, else no-op (same fallback chain unicorn_cast_q already
- * uses) -- clamped to ARENA_BLINK_RANGE and the map bounds. PACKET_ARENA_BLINK's own server-side
- * handler. */
+ * uses) -- clamped to ARENA_BLINK_RANGE and the map bounds. */
 void arena_use_blink(int owner);
+
+/* arena_use_donkey_glide (S170-206): activates Donkey's Paper Glide -- no-op unless
+ * ARENA_DONKEY_ITEM_ID is equipped, alive, not stunned, and donkey_glide_cooldown_ms has
+ * elapsed. Direction: away from the nearest living enemy (a real escape, matching the item's
+ * own lore), else toward the current move target if no enemy is nearby, else no-op. Sets a real
+ * move target ARENA_DONKEY_GLIDE_RANGE away at ARENA_DONKEY_GLIDE_SPEED_MULT speed rather than
+ * an instant teleport -- update_hero_motion reads donkey_airborne_ms for both the speed boost
+ * and skipping obstacle collision for the glide's duration. Also sets intangible_ms for the
+ * same window (untargetable while airborne). */
+void arena_use_donkey_glide(int owner);
+
+/* arena_use_active_item (S170-206): PACKET_ARENA_BLINK's own server-side handler, generalized
+ * past its original single-item name once Donkey shipped as a second tilde-bound active --
+ * dispatches to whichever active item the hero actually has equipped (Blink Dagger checked
+ * first, then Donkey; a hero holding both, an edge case no real build would deliberately create
+ * since they're both expensive single-purpose mobility items, just gets Blink Dagger). No-op if
+ * neither is equipped. */
+void arena_use_active_item(int owner);
 
 /* arena_tick_resources (S170-153): advances each team's Arathi-Basin-style
  * resource race by dt_ms. Fixed ARENA_RESOURCE_TICK_MS interval, same

@@ -38,38 +38,22 @@ Support, Indirect-Control** (the last one is a deliberate roster feature per NOR
 
 ## Hero Kits
 
-### The Donkey (S, #38 — Middle Kingdom Heirs) — **Indirect-Control**
+### The Donkey — moved to the item roster (S170-206)
 
-Folds flat like paper when not needed, unfolds instantly when it is. The Donkey is never
-directly commanded — it rides folded (inert, untargetable, no collision) alongside its owner
-until a trigger condition fires, then unfolds for a short window.
-
-- **Passive — Immortal's Fold**: Folded by default. Unfolds automatically for 4s whenever the
-  owner drops below 25% HP, immediately granting the owner a flat damage shield and a burst of MS
-  — then re-folds. Cannot be targeted, killed, or interacted with while folded.
-- **W — Load Bearing**: While unfolded, the Donkey can carry one ally's dropped item/resource
-  drop for the rest of the fold cycle, delivering it to the owner on re-fold.
-- **Q — Paper Glide** (2026-07-24, founder direction: "launching itself into the air while folding
-  into a paper airplane... movement mobility and escape... fly over trees etc"): while unfolded,
-  launches itself into the air and refolds mid-launch into a paper-airplane shape, gliding a long
-  distance to carry the owner clear of immediate danger before landing and re-folding. Airborne for
-  the glide's duration — flies *over* terrain and ground-based obstacles rather than around them,
-  and is untargetable by ground-based crowd control for the same window (nothing can root or catch
-  what's currently in the air). Same Indirect-Control identity as the rest of the kit: this isn't a
-  player-cast ability with its own keybind, it's a second auto-trigger condition alongside the
-  Immortal's Fold passive — fires when the owner needs distance fast (a bad engage, a closing
-  gap-closer), not on command.
-- **Passive interaction**: stacks oddly with burst/execute effects aimed at the owner — an
-  execute that would've killed the owner can be shielded out entirely if the Fold triggers first,
-  making the Donkey a strong answer to assassin dive comps. Paper Glide compounds this further:
-  an owner who escapes airborne mid-engage denies an execute its window entirely, not just its
-  damage.
-- **Not built in code this pass**: The Donkey (and the rest of the Indirect-Control archetype) stays
-  blocked on a non-piloted-unit system that doesn't exist in `packages/simulation/arena_game.c` yet
-  — every hero currently implemented is directly owner-piloted. This is a real, flagged gap (see
-  NORTHSTAR §12's roster audit), not something this doc entry papers over; the ability is fully
-  specified here so implementation is a clean follow-on once that system exists, not a fresh design
-  question.
+**Update, 2026-07-29:** The Donkey shipped as an equippable item (`docs/HEROES_VS0.md`'s own
+"Starting Item Roster" section below, `packages/simulation/arena_game.c`'s `ARENA_ITEMS`
+catalog), not a hero. Founder, real-time, when asked to clarify the Indirect-Control/non-piloted-
+unit blocker this entry originally described: "donkey should be an item." This sidesteps that
+whole blocker entirely — no second targetable entity, no companion-slot system, no new
+collision/render path — both of Donkey's original kit pieces (Immortal's Fold, the automatic
+low-HP damage-floor + fight-back proc; Paper Glide, now a real tilde-activated high-speed escape
+that flies over obstacles) trigger on whichever hero actually wears the item. Kept here as a
+historical pointer, not deleted outright, since the roster numbering elsewhere in this doc
+references "#38, Middle Kingdom Heirs" by TYLER lore ID. The "Starting Item Roster" table below
+predates the current arena MOBA (it's the original card-RTS `local_game.c` item vision, never
+actually wired into the live `ARENA_ITEMS` catalog -- Blink Dagger isn't in it either) -- the
+real, current, shipped item stats live in `README.md`'s own item table, sourced directly from
+`packages/simulation/arena_game.c`.
 
 ### The Duck ("A Duck, Reportedly Telekinetic", S, #103) — **Fighter/Assassin**
 
@@ -631,6 +615,33 @@ hits meant for somebody else. That line is the kit, mechanically, not just flavo
   duration, same real damage-floor mechanic as Pizza's R) — combining two existing generic
   fields the same way Tree's Grand Secret does, just with `survive_floor_ms` standing in for
   Tree's armor buff. The shell takes the hit instead of the crab underneath it.
+
+---
+
+### Weatherman (TYLER `multiverse_heroes.md` #45, "Ao Guang's Weather-Debt Collector") — **Fighter/Support** (S170-206)
+
+9.0 Hz, "collects on storms owed and storms overdrawn, for the Dragon King of the East Sea" — a
+demigod whose entire ledger is meteorological, every flood/drought/unseasonable calm somewhere on
+his books, balanced against a debt system nobody outside his office fully understands. Seed
+phrase: "the debt compounds with the barometer." The roster's first kit built around wind/
+displacement rather than direct damage.
+
+- **Passive — The Ledger**: flavor-only for this first pass — reuses Dagda's own Undry always-on
+  regen shape rather than a real alternating storm-debt buff/debuff cycle, a legitimate richer
+  follow-on.
+- **Q — Barometric Shove**: a ranged wind gust that knocks the target back a fixed distance —
+  displacement only, no damage at all, the roster's first push-*outward* Q (Duck's own Q/R pull
+  inward).
+- **W — Collects On What's Owed**: cast on the nearest hero, ally or enemy. Cast on an enemy
+  currently mid-Paper-Glide (see the Donkey item, "Starting Item Roster" below): immediately
+  grounds them — "the debt catches up to you no matter how far you fly." Cast on an ally
+  currently mid-glide: extends it instead, a tailwind, not a headwind — same "same zone, opposite
+  effect depending on team" shape Ghost's Recital already established, applied to a targeted cast.
+  Whiffs (no cooldown spent) if nobody nearby is currently airborne at all, the overwhelmingly
+  common case.
+- **R — The Debt Compounds**: a fixed AoE zone dealing periodic damage to enemies standing in it —
+  the literal storm finally collecting, biggest and simplest ability on the kit by design, so the
+  real design surface stays on W.
 
 ---
 

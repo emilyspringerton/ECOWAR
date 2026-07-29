@@ -95,6 +95,7 @@ const char *arena_ability_name(ArenaHeroID hero_id, int slot) {
         [ARENA_HERO_HE_XIANGU]  = {"MOTHER-OF-PEARL AND MOONLIGHT", "SELF-DENIAL", "NEVER FRAMED AS SACRIFICE"},
         [ARENA_HERO_BELETH]     = {"EVERY LOVE TRIANGLE", "HOPE IS A TERROR I LEASH WITH SONG", "THE DETONATION"},
         [ARENA_HERO_MNM]        = {"CLAMP DOWN", "WASN'T THAT SHAPE A SECOND AGO", "ABSORBING HITS MEANT FOR SOMEBODY ELSE"},
+        [ARENA_HERO_WEATHERMAN] = {"BAROMETRIC SHOVE", "COLLECTS ON WHAT'S OWED", "THE DEBT COMPOUNDS"},
     };
     if (hero_id < 0 || hero_id >= ARENA_HERO_COUNT || slot < 0 || slot > 2) return "?";
     const char *name = NAMES[hero_id][slot];
@@ -134,6 +135,7 @@ const char *arena_ability_description(ArenaHeroID hero_id, int slot) {
         [ARENA_HERO_HE_XIANGU]  = {"DAMAGE + SELF-HEAL OFF IT", "TOGGLE: BOOSTS SELF REGEN", "ZONE: HEAL ALLIES, NO DAMAGE"},
         [ARENA_HERO_BELETH]     = {"PROJECTILE: DAMAGE + BURN DOT", "SILENCE NEAREST FOE, NO DAMAGE", "MARKS A SPOT, BIG DELAYED BURST"},
         [ARENA_HERO_MNM]        = {"MELEE ROOT + DAMAGE", "TOGGLE: EXTRA ARMOR STACKS", "SELF-ROOT + TEMPORARY DAMAGE FLOOR"},
+        [ARENA_HERO_WEATHERMAN] = {"RANGED KNOCKBACK, NO DAMAGE", "GROUNDS/EXTENDS DONKEY'S GLIDE", "ZONE: DAMAGE OVER TIME"},
     };
     if (hero_id < 0 || hero_id >= ARENA_HERO_COUNT || slot < 0 || slot > 2) return "?";
     const char *desc = DESC[hero_id][slot];
@@ -189,6 +191,7 @@ static const ArenaHeroTags ARENA_HERO_TAGS[ARENA_HERO_COUNT] = {
     [ARENA_HERO_HE_XIANGU]  = { 0, 0, 0, 1, 0, 0 }, /* Q/W/R all heal-shaped, kit reads melee-range */
     [ARENA_HERO_BELETH]     = { 1, 0, 0, 0, 0, 0 }, /* Q projectile burn */
     [ARENA_HERO_MNM]        = { 0, 0, 0, 0, 0, 0 }, /* Q explicitly "melee root+damage" per docs */
+    [ARENA_HERO_WEATHERMAN] = { 1, 0, 1, 1, 0, 0 }, /* Q ranged + a real knockback (the roster's first push-outward Q); passive is a heal-shaped regen */
 };
 
 /* arena_hero_tags_string writes a space-separated list of hero_id's TRUE tags into out (empty

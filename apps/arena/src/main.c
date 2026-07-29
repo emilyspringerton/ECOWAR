@@ -412,9 +412,12 @@ static void net_send_shop_sell(int slot) {
     sendto(net_sock, buf, sizeof(buf), 0, (struct sockaddr *)&net_server_addr, sizeof(net_server_addr));
 }
 
-/* net_send_blink (S170-205): no payload -- arena_use_blink derives everything (equipped-item
- * check, direction) server-side from the sending client's own owner slot alone. */
-static void net_send_blink(void) {
+/* net_send_active_item (S170-205/S170-206): no payload -- arena_use_active_item derives
+ * everything (which item is actually equipped, direction) server-side from the sending client's
+ * own owner slot alone. Named generically, not net_send_blink, since PACKET_ARENA_BLINK now
+ * covers Donkey's Paper Glide too -- one tilde key, whichever active item the hero actually has
+ * equipped. */
+static void net_send_active_item(void) {
     char buf[sizeof(NetHeader)];
     NetHeader *h = (NetHeader *)buf;
     memset(h, 0, sizeof(NetHeader));
@@ -556,6 +559,7 @@ static void net_poll_snapshots(uint32_t now_ms) {
                     dst->cast_time_remaining_ms = msg->heroes[i].cast_time_remaining_ms;
                     dst->cast_total_ms = msg->heroes[i].cast_total_ms;
                     dst->blink_cooldown_ms = msg->heroes[i].blink_cooldown_ms; /* S170-205 */
+                    dst->donkey_glide_cooldown_ms = msg->heroes[i].donkey_glide_cooldown_ms; /* S170-206 */
                     if (msg->heroes[i].cast_flash_slot > 0) {
                         spawn_spell_flash(dst->x, dst->z, msg->heroes[i].cast_flash_slot, dst->hero_id);
                         trigger_squish(i);
@@ -1739,6 +1743,7 @@ static float q_cooldown_peak_ms = 0.0f;
 static float w_cooldown_peak_ms = 0.0f;
 static float r_cooldown_peak_ms = 0.0f;
 static float blink_cooldown_peak_ms = 0.0f; /* S170-205 */
+static float donkey_glide_cooldown_peak_ms = 0.0f; /* S170-206 */
 
 /* draw_ability_tile: one Overwatch-style square ability icon -- bordered
  * tile, a radial dark wedge (GL_TRIANGLE_FAN from the tile's center)
@@ -2363,16 +2368,18 @@ int main(int argc, char *argv[]) {
                     if (e.key.keysym.sym == SDLK_w) { arena_toggle_w(my_owner); arena_log_ability("W"); }
                     if (e.key.keysym.sym == SDLK_e) { arena_cast_r(my_owner); arena_log_ability("R"); }
                 }
-                /* Blink Dagger (S170-205, founder: "add blink dagger 1400 flow it gives a new
-                   keybind on screen for tilda"): a dedicated key, not one of Q/W/E, since it's
-                   an item activation, not a kit ability -- same "the affordance you're looking
-                   at is the one the key acts on" precedent as every other keybind in this file.
-                   apm_record_action deliberately NOT called here -- item actives aren't kit
-                   abilities, same reasoning the shop's own quick-buy keys (1-9) don't count
-                   toward APM either. */
+                /* Active item (S170-205/S170-206, founder: "add blink dagger 1400 flow it gives
+                   a new keybind on screen for tilda" -> "tilda should make the hero do the
+                   paper airplane glide thing"): a dedicated key, not one of Q/W/E, since it's an
+                   item activation, not a kit ability -- same "the affordance you're looking at
+                   is the one the key acts on" precedent as every other keybind in this file. One
+                   key for whichever active item is actually equipped (Blink Dagger or Donkey),
+                   same as arena_use_active_item's own server-side dispatch. apm_record_action
+                   deliberately NOT called here -- item actives aren't kit abilities, same
+                   reasoning the shop's own quick-buy keys (1-9) don't count toward APM either. */
                 if (e.key.keysym.sym == SDLK_BACKQUOTE) {
-                    if (net_mode) net_send_blink();
-                    else arena_use_blink(my_owner);
+                    if (net_mode) net_send_active_item();
+                    else arena_use_active_item(my_owner);
                 }
             }
         }
@@ -3332,6 +3339,15 @@ int main(int argc, char *argv[]) {
             if (h->equipped_item[ARENA_ITEM_SLOT_TRINKET] == ARENA_BLINK_DAGGER_ITEM_ID) {
                 draw_ability_tile(tiles_x0 + tile_pitch * 3.0f, tiles_y, tile_size, h->blink_cooldown_ms, &blink_cooldown_peak_ms,
                                    0, 0, "~", "BLINK DAGGER", 0.55f, 0.85f, 0.95f);
+            }
+            /* Donkey (S170-206, same tilde key as Blink Dagger, same "only drawn while equipped"
+               precedent -- see this same block's own doc comment two lines up). Different item
+               slot (Back, not Trinket) than Blink Dagger, so a hero could in principle show both
+               tiles at once if they somehow bought both -- tile_pitch * 4.0f, one slot further
+               right, so they don't overlap. */
+            if (h->equipped_item[ARENA_ITEM_SLOT_BACK] == ARENA_DONKEY_ITEM_ID) {
+                draw_ability_tile(tiles_x0 + tile_pitch * 4.0f, tiles_y, tile_size, h->donkey_glide_cooldown_ms, &donkey_glide_cooldown_peak_ms,
+                                   0, 0, "~", "PAPER GLIDE", 0.75f, 0.85f, 0.95f);
             }
 
             /* Ability-help overlay (S170-151, "H should show an overlay with

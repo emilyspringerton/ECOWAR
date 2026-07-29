@@ -4110,6 +4110,264 @@ static void test_blink_dagger_catalog_entry_costs_1400(void) {
     CHECK(ARENA_ITEMS[ARENA_BLINK_DAGGER_ITEM_ID].bonus_max_hp == 6, "Blink Dagger grants +6 HP");
 }
 
+/* S170-206, NORTHSTAR §16, founder: "add the weatherman and donkey" -> [clarified: no
+ * non-piloted-unit system needed] "donkey should be an item" -> "3.2k flow" -> "tilda should
+ * make the hero do the paper airplane glide thing" -> "longish range high speed escape can move
+ * above obstacles" -> "long ish cooldown" -> "2 minute cooldown on paper plane fly mode" -> "but
+ * the thing where it unfolds and fights for you thats a passive". Donkey shipped as an item
+ * (sidestepping §16.1's whole non-piloted-unit blocker), not a hero -- these tests exercise both
+ * of its independent effects directly. */
+
+static void test_donkey_fold_triggers_below_hp_threshold(void) {
+    arena_init_teams();
+    arena_state.heroes[0].equipped_item[ARENA_ITEM_SLOT_BACK] = ARENA_DONKEY_ITEM_ID;
+    arena_state.heroes[0].max_hp = 100;
+    arena_state.heroes[0].hp = 20; /* below ARENA_DONKEY_FOLD_HP_FRACTION (0.25) */
+
+    arena_update_teams(16);
+
+    CHECK(arena_state.heroes[0].donkey_fold_ms > 0, "Immortal's Fold triggers automatically once HP crosses below the threshold");
+    CHECK(arena_state.heroes[0].survive_floor_ms > 0, "grants the simplified damage-floor shield");
+    CHECK(arena_state.heroes[0].donkey_fold_proc_cooldown_ms > 0, "the proc's own cooldown starts immediately");
+}
+
+static void test_donkey_fold_does_not_trigger_without_item(void) {
+    arena_init_teams();
+    arena_state.heroes[0].max_hp = 100;
+    arena_state.heroes[0].hp = 20;
+
+    arena_update_teams(16);
+
+    CHECK(arena_state.heroes[0].donkey_fold_ms == 0, "no Donkey equipped -- Immortal's Fold never triggers regardless of HP");
+}
+
+static void test_donkey_fold_respects_proc_cooldown(void) {
+    arena_init_teams();
+    arena_state.heroes[0].equipped_item[ARENA_ITEM_SLOT_BACK] = ARENA_DONKEY_ITEM_ID;
+    arena_state.heroes[0].max_hp = 100;
+    arena_state.heroes[0].hp = 20;
+    arena_update_teams(16);
+    CHECK(arena_state.heroes[0].donkey_fold_ms > 0, "sanity: first proc fired");
+
+    /* Let the fold window itself fully expire, then drop below the threshold again -- the proc's
+       own separate cooldown should still be blocking a second trigger. */
+    arena_update_teams((unsigned int)ARENA_DONKEY_FOLD_MS);
+    CHECK(arena_state.heroes[0].donkey_fold_ms == 0, "sanity: the fold window itself has expired");
+    arena_state.heroes[0].hp = 20; /* still/again below threshold */
+    arena_update_teams(16);
+
+    CHECK(arena_state.heroes[0].donkey_fold_ms == 0, "a second proc attempt while still on its own cooldown does nothing");
+}
+
+static void test_donkey_fold_fights_back_damages_nearest_enemy(void) {
+    arena_init_teams();
+    for (int i = 2; i < ARENA_MAX_HEROES; i++) arena_state.heroes[i].active = 0;
+    arena_state.heroes[ARENA_TEAM_SIZE].active = 1;
+    arena_state.heroes[ARENA_TEAM_SIZE].alive = 1;
+    arena_state.heroes[ARENA_TEAM_SIZE].hero_id = ARENA_HERO_DUCK; /* 0 base armor -- clean HP math */
+    arena_state.heroes[ARENA_TEAM_SIZE].hp = 1000; arena_state.heroes[ARENA_TEAM_SIZE].max_hp = 1000;
+    arena_state.heroes[ARENA_TEAM_SIZE].x = 1.0f; arena_state.heroes[ARENA_TEAM_SIZE].z = 0; /* within ARENA_DONKEY_FOLD_FIGHT_RADIUS */
+    arena_state.heroes[0].x = 0; arena_state.heroes[0].z = 0;
+    arena_state.heroes[0].equipped_item[ARENA_ITEM_SLOT_BACK] = ARENA_DONKEY_ITEM_ID;
+    arena_state.heroes[0].max_hp = 100;
+    arena_state.heroes[0].hp = 20;
+    int foe_hp_before = arena_state.heroes[ARENA_TEAM_SIZE].hp;
+
+    arena_update_teams(16);
+    CHECK(arena_state.heroes[0].donkey_fold_ms > 0, "sanity: fold triggered");
+    arena_update_teams(1000); /* one full fight-back DPS tick */
+
+    CHECK(arena_state.heroes[ARENA_TEAM_SIZE].hp < foe_hp_before,
+          "\"it unfolds and fights for you\" -- the unfolded window deals real periodic damage to the nearest enemy, not just a passive shield");
+}
+
+static void test_donkey_glide_noop_without_item(void) {
+    arena_init_teams();
+    for (int i = 2; i < ARENA_MAX_HEROES; i++) arena_state.heroes[i].active = 0;
+    arena_state.heroes[ARENA_TEAM_SIZE].active = 1;
+    arena_state.heroes[ARENA_TEAM_SIZE].alive = 1;
+    arena_state.heroes[0].x = 0; arena_state.heroes[0].z = 0;
+    arena_state.heroes[ARENA_TEAM_SIZE].x = 3.0f; arena_state.heroes[ARENA_TEAM_SIZE].z = 0;
+
+    arena_use_donkey_glide(0);
+
+    CHECK(!arena_state.heroes[0].moving, "no Donkey equipped -- no glide happens at all");
+    CHECK(arena_state.heroes[0].donkey_glide_cooldown_ms == 0, "no cooldown spent on a no-op");
+}
+
+static void test_donkey_glide_moves_away_from_nearest_enemy(void) {
+    arena_init_teams();
+    for (int i = 2; i < ARENA_MAX_HEROES; i++) arena_state.heroes[i].active = 0;
+    arena_state.heroes[ARENA_TEAM_SIZE].active = 1;
+    arena_state.heroes[ARENA_TEAM_SIZE].alive = 1;
+    arena_state.heroes[0].equipped_item[ARENA_ITEM_SLOT_BACK] = ARENA_DONKEY_ITEM_ID;
+    arena_state.heroes[0].x = 0; arena_state.heroes[0].z = 0;
+    arena_state.heroes[0].moving = 0;
+    arena_state.heroes[ARENA_TEAM_SIZE].x = 5.0f; arena_state.heroes[ARENA_TEAM_SIZE].z = 0; /* foe to the east */
+
+    arena_use_donkey_glide(0);
+
+    CHECK(arena_state.heroes[0].moving, "glide sets a real move target and starts moving toward it");
+    CHECK(arena_state.heroes[0].target_x < 0.0f, "the destination is AWAY from the foe (west), a real escape, not toward it");
+    CHECK(fabsf(arena_state.heroes[0].target_x - (-ARENA_DONKEY_GLIDE_RANGE)) < 0.01f, "covers the full documented glide range");
+    CHECK(arena_state.heroes[0].donkey_airborne_ms == ARENA_DONKEY_GLIDE_DURATION_MS, "airborne window starts at its full duration");
+    CHECK(arena_state.heroes[0].intangible_ms == ARENA_DONKEY_GLIDE_DURATION_MS, "untargetable for the same window");
+    CHECK(arena_state.heroes[0].donkey_glide_cooldown_ms == ARENA_DONKEY_GLIDE_COOLDOWN_MS, "cooldown is spent on a real glide");
+}
+
+static void test_donkey_glide_respects_cooldown(void) {
+    arena_init_teams();
+    for (int i = 2; i < ARENA_MAX_HEROES; i++) arena_state.heroes[i].active = 0;
+    arena_state.heroes[ARENA_TEAM_SIZE].active = 1;
+    arena_state.heroes[ARENA_TEAM_SIZE].alive = 1;
+    arena_state.heroes[0].equipped_item[ARENA_ITEM_SLOT_BACK] = ARENA_DONKEY_ITEM_ID;
+    arena_state.heroes[0].x = 0; arena_state.heroes[0].z = 0;
+    arena_state.heroes[ARENA_TEAM_SIZE].x = 5.0f; arena_state.heroes[ARENA_TEAM_SIZE].z = 0;
+
+    arena_use_donkey_glide(0);
+    float target_after_first = arena_state.heroes[0].target_x;
+    arena_state.heroes[0].moving = 0; /* pretend we already arrived, to isolate the cooldown check */
+    arena_use_donkey_glide(0);
+
+    CHECK(arena_state.heroes[0].target_x == target_after_first, "a second glide attempt while still on cooldown does nothing");
+}
+
+static void test_donkey_glide_grants_high_speed(void) {
+    arena_init_teams();
+    arena_state.heroes[0].x = 0; arena_state.heroes[0].z = 0;
+    arena_state.heroes[0].target_x = 50.0f; arena_state.heroes[0].target_z = 0;
+    arena_state.heroes[0].moving = 1;
+    arena_state.heroes[0].donkey_airborne_ms = ARENA_DONKEY_GLIDE_DURATION_MS;
+
+    arena_update_teams(100); /* 0.1s */
+
+    float expected = (ARENA_HERO_SPEED) * ARENA_DONKEY_GLIDE_SPEED_MULT * 0.1f;
+    CHECK(fabsf(arena_state.heroes[0].x - expected) < 0.05f,
+          "movement while airborne uses ARENA_DONKEY_GLIDE_SPEED_MULT, a real high-speed traversal, not base move speed");
+}
+
+static void test_donkey_glide_flies_over_obstacles(void) {
+    arena_init_teams();
+    arena_state.heroes[0].x = 0; arena_state.heroes[0].z = 0;
+    arena_state.heroes[0].target_x = 2.0f; arena_state.heroes[0].target_z = 0;
+    arena_state.heroes[0].moving = 1;
+    arena_state.heroes[0].donkey_airborne_ms = ARENA_DONKEY_GLIDE_DURATION_MS;
+    /* A real obstacle directly on the flight path, big enough that any grounded hero moving
+       through it would get pushed back out by resolve_hero_obstacle_collision. */
+    arena_state.obstacles[0].x = 1.0f; arena_state.obstacles[0].z = 0; arena_state.obstacles[0].radius = 2.0f;
+
+    arena_update_teams(60); /* enough time, at the boosted speed, to have crossed well into the obstacle */
+
+    CHECK(arena_state.heroes[0].x > arena_state.obstacles[0].x - arena_state.obstacles[0].radius,
+          "while airborne, the hero's real position moved past where a grounded collision push-out would have stopped it -- it flew over the obstacle instead");
+}
+
+static void test_donkey_catalog_entry_costs_3200(void) {
+    CHECK(ARENA_ITEMS[ARENA_DONKEY_ITEM_ID].cost == 3200, "Donkey costs the documented 3200 Flow");
+    CHECK(ARENA_ITEMS[ARENA_DONKEY_ITEM_ID].slot == ARENA_ITEM_SLOT_BACK, "Donkey occupies the Back slot");
+}
+
+static void test_weatherman_q_knocks_back_no_damage(void) {
+    arena_init_teams();
+    for (int i = 2; i < ARENA_MAX_HEROES; i++) arena_state.heroes[i].active = 0;
+    arena_state.heroes[ARENA_TEAM_SIZE].active = 1;
+    arena_state.heroes[ARENA_TEAM_SIZE].alive = 1;
+    arena_state.heroes[0].hero_id = ARENA_HERO_WEATHERMAN;
+    arena_state.heroes[0].x = 0; arena_state.heroes[0].z = 0;
+    arena_state.heroes[ARENA_TEAM_SIZE].x = 3.0f; arena_state.heroes[ARENA_TEAM_SIZE].z = 0;
+    int foe_hp_before = arena_state.heroes[ARENA_TEAM_SIZE].hp;
+
+    arena_cast_q(0);
+
+    CHECK(arena_state.heroes[ARENA_TEAM_SIZE].x > 3.0f, "Barometric Shove pushes the target further away from Weatherman");
+    CHECK(arena_state.heroes[ARENA_TEAM_SIZE].hp == foe_hp_before, "displacement-only -- no damage component at all, unlike every other roster Q");
+}
+
+static void test_weatherman_q_out_of_range_whiffs(void) {
+    arena_init_teams();
+    for (int i = 2; i < ARENA_MAX_HEROES; i++) arena_state.heroes[i].active = 0;
+    arena_state.heroes[ARENA_TEAM_SIZE].active = 1;
+    arena_state.heroes[ARENA_TEAM_SIZE].alive = 1;
+    arena_state.heroes[0].hero_id = ARENA_HERO_WEATHERMAN;
+    arena_state.heroes[0].x = 0; arena_state.heroes[0].z = 0;
+    arena_state.heroes[ARENA_TEAM_SIZE].x = ARENA_WEATHERMAN_Q_RANGE + 5.0f; arena_state.heroes[ARENA_TEAM_SIZE].z = 0;
+
+    arena_cast_q(0);
+
+    CHECK(arena_state.heroes[ARENA_TEAM_SIZE].x == ARENA_WEATHERMAN_Q_RANGE + 5.0f, "a foe out of range is untouched");
+    CHECK(arena_state.heroes[0].q_cooldown_ms == 0, "an out-of-range whiff doesn't consume the cooldown");
+}
+
+static void test_weatherman_w_grounds_airborne_enemy(void) {
+    arena_init_teams();
+    for (int i = 2; i < ARENA_MAX_HEROES; i++) arena_state.heroes[i].active = 0;
+    arena_state.heroes[ARENA_TEAM_SIZE].active = 1;
+    arena_state.heroes[ARENA_TEAM_SIZE].alive = 1;
+    arena_state.heroes[0].hero_id = ARENA_HERO_WEATHERMAN;
+    arena_state.heroes[0].x = 0; arena_state.heroes[0].z = 0;
+    arena_state.heroes[ARENA_TEAM_SIZE].x = 3.0f; arena_state.heroes[ARENA_TEAM_SIZE].z = 0;
+    arena_state.heroes[ARENA_TEAM_SIZE].donkey_airborne_ms = 400;
+    arena_state.heroes[ARENA_TEAM_SIZE].intangible_ms = 400;
+
+    arena_toggle_w(0);
+
+    CHECK(arena_state.heroes[ARENA_TEAM_SIZE].donkey_airborne_ms == 0, "\"the debt catches up to you\" -- an airborne enemy is grounded immediately");
+    CHECK(arena_state.heroes[ARENA_TEAM_SIZE].intangible_ms == 0, "grounding also ends the untargetable glide window");
+    CHECK(arena_state.heroes[0].w_cooldown_ms == ARENA_WEATHERMAN_W_COOLDOWN_MS, "a real landed cast spends the cooldown");
+}
+
+static void test_weatherman_w_extends_airborne_ally(void) {
+    arena_init_teams();
+    for (int i = 2; i < ARENA_MAX_HEROES; i++) arena_state.heroes[i].active = 0;
+    arena_state.heroes[1].active = 1;
+    arena_state.heroes[1].alive = 1;
+    arena_state.heroes[0].hero_id = ARENA_HERO_WEATHERMAN;
+    arena_state.heroes[0].x = 0; arena_state.heroes[0].z = 0;
+    arena_state.heroes[1].x = 3.0f; arena_state.heroes[1].z = 0;
+    arena_state.heroes[1].donkey_airborne_ms = 400;
+    arena_state.heroes[1].intangible_ms = 400;
+    arena_state.heroes[1].moving = 0; /* already arrived -- isolates the duration-only half of the extension */
+
+    arena_toggle_w(0);
+
+    CHECK(arena_state.heroes[1].donkey_airborne_ms == 400 + ARENA_DONKEY_GLIDE_DURATION_MS,
+          "a tailwind, not a headwind -- an ally's glide is EXTENDED, not ended");
+    CHECK(arena_state.heroes[1].intangible_ms == 400 + ARENA_DONKEY_GLIDE_DURATION_MS, "untargetable window extends to match");
+}
+
+static void test_weatherman_w_noop_when_nobody_airborne(void) {
+    arena_init_teams();
+    for (int i = 2; i < ARENA_MAX_HEROES; i++) arena_state.heroes[i].active = 0;
+    arena_state.heroes[ARENA_TEAM_SIZE].active = 1;
+    arena_state.heroes[ARENA_TEAM_SIZE].alive = 1;
+    arena_state.heroes[0].hero_id = ARENA_HERO_WEATHERMAN;
+    arena_state.heroes[0].x = 0; arena_state.heroes[0].z = 0;
+    arena_state.heroes[ARENA_TEAM_SIZE].x = 3.0f; arena_state.heroes[ARENA_TEAM_SIZE].z = 0;
+    /* nobody is airborne -- the overwhelmingly common case */
+
+    arena_toggle_w(0);
+
+    CHECK(arena_state.heroes[0].w_cooldown_ms == 0, "whiffs (no cooldown consumed) when nobody nearby is currently mid-glide, same convention every other conditional W on this roster follows");
+}
+
+static void test_weatherman_r_zone_damages_over_time(void) {
+    arena_init_teams();
+    for (int i = 2; i < ARENA_MAX_HEROES; i++) arena_state.heroes[i].active = 0;
+    arena_state.heroes[ARENA_TEAM_SIZE].active = 1;
+    arena_state.heroes[ARENA_TEAM_SIZE].alive = 1;
+    arena_state.heroes[ARENA_TEAM_SIZE].hp = 1000; arena_state.heroes[ARENA_TEAM_SIZE].max_hp = 1000;
+    arena_state.heroes[0].hero_id = ARENA_HERO_WEATHERMAN;
+    arena_state.heroes[0].x = 0; arena_state.heroes[0].z = 0;
+    arena_state.heroes[ARENA_TEAM_SIZE].x = 1.0f; arena_state.heroes[ARENA_TEAM_SIZE].z = 0;
+    int foe_hp_before = arena_state.heroes[ARENA_TEAM_SIZE].hp;
+
+    arena_cast_r(0);
+    CHECK(arena_state.heroes[0].r_active_ms == ARENA_WEATHERMAN_R_DURATION_MS, "R starts a real fixed-duration zone");
+    arena_update_teams(1000); /* one full DPS tick */
+
+    CHECK(arena_state.heroes[ARENA_TEAM_SIZE].hp < foe_hp_before, "The Debt Compounds -- the zone deals real periodic damage to enemies standing in it");
+}
+
 static void test_item_stats_apply_to_hp_mp_armor_ad_speed(void) {
     arena_init_teams();
     arena_state.heroes[0].team = 0;
@@ -5082,6 +5340,22 @@ int main(void) {
     test_blink_blocked_by_stun();
     test_blink_not_blocked_by_silence();
     test_blink_dagger_catalog_entry_costs_1400();
+    test_donkey_fold_triggers_below_hp_threshold();
+    test_donkey_fold_does_not_trigger_without_item();
+    test_donkey_fold_respects_proc_cooldown();
+    test_donkey_fold_fights_back_damages_nearest_enemy();
+    test_donkey_glide_noop_without_item();
+    test_donkey_glide_moves_away_from_nearest_enemy();
+    test_donkey_glide_respects_cooldown();
+    test_donkey_glide_grants_high_speed();
+    test_donkey_glide_flies_over_obstacles();
+    test_donkey_catalog_entry_costs_3200();
+    test_weatherman_q_knocks_back_no_damage();
+    test_weatherman_q_out_of_range_whiffs();
+    test_weatherman_w_grounds_airborne_enemy();
+    test_weatherman_w_extends_airborne_ally();
+    test_weatherman_w_noop_when_nobody_airborne();
+    test_weatherman_r_zone_damages_over_time();
     test_item_stats_apply_to_hp_mp_armor_ad_speed();
     test_jungle_creep_kill_grants_flow_and_xp();
     test_lane_creep_kill_grants_flow_and_xp();
