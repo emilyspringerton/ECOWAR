@@ -2,6 +2,15 @@
 
 ## 2026-07-29
 
+- feat(arena): S170-212, visible aggro-radius ring for node-guardian ("jungle") creeps. Same
+  `ring_mesh`/annulus idiom the R-zone/cast-radius circles already use (S170-200), reusing the
+  flavor color already computed for each creep's body (gold/neutral, blue/team0, red/team1) so a
+  player sees the boundary before taking an unexpected hit, rather than learning it that way --
+  particularly valuable since a marching team creep's position (S170-161) is already
+  unpredictable in a way a fixed camp wouldn't be. Outline only, no pulse, flat low alpha -- a
+  static passive boundary, not a "something just happened" spell-cast effect. Verified live under
+  Xvfb: the ring renders at the correct position and flavor color around a neutral creep.
+
 - feat(arena): S170-211, node-guardian ("jungle") creep damage now routes through `apply_armor`.
   NORTHSTAR §20.3's first bullet, first item of the creep-overhaul batch resumed after the
   founder lifted the code freeze. These creeps previously dealt flat, unmitigated damage via a

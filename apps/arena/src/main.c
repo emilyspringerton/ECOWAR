@@ -2861,6 +2861,21 @@ int main(int argc, char *argv[]) {
             glUniform4f_(loc_color, cr_r * 0.6f, cr_g * 0.6f, cr_b * 0.6f, 1.0f); /* darker nub, same hue -- reads as a "front," not a second creep */
             draw_hero_box_facing(cr->x, cr->z, creep_facing_rad[i], 0.0f, 0.45f, 0.5f, 0.22f, 0.22f, 0.22f, 1.0f,
                                   &vp, loc_mvp, loc_model, &cube_mesh);
+            /* S170-212: aggro-radius ring, same ring_mesh + flavor color already computed above
+               for the body -- lets a player see the boundary before taking an unexpected hit,
+               rather than learning it that way, particularly valuable since a marching team
+               creep's position (S170-161) is already unpredictable in a way a fixed camp
+               wouldn't be. Outline only (no filled disc, unlike the S170-200 zone-ability
+               circles this reuses ring_mesh from) and no pulse -- this is a static, always-on
+               passive boundary, not a "something just happened here" effect. */
+            Mat4 aatr = mat4_translate(cr->x, 0.03f, cr->z);
+            Mat4 aasc = mat4_scale(ARENA_CREEP_AGGRO_RADIUS, 1.0f, ARENA_CREEP_AGGRO_RADIUS);
+            Mat4 aamodel = mat4_multiply(&aatr, &aasc);
+            Mat4 aamvp = mat4_multiply(&vp, &aamodel);
+            glUniformMatrix4fv_(loc_mvp, 1, GL_FALSE, aamvp.m);
+            glUniformMatrix4fv_(loc_model, 1, GL_FALSE, aamodel.m);
+            glUniform4f_(loc_color, cr_r, cr_g, cr_b, 0.3f);
+            draw_mesh(&ring_mesh);
         }
 
         /* Lane creeps (S170-138): only ever populated client-side in the
