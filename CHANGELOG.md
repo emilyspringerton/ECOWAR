@@ -2,6 +2,17 @@
 
 ## 2026-07-29
 
+- feat(arena): MnM W rework -- Burrow, replacing the free toggle armor stack (S170-208). Founder:
+  "switch MnM w to burrow where he digs down below the map and is untargetable in that time
+  dealing small aoe damage when he comes back up." W is now a real cast (14s cooldown, flat
+  mana charge) that sets intangible_ms + rooted_ms for 1.5s -- untargetable and pinned in place,
+  same combo his own R already uses -- then fires a one-shot AoE eruption (radius 3.0, 16 damage)
+  on the exact spot he burrowed once a new dedicated `mnm_burrow_ms` countdown hits zero. Also
+  gated `mnm_burrow_ms` across all three auto-attack paths plus the legacy 1v1 `resolve_combat`
+  resolver -- a burrowed MnM isn't present on the surface to swing at anything, a real bug this
+  change's own first test draft caught (the 1v1 path had no such gate). 11 new/updated tests,
+  full suite green.
+
 - fix(arena): shop panel showed only 24 of 27 items; Donkey fold proc affordance (S170-210).
   Founder: "ensure the new items donkey and blink dagger are actually available in the shop ui"
   -> "ensure donkey has affordances so its clear something is happening when it procs on the 25%
