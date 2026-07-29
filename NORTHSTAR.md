@@ -1785,3 +1785,190 @@ first item, unlike crit/lifesteal/penetration which each need real new mechanics
 never had); whether structures get their own NORTHSTAR-numbered constants file section or fold into
 the existing jungle/lane-creep constant blocks given how structurally similar they are to those
 entities already.
+
+## 20. Full creep overhaul — League of Legends parity (2026-07-29, S170-209) -- spec only, no code yet
+
+Founder, real-time: "full creep overhaul lol parity northstar doc first currently creeps are spooky
+too strong and hard to reason about." Same discipline §17 (auto-attack movement) already applied:
+pin down exactly what real League's minion/jungle model actually does, name the honest gap against
+REDGARDEN's current code, and propose a target design -- *before* touching a single damage number.
+"Spooky" isn't a named creep type anywhere in this codebase (checked) -- it's the founder's own word
+for how the current system plays: opaque and overtuned. That reading matters for how this section is
+scoped: a pure numeric nerf pass would treat the symptom; this section treats it as a *model* problem
+first, numbers second, same reasoning §17.5 gave for not resolving exact windup:backswing ratios in
+that section either.
+
+### 20.1 League's actual model (the gold standard)
+
+**Lane minions are three roles, not one flat unit.** Each of League's three lanes spawns a wave every
+30 seconds: 3 **melee** minions (front line, tankiest, highest single-target damage), 3 **caster**
+minions (ranged poke, lower HP, fire from the back of the group), and every third wave adds one
+**siege/cannon** minion (much tankier, much harder-hitting, and the priority target for actually
+threatening a tower -- the mechanical reason "cannon wave" is a real, plannable moment top/mid/bot
+laners route around, not incidental flavor). All three roles auto-fight anything they aggro exactly
+the same way; the role only changes their own stat block and (for melee) their position at the front
+of the clash.
+
+**Wave clashes are fully automatic -- players don't control minions at all.** The moment an enemy
+wave (or an enemy champion) enters a minion's aggro range, it engages on its own; two opposing waves
+meeting mid-lane fight each other with zero player input, the same "passive-until-approached, active
+once engaged" shape most aggro-based creeps everywhere share, League included.
+
+**Minion aggro can be redirected by combat, not just proximity.** A champion who attacks an enemy
+champion while that enemy is within an allied minion's aggro range draws that minion's aggro onto the
+attacker -- "minion aggro" -- discouraging free, riskless poke onto an enemy standing in front of
+their own wave. Minions do not, however, chase indefinitely: aggro has a leash, and a minion that
+chases too far off its own wave's position resets back to defending the wave/pushing the lane.
+
+**Last-hit is the entire skill expression of laning, and it exists because of a very specific
+mechanical split: minions do almost all the damage to each other automatically; the player's own
+auto-attack is only there to land the final, precisely-timed point of damage.** Gold for a minion
+kill goes ONLY to whichever champion's damage brought it to 0 HP -- not to whoever dealt the most
+damage, not split among participants. XP, by contrast, is NOT killer-exclusive: every allied champion
+within a fixed radius of the dying minion gets full XP regardless of who landed the kill (a support
+standing next to their laner's wave still levels up). This split -- gold is precise and individual,
+XP is generous and shared -- is itself the design, not an incidental implementation detail.
+
+**Deny is last-hit's mirror image.** Once an allied minion drops below 50% HP, an enemy champion
+can no longer kill it (a real League rule: minions can't be finished off by the enemy team below that
+threshold) -- but an ALLIED champion can still attack their own low-HP minion to kill it themselves,
+denying the enemy team the gold entirely and roughly halving the XP they'd have gotten from it. This
+is why competent laning involves attacking your own minions, not just the enemy's.
+
+**Structures give minions somewhere to matter beyond the kill reward.** A wave that wins its clash
+keeps marching and eventually reaches a tower, which minions (especially a cannon minion) meaningfully
+damage over time if left unanswered -- the actual reason winning lane matters beyond a KDA line: an
+uncontested, winning wave is slow, inexorable structure pressure, not just a farm/XP faucet.
+
+### 20.2 REDGARDEN's current model (gap analysis, grounded in the actual code)
+
+**Two entirely separate systems exist today, and they map onto DIFFERENT halves of League's model --
+neither one is really "the jungle" or "the lane" in the League sense, which is itself likely a real
+source of the "hard to reason about" complaint.**
+
+**Lane creeps (`ArenaLaneCreep`, S170-139) are the closer analog to League's minion waves, but
+collapsed to one role.** A single lane (spawn line x=-8/+8 to the center node at 0,0 to the enemy
+spawn line -- `packages/simulation/arena_game.h`'s own doc comment above `ARENA_LANE_WAYPOINT_COUNT`
+already names this as a deliberate single-lane MVP simplification of Arathi Basin's open-field shape,
+not an oversight) spawns a 3-creep wave every 20 seconds (`ARENA_LANE_WAVE_INTERVAL_MS`), all three
+creeps sharing one identical stat block (`ARENA_LANE_CREEP_HP` 60, `ARENA_LANE_CREEP_DAMAGE` 7) --
+no melee/caster/siege split of any kind, and no stat growth over the course of a match. They DO
+already fight each other automatically on aggro (`arena_tick_lane_creeps`' own nearest-hero-or-nearest-
+opposing-creep target selection) and DO stop to fight rather than march past -- the actual "wave
+clash" shape is real. But: no minion-aggro-redirect-on-champion-attack exists at all (a hero can poke
+an enemy standing right next to their own wave with zero retaliation risk from the creeps
+themselves); no deny (`arena_hero_attack_lane_creeps` explicitly skips a hero's own team's creeps --
+`if (creep->team == h->team) continue`, so a friendly creep can't even be targeted, let alone denied);
+gold/XP (`ARENA_LANE_CREEP_KILL_FLOW`/`_XP`) goes only to whoever's hit brought a creep's HP to 0,
+which happens to already be a real last-hit-shaped reward (since creep-vs-creep damage and hero
+auto-attacks are two independent sources converging on the same HP pool -- this half of League's
+split is closer to already-correct than it looks, see §20.3) -- but there is no XP-share radius at
+all, so a support standing next to their laner gets nothing from a kill they didn't personally land.
+No tower exists (already flagged in this file's own header comment above `ARENA_LANE_WAYPOINT_COUNT`
+and in §19's structures section) -- a wave that survives to the enemy spawn line just despawns.
+
+**Jungle creeps (`ArenaCreep`, S170-51/161) are NOT League jungle camps at all -- they're node-
+ownership guardians, a fundamentally different mechanic wearing jungle-creep terminology.** One
+creep per capturable node (`ARENA_MAX_CREEPS` == `ARENA_NODE_COUNT`, index-matched), in two flavors:
+a NEUTRAL camp sitting at any unowned/contested node (static, tanky -- 80 HP, the "prize" a team
+fights through to help capture that node), and a TEAM-flavored creep that spawns once a team owns a
+node and then actively marches toward whichever node ITS OWN team doesn't yet own (`ARENA_CREEP_
+MARCH_SPEED`, S170-161) -- a "home-turf projecting outward" push mechanic with no equivalent
+anywhere in real League jungle camps (Blue/Red buff camps, Krugs, Raptors, Dragon, Baron, Herald --
+none of them move, none of them belong to a team, none of them exist because of node/objective
+ownership). There is no camp variety (no buff-on-kill, no epic-monster global-relevant objective, no
+smiting), and — critically for the "too strong" complaint — team-flavored creeps deal FLAT, unmitigated
+damage (`ARENA_CREEP_TEAM_DAMAGE`, applied via a raw `apply_damage` call with no `apply_armor` pass,
+unlike every hero-vs-hero and hero-vs-lane-creep damage source in this codebase) at a relatively high
+tick rate (1500ms cooldown) against low-HP early heroes, with a march path that's dynamic and
+unpredictable rather than a fixed camp position a player can learn and route around -- exactly the
+"hard to reason about" shape a static, on-a-fixed-timer League jungle camp doesn't have. Notably,
+this was already tuned down once (S170-161 cut team-creep HP 40→26 and split out a lower
+`ARENA_CREEP_TEAM_DAMAGE` from the old shared damage constant, founder: "tone down the strength of
+the team creeps just a bit they are so strong") -- the founder calling them "spooky... strong" again
+now suggests either that pass wasn't enough, or (more likely, given this section's own framing) the
+complaint was never really about the raw numbers at all, but about the armor-bypass + unpredictable-
+position combination making them feel unfair rather than just difficult. Jungle creeps here also
+never fight each other (their aggro loop only ever scans `ARENA_MAX_HEROES`, never other creeps) --
+so unlike lane creeps, there is no last-hit skill expression possible on a jungle creep at all: it's
+a flat race to whoever's already in range when its HP hits 0, generally whichever hero has simply
+been trading blows with it the whole time.
+
+**§8's own "the jungle is alive and dynamic, not static camps... grafted onto GoblinFoxDragon's mob/
+NM/loot systems" direction is a real, different, FUTURE system** -- not what `ArenaCreep` is today.
+Conflating "the thing currently called jungle creeps in the code" with "the actual League-style
+jungle §8 describes" is itself a likely source of confusion for anyone reasoning about this system,
+founder included; §20.3 below treats them as two separate concerns rather than trying to make one
+system satisfy both descriptions at once.
+
+### 20.3 Target design for parity
+
+- [ ] **Split the single lane's wave into melee + caster roles**, sharing the existing one-lane
+  geometry (§20.2's own citation of the header comment already treats multi-lane as unscoped, not
+  a gap this pass needs to close -- see §20.4). Siege/cannon-every-third-wave is real League depth
+  but a reasonable stretch goal, not required for a first pass at "roles exist at all."
+- [ ] **Minion-aggro-redirect on lane creeps**: a hero attacking an enemy hero within an opposing
+  lane creep's aggro radius should draw that creep's aggro onto the attacker, the single biggest
+  missing piece of real lane-trading risk (§20.1's own "minion aggro" paragraph) and the most
+  legible near-term win for making lane creeps read as a real hazard rather than passive scenery.
+- [ ] **Deny for lane creeps**: allow a hero to target their OWN team's lane creep (currently
+  impossible -- `arena_hero_attack_lane_creeps` filters same-team creeps out entirely) once it's
+  below 50% HP, killing it and denying the enemy the reward. Confirm/decide whether REDGARDEN wants
+  the exact "can't be killed by the enemy below 50%" half of the real rule too, or just the "an ally
+  CAN kill their own" half -- these are two separate rule halves league bundles together and either
+  could ship independently.
+- [ ] **XP-share radius on lane creep kills**: currently killer-only (`h->xp += ARENA_LANE_CREEP_
+  KILL_XP` on the single hero whose hit landed); real parity grants XP to every allied hero within
+  some radius of the kill regardless of who landed it, keeping gold individual/precise.
+- [ ] **Confirm (not rebuild) that last-hit already basically works for lane creeps.** Because
+  lane-creep-vs-lane-creep damage (`arena_tick_lane_creeps`) and hero-vs-lane-creep damage
+  (`arena_hero_attack_lane_creeps`) are two independent sources hitting the same `hp` field, a hero
+  landing the final point of damage on a creep already-weakened by its own wave's clash already
+  reproduces the actual shape of League's last-hit mechanic -- this needs tests confirming the
+  behavior and a doc-comment callout, not new code, and should be verified before assuming it's a
+  gap that needs building.
+- [ ] **Route jungle (node-guardian) creep damage through `apply_armor`**, same as every other
+  damage source in this codebase, so hero armor items actually matter against them -- named in
+  §20.2 as a likely real contributor to "too strong," independent of any HP/damage retuning.
+  Retuning the actual numbers is explicitly NOT decided here (§20.4).
+- [ ] **Legibility pass on node-guardian creeps**: a visible aggro-radius ring (same idiom as the
+  existing R-zone/cast-radius circles, S170-200) so a player can SEE the boundary rather than
+  learning it by taking an unexpected hit, particularly valuable given their march path already
+  makes their position unpredictable in a way a fixed camp wouldn't be.
+- [ ] **Rename/reframe node-guardian creeps away from "jungle creep" terminology** if they stay
+  structurally as-is (§20.4's first open question) -- they are not League jungle camps, and naming
+  them like one is a likely contributor to "hard to reason about" independent of any mechanical
+  change: the mental model a player brings from "jungle creep" (a static camp you route to on your
+  own time) doesn't match what this entity actually does (marches at you, tied to node ownership).
+
+### 20.4 Open questions, not resolved here
+
+- **Does REDGARDEN keep the current node-guardian creep system as its own (renamed/reframed) thing,
+  with a SEPARATE new true jungle-camp system added alongside it per §8's own ecology direction --
+  or should node-guardians be reworked in place to absorb real jungle-camp behavior instead?** These
+  read as two different games mechanically (a capture-point guardian vs. a routeable neutral camp
+  with its own buff/objective economy) and this section deliberately does not force a merger. Given
+  §8 already describes the real jungle as a FUTURE graft onto GoblinFoxDragon's live mob/NM/loot
+  systems, "keep node-guardians as their own thing, build real jungle camps as a genuinely separate
+  later system" reads like the lower-risk default, but is not decided here.
+- **Multi-lane geometry** (a real 3-lane split vs. the current single center lane) is a map-shape
+  question, not a creep-model question -- §8's own "not scoped further yet, no map file, no concrete
+  node layout" line still holds as of this section being written. This section's role/aggro/deny/
+  XP-share proposals in §20.3 are all designed to work unchanged whether REDGARDEN ships one lane or
+  three; the lane COUNT is explicitly out of scope here.
+- **Exact numeric retuning** (HP/damage/respawn/cooldown values, for either creep system) is
+  deliberately not decided in this section -- same "spec the model, not the numbers" discipline
+  §17.5 already applied to windup:backswing ratios. §20.3's armor-mitigation and legibility items are
+  proposed as likely bigger levers on the "too strong and hard to reason about" complaint than a
+  flat numeric nerf pass would be, but that's a hypothesis for whoever picks this up to verify against
+  actual playtesting, not a conclusion this section reaches on its own.
+- **Cannon/siege minions and structure-pushing** (§20.1's last two paragraphs) are real League depth
+  this section intentionally treats as stretch goals, gated behind the same missing-structures gap
+  §19's own structures section already tracks -- a wave with nothing to push against can't
+  meaningfully carry a siege minion's whole reason for existing yet.
+
+This section's job -- pin down the real League model, name the actual gap in REDGARDEN's own code
+(two different systems, neither one a clean match for either half of League's model), and propose a
+sequenced target design -- is done, per the founder's own "lol parity northstar doc first" framing.
+No code changes accompany this section; S170-209's implementation phase (sprints against §20.3's
+checklist) is separate, future work.
