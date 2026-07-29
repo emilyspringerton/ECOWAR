@@ -2,6 +2,14 @@
 
 ## 2026-07-29
 
+- feat(arena): S170-216, XP-share radius on lane creep kills. Was killer-only
+  (`h->xp += ARENA_LANE_CREEP_KILL_XP` on the single hero whose hit landed); now every OTHER
+  allied hero within the new `ARENA_LANE_CREEP_XP_SHARE_RADIUS` (8.0, deliberately bigger than
+  this file's typical combat-ability radii -- XP-share rewards "present for the wave," not
+  "landed inside a tight hitbox") also gets the XP. Flow/gold stays individual/precise
+  (killer-only, unchanged) -- real MOBA parity. New test confirms a nearby ally shares XP while
+  a far-away ally gets nothing. Full suite + test_10_bots.sh green.
+
 - feat(arena): S170-215, deny for lane creeps. `arena_hero_attack_lane_creeps` used to filter a
   hero's own team's creeps out entirely; now an ally CAN target their own lane creep once it
   drops below 50% HP, killing it to deny the enemy the reward -- the real League deny mechanic.

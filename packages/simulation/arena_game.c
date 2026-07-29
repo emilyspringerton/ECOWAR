@@ -2076,6 +2076,17 @@ void arena_hero_attack_lane_creeps(unsigned int dt_ms) {
                 h->flow += ARENA_LANE_CREEP_KILL_FLOW;
                 h->flow_earned += ARENA_LANE_CREEP_KILL_FLOW;
                 h->xp += ARENA_LANE_CREEP_KILL_XP;
+                /* S170-216: XP-share -- gold/Flow above stays individual/precise (killer only),
+                   but every OTHER allied hero within ARENA_LANE_CREEP_XP_SHARE_RADIUS of the
+                   kill also gets the XP, real MOBA "present for the wave" parity. */
+                for (int a = 0; a < ARENA_MAX_HEROES; a++) {
+                    if (a == i) continue;
+                    ArenaHero *ally = &arena_state.heroes[a];
+                    if (!ally->active || !ally->alive || ally->team != h->team) continue;
+                    float sdx = ally->x - creep->x, sdz = ally->z - creep->z;
+                    if (sqrtf(sdx * sdx + sdz * sdz) > ARENA_LANE_CREEP_XP_SHARE_RADIUS) continue;
+                    ally->xp += ARENA_LANE_CREEP_KILL_XP;
+                }
             }
             break; /* one creep target per hero per attack, same as node-guardian creeps/hero-vs-hero */
         }

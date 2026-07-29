@@ -4663,6 +4663,32 @@ static void test_lane_creep_kill_grants_flow_and_xp(void) {
     CHECK(arena_state.heroes[0].xp == ARENA_LANE_CREEP_KILL_XP, "a lane creep kill grants the documented XP");
 }
 
+static void test_lane_creep_kill_shares_xp_with_nearby_allies_but_not_far_ones(void) {
+    arena_init_teams();
+    for (int i = 3; i < ARENA_MAX_HEROES; i++) arena_state.heroes[i].active = 0;
+    ArenaLaneCreep *lc = &arena_state.lane_creeps[0];
+    lc->active = 1; lc->alive = 1; lc->team = 1; /* enemy wave */
+    lc->hp = ARENA_ATTACK_DAMAGE;
+    lc->x = arena_state.heroes[0].x; lc->z = arena_state.heroes[0].z;
+
+    /* heroes[1]: nearby ally, within ARENA_LANE_CREEP_XP_SHARE_RADIUS (8.0) of the kill but not
+       the one who landed it -- should share in the XP. */
+    arena_state.heroes[1].x = lc->x + 2.0f;
+    arena_state.heroes[1].z = lc->z;
+
+    /* heroes[2]: far ally, well outside the share radius -- should get nothing. */
+    arena_state.heroes[2].x = lc->x + (ARENA_LANE_CREEP_XP_SHARE_RADIUS + 5.0f);
+    arena_state.heroes[2].z = lc->z;
+
+    arena_hero_attack_lane_creeps(16);
+
+    CHECK(!lc->alive, "sanity: the lane creep actually died");
+    CHECK(arena_state.heroes[0].flow == ARENA_LANE_CREEP_KILL_FLOW, "the killer's Flow stays individual/precise, unaffected by XP-share");
+    CHECK(arena_state.heroes[0].xp == ARENA_LANE_CREEP_KILL_XP, "the killer still gets the XP");
+    CHECK(arena_state.heroes[1].xp == ARENA_LANE_CREEP_KILL_XP, "S170-216: a nearby ally who didn't land the kill still shares in the XP");
+    CHECK(arena_state.heroes[2].xp == 0, "an ally outside the XP-share radius gets nothing");
+}
+
 static void test_hero_kill_grants_flow_xp_kills_and_deaths(void) {
     arena_init_teams();
     for (int i = 2; i < ARENA_MAX_HEROES; i++) arena_state.heroes[i].active = 0;
@@ -5620,6 +5646,7 @@ int main(void) {
     test_item_stats_apply_to_hp_mp_armor_ad_speed();
     test_node_guardian_kill_grants_flow_and_xp();
     test_lane_creep_kill_grants_flow_and_xp();
+    test_lane_creep_kill_shares_xp_with_nearby_allies_but_not_far_ones();
     test_hero_kill_grants_flow_xp_kills_and_deaths();
     test_hero_kill_awards_assist_to_recent_damager();
     test_assist_expires_outside_the_tracking_window();

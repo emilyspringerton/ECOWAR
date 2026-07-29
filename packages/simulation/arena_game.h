@@ -1196,6 +1196,12 @@ extern const ArenaItemDef ARENA_ITEMS[];
 #define ARENA_NODE_GUARDIAN_KILL_XP     10
 #define ARENA_LANE_CREEP_KILL_FLOW     80
 #define ARENA_LANE_CREEP_KILL_XP        6
+/* S170-216: XP-share radius on lane creep kills -- real MOBA parity keeps gold/Flow
+ * individual/precise (only the hero whose hit landed gets ARENA_LANE_CREEP_KILL_FLOW above) but
+ * shares XP generously with every allied hero nearby, not just the killer. Bigger than this
+ * file's typical combat-ability radii (3.5-6.0) on purpose -- XP-share is meant to reward
+ * "present for the wave," not "landed inside a tight hitbox." */
+#define ARENA_LANE_CREEP_XP_SHARE_RADIUS 8.0f
 #define ARENA_HERO_KILL_FLOW         1000
 #define ARENA_HERO_KILL_XP             60
 /* Assists (S170-187, founder: "assists should gen flow"). Real MOBA convention: anyone else
