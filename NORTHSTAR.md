@@ -1972,3 +1972,130 @@ This section's job -- pin down the real League model, name the actual gap in RED
 sequenced target design -- is done, per the founder's own "lol parity northstar doc first" framing.
 No code changes accompany this section; S170-209's implementation phase (sprints against §20.3's
 checklist) is separate, future work.
+
+## 21. Reinforcement learning for the arena bot AI — reward-driven, Unity ML-Agents-shaped (2026-07-29, S170-223)
+
+Founder, real-time, immediately after S170-220's corpus-based unsupervised pretraining pipeline
+shipped: "running training on a corpus of games is cool but thats not what i actually want right
+now i want unsupervised learning with rewards like in the unity ml-agents plugin." A real
+correction, not an extension -- next-token prediction over a static replay corpus (S170-194/195/
+220, and NORTHSTAR §12 Phase E / gpt2-alpine-c's own `GAME_AI_NORTHSTAR.md`) has no notion of
+"good" or "bad": it learns to continue a sequence the way the corpus already did, whether that
+corpus was full of winning or losing play. What the founder is describing is genuine
+reinforcement learning -- an agent takes actions, a reward signal scores them, a policy improves
+by directly optimizing expected reward, the actual Unity ML-Agents shape (Agent.CollectObservations
+→ policy → Agent.OnActionReceived → Agent.AddReward, trained via PPO against a Python
+process, then exported to run standalone at inference time). Neither this repo nor the two AI
+docs above spec that anywhere -- this section does, and S170-220's own GPT-2 infrastructure is
+**not replaced or wasted by this** -- it's a different tool already built for §12 Phase E's own
+different, still-valid imitation-learning-plus-self-play direction; this section adds RL as a
+second, separate lineage, not a swap.
+
+### 21.1 The real precedent already in this org: SHANKPIT
+
+A repo-wide check (this session's own "check what already exists first" discipline) found the
+right shape already real, in the sibling SHANKPIT repo, not invented from scratch here:
+
+- **`SHANKPIT/apps/training/headless.c`** -- a minimal, real, already-compiling C shim exposing
+  exactly three functions for a Python process to call directly (via `ctypes`, no network, no
+  serialization protocol): `sim_init(bots)`, `sim_step(fwd, strafe, yaw, pitch, shoot, jump)`,
+  `sim_get_state()` (returns a pointer to the live `ServerState`). Player 0 is "the Agent"; every
+  other player in the match is the existing hand-authored bot AI, playing as the opponent --
+  training needs no separate opponent-AI system, it reuses what already exists to practice
+  against.
+- **`SHANKPIT/packages/simulation/neural_net.h` + `brain_weights.h`** -- a small, literal,
+  compiled-in-C-arrays MLP (`dense_layer`, ReLU/tanh, `bot_brain_forward`: 8 inputs → 256 → 128 →
+  4 outputs) -- this is the actual "embed the weights right into the C code" pattern the founder
+  described two sections ago, just realized with a small fixed-size numeric policy net instead of
+  GPT-2's token-generation shape (S170-220's own research already found gpt2-alpine-c does NOT do
+  this -- SHANKPIT does, for a differently-shaped model). A small MLP is also the standard shape
+  Unity ML-Agents itself defaults to (fixed observation/action vectors, not token sequences) --
+  this is the closer analog to what was actually asked for.
+- **`SHANKPIT/packages/simulation/local_game.h`'s own reward shaping** (`accumulated_reward`,
+  ticked in `update_entity`) -- dense per-tick shaping (`+0.05` alive, `+0.1` engaged in combat
+  within 25 units) plus event-based reward (`+0.5 * damage_dealt`) is real, working precedent for
+  the shape §21.2's own reward function below follows, adapted to REDGARDEN's own MOBA state
+  instead of SHANKPIT's FPS one.
+- **What SHANKPIT does NOT have**: any Python-side training loop at all. `headless.c`'s own
+  README section documents an "Expected Functionality" training loop in pseudocode, not real
+  code -- no `gym`/`stable_baselines3`/`PPO` usage anywhere in that repo. The C-side environment
+  API shape is real, proven precedent; the actual RL algorithm/trainer is not -- this section
+  specs building that part for the first time, informed by but not copying nonexistent code.
+
+### 21.2 Target architecture for REDGARDEN
+
+**Environment (C side, new, small, mechanical):** `apps/arena_training/headless.c`, same
+three-function shape as SHANKPIT's own --
+- `void sim_init(int hero0_id, int hero1_id)` → `arena_init_with_heroes(...)`, the exact same 1v1
+  local-demo path this whole repo's own tests already exercise headlessly, no display needed.
+- `void sim_step(float move_x, float move_z, int cast_q, int cast_w, int cast_r, unsigned int
+  dt_ms)` → sets hero 0's ("the Agent") move target and cast flags directly via the same
+  `arena_set_move_target`/`arena_cast_q`/`arena_toggle_w`/`arena_cast_r` calls `apps/arena`'s own
+  local-mode client already uses, then one `arena_update(dt_ms)` tick. Hero 1 needs no separate
+  opponent code at all -- `arena_bot_enabled` (already defaults to 1) drives it through the
+  existing `bot_cast_kit_if_ready`/`arena_bot_tick` heuristic AI, same "practice against what
+  already exists" reasoning as SHANKPIT's own Player-0-vs-bots framing.
+- `ArenaState *sim_get_state(void)` → returns `&arena_state` directly (already an extern global).
+- A `sim_reset(int hero0_id, int hero1_id)` alias for starting a fresh episode without a fresh
+  process (episodes need to be cheap -- PPO needs thousands of them).
+
+**Environment (Python side, new):** a `gymnasium.Env` subclass loading the compiled shared
+library via `ctypes`, walking `ArenaState`'s own field layout (mirrored as a `ctypes.Structure`,
+not re-serialized to text -- numeric fields read directly, no string round-trip) to build a fixed
+observation vector (self hp/mp/position/cooldowns, foe hp/position, distance, same information
+`arena_serialize_state` already exposes in text form, just numeric here since a small MLP policy
+wants floats, not tokens) and a small discrete/continuous action space (move direction + 3 binary
+cast flags, matching `sim_step`'s own signature exactly).
+
+**Reward function (S170-223, founder: "do all the reward engineering" -- designed here, not
+deferred), dense shaping + sparse terminal, same two-tier shape SHANKPIT's own precedent and the
+standard MOBA-RL literature (OpenAI Five, AlphaStar) both use -- shaping keeps the learning signal
+alive long before the agent can reliably land a kill; the terminal term is the actual objective
+and is weighted to dominate any one episode's accumulated shaping:**
+- Damage dealt to foe: `+0.01` per HP.
+- Damage taken from foe: `-0.01` per HP (symmetric).
+- Foe killed: `+5.0`. Self died: `-5.0`.
+- Flow gained: `+0.001` per point (a MOBA agent that farms competently is on-track before its
+  first kill, same reasoning real MOBA junior-jungle/laning coaching gives).
+- XP gained: `+0.0005` per point (smaller, secondary economy signal).
+- Alive this tick: `+0.001` (SHANKPIT's own "alive = good" term, deliberately tiny so it can't
+  outweigh actually engaging -- a purely passive agent should not out-score an aggressive one).
+- Episode ends in a win: `+10.0`. Loss: `-10.0`. Timeout/draw: `0`.
+All deltas computed in Python between consecutive `sim_get_state()` snapshots, not accumulated
+in C (unlike SHANKPIT's own `accumulated_reward` field) -- keeps the reward function itself
+iterable without a C recompile every time it's tuned, a real practical win during RL
+experimentation specifically.
+
+**Trainer:** Stable-Baselines3's PPO against the `gymnasium.Env` above -- the standard, actively
+maintained choice for a custom Gym environment (no existing PPO/RL trainer anywhere in this org
+to reuse instead, confirmed by the SHANKPIT check in §21.1). Runs equally well locally (this
+sim has no display dependency, confirmed by this whole repo's own headless test suite) or on
+Colab, same delivery pattern S170-220 already established for the corpus pipeline.
+
+**Weight embed + git-sync:** reuses S170-220's own established shape, adapted to the smaller
+network -- after training, extract the PPO policy network's weights (SB3's default `net_arch`,
+a small MLP, not GPT-2-shaped) and write them as literal C float arrays (SHANKPIT's own
+`brain_weights.h` pattern -- genuinely appropriate here, unlike GPT-2-small, since a PPO policy
+MLP is small enough -- a few thousand params, not millions), then commit + push to `origin/main`
+via the same SSH-key-in-`MyDrive/.ssh` flow `git_sync_weights_to_repo()` already implements.
+Inference: a new small, dependency-free C module mirroring SHANKPIT's own `neural_net.h`
+(`dense_layer`, matmul + bias + ReLU/tanh) -- deliberately NOT `packages/common/gpt2_infer.c`,
+which is the wrong shape for a small fixed-size-vector policy net.
+
+### 21.3 What this section deliberately does not resolve
+
+- **Exact network architecture** (hidden layer sizes, activation functions) for the PPO policy
+  net -- SB3's own default (`net_arch=[64, 64]`, two hidden layers) is a reasonable starting
+  point, not confirmed as final tuning, same "spec the model, not the numbers" reasoning §17.5/
+  §20.4 already applied elsewhere in this file.
+- **Self-play / curriculum.** This first pass trains against the existing rule-based heuristic
+  bot AI only (matching SHANKPIT's own current precedent) -- training against a population of
+  past policy checkpoints (real self-play, AlphaStar/OpenAI-Five-style) is real, valuable, later
+  depth this section doesn't build.
+- **Team-mode (10v10) training.** §21.2's environment targets the 1v1 local-demo path first,
+  same "simplest real slice first" sequencing every phase in §12 already used -- multi-agent RL
+  (coordinating a full team) is a substantially harder problem than single-agent PPO against a
+  fixed opponent, deliberately out of scope for a first pass.
+- **Wiring the trained policy into a LIVE multiplayer match.** Same gap S170-220's own weight-embed
+  pipeline already flagged honestly -- this section's own pipeline trains, exports, and syncs a
+  policy; nothing here makes `apps/arena_server` actually call it during a real game yet.
