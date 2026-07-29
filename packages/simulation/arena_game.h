@@ -956,11 +956,10 @@ typedef enum {
  * Duck's W, "Government Clearance," is already blocked on) -- a wave that
  * survives all the way to the enemy spawn line currently just despawns
  * rather than damaging anything, flagged not faked, same as every other
- * "doesn't fit this engine yet" gap in this roster. Likewise no gold/XP
- * economy exists to reward a kill -- lane creep kills (by heroes or by each
- * other) remove a threat and nothing more; wiring them into a future
- * economy is a natural follow-on once one exists, not invented here as a
- * standalone reward just for this pass. */
+ * "doesn't fit this engine yet" gap in this roster. (This comment used to
+ * also say no gold/XP economy exists to reward a kill -- that's since gone
+ * stale: S170-216/S170-217 added real Flow/XP kill credit, see
+ * ARENA_LANE_CREEP_KILL_FLOW/XP below.) */
 #define ARENA_LANE_WAYPOINT_COUNT      3
 #define ARENA_LANE_CREEPS_PER_WAVE     3
 #define ARENA_MAX_LANE_CREEPS          (ARENA_LANE_CREEPS_PER_WAVE * 2 * 2) /* both teams, generous headroom for the previous wave still marching when the next spawns */
@@ -973,6 +972,27 @@ typedef enum {
 #define ARENA_LANE_CREEP_AGGRO_RADIUS  3.5f /* doubles as attack range, same simplification as ARENA_CREEP_AGGRO_RADIUS */
 #define ARENA_LANE_CREEP_WAYPOINT_EPSILON 0.15f
 
+/* S170-218: melee + caster roles ("roles exist at all" per the backlog's own framing, not
+ * required to be exact League parity -- multi-lane/siege-every-third-wave stay explicitly out
+ * of scope per NORTHSTAR §20.4). ARENA_LANE_CREEP_MELEE stays value 0 and reuses every constant
+ * above unchanged (HP/DAMAGE/AGGRO_RADIUS) specifically so every existing test that hand-builds
+ * an ArenaLaneCreep without setting `role` at all keeps behaving exactly as before -- a
+ * zero-initialized creep is a melee creep, same as the single-role system this replaces.
+ * ARENA_LANE_WAVE_CASTER_COUNT of each ARENA_LANE_CREEPS_PER_WAVE-strong wave spawn as casters
+ * (the rest melee) -- 1 of 3 per wave, the closest whole-number approximation to real MOBA's
+ * roughly-even split that fits without changing total wave headcount (a broader balance/perf
+ * question, not asked for here). Casters trade HP and per-hit damage for a real range
+ * advantage, the actual "role" distinction -- they engage from farther away and die faster once
+ * something reaches them, same real MOBA melee/caster minion tradeoff. */
+typedef enum {
+    ARENA_LANE_CREEP_MELEE = 0,
+    ARENA_LANE_CREEP_CASTER = 1,
+} ArenaLaneCreepRole;
+#define ARENA_LANE_WAVE_CASTER_COUNT      1
+#define ARENA_LANE_CREEP_CASTER_HP        36 /* 60% of melee's 60 -- squishier, matching real MOBA caster minions */
+#define ARENA_LANE_CREEP_CASTER_DAMAGE     5 /* less per-hit than melee's 7 -- the range is the tradeoff, not raw damage */
+#define ARENA_LANE_CREEP_CASTER_RANGE     6.0f /* real range advantage over melee's 3.5 -- the actual point of the role */
+
 typedef struct {
     int active; /* pool slot in use */
     int alive;
@@ -981,6 +1001,7 @@ typedef struct {
     int hp, max_hp;
     int waypoint_index; /* 0..ARENA_LANE_WAYPOINT_COUNT-1: next waypoint this creep is marching toward */
     int attack_cooldown_ms;
+    ArenaLaneCreepRole role; /* S170-218: melee (0, default) or caster -- see the enum's own doc comment above */
 } ArenaLaneCreep;
 
 /* ARENA_HERO_RESPAWN_MS (S170-121, "controlling a node enables its spawn

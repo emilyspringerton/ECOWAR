@@ -366,6 +366,9 @@ typedef struct {
     uint16_t hp;
     uint16_t max_hp;
     uint8_t team;
+    uint8_t role; /* S170-218: ArenaLaneCreepRole (0=melee, 1=caster) -- lets the client render
+                     and eventually the client itself distinguish the two without guessing from
+                     max_hp alone */
 } ArenaLaneCreepSnapshot;
 
 // ARENA_SNAPSHOT_MAX_LANE_CREEPS must match packages/simulation/arena_game.h's

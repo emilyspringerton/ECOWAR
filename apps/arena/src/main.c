@@ -668,6 +668,7 @@ static void net_poll_snapshots(uint32_t now_ms) {
                         dst->hp = msg->lane_creeps[i].hp;
                         dst->max_hp = msg->lane_creeps[i].max_hp;
                         dst->team = msg->lane_creeps[i].team;
+                        dst->role = (ArenaLaneCreepRole)msg->lane_creeps[i].role; /* S170-218 */
                     }
                     for (int i = lcount; i < ARENA_MAX_LANE_CREEPS; i++) {
                         arena_state.lane_creeps[i].active = 0;
@@ -2886,16 +2887,17 @@ int main(int argc, char *argv[]) {
             draw_mesh(&ring_mesh);
         }
 
-        /* Lane creeps (S170-138): only ever populated client-side in the
-           local 1v1 demo, which simulates arena_update() directly -- not
-           synced over the wire yet (same not-yet-networked gap node-guardian
-           creeps already have; net_mode's arena_state.lane_creeps simply
-           stays all-zeroed/inactive, so this loop harmlessly draws nothing
-           there). Small flat-topped boxes (distinct silhouette from the
-           taller hero models) in the same self/team/enemy-adjacent
-           blue/red team-color convention as nodes and heroes above, so a
-           wave reads as "which side" at a glance without being mistaken
-           for a hero. */
+        /* Lane creeps (S170-138, wire-synced since S170-146 -- populated in BOTH the local
+           1v1 demo, which simulates arena_update() directly, AND real networked matches via
+           the server's own ArenaLaneCreepSnapshot pack loop; this render loop draws real data
+           either way, correcting an earlier version of this comment that claimed otherwise).
+           Small flat-topped boxes (distinct silhouette from the taller hero models) in the
+           same self/team/enemy-adjacent blue/red team-color convention as nodes and heroes
+           above, so a wave reads as "which side" at a glance without being mistaken for a
+           hero. S170-218: melee vs. caster now get distinct silhouettes on top of that -- a
+           caster is narrower and taller (a ranged unit reads as lighter/less physically
+           imposing) with a bright glowing accent instead of melee's darker plate accent,
+           mirroring the real HP/damage/range tradeoff the sim itself gives them. */
         for (int i = 0; i < ARENA_MAX_LANE_CREEPS; i++) {
             ArenaLaneCreep *lc = &arena_state.lane_creeps[i];
             if (!lc->active || !lc->alive) continue;
@@ -2905,16 +2907,25 @@ int main(int argc, char *argv[]) {
             } else {
                 lc_r = 0.95f; lc_g = 0.25f; lc_b = 0.15f; /* enemy wave: red */
             }
+            int is_caster = (lc->role == ARENA_LANE_CREEP_CASTER);
             /* S170-171: same body + forward-nub idiom as node-guardian creeps above
                -- a lane creep marching its waypoint route (arena_game.c's
                lane_creep_waypoint) now visibly faces the way it's actually
                walking instead of floating along sideways. */
             glUniform4f_(loc_color, lc_r, lc_g, lc_b, 1.0f);
-            draw_hero_box_facing(lc->x, lc->z, lane_creep_facing_rad[i], 0.0f, 0.35f, 0.0f, 0.55f, 0.55f, 0.55f, 1.0f,
-                                  &vp, loc_mvp, loc_model, &cube_mesh);
-            glUniform4f_(loc_color, lc_r * 0.6f, lc_g * 0.6f, lc_b * 0.6f, 1.0f);
-            draw_hero_box_facing(lc->x, lc->z, lane_creep_facing_rad[i], 0.0f, 0.35f, 0.35f, 0.16f, 0.16f, 0.16f, 1.0f,
-                                  &vp, loc_mvp, loc_model, &cube_mesh);
+            if (is_caster) {
+                draw_hero_box_facing(lc->x, lc->z, lane_creep_facing_rad[i], 0.0f, 0.45f, 0.0f, 0.38f, 0.65f, 0.38f, 1.0f,
+                                      &vp, loc_mvp, loc_model, &cube_mesh);
+                glUniform4f_(loc_color, 0.3f + lc_r * 0.7f, 0.3f + lc_g * 0.7f, 0.3f + lc_b * 0.7f, 1.0f); /* bright glowing accent, not a darker plate */
+                draw_hero_box_facing(lc->x, lc->z, lane_creep_facing_rad[i], 0.0f, 0.45f, 0.35f, 0.14f, 0.14f, 0.14f, 1.0f,
+                                      &vp, loc_mvp, loc_model, &cube_mesh);
+            } else {
+                draw_hero_box_facing(lc->x, lc->z, lane_creep_facing_rad[i], 0.0f, 0.35f, 0.0f, 0.55f, 0.55f, 0.55f, 1.0f,
+                                      &vp, loc_mvp, loc_model, &cube_mesh);
+                glUniform4f_(loc_color, lc_r * 0.6f, lc_g * 0.6f, lc_b * 0.6f, 1.0f);
+                draw_hero_box_facing(lc->x, lc->z, lane_creep_facing_rad[i], 0.0f, 0.35f, 0.35f, 0.16f, 0.16f, 0.16f, 1.0f,
+                                      &vp, loc_mvp, loc_model, &cube_mesh);
+            }
         }
 
         /* projectiles (S170-136): the first travelling skill-shot in this

@@ -437,6 +437,7 @@ static void server_broadcast(void) {
         msg.lane_creeps[slot].hp = (uint16_t)(lc->hp > 0 ? lc->hp : 0);
         msg.lane_creeps[slot].max_hp = (uint16_t)lc->max_hp;
         msg.lane_creeps[slot].team = (uint8_t)lc->team;
+        msg.lane_creeps[slot].role = (uint8_t)lc->role; /* S170-218 */
     }
     msg.resources[0] = (uint16_t)arena_state.resources[0]; /* S170-153 */
     msg.resources[1] = (uint16_t)arena_state.resources[1];

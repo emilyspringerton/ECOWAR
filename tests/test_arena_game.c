@@ -2204,6 +2204,66 @@ static void test_lane_creep_wave_spawns_for_both_teams_after_initial_delay(void)
     CHECK(team1_count == ARENA_LANE_CREEPS_PER_WAVE, "team 1's first wave spawns a full wave once the initial delay elapses, same timer start as team 0");
 }
 
+static void test_lane_creep_wave_spawns_a_melee_caster_mix(void) {
+    /* S170-218: every wave should carry ARENA_LANE_WAVE_CASTER_COUNT casters (with the
+       caster's own, lower ARENA_LANE_CREEP_CASTER_HP) and the rest melee (the original
+       ARENA_LANE_CREEP_HP, unchanged) -- "roles exist at all," not exact League parity. */
+    arena_init_teams();
+    for (int i = 0; i < ARENA_MAX_HEROES; i++) arena_state.heroes[i].active = 0;
+
+    arena_tick_lane_creeps(ARENA_LANE_WAVE_INITIAL_DELAY_MS);
+
+    int team0_melee = 0, team0_caster = 0;
+    for (int i = 0; i < ARENA_MAX_LANE_CREEPS; i++) {
+        ArenaLaneCreep *c = &arena_state.lane_creeps[i];
+        if (!c->active || c->team != 0) continue;
+        if (c->role == ARENA_LANE_CREEP_CASTER) {
+            team0_caster++;
+            CHECK(c->max_hp == ARENA_LANE_CREEP_CASTER_HP, "a caster spawns with the caster HP value, not the melee one");
+        } else {
+            team0_melee++;
+            CHECK(c->max_hp == ARENA_LANE_CREEP_HP, "a melee creep spawns with the original, unchanged HP value");
+        }
+    }
+    CHECK(team0_caster == ARENA_LANE_WAVE_CASTER_COUNT, "each wave carries the documented number of casters");
+    CHECK(team0_melee == ARENA_LANE_CREEPS_PER_WAVE - ARENA_LANE_WAVE_CASTER_COUNT, "the rest of the wave is melee");
+}
+
+static void test_lane_creep_caster_engages_from_farther_than_melee(void) {
+    /* The actual point of the role split: a caster should be willing to stop and fight an
+       enemy hero from farther away than a melee creep would, ARENA_LANE_CREEP_CASTER_RANGE vs.
+       ARENA_LANE_CREEP_AGGRO_RADIUS. Distance chosen is past melee's own range but still
+       within the caster's. */
+    arena_init_teams();
+    for (int i = 1; i < ARENA_MAX_HEROES; i++) arena_state.heroes[i].active = 0;
+    arena_state.lane_wave_timer_ms[0] = 999999;
+    arena_state.lane_wave_timer_ms[1] = 999999;
+    float dist = (ARENA_LANE_CREEP_AGGRO_RADIUS + ARENA_LANE_CREEP_CASTER_RANGE) / 2.0f; /* past melee's range, within caster's */
+
+    ArenaLaneCreep *melee = &arena_state.lane_creeps[0];
+    melee->active = 1; melee->alive = 1; melee->team = 1; melee->role = ARENA_LANE_CREEP_MELEE;
+    melee->hp = melee->max_hp = ARENA_LANE_CREEP_HP;
+    melee->x = 0.0f; melee->z = -5.0f; /* far enough from the caster below that they don't aggro each other */
+
+    ArenaLaneCreep *caster = &arena_state.lane_creeps[1];
+    caster->active = 1; caster->alive = 1; caster->team = 1; caster->role = ARENA_LANE_CREEP_CASTER;
+    caster->hp = caster->max_hp = ARENA_LANE_CREEP_CASTER_HP;
+    caster->x = 0.0f; caster->z = 5.0f;
+
+    arena_state.heroes[0].x = dist; arena_state.heroes[0].z = -5.0f; /* near the melee creep, past its range */
+    arena_state.heroes[0].hp = arena_state.heroes[0].max_hp = 100;
+    int hero_hp_before = arena_state.heroes[0].hp;
+
+    arena_tick_lane_creeps(ARENA_LANE_CREEP_ATTACK_COOLDOWN_MS);
+    CHECK(arena_state.heroes[0].hp == hero_hp_before, "sanity: the hero is past melee's own range, so nothing has hit it yet from that side");
+
+    arena_state.heroes[0].x = dist; arena_state.heroes[0].z = 5.0f; /* now near the caster, same distance */
+    arena_state.heroes[0].hp = arena_state.heroes[0].max_hp = 100;
+
+    arena_tick_lane_creeps(ARENA_LANE_CREEP_ATTACK_COOLDOWN_MS);
+    CHECK(arena_state.heroes[0].hp == 100 - ARENA_LANE_CREEP_CASTER_DAMAGE, "the caster engages from a range melee couldn't, dealing its own (lower) damage");
+}
+
 static void test_lane_creep_marches_toward_center_when_no_target(void) {
     /* Isolated single creep, real wave timers suppressed -- avoids the real
        opposing wave's own march/clash behavior clouding this specific
@@ -5676,6 +5736,8 @@ int main(void) {
     test_team_creep_kill_by_owning_team_heals();
     test_team_creep_kill_by_enemy_team_helps_flip_the_node();
     test_lane_creep_wave_spawns_for_both_teams_after_initial_delay();
+    test_lane_creep_wave_spawns_a_melee_caster_mix();
+    test_lane_creep_caster_engages_from_farther_than_melee();
     test_lane_creep_marches_toward_center_when_no_target();
     test_lane_creep_attacks_nearby_enemy_hero_and_does_not_advance();
     test_lane_creep_aggro_redirects_to_attacker_over_a_closer_bystander();

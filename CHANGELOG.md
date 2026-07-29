@@ -2,6 +2,23 @@
 
 ## 2026-07-29
 
+- feat(arena): S170-218, split the single lane's wave into melee + caster roles. Biggest,
+  most structural item of the creep-overhaul batch, deliberately sequenced last -- closes it
+  out. New `ArenaLaneCreepRole` (`ARENA_LANE_CREEP_MELEE`=0 default, `ARENA_LANE_CREEP_CASTER`);
+  `ARENA_LANE_WAVE_CASTER_COUNT` (1 of each 3-strong wave) spawns as a caster with its own
+  lower HP/damage but a genuine range advantage (`ARENA_LANE_CREEP_CASTER_RANGE` 6.0 vs.
+  melee's 3.5) -- the actual "role" distinction, not just a stat reskin. "Roles exist at all"
+  was the goal per the backlog's own framing, not exact League parity (multi-lane/siege waves
+  stay explicitly out of scope). Melee stays value 0 and reuses every original constant
+  unchanged specifically so every pre-existing test that hand-builds an `ArenaLaneCreep`
+  without setting `role` keeps behaving exactly as before -- all 15 prior lane-creep tests
+  passed unmodified. Wire-synced: `ArenaLaneCreepSnapshot` gained a `role` byte (server pack +
+  client unpack), and the client render loop gives casters a distinct taller/narrower
+  silhouette with a bright accent instead of melee's darker plate accent -- also corrected a
+  stale comment there that still claimed lane creeps weren't wire-synced (they have been since
+  S170-146). 2 new tests (wave role mix + HP-per-role, caster engaging from a range melee
+  couldn't). Full suite (772 checks) + test_10_bots.sh green.
+
 - feat(arena): S170-230, hero Zagan, "The Standstill's Confessor" -- 28th hero, Control/
   Disruptor. Founder, across several fragmented messages: "hero ZAGAN" -> "unique kit adds
   stun" -> "think of a way to give ZAGAN a unique kit that changes meta." Built directly from

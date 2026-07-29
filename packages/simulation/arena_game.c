@@ -1919,13 +1919,28 @@ static void lane_creep_waypoint(int team, int index, float *out_x, float *out_z)
     *out_z = path[index][1];
 }
 
+/* lane_creep_range/lane_creep_damage (S170-218): per-role lookups -- ARENA_LANE_CREEP_MELEE
+ * (value 0) reuses the original global constants unchanged, ARENA_LANE_CREEP_CASTER gets its
+ * own. Kept as tiny helpers rather than inlined at each of the several call sites below that
+ * need one or the other. */
+static float lane_creep_range(const ArenaLaneCreep *creep) {
+    return creep->role == ARENA_LANE_CREEP_CASTER ? ARENA_LANE_CREEP_CASTER_RANGE : ARENA_LANE_CREEP_AGGRO_RADIUS;
+}
+static int lane_creep_damage(const ArenaLaneCreep *creep) {
+    return creep->role == ARENA_LANE_CREEP_CASTER ? ARENA_LANE_CREEP_CASTER_DAMAGE : ARENA_LANE_CREEP_DAMAGE;
+}
+
 /* lane_creep_spawn_wave: fills up to ARENA_LANE_CREEPS_PER_WAVE free pool
  * slots with fresh creeps at `team`'s spawn line (waypoint 0), spread along z
  * so a wave doesn't spawn perfectly stacked on one point. If fewer free
  * slots exist than a full wave (a previous wave hasn't fully cleared out),
  * spawns as many as fit rather than blocking the whole wave on pool space --
  * ARENA_MAX_LANE_CREEPS' 4x-a-single-wave headroom should make that rare in
- * practice, not something worth a harder failure mode for. */
+ * practice, not something worth a harder failure mode for.
+ *
+ * S170-218: the first ARENA_LANE_WAVE_CASTER_COUNT creeps spawned each wave are casters, the
+ * rest melee -- an arbitrary but fixed assignment (not randomized), simplest thing that
+ * guarantees every wave has the same role mix rather than leaving it to chance. */
 static void lane_creep_spawn_wave(int team) {
     int spawned = 0;
     float wx, wz;
@@ -1937,7 +1952,8 @@ static void lane_creep_spawn_wave(int team) {
         creep->alive = 1;
         creep->team = team;
         creep->waypoint_index = 0;
-        creep->hp = creep->max_hp = ARENA_LANE_CREEP_HP;
+        creep->role = (spawned < ARENA_LANE_WAVE_CASTER_COUNT) ? ARENA_LANE_CREEP_CASTER : ARENA_LANE_CREEP_MELEE;
+        creep->hp = creep->max_hp = (creep->role == ARENA_LANE_CREEP_CASTER) ? ARENA_LANE_CREEP_CASTER_HP : ARENA_LANE_CREEP_HP;
         creep->x = wx;
         creep->z = wz + (spawned - (ARENA_LANE_CREEPS_PER_WAVE - 1) / 2.0f) * 1.0f;
         creep->attack_cooldown_ms = 0;
@@ -1976,7 +1992,7 @@ void arena_tick_lane_creeps(unsigned int dt_ms) {
             if (!cand->active || cand->team == creep->team || !hero_is_hittable(cand)) continue;
             float dx = cand->x - creep->x, dz = cand->z - creep->z;
             float dist = sqrtf(dx * dx + dz * dz);
-            if (dist > ARENA_LANE_CREEP_AGGRO_RADIUS) continue;
+            if (dist > lane_creep_range(creep)) continue;
             if (!nearest_hero || dist < hero_dist) { nearest_hero = cand; hero_dist = dist; }
         }
 
@@ -1988,7 +2004,7 @@ void arena_tick_lane_creeps(unsigned int dt_ms) {
             if (!cand->active || !cand->alive || cand->team == creep->team) continue;
             float dx = cand->x - creep->x, dz = cand->z - creep->z;
             float dist = sqrtf(dx * dx + dz * dz);
-            if (dist > ARENA_LANE_CREEP_AGGRO_RADIUS) continue;
+            if (dist > lane_creep_range(creep)) continue;
             if (!nearest_creep || dist < creep_dist) { nearest_creep = cand; creep_dist = dist; }
         }
 
@@ -2012,7 +2028,7 @@ void arena_tick_lane_creeps(unsigned int dt_ms) {
             ArenaHero *attacker = &arena_state.heroes[ally->last_attacked_by_owner];
             if (!attacker->active || attacker->team == creep->team || !hero_is_hittable(attacker)) continue;
             float adx = attacker->x - creep->x, adz = attacker->z - creep->z;
-            if (sqrtf(adx * adx + adz * adz) > ARENA_LANE_CREEP_AGGRO_RADIUS) continue;
+            if (sqrtf(adx * adx + adz * adz) > lane_creep_range(creep)) continue;
             aggro_hero = attacker;
             break;
         }
@@ -2025,9 +2041,9 @@ void arena_tick_lane_creeps(unsigned int dt_ms) {
 
         if ((atk_hero || atk_creep) && creep->attack_cooldown_ms <= 0) {
             if (atk_hero) {
-                apply_damage(atk_hero, ARENA_LANE_CREEP_DAMAGE); /* no armor stat on lane-creep attacks, same as node-guardian creeps */
+                apply_damage(atk_hero, lane_creep_damage(creep)); /* no armor stat on lane-creep attacks, same as node-guardian creeps */
             } else {
-                atk_creep->hp -= ARENA_LANE_CREEP_DAMAGE;
+                atk_creep->hp -= lane_creep_damage(creep);
                 if (atk_creep->hp <= 0) { atk_creep->hp = 0; atk_creep->alive = 0; atk_creep->active = 0; }
             }
             creep->attack_cooldown_ms = ARENA_LANE_CREEP_ATTACK_COOLDOWN_MS;
