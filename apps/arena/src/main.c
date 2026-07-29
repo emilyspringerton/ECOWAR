@@ -66,7 +66,15 @@ static int shop_open = 0; /* S170-175, founder: "do a first pass shop interface"
 #define SHOP_ROW_H 20.0f
 #define SHOP_COL_W 260.0f
 #define SHOP_BUY_COLS 2
-#define SHOP_ITEMS_PER_COL 12 /* ARENA_ITEM_COUNT (24) / SHOP_BUY_COLS */
+/* S170-210: was a hardcoded 12 (matched the original 24-item catalog's even
+ * split), which silently clipped the shop panel's render loop AND its click
+ * hit-test at item_id 23 -- Blink Dagger (24), Donkey (25), and Haste
+ * Trinket (26) rendered nowhere and couldn't be bought at all once the
+ * catalog grew past ARENA_ITEM_COUNT 24. Col 0 stays the 12 SPECIFIC
+ * weapons; col 1 now holds all 15 of WEIRD weapons + GENERIC + the three
+ * newest items. Bump this again (or rebalance the two columns) the next
+ * time ARENA_ITEM_COUNT grows past what col 1 can hold. */
+#define SHOP_ITEMS_PER_COL 15
 static void shop_panel_origin(int win_w, int win_h, float *sp_x, float *sp_y_top) {
     (void)win_w;
     *sp_x = 40.0f;
@@ -1398,7 +1406,14 @@ static int hero_status_label(const ArenaHero *h, char *buf, size_t bufsize) {
     if (h->rooted_ms > 0) APPEND_TAG("ROOTED");
     if (h->intangible_ms > 0) APPEND_TAG("INTANGIBLE");
     if (h->burning_ms > 0) APPEND_TAG("BURNING");
-    if (h->survive_floor_ms > 0) APPEND_TAG("UNKILLABLE");
+    if (h->survive_floor_ms > 0) {
+        /* S170-210: name the source when it's Donkey's own Immortal's Fold, instead of
+           the generic tag -- "clear something is happening" per the founder's own ask,
+           not just "clear something happened" (that's what the FOLD_FLASH burst above
+           the health bar and the distinct proc tone are for). */
+        if (h->equipped_item[ARENA_ITEM_SLOT_BACK] == ARENA_DONKEY_ITEM_ID) APPEND_TAG("DONKEY FOLD");
+        else APPEND_TAG("UNKILLABLE");
+    }
     if (h->stunned_ms > 0) APPEND_TAG("STUNNED");
     if (h->slowed_ms > 0) APPEND_TAG("SLOWED");
     if (h->berserker_ms > 0) APPEND_TAG("BERSERKER");
@@ -1544,6 +1559,8 @@ static int prev_hero_hp_valid[ARENA_MAX_HEROES];
  * (S170-122); creeps had none at all -- same idiom, mirrored for both
  * jungle and lane creep pools. Local-mode/1v1-demo only, same scope as
  * jungle/lane creeps' own sim-only (not wire-synced) status. */
+static int prev_donkey_fold_active[ARENA_MAX_HEROES];
+static int prev_donkey_fold_valid[ARENA_MAX_HEROES];
 static int prev_creep_hp[ARENA_MAX_CREEPS];
 static int prev_creep_hp_valid[ARENA_MAX_CREEPS];
 static int prev_lane_creep_hp[ARENA_MAX_LANE_CREEPS];
@@ -1573,6 +1590,34 @@ static void spawn_heal_flash(float x, float z) {
             heal_flashes[i].x = x;
             heal_flashes[i].z = z;
             heal_flashes[i].age_ms = 0;
+            return;
+        }
+    }
+}
+
+/* FoldFlash (S170-210, founder: "ensure donkey has affordances so its clear
+ * something is happening when it procs on the 25% health thing"): Immortal's
+ * Fold sets survive_floor_ms, which already drives the generic UNKILLABLE
+ * status tag -- but that tag is silent about WHY, and gives no one-shot "it
+ * just happened" pop the way heal-flash/attack-flash give every other HP
+ * event on this battlefield. Same "reconstruct the event from a frame-to-
+ * frame edge" idiom (no wire-protocol change needed: survive_floor_ms and
+ * equipped_item are both already synced), just watching for a 0-to-active
+ * transition instead of an HP delta. Bigger and longer-lived than a heal
+ * flash on purpose -- a near-death save reads as a bigger deal than a Doc
+ * Wheel tick. */
+#define MAX_FOLD_FLASHES ARENA_MAX_HEROES
+#define FOLD_FLASH_LIFETIME_MS 480.0f
+typedef struct { float x, z, age_ms; int active; } FoldFlash;
+static FoldFlash fold_flashes[MAX_FOLD_FLASHES];
+
+static void spawn_fold_flash(float x, float z) {
+    for (int i = 0; i < MAX_FOLD_FLASHES; i++) {
+        if (!fold_flashes[i].active) {
+            fold_flashes[i].active = 1;
+            fold_flashes[i].x = x;
+            fold_flashes[i].z = z;
+            fold_flashes[i].age_ms = 0;
             return;
         }
     }
@@ -2432,6 +2477,7 @@ int main(int argc, char *argv[]) {
                 prev_hero_hp_valid[i] = 0;
                 prev_hero_moving_valid[i] = 0;
                 prev_hero_facing_valid[i] = 0;
+                prev_donkey_fold_valid[i] = 0;
                 continue;
             }
             /* S170-171: update facing from observed movement this frame,
@@ -2469,6 +2515,23 @@ int main(int argc, char *argv[]) {
             }
             prev_hero_hp[i] = h->hp;
             prev_hero_hp_valid[i] = 1;
+
+            /* S170-210: Donkey's Immortal's Fold, edge-detected off the wearer's own
+               equipped_item + survive_floor_ms (both already synced -- no new wire
+               state needed). */
+            int donkey_fold_active = (h->equipped_item[ARENA_ITEM_SLOT_BACK] == ARENA_DONKEY_ITEM_ID) &&
+                                      h->survive_floor_ms > 0;
+            if (prev_donkey_fold_valid[i] && !prev_donkey_fold_active[i] && donkey_fold_active) {
+                spawn_fold_flash(h->x, h->z);
+                trigger_squish(i);
+                float fdx = h->x - arena_state.heroes[my_owner].x;
+                float fdz = h->z - arena_state.heroes[my_owner].z;
+                if (fdx * fdx + fdz * fdz <= ARENA_AUDIO_HEARING_RADIUS * ARENA_AUDIO_HEARING_RADIUS) {
+                    play_tone(880.0f, 140.0f, 0.4f); /* bright, longer than the heal/attack tones -- a near-death save deserves to stand out */
+                }
+            }
+            prev_donkey_fold_active[i] = donkey_fold_active;
+            prev_donkey_fold_valid[i] = 1;
         }
         /* S170-145: creep-side half of "auto attacks hit a creep or a hero should
            show visual indication" -- same HP-delta idiom as heroes above, both
@@ -2513,6 +2576,11 @@ int main(int argc, char *argv[]) {
             if (!heal_flashes[i].active) continue;
             heal_flashes[i].age_ms += dt;
             if (heal_flashes[i].age_ms >= HEAL_FLASH_LIFETIME_MS) heal_flashes[i].active = 0;
+        }
+        for (int i = 0; i < MAX_FOLD_FLASHES; i++) {
+            if (!fold_flashes[i].active) continue;
+            fold_flashes[i].age_ms += dt;
+            if (fold_flashes[i].age_ms >= FOLD_FLASH_LIFETIME_MS) fold_flashes[i].active = 0;
         }
         for (int i = 0; i < ARENA_MAX_HEROES; i++) {
             if (squish_age_ms[i] >= 0.0f && squish_age_ms[i] < SQUISH_ANIM_MS) {
@@ -2939,6 +3007,23 @@ int main(int argc, char *argv[]) {
             glUniformMatrix4fv_(loc_mvp, 1, GL_FALSE, mvp.m);
             glUniformMatrix4fv_(loc_model, 1, GL_FALSE, model.m);
             glUniform4f_(loc_color, 0.35f, 1.0f, 0.45f, alpha);
+            draw_mesh(&ring_mesh);
+        }
+        /* fold flashes (S170-210): a bright gold-white burst, bigger and slower to fade
+           than the heal flash above -- Immortal's Fold procs at a moment the wearer is
+           about to die, so it needs to read as more urgent than a routine heal tick. */
+        for (int i = 0; i < MAX_FOLD_FLASHES; i++) {
+            if (!fold_flashes[i].active) continue;
+            float t01 = fold_flashes[i].age_ms / FOLD_FLASH_LIFETIME_MS;
+            float scale = 0.7f + t01 * 1.1f;
+            float alpha = 1.0f - t01;
+            Mat4 tr = mat4_translate(fold_flashes[i].x, 0.05f, fold_flashes[i].z);
+            Mat4 sc = mat4_scale(scale, 1.0f, scale);
+            Mat4 model = mat4_multiply(&tr, &sc);
+            Mat4 mvp = mat4_multiply(&vp, &model);
+            glUniformMatrix4fv_(loc_mvp, 1, GL_FALSE, mvp.m);
+            glUniformMatrix4fv_(loc_model, 1, GL_FALSE, model.m);
+            glUniform4f_(loc_color, 1.0f, 0.85f, 0.25f, alpha);
             draw_mesh(&ring_mesh);
         }
         /* spell flashes (S170-124, per-hero color S170-142): SIZE still
