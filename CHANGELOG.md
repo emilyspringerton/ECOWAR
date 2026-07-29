@@ -2,6 +2,16 @@
 
 ## 2026-07-29
 
+- feat(arena): S170-225, Python gymnasium.Env wrapper for the RL sim. NORTHSTAR §21's sprint,
+  second item. `scripts/rl_env.py` wraps `apps/arena_training/src/headless.c`'s ctypes API: an
+  18-float Box observation space (named indices mirroring `sim_get_obs()`'s own layout), a
+  5-float Box action space, and `compute_reward()` implementing S170-223's full reward design
+  (damage dealt/taken, kill/death, Flow/XP gained, alive bonus, dominant terminal win/loss).
+  Verified for real against the compiled `.so` via `--smoke-test` (400 sim ticks, real combat,
+  reward correctly accumulating) since `gymnasium`/`stable-baselines3` aren't installable in
+  this environment -- the `gymnasium.Env` subclass itself is written to spec but not live-tested,
+  flagged honestly rather than claimed.
+
 - feat(arena): S170-224, ctypes-callable RL environment API. NORTHSTAR §21's implementation
   sprint, first item. `apps/arena_training/src/headless.c` mirrors sibling SHANKPIT's own
   `apps/training/headless.c` shape (`sim_init`/`sim_step`) but exposes a small, fixed, documented
