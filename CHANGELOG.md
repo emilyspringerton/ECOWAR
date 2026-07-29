@@ -2473,3 +2473,20 @@
   same agent token/permission (`redgarden.match.write`) the existing per-player `game-result`
   POST already needs -- no new auth wiring. This is the durable, always-on counterpart to the
   local `var/matches/*.jsonl` logs `scripts/hero_stats.py` reads: real matches now feed both.
+
+- feat(arena): promote the spatial-generalization RL checkpoint; fix a real progress-tracking
+  bug in `rl_train.py`. The 5M-timestep run trained against the new randomized-spawn environment
+  (see the earlier "team-mode initial spawn moved to graveyards" entry above) finished, evaluated
+  50W/0L/0D over 50 episodes, and is now promoted into `packages/common/rl_policy_weights.h`.
+  Real bug caught live while watching this run: `scripts/rl_train.py`'s own checkpoint loop
+  tracked progress as `timesteps_done += chunk` (the REQUESTED chunk size) rather than reading
+  `model.num_timesteps` (the model's real internal counter) -- since a chunk can only stop at a
+  rollout boundary, every `model.learn()` call actually runs slightly MORE than requested, and
+  crediting only the requested amount silently undercounts every single checkpoint. With this
+  run's `save_freq` (20,000, the default) much smaller than one rollout (8,192 steps at
+  `n_envs=4`), that undercount compounded across ~250 checkpoints into a script-vs-reality gap
+  of over 1,000,000 steps by the time it was caught -- the script still believed it was at
+  4.46M/5M while the model had actually already trained past 5.5M. Manually stopped the run,
+  evaluated + exported the latest real checkpoint directly (same 50W/0L result), and fixed the
+  root cause: `timesteps_done = model.num_timesteps` reads the authoritative counter instead of
+  re-deriving a second copy of the same number that can drift. Full suite green.

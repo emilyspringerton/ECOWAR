@@ -136,7 +136,23 @@ def main():
     while timesteps_done < args.total_timesteps:
         chunk = min(args.save_freq, args.total_timesteps - timesteps_done)
         model.learn(total_timesteps=chunk, reset_num_timesteps=False)
-        timesteps_done += chunk
+        # 2026-07-29, real bug found live: `model.learn(total_timesteps=chunk, ...)` can only
+        # stop at a rollout boundary (n_envs * n_steps, e.g. 4*2048=8192), so it always runs
+        # AT LEAST `chunk` steps and usually somewhat more -- crediting only the requested
+        # `chunk` here (as this line used to: `timesteps_done += chunk`) silently undercounts
+        # every single checkpoint. With a `save_freq` much smaller than one rollout's worth
+        # (this run used the default 20,000 against an 8,192-step rollout), that undercount is
+        # a meaningful fraction of the chunk every time, and it compounds across every
+        # iteration -- over one real run, this script's own `timesteps_done` ended up more than
+        # 1,000,000 steps behind `model.num_timesteps` (the model's real internal progress),
+        # meaning the loop kept training for ~20% longer than `--total-timesteps` actually
+        # asked for before its own (wrong) counter finally caught up. Reading the model's own
+        # authoritative counter instead of re-deriving one from the requested chunk size fixes
+        # this by construction -- it can never drift, because it's not a second copy of the
+        # same number. Long enough that the run has to be intervened on manually to catch, but
+        # not the first "which of these two things does 'total_timesteps' actually mean"
+        # inconsistency this exact command surfaced, either.
+        timesteps_done = model.num_timesteps
         ckpt_path = checkpoint_path_template.format(timesteps_done)
         model.save(ckpt_path)
         print(f"Checkpoint saved: {ckpt_path}.zip ({timesteps_done}/{args.total_timesteps} timesteps)")
