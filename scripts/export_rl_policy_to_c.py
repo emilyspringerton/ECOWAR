@@ -119,10 +119,21 @@ def write_c_header_from_layers(layers, output_path, guard_name="RL_POLICY_WEIGHT
     lines.append('#include "mlp_infer.h"')
     lines.append("")
 
+    def fmt_float(v):
+        """C requires a floating literal to already look like one (a '.' or an exponent) before
+        an 'f' suffix is legal -- `f"{v:.8g}"` alone produces bare-integer strings like "0" or
+        "2" for exactly-integer values (real, common for an untrained/zero-initialized bias, as
+        a real trained model's own export caught: `0f` is not valid C, `0.0f` is). Appending
+        ".0" whenever neither is present makes every value a valid literal regardless."""
+        s = f"{v:.8g}"
+        if "." not in s and "e" not in s and "E" not in s:
+            s += ".0"
+        return s + "f"
+
     for i, (w, b, _act) in enumerate(layers):
         out_f, in_f = w.shape
-        flat_w = ", ".join(f"{v:.8g}f" for v in w.flatten())
-        flat_b = ", ".join(f"{v:.8g}f" for v in b.flatten())
+        flat_w = ", ".join(fmt_float(v) for v in w.flatten())
+        flat_b = ", ".join(fmt_float(v) for v in b.flatten())
         lines.append(f"static const float layer{i}_w[{out_f * in_f}] = {{ {flat_w} }};")
         lines.append(f"static const float layer{i}_b[{out_f}] = {{ {flat_b} }};")
         lines.append("")
@@ -175,9 +186,72 @@ def write_c_header_from_layers(layers, output_path, guard_name="RL_POLICY_WEIGHT
           f"sizes={layer_sizes})")
 
 
+def _self_test():
+    """Regression test for a real bug found live (S170-227, this pass): `f"{v:.8g}f"` alone
+    produces bare-integer C literals like `0f` or `2f` for exactly-integer float values --
+    invalid C syntax (a floating constant needs a '.' or exponent before the 'f' suffix is
+    legal). Never caught by this file's own earlier verification against a hand-built,
+    randomly-initialized torch network (vanishingly unlikely to land on an exact integer by
+    chance) -- only surfaced once tested against a REAL trained PPO model, whose untrained/
+    unchanged biases genuinely do include exact zeros. Runs with no torch/stable_baselines3
+    dependency at all -- exercises write_c_header_from_layers directly on hand-built layer
+    tuples containing 0.0 and other exact-integer values, then actually compiles the result."""
+    import numpy as np
+    import os
+    import subprocess
+    import tempfile
+
+    w1 = np.array([[1.0, 0.0], [0.0, 2.0]], dtype=np.float32)  # deliberately exact integers
+    b1 = np.array([0.0, -1.0], dtype=np.float32)
+    layers = [(w1, b1, 0)]
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        header_path = os.path.join(tmpdir, "self_test_weights.h")
+        write_c_header_from_layers(layers, header_path, guard_name="SELF_TEST_H",
+                                    model_name="SELF_TEST_MODEL")
+
+        repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        mlp_infer_dir = os.path.join(repo_root, "packages", "common")
+        probe_c = os.path.join(tmpdir, "probe.c")
+        probe_source = (
+            '#include "self_test_weights.h"\n'
+            "int main(void) {\n"
+            "    float in[2] = {3.0f, 4.0f};\n"
+            "    float out[2];\n"
+            "    mlp_forward(&SELF_TEST_MODEL, in, out);\n"
+            "    return (out[0] == 3.0f && out[1] == 7.0f) ? 0 : 1;\n"
+            "}\n"
+        )
+        with open(probe_c, "w") as f:
+            f.write(probe_source)
+        probe_bin = os.path.join(tmpdir, "probe")
+        compile_result = subprocess.run(
+            ["gcc", "-std=c99", "-O2", "-Wall", "-Wextra", "-I", tmpdir, "-I", mlp_infer_dir,
+             "-o", probe_bin, probe_c, os.path.join(mlp_infer_dir, "mlp_infer.c"), "-lm"],
+            capture_output=True, text=True,
+        )
+        if compile_result.returncode != 0:
+            print("SELF-TEST FAILED: generated header did not compile")
+            print(compile_result.stderr)
+            sys.exit(1)
+
+        run_result = subprocess.run([probe_bin], capture_output=True, text=True)
+        if run_result.returncode != 0:
+            print("SELF-TEST FAILED: compiled correctly but produced the wrong forward-pass result")
+            sys.exit(1)
+
+    print("SELF-TEST PASSED: a layer containing exact-integer weights (0.0, 1.0, 2.0, -1.0) "
+          "exported, compiled, and produced the correct forward-pass result "
+          "(y = [1,0; 0,2]*[3,4] + [0,-1] = [3, 7]).")
+
+
 def main():
+    if len(sys.argv) == 2 and sys.argv[1] == "--self-test":
+        _self_test()
+        return
     if len(sys.argv) != 3:
         print("Usage: python3 scripts/export_rl_policy_to_c.py <ppo_model.zip> <output.h>")
+        print("       python3 scripts/export_rl_policy_to_c.py --self-test")
         sys.exit(1)
     model_path, output_path = sys.argv[1], sys.argv[2]
 
