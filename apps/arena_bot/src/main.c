@@ -436,23 +436,39 @@ static void send_shop_buy(int item_id) {
  *     S170-168 anchor the capper to the node's exact point instead of leaving it purely
  *     force-driven.
  *
- * Squad membership is a simple, stable, no-coordination-needed partition of the team's OWNER
+ * BotSnapshotView (S170-193): a bot-local combined view standing in for what ArenaSnapshotMsg
+ * used to be before the MTU-driven packet split (see ArenaSnapshotHeroesMsg's own doc comment
+ * in protocol.h for the full story) -- `world` holds everything the (now heroes-less)
+ * ArenaSnapshotMsg still carries, `heroes` is reassembled here from whichever
+ * PACKET_ARENA_SNAPSHOT_HEROES chunks have arrived. Purely a convenience for this file's own
+ * decision logic below, which was written against one atomic combined struct and has no reason
+ * to care that the WIRE format no longer matches that shape -- every read site below just
+ * gained a `.world.` prefix on the handful of non-hero fields it touches (`count`/`phase`/
+ * `winner`/`nodes`), heroes[] itself is untouched. Not defined in protocol.h: this is a local
+ * reassembly convenience, not part of the wire format itself.
+ */
+typedef struct {
+    ArenaSnapshotMsg world;
+    ArenaHeroSnapshot heroes[ARENA_SNAPSHOT_MAX_HEROES];
+} BotSnapshotView;
+
+/* Squad membership is a simple, stable, no-coordination-needed partition of the team's OWNER
  * SLOTS (my_owner % squad_count) -- every bot computes the same partition independently from
  * data already in the shared snapshot, same idiom the S170-90 approach-angle spread and the
  * S170-201 anchor fix both already rely on. squad_count tracks how many nodes are actually
  * worth splitting toward right now (uncapped), capped by how many living teammates there are
  * (no point in more squads than bots), so the structure adapts as the map state changes instead
  * of using a fixed number regardless of what's actually happening. */
-static int hero_squad_count(const ArenaSnapshotMsg *cur, int hero_team) {
+static int hero_squad_count(const BotSnapshotView *cur, int hero_team) {
     int want_owner = hero_team + 1;
     int uncapped_count = 0;
     for (int n = 0; n < ARENA_SNAPSHOT_NODE_COUNT; n++) {
-        if (cur->nodes[n].owner != want_owner) uncapped_count++;
+        if (cur->world.nodes[n].owner != want_owner) uncapped_count++;
     }
     int living = 0;
-    for (int i = 0; i < cur->count; i++) {
+    for (int i = 0; i < cur->world.count; i++) {
         if (!cur->heroes[i].alive) continue;
-        int team_i = (i < cur->count / 2) ? 0 : 1;
+        int team_i = (i < cur->world.count / 2) ? 0 : 1;
         if (team_i == hero_team) living++;
     }
     int count = uncapped_count < 1 ? 1 : uncapped_count;
@@ -464,13 +480,13 @@ static int hero_squad_count(const ArenaSnapshotMsg *cur, int hero_team) {
  * squad_count == squad_id). Every bot needs to be able to compute ANY squad's centroid, not
  * just its own, for the greedy squad-to-node assignment below, which has to reason about every
  * squad's position, not just self's. */
-static void squad_centroid(const ArenaSnapshotMsg *cur, int hero_team, int squad_count, int squad_id,
+static void squad_centroid(const BotSnapshotView *cur, int hero_team, int squad_count, int squad_id,
                             float *cx, float *cz) {
     float sx = 0, sz = 0;
     int n = 0;
-    for (int i = 0; i < cur->count; i++) {
+    for (int i = 0; i < cur->world.count; i++) {
         if (!cur->heroes[i].alive) continue;
-        int team_i = (i < cur->count / 2) ? 0 : 1;
+        int team_i = (i < cur->world.count / 2) ? 0 : 1;
         if (team_i != hero_team) continue;
         if ((i % squad_count) != squad_id) continue;
         sx += cur->heroes[i].x;
@@ -488,12 +504,12 @@ static void squad_centroid(const ArenaSnapshotMsg *cur, int hero_team, int squad
  * centroid. squad_count is sized (hero_squad_count above) so squad_count <= the number of
  * uncapped nodes always holds, which guarantees every squad finds a distinct, never-before-
  * claimed node -- normally a clean 1-squad-per-node split. */
-static int hero_squad_target_node(const ArenaSnapshotMsg *cur, int hero_team, int squad_count, int my_squad) {
+static int hero_squad_target_node(const BotSnapshotView *cur, int hero_team, int squad_count, int my_squad) {
     int want_owner = hero_team + 1;
     int uncapped[ARENA_SNAPSHOT_NODE_COUNT];
     int uncapped_count = 0;
     for (int n = 0; n < ARENA_SNAPSHOT_NODE_COUNT; n++) {
-        if (cur->nodes[n].owner != want_owner) uncapped[uncapped_count++] = n;
+        if (cur->world.nodes[n].owner != want_owner) uncapped[uncapped_count++] = n;
     }
     if (uncapped_count == 0) return -1;
 
@@ -507,7 +523,7 @@ static int hero_squad_target_node(const ArenaSnapshotMsg *cur, int hero_team, in
         for (int u = 0; u < uncapped_count; u++) {
             int n = uncapped[u];
             if (claimed[n]) continue;
-            float dx = cur->nodes[n].x - sx, dz = cur->nodes[n].z - sz;
+            float dx = cur->world.nodes[n].x - sx, dz = cur->world.nodes[n].z - sz;
             float d = dx * dx + dz * dz;
             if (pick == -1 || d < pick_d) { pick = n; pick_d = d; }
         }
@@ -557,7 +573,7 @@ static int hero_squad_target_node(const ArenaSnapshotMsg *cur, int hero_team, in
  * nodes (hero_squad_target_node), not by a second force here. Whole-team flocking would have
  * pulled every squad back toward each other the instant they got within FLOCK_RADIUS of another
  * squad, fighting the very spread the squad-target-node split is trying to create. */
-static void flock_offset(const ArenaSnapshotMsg *cur, const ArenaSnapshotMsg *prev, int have_prev,
+static void flock_offset(const BotSnapshotView *cur, const BotSnapshotView *prev, int have_prev,
                           int self_owner, int my_team, int squad_count, int my_squad,
                           float *out_dx, float *out_dz) {
     const float FLOCK_RADIUS = 6.0f;
@@ -568,9 +584,9 @@ static void flock_offset(const ArenaSnapshotMsg *cur, const ArenaSnapshotMsg *pr
     float sep_x = 0.0f, sep_z = 0.0f;
     int count = 0;
 
-    for (int i = 0; i < cur->count; i++) {
+    for (int i = 0; i < cur->world.count; i++) {
         if (i == self_owner || !cur->heroes[i].alive) continue;
-        int team = (i < cur->count / 2) ? 0 : 1;
+        int team = (i < cur->world.count / 2) ? 0 : 1;
         if (team != my_team) continue; /* teammates only -- see doc comment above */
         if ((i % squad_count) != my_squad) continue; /* S170-202: squadmates only, not the whole team */
 
@@ -610,8 +626,19 @@ static void flock_offset(const ArenaSnapshotMsg *cur, const ArenaSnapshotMsg *pr
 // the already-connected server. Returns once the match ends (winner != 0)
 // or the connection goes quiet for too long.
 static void play_one_match(int game_port) {
-    ArenaSnapshotMsg last = {0};
-    ArenaSnapshotMsg prev = {0}; /* S170-160: previous tick's snapshot, purely so flock_offset can infer ally velocity for alignment -- the wire snapshot itself never carries velocity */
+    /* S170-193: cur_view accumulates whichever of the world/hero-chunk packets have arrived so
+       far (see BotSnapshotView's own doc comment) -- last/prev are then swapped exactly ONCE
+       per outer loop iteration, after the inner drain loop below has processed every packet
+       currently queued, not once per individual packet. This is a real improvement over the
+       pre-split behavior, not just a mechanical consequence of it: the old code did `prev =
+       last` on every single PACKET_ARENA_SNAPSHOT arrival, so if the bot's own loop ever fell
+       behind and drained more than one backlogged snapshot in a single pass, prev/last ended up
+       one PACKET apart, not one genuine TICK apart, subtly corrupting flock_offset's velocity
+       inference. Swapping once per drain fixes that same-shape-but-worse bug for free while
+       fixing the split itself. */
+    BotSnapshotView cur_view = {0};
+    BotSnapshotView last = {0};
+    BotSnapshotView prev = {0}; /* S170-160: previous tick's snapshot, purely so flock_offset can infer ally velocity for alignment -- the wire snapshot itself never carries velocity */
     int have_prev = 0;
     int have_snapshot = 0;
     int picked = 0;
@@ -646,23 +673,36 @@ static void play_one_match(int game_port) {
            a real networked match since whichever commit first pushed the struct over 2048.
            Sized dynamically to the actual current packet size instead of a magic-number guess,
            so this can never silently drift out of sync again the same way. */
-        char rbuf[sizeof(NetHeader) + sizeof(ArenaSnapshotMsg)];
+        /* S170-193: sized for whichever of the two snapshot packet types is larger -- see
+           ARENA_SNAPSHOT_RECV_BUF_SIZE's own doc comment in protocol.h. */
+        char rbuf[ARENA_SNAPSHOT_RECV_BUF_SIZE];
         struct sockaddr_in sender;
         socklen_t slen = sizeof(sender);
         int len = recvfrom(sock, rbuf, sizeof(rbuf), 0, (struct sockaddr *)&sender, &slen);
         int got_one = 0;
         while (len > 0) {
-            if (len >= (int)(sizeof(NetHeader) + sizeof(ArenaSnapshotMsg))) {
+            if (len >= (int)sizeof(NetHeader)) {
                 NetHeader *h = (NetHeader *)rbuf;
-                if (h->type == PACKET_ARENA_SNAPSHOT) {
-                    prev = last;
-                    have_prev = have_snapshot;
-                    memcpy(&last, rbuf + sizeof(NetHeader), sizeof(ArenaSnapshotMsg));
-                    have_snapshot = 1;
+                if (h->type == PACKET_ARENA_SNAPSHOT && len >= (int)(sizeof(NetHeader) + sizeof(ArenaSnapshotMsg))) {
+                    memcpy(&cur_view.world, rbuf + sizeof(NetHeader), sizeof(ArenaSnapshotMsg));
+                    got_one = 1;
+                } else if (h->type == PACKET_ARENA_SNAPSHOT_HEROES && len >= (int)(sizeof(NetHeader) + sizeof(ArenaSnapshotHeroesMsg))) {
+                    ArenaSnapshotHeroesMsg chunk;
+                    memcpy(&chunk, rbuf + sizeof(NetHeader), sizeof(chunk));
+                    int base = chunk.chunk_index * ARENA_SNAPSHOT_HERO_CHUNK_SIZE;
+                    for (int j = 0; j < ARENA_SNAPSHOT_HERO_CHUNK_SIZE && base + j < ARENA_SNAPSHOT_MAX_HEROES; j++) {
+                        cur_view.heroes[base + j] = chunk.heroes[j];
+                    }
                     got_one = 1;
                 }
             }
             len = recvfrom(sock, rbuf, sizeof(rbuf), 0, (struct sockaddr *)&sender, &slen);
+        }
+        if (got_one) {
+            prev = last;
+            have_prev = have_snapshot;
+            last = cur_view;
+            have_snapshot = 1;
         }
         silent_ticks = got_one ? 0 : silent_ticks + 1;
         if (silent_ticks > 1000) { /* ~10s of nothing at all -- server's gone */
@@ -671,7 +711,7 @@ static void play_one_match(int game_port) {
         }
 
         if (have_snapshot) {
-            if (last.phase == ARENA_PHASE_DRAFT && !picked) {
+            if (last.world.phase == ARENA_PHASE_DRAFT && !picked) {
                 /* Simple roster spread: pick based on owner slot so a full
                    lobby doesn't converge on one hero -- real draft strategy
                    is a later, separate concern. */
@@ -680,7 +720,7 @@ static void play_one_match(int game_port) {
                 picked = 1;
                 ticks_since_pick_send = 0;
                 printf("[arena_bot %d] drafted hero_id=%d\n", (int)getpid(), hero_id);
-            } else if (last.phase == ARENA_PHASE_DRAFT && picked) {
+            } else if (last.world.phase == ARENA_PHASE_DRAFT && picked) {
                 /* Retry (S170-99, real bug found live against a real human client): a single
                    fire-and-forget send_pick() with no retry meant one dropped UDP packet left
                    the pick never actually received, stalling a full lobby until the server's
@@ -691,18 +731,18 @@ static void play_one_match(int game_port) {
                     send_pick((my_owner + draft_offset) % ARENA_HERO_COUNT);
                     ticks_since_pick_send = 0;
                 }
-            } else if (last.phase == ARENA_PHASE_LIVE) {
-                if (last.winner != 0) {
-                    printf("[arena_bot %d] match ended, winner=%d\n", (int)getpid(), last.winner);
+            } else if (last.world.phase == ARENA_PHASE_LIVE) {
+                if (last.world.winner != 0) {
+                    printf("[arena_bot %d] match ended, winner=%d\n", (int)getpid(), last.world.winner);
                     return;
                 }
-                if (my_owner >= 0 && my_owner < last.count && last.heroes[my_owner].alive) {
+                if (my_owner >= 0 && my_owner < last.world.count && last.heroes[my_owner].alive) {
                     /* Nearest enemy from the snapshot -- this bot has no
                        access to the authoritative ArenaState, only what any
                        client sees, same information a human player's client
                        would have. */
                     float mx = last.heroes[my_owner].x, mz = last.heroes[my_owner].z;
-                    int my_team = (my_owner < last.count / 2) ? 0 : 1;
+                    int my_team = (my_owner < last.world.count / 2) ? 0 : 1;
 
                     /* S170-173, founder: "add healing fountains to bot awareness
                        brain and heuristics ... bots seek out fountains when super
@@ -735,9 +775,9 @@ static void play_one_match(int game_port) {
                     if (!retreating_to_fountain) {
                         int best = -1;
                         float best_dist = 0;
-                        for (int i = 0; i < last.count; i++) {
+                        for (int i = 0; i < last.world.count; i++) {
                             if (!last.heroes[i].alive) continue;
-                            int team = (i < last.count / 2) ? 0 : 1;
+                            int team = (i < last.world.count / 2) ? 0 : 1;
                             if (team == my_team) continue;
                             float dx = last.heroes[i].x - mx, dz = last.heroes[i].z - mz;
                             float dist = dx * dx + dz * dz;
@@ -849,16 +889,16 @@ static void play_one_match(int game_port) {
                                anchor question collapses to "am I my own squad's lowest owner
                                index," no per-candidate node lookup needed anymore. */
                             int am_anchor = 1;
-                            for (int i = 0; i < last.count; i++) {
+                            for (int i = 0; i < last.world.count; i++) {
                                 if (i == my_owner || !last.heroes[i].alive) continue;
-                                int team_i = (i < last.count / 2) ? 0 : 1;
+                                int team_i = (i < last.world.count / 2) ? 0 : 1;
                                 if (team_i != my_team || (i % squad_count) != my_squad) continue;
                                 if (i < my_owner) { am_anchor = 0; break; }
                             }
                             if (am_anchor) {
-                                send_move(last.nodes[best_node].x, last.nodes[best_node].z);
+                                send_move(last.world.nodes[best_node].x, last.world.nodes[best_node].z);
                             } else {
-                                send_move(last.nodes[best_node].x + flock_dx, last.nodes[best_node].z + flock_dz);
+                                send_move(last.world.nodes[best_node].x + flock_dx, last.world.nodes[best_node].z + flock_dz);
                             }
                         } else if (best != -1) {
                             /* S170-90 fix, real bug found live: "all of the bots just bunch up on

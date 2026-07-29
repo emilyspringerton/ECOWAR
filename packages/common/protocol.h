@@ -22,6 +22,7 @@
 #define PACKET_ARENA_SHOP_BUY 11  /* client -> arena_server: buy an item by catalog index, S170-175 */
 #define PACKET_ARENA_SHOP_SELL 12 /* client -> arena_server: sell an equipped item by slot, S170-175 */
 #define PACKET_ARENA_BLINK 13     /* client -> arena_server: use Blink Dagger, S170-205 -- no payload, direction is derived server-side same as Unicorn's Q dash (toward move target, else nearest foe) */
+#define PACKET_ARENA_SNAPSHOT_HEROES 14 /* arena_server -> client: one ARENA_SNAPSHOT_HERO_CHUNK_SIZE-hero slice, S170-193 -- see ArenaSnapshotHeroesMsg's own doc comment */
 
 #define ARENA_PHASE_WAITING 0 /* fewer than 2 real players connected yet */
 #define ARENA_PHASE_DRAFT   1 /* both connected, waiting on hero picks */
@@ -371,18 +372,17 @@ typedef struct {
 // ARENA_MAX_LANE_CREEPS, same duplication reasoning as the others above.
 #define ARENA_SNAPSHOT_MAX_LANE_CREEPS 12
 
-// PACKET_ARENA_SNAPSHOT payload: up to ARENA_SNAPSHOT_MAX_HEROES hero
-// slots, in owner order -- `count` says how many are actually meaningful
-// (2 for a 1v1 match, up to 20 for a full 10v10 lobby), same "count +
-// fixed-size array" convention as NetEntity/entity_count elsewhere in this
-// protocol. Plus the match phase and each side's draft-pick status
-// (2026-07-24: draft phase added so players choose a hero instead of it
-// being hardcoded Unicorn-vs-Duck). During ARENA_PHASE_WAITING/DRAFT,
-// heroes[] content is not meaningful yet -- clients should render a
-// lobby/draft UI instead, driven by `phase` and `picked[]`.
+// PACKET_ARENA_SNAPSHOT payload (S170-193 split, see ArenaSnapshotHeroesMsg's
+// own doc comment below for the full story): the "world" half of a
+// broadcast tick -- match phase, draft-pick status, nodes, projectiles,
+// creeps, powerups, lane creeps, and the resource race. `count` says how
+// many hero slots are actually meaningful (2 for a 1v1 match, up to 20 for
+// a full 10v10 lobby) -- heroes[] itself no longer lives here; see
+// ArenaSnapshotHeroesMsg. During ARENA_PHASE_WAITING/DRAFT, hero state is
+// not meaningful yet -- clients should render a lobby/draft UI instead,
+// driven by `phase` and `picked[]`.
 typedef struct {
     uint8_t count;
-    ArenaHeroSnapshot heroes[ARENA_SNAPSHOT_MAX_HEROES];
     uint8_t winner; /* 0 = none yet, 1 = team/owner 0 won, 2 = team/owner 1 won */
     uint8_t phase;  /* ARENA_PHASE_WAITING/DRAFT/LIVE */
     uint8_t picked[ARENA_SNAPSHOT_MAX_HEROES]; /* 1 once that slot has locked in a hero this draft */
@@ -395,5 +395,50 @@ typedef struct {
     ArenaLaneCreepSnapshot lane_creeps[ARENA_SNAPSHOT_MAX_LANE_CREEPS];
     uint16_t resources[2]; /* S170-153: team resource race, capped at ARENA_RESOURCE_CAP */
 } ArenaSnapshotMsg;
+
+// PACKET_ARENA_SNAPSHOT_HEROES payload (S170-193, founder: split the
+// snapshot into multiple packets rather than accept fragmentation risk).
+// Found while sizing this file's own structs: with a full 20-hero lobby,
+// heroes[ARENA_SNAPSHOT_MAX_HEROES] alone was 1680 of ArenaSnapshotMsg's
+// total 2460 bytes -- comfortably over the typical 1500-byte Ethernet MTU
+// even before NetHeader/IP/UDP overhead. A UDP datagram larger than the
+// path MTU gets fragmented by IP, and losing any ONE fragment loses the
+// WHOLE datagram -- worse packet-loss behavior than staying under MTU. The
+// fix here is deliberately NOT "reassemble one logical message from
+// sequenced fragments" (that needs its own sequencing/buffering and adds
+// real latency waiting on the last piece) -- it's "send several genuinely
+// independent, individually-complete packets instead," so losing one only
+// ever costs that packet's own slice of state for one tick, not the whole
+// snapshot. heroes[] is split into ARENA_SNAPSHOT_HERO_CHUNKS
+// self-contained chunks of ARENA_SNAPSHOT_HERO_CHUNK_SIZE heroes each,
+// sent as this packet type once per chunk, every broadcast tick, on top of
+// the (now heroes-less, ~780-byte) ArenaSnapshotMsg above. total_count is
+// duplicated onto every chunk (not read from the ArenaSnapshotMsg) so a
+// chunk is fully self-describing and doesn't depend on packet arrival
+// order -- team-split math (`i < total_count / 2`) and the "which slots
+// are actually meaningful" bound both need it, and either chunk can
+// legitimately arrive before or after the world packet, or before or after
+// the OTHER chunk, on any given tick.
+#define ARENA_SNAPSHOT_HERO_CHUNK_SIZE 10
+#define ARENA_SNAPSHOT_HERO_CHUNKS (ARENA_SNAPSHOT_MAX_HEROES / ARENA_SNAPSHOT_HERO_CHUNK_SIZE) /* 2, with the current 20-hero roster cap */
+typedef struct {
+    uint8_t chunk_index;  /* 0..ARENA_SNAPSHOT_HERO_CHUNKS-1 -- which slice of heroes[] this is */
+    uint8_t total_count;  /* same value as ArenaSnapshotMsg.count -- duplicated so this chunk is self-contained */
+    ArenaHeroSnapshot heroes[ARENA_SNAPSHOT_HERO_CHUNK_SIZE]; /* owner slots [chunk_index*ARENA_SNAPSHOT_HERO_CHUNK_SIZE .. +SIZE) */
+} ArenaSnapshotHeroesMsg;
+
+// Shared receive-buffer sizing for every PACKET_ARENA_SNAPSHOT*-handling
+// socket in this codebase (apps/arena_server's send side doesn't need this,
+// but every recvfrom call sizing a fixed rbuf does) -- one source of truth
+// for "big enough for either snapshot packet type," same "size dynamically,
+// never a magic-number guess" discipline S170-192's own critical fixed-
+// buffer bug established. Whichever of the two message types is currently
+// larger wins; both are comfortably under a real MTU today (this whole
+// section exists because the OLD single combined message wasn't), but if a
+// future field addition ever pushes one of them back over that line, this
+// is the one place that needs the resulting redesign, not three
+// independently-drifting call sites.
+#define ARENA_SNAPSHOT_RECV_BUF_SIZE (sizeof(NetHeader) + \
+    (sizeof(ArenaSnapshotMsg) > sizeof(ArenaSnapshotHeroesMsg) ? sizeof(ArenaSnapshotMsg) : sizeof(ArenaSnapshotHeroesMsg)))
 
 #endif

@@ -494,14 +494,91 @@ static void net_poll_snapshots(uint32_t now_ms) {
        of the "frozen match" symptom reported earlier this session (a genuinely different,
        already-fixed live-pool binary mismatch was the other confirmed cause; this may have
        been compounding it, or affecting matches that got past that first issue). */
-    char rbuf[sizeof(NetHeader) + sizeof(ArenaSnapshotMsg)];
+    /* S170-193: sized for whichever of the two snapshot packet types is larger (see
+       ARENA_SNAPSHOT_RECV_BUF_SIZE's own doc comment in protocol.h) -- the world message and
+       each hero chunk arrive as independent packets now, not one combined message. */
+    char rbuf[ARENA_SNAPSHOT_RECV_BUF_SIZE];
     struct sockaddr_in sender;
     socklen_t slen = sizeof(sender);
     int len = recvfrom(net_sock, rbuf, sizeof(rbuf), 0, (struct sockaddr *)&sender, &slen);
     while (len > 0) {
-        if (len >= (int)(sizeof(NetHeader) + sizeof(ArenaSnapshotMsg))) {
+        if (len >= (int)sizeof(NetHeader)) {
             NetHeader *h = (NetHeader *)rbuf;
-            if (h->type == PACKET_ARENA_SNAPSHOT) {
+            if (h->type == PACKET_ARENA_SNAPSHOT_HEROES && len >= (int)(sizeof(NetHeader) + sizeof(ArenaSnapshotHeroesMsg))) {
+                /* S170-193: one ARENA_SNAPSHOT_HERO_CHUNK_SIZE-hero slice -- self-contained
+                   (total_count travels with the chunk itself), so this branch never depends on
+                   whether the world packet or the other chunk has arrived yet this tick. */
+                ArenaSnapshotHeroesMsg *chunk = (ArenaSnapshotHeroesMsg *)(rbuf + sizeof(NetHeader));
+                int base = chunk->chunk_index * ARENA_SNAPSHOT_HERO_CHUNK_SIZE;
+                for (int j = 0; j < ARENA_SNAPSHOT_HERO_CHUNK_SIZE; j++) {
+                    int i = base + j;
+                    if (i >= chunk->total_count || i >= ARENA_SNAPSHOT_MAX_HEROES) break;
+                    ArenaHero *dst = &arena_state.heroes[i];
+                    dst->x = chunk->heroes[j].x;
+                    dst->z = chunk->heroes[j].z;
+                    dst->hp = chunk->heroes[j].hp;
+                    dst->max_hp = chunk->heroes[j].max_hp;
+                    dst->alive = chunk->heroes[j].alive;
+                    dst->active = 1;
+                    dst->team = (i < chunk->total_count / 2) ? 0 : 1;
+                    dst->hero_id = (ArenaHeroID)chunk->heroes[j].hero_id;
+                    /* S170-137: ability-tile readiness needs real cooldown/mana state, not the
+                       zeroed default net_mode left them at forever (see the field's own doc
+                       comment in protocol.h). */
+                    dst->q_cooldown_ms = chunk->heroes[j].q_cooldown_ms;
+                    dst->w_cooldown_ms = chunk->heroes[j].w_cooldown_ms;
+                    dst->r_cooldown_ms = chunk->heroes[j].r_cooldown_ms;
+                    dst->mp = chunk->heroes[j].mp;
+                    dst->attack_target = chunk->heroes[j].attack_target; /* S170-162: synced for every hero so the lock reads clearly to any hero watching the fight */
+                    /* S170-175: Flow/XP economy + equipped items, for the character pane and stats page below. */
+                    dst->flow = chunk->heroes[j].flow;
+                    dst->flow_earned = chunk->heroes[j].flow_earned;
+                    dst->xp = chunk->heroes[j].xp;
+                    dst->kills = chunk->heroes[j].kills;
+                    dst->deaths = chunk->heroes[j].deaths;
+                    for (int s = 0; s < ARENA_SNAPSHOT_ITEM_SLOT_COUNT && s < ARENA_ITEM_SLOT_COUNT; s++) {
+                        dst->equipped_item[s] = chunk->heroes[j].equipped_item[s];
+                    }
+                    dst->w_active = chunk->heroes[j].w_active; /* S170-180 bugfix: was never synced, so the W tile's "active" highlight was always wrong in net_mode */
+                    /* S170-184 bugfix: status effects were never synced either -- the status
+                       label above the health bar (hero_status_label) has been silently
+                       non-functional in every net_mode match, same class of bug as w_active
+                       just above. */
+                    dst->silenced_ms = chunk->heroes[j].silenced_ms;
+                    dst->rooted_ms = chunk->heroes[j].rooted_ms;
+                    dst->intangible_ms = chunk->heroes[j].intangible_ms;
+                    dst->burning_ms = chunk->heroes[j].burning_ms;
+                    dst->survive_floor_ms = chunk->heroes[j].survive_floor_ms;
+                    dst->stunned_ms = chunk->heroes[j].stunned_ms;
+                    dst->slowed_ms = chunk->heroes[j].slowed_ms;
+                    dst->slow_pct = (float)chunk->heroes[j].slow_pct_x100 / 100.0f;
+                    dst->berserker_ms = chunk->heroes[j].berserker_ms; /* S170-190 */
+                    dst->regen_ms = chunk->heroes[j].regen_ms;
+                    dst->r_zone_x = chunk->heroes[j].r_zone_x; /* S170-200 */
+                    dst->r_zone_z = chunk->heroes[j].r_zone_z;
+                    dst->r_active_ms = chunk->heroes[j].r_active_ms;
+                    dst->casting_slot = chunk->heroes[j].casting_slot; /* S170-203 */
+                    dst->cast_time_remaining_ms = chunk->heroes[j].cast_time_remaining_ms;
+                    dst->cast_total_ms = chunk->heroes[j].cast_total_ms;
+                    dst->blink_cooldown_ms = chunk->heroes[j].blink_cooldown_ms; /* S170-205 */
+                    dst->donkey_glide_cooldown_ms = chunk->heroes[j].donkey_glide_cooldown_ms; /* S170-206 */
+                    if (chunk->heroes[j].cast_flash_slot > 0) {
+                        spawn_spell_flash(dst->x, dst->z, chunk->heroes[j].cast_flash_slot, dst->hero_id);
+                        trigger_squish(i);
+                        /* Hearing range (S170-92): a real 20-hero match can have several
+                           casts landing every second across the whole map -- unfiltered,
+                           that's noise, not legibility. Only sound cues for casts within a
+                           reasonable radius of the local player's own hero, same "you can
+                           hear nearby fights, not the whole battlefield" scoping real games
+                           use for audio falloff. */
+                        float adx = dst->x - arena_state.heroes[my_owner].x;
+                        float adz = dst->z - arena_state.heroes[my_owner].z;
+                        if (adx * adx + adz * adz <= ARENA_AUDIO_HEARING_RADIUS * ARENA_AUDIO_HEARING_RADIUS) {
+                            play_cast_tone(chunk->heroes[j].cast_flash_slot);
+                        }
+                    }
+                }
+            } else if (h->type == PACKET_ARENA_SNAPSHOT && len >= (int)(sizeof(NetHeader) + sizeof(ArenaSnapshotMsg))) {
                 ArenaSnapshotMsg *msg = (ArenaSnapshotMsg *)(rbuf + sizeof(NetHeader));
                 net_lobby_size = msg->count;
                 net_phase = msg->phase;
@@ -518,72 +595,6 @@ static void net_poll_snapshots(uint32_t now_ms) {
                    own convention is to scope an ask to what was actually asked rather than
                    inventing a timeout nobody requested -- flagged as a real, deliberate gap for
                    a future pass if AFK-in-draft turns out to matter in practice. */
-                for (int i = 0; i < msg->count && i < ARENA_SNAPSHOT_MAX_HEROES; i++) {
-                    ArenaHero *dst = &arena_state.heroes[i];
-                    dst->x = msg->heroes[i].x;
-                    dst->z = msg->heroes[i].z;
-                    dst->hp = msg->heroes[i].hp;
-                    dst->max_hp = msg->heroes[i].max_hp;
-                    dst->alive = msg->heroes[i].alive;
-                    dst->active = 1;
-                    dst->team = (i < msg->count / 2) ? 0 : 1;
-                    dst->hero_id = (ArenaHeroID)msg->heroes[i].hero_id;
-                    /* S170-137: ability-tile readiness needs real cooldown/mana state, not the
-                       zeroed default net_mode left them at forever (see the field's own doc
-                       comment in protocol.h). */
-                    dst->q_cooldown_ms = msg->heroes[i].q_cooldown_ms;
-                    dst->w_cooldown_ms = msg->heroes[i].w_cooldown_ms;
-                    dst->r_cooldown_ms = msg->heroes[i].r_cooldown_ms;
-                    dst->mp = msg->heroes[i].mp;
-                    dst->attack_target = msg->heroes[i].attack_target; /* S170-162: synced for every hero so the lock reads clearly to any hero watching the fight */
-                    /* S170-175: Flow/XP economy + equipped items, for the character pane and stats page below. */
-                    dst->flow = msg->heroes[i].flow;
-                    dst->flow_earned = msg->heroes[i].flow_earned;
-                    dst->xp = msg->heroes[i].xp;
-                    dst->kills = msg->heroes[i].kills;
-                    dst->deaths = msg->heroes[i].deaths;
-                    for (int s = 0; s < ARENA_SNAPSHOT_ITEM_SLOT_COUNT && s < ARENA_ITEM_SLOT_COUNT; s++) {
-                        dst->equipped_item[s] = msg->heroes[i].equipped_item[s];
-                    }
-                    dst->w_active = msg->heroes[i].w_active; /* S170-180 bugfix: was never synced, so the W tile's "active" highlight was always wrong in net_mode */
-                    /* S170-184 bugfix: status effects were never synced either -- the status
-                       label above the health bar (hero_status_label) has been silently
-                       non-functional in every net_mode match, same class of bug as w_active
-                       just above. */
-                    dst->silenced_ms = msg->heroes[i].silenced_ms;
-                    dst->rooted_ms = msg->heroes[i].rooted_ms;
-                    dst->intangible_ms = msg->heroes[i].intangible_ms;
-                    dst->burning_ms = msg->heroes[i].burning_ms;
-                    dst->survive_floor_ms = msg->heroes[i].survive_floor_ms;
-                    dst->stunned_ms = msg->heroes[i].stunned_ms;
-                    dst->slowed_ms = msg->heroes[i].slowed_ms;
-                    dst->slow_pct = (float)msg->heroes[i].slow_pct_x100 / 100.0f;
-                    dst->berserker_ms = msg->heroes[i].berserker_ms; /* S170-190 */
-                    dst->regen_ms = msg->heroes[i].regen_ms;
-                    dst->r_zone_x = msg->heroes[i].r_zone_x; /* S170-200 */
-                    dst->r_zone_z = msg->heroes[i].r_zone_z;
-                    dst->r_active_ms = msg->heroes[i].r_active_ms;
-                    dst->casting_slot = msg->heroes[i].casting_slot; /* S170-203 */
-                    dst->cast_time_remaining_ms = msg->heroes[i].cast_time_remaining_ms;
-                    dst->cast_total_ms = msg->heroes[i].cast_total_ms;
-                    dst->blink_cooldown_ms = msg->heroes[i].blink_cooldown_ms; /* S170-205 */
-                    dst->donkey_glide_cooldown_ms = msg->heroes[i].donkey_glide_cooldown_ms; /* S170-206 */
-                    if (msg->heroes[i].cast_flash_slot > 0) {
-                        spawn_spell_flash(dst->x, dst->z, msg->heroes[i].cast_flash_slot, dst->hero_id);
-                        trigger_squish(i);
-                        /* Hearing range (S170-92): a real 20-hero match can have several
-                           casts landing every second across the whole map -- unfiltered,
-                           that's noise, not legibility. Only sound cues for casts within a
-                           reasonable radius of the local player's own hero, same "you can
-                           hear nearby fights, not the whole battlefield" scoping real games
-                           use for audio falloff. */
-                        float adx = dst->x - arena_state.heroes[my_owner].x;
-                        float adz = dst->z - arena_state.heroes[my_owner].z;
-                        if (adx * adx + adz * adz <= ARENA_AUDIO_HEARING_RADIUS * ARENA_AUDIO_HEARING_RADIUS) {
-                            play_cast_tone(msg->heroes[i].cast_flash_slot);
-                        }
-                    }
-                }
                 arena_state.winner = msg->winner;
                 for (int i = 0; i < ARENA_SNAPSHOT_NODE_COUNT && i < ARENA_NODE_COUNT; i++) {
                     ArenaNode *dst = &arena_state.nodes[i];

@@ -314,61 +314,72 @@ static void server_net_init(int port) {
 }
 
 static void server_broadcast(void) {
+    /* S170-193: heroes[] now goes out as ARENA_SNAPSHOT_HERO_CHUNKS separate
+       PACKET_ARENA_SNAPSHOT_HEROES packets instead of living inside this
+       (now much smaller) world message -- see ArenaSnapshotHeroesMsg's own
+       doc comment in protocol.h for the full MTU-fragmentation story. */
     char buffer[sizeof(NetHeader) + sizeof(ArenaSnapshotMsg)];
     NetHeader head = {0};
     head.type = PACKET_ARENA_SNAPSHOT;
     head.timestamp = get_server_time();
 
+    ArenaSnapshotHeroesMsg chunks[ARENA_SNAPSHOT_HERO_CHUNKS] = {0};
+    for (int c = 0; c < ARENA_SNAPSHOT_HERO_CHUNKS; c++) {
+        chunks[c].chunk_index = (uint8_t)c;
+        chunks[c].total_count = (uint8_t)lobby_size;
+    }
+
     ArenaSnapshotMsg msg = {0};
     msg.count = (uint8_t)lobby_size;
     for (int i = 0; i < lobby_size; i++) {
         ArenaHero *h = &arena_state.heroes[i];
-        msg.heroes[i].x = h->x;
-        msg.heroes[i].z = h->z;
-        msg.heroes[i].hp = (uint16_t)(h->hp > 0 ? h->hp : 0);
-        msg.heroes[i].max_hp = (uint16_t)h->max_hp;
-        msg.heroes[i].alive = (uint8_t)h->alive;
-        msg.heroes[i].hero_id = (uint8_t)h->hero_id;
-        msg.heroes[i].cast_flash_slot = (uint8_t)h->cast_flash_slot;
+        ArenaHeroSnapshot *hs = &chunks[i / ARENA_SNAPSHOT_HERO_CHUNK_SIZE].heroes[i % ARENA_SNAPSHOT_HERO_CHUNK_SIZE];
+        hs->x = h->x;
+        hs->z = h->z;
+        hs->hp = (uint16_t)(h->hp > 0 ? h->hp : 0);
+        hs->max_hp = (uint16_t)h->max_hp;
+        hs->alive = (uint8_t)h->alive;
+        hs->hero_id = (uint8_t)h->hero_id;
+        hs->cast_flash_slot = (uint8_t)h->cast_flash_slot;
         /* S170-137: cooldown/mp can both dip transiently negative between
            ticks (see tick_hero_kit's own `-= dt_ms`, never clamped back to
            0 until the next `> 0` gate) -- clamp before the signed->unsigned
            narrowing, same convention as hp's own clamp just above. */
-        msg.heroes[i].q_cooldown_ms = (uint16_t)(h->q_cooldown_ms > 0 ? h->q_cooldown_ms : 0);
-        msg.heroes[i].w_cooldown_ms = (uint16_t)(h->w_cooldown_ms > 0 ? h->w_cooldown_ms : 0);
-        msg.heroes[i].r_cooldown_ms = (uint16_t)(h->r_cooldown_ms > 0 ? h->r_cooldown_ms : 0);
-        msg.heroes[i].mp = (uint8_t)(h->mp > 0 ? h->mp : 0);
-        msg.heroes[i].attack_target = (int8_t)h->attack_target; /* S170-162 */
-        msg.heroes[i].flow = (uint16_t)(h->flow > 0 ? h->flow : 0); /* S170-175 */
-        msg.heroes[i].flow_earned = (uint16_t)h->flow_earned;
-        msg.heroes[i].xp = (uint16_t)h->xp;
-        msg.heroes[i].kills = (uint8_t)h->kills;
-        msg.heroes[i].deaths = (uint8_t)h->deaths;
+        hs->q_cooldown_ms = (uint16_t)(h->q_cooldown_ms > 0 ? h->q_cooldown_ms : 0);
+        hs->w_cooldown_ms = (uint16_t)(h->w_cooldown_ms > 0 ? h->w_cooldown_ms : 0);
+        hs->r_cooldown_ms = (uint16_t)(h->r_cooldown_ms > 0 ? h->r_cooldown_ms : 0);
+        hs->mp = (uint8_t)(h->mp > 0 ? h->mp : 0);
+        hs->attack_target = (int8_t)h->attack_target; /* S170-162 */
+        hs->flow = (uint16_t)(h->flow > 0 ? h->flow : 0); /* S170-175 */
+        hs->flow_earned = (uint16_t)h->flow_earned;
+        hs->xp = (uint16_t)h->xp;
+        hs->kills = (uint8_t)h->kills;
+        hs->deaths = (uint8_t)h->deaths;
         for (int s = 0; s < ARENA_SNAPSHOT_ITEM_SLOT_COUNT; s++) {
-            msg.heroes[i].equipped_item[s] = (int8_t)h->equipped_item[s];
+            hs->equipped_item[s] = (int8_t)h->equipped_item[s];
         }
-        msg.heroes[i].w_active = (uint8_t)h->w_active; /* S170-180 bugfix */
+        hs->w_active = (uint8_t)h->w_active; /* S170-180 bugfix */
         /* S170-184 bugfix: status effects were never synced at all, see ArenaHeroSnapshot's
            own doc comment. Clamp before the signed->unsigned narrowing, same convention as
            cooldowns' own clamp above (these can dip transiently negative between ticks too). */
-        msg.heroes[i].silenced_ms = (uint16_t)(h->silenced_ms > 0 ? h->silenced_ms : 0);
-        msg.heroes[i].rooted_ms = (uint16_t)(h->rooted_ms > 0 ? h->rooted_ms : 0);
-        msg.heroes[i].intangible_ms = (uint16_t)(h->intangible_ms > 0 ? h->intangible_ms : 0);
-        msg.heroes[i].burning_ms = (uint16_t)(h->burning_ms > 0 ? h->burning_ms : 0);
-        msg.heroes[i].survive_floor_ms = (uint16_t)(h->survive_floor_ms > 0 ? h->survive_floor_ms : 0);
-        msg.heroes[i].stunned_ms = (uint16_t)(h->stunned_ms > 0 ? h->stunned_ms : 0);
-        msg.heroes[i].slowed_ms = (uint16_t)(h->slowed_ms > 0 ? h->slowed_ms : 0);
-        msg.heroes[i].slow_pct_x100 = (uint8_t)(h->slow_pct * 100.0f);
-        msg.heroes[i].berserker_ms = (uint16_t)(h->berserker_ms > 0 ? h->berserker_ms : 0); /* S170-190 */
-        msg.heroes[i].regen_ms = (uint16_t)(h->regen_ms > 0 ? h->regen_ms : 0);
-        msg.heroes[i].r_zone_x = h->r_zone_x; /* S170-200 */
-        msg.heroes[i].r_zone_z = h->r_zone_z;
-        msg.heroes[i].r_active_ms = (uint16_t)(h->r_active_ms > 0 ? h->r_active_ms : 0);
-        msg.heroes[i].casting_slot = (uint8_t)h->casting_slot; /* S170-203 */
-        msg.heroes[i].cast_time_remaining_ms = (uint16_t)(h->cast_time_remaining_ms > 0 ? h->cast_time_remaining_ms : 0);
-        msg.heroes[i].cast_total_ms = (uint16_t)(h->cast_total_ms > 0 ? h->cast_total_ms : 0);
-        msg.heroes[i].blink_cooldown_ms = (uint16_t)(h->blink_cooldown_ms > 0 ? h->blink_cooldown_ms : 0); /* S170-205 */
-        msg.heroes[i].donkey_glide_cooldown_ms = (uint16_t)(h->donkey_glide_cooldown_ms > 0 ? h->donkey_glide_cooldown_ms : 0); /* S170-206 */
+        hs->silenced_ms = (uint16_t)(h->silenced_ms > 0 ? h->silenced_ms : 0);
+        hs->rooted_ms = (uint16_t)(h->rooted_ms > 0 ? h->rooted_ms : 0);
+        hs->intangible_ms = (uint16_t)(h->intangible_ms > 0 ? h->intangible_ms : 0);
+        hs->burning_ms = (uint16_t)(h->burning_ms > 0 ? h->burning_ms : 0);
+        hs->survive_floor_ms = (uint16_t)(h->survive_floor_ms > 0 ? h->survive_floor_ms : 0);
+        hs->stunned_ms = (uint16_t)(h->stunned_ms > 0 ? h->stunned_ms : 0);
+        hs->slowed_ms = (uint16_t)(h->slowed_ms > 0 ? h->slowed_ms : 0);
+        hs->slow_pct_x100 = (uint8_t)(h->slow_pct * 100.0f);
+        hs->berserker_ms = (uint16_t)(h->berserker_ms > 0 ? h->berserker_ms : 0); /* S170-190 */
+        hs->regen_ms = (uint16_t)(h->regen_ms > 0 ? h->regen_ms : 0);
+        hs->r_zone_x = h->r_zone_x; /* S170-200 */
+        hs->r_zone_z = h->r_zone_z;
+        hs->r_active_ms = (uint16_t)(h->r_active_ms > 0 ? h->r_active_ms : 0);
+        hs->casting_slot = (uint8_t)h->casting_slot; /* S170-203 */
+        hs->cast_time_remaining_ms = (uint16_t)(h->cast_time_remaining_ms > 0 ? h->cast_time_remaining_ms : 0);
+        hs->cast_total_ms = (uint16_t)(h->cast_total_ms > 0 ? h->cast_total_ms : 0);
+        hs->blink_cooldown_ms = (uint16_t)(h->blink_cooldown_ms > 0 ? h->blink_cooldown_ms : 0); /* S170-205 */
+        hs->donkey_glide_cooldown_ms = (uint16_t)(h->donkey_glide_cooldown_ms > 0 ? h->donkey_glide_cooldown_ms : 0); /* S170-206 */
         msg.picked[i] = (uint8_t)hero_picked[i];
     }
     msg.winner = (uint8_t)arena_state.winner;
@@ -433,9 +444,22 @@ static void server_broadcast(void) {
     memcpy(buffer, &head, sizeof(NetHeader));
     memcpy(buffer + sizeof(NetHeader), &msg, sizeof(ArenaSnapshotMsg));
 
+    /* S170-193: each hero chunk goes out as its own independent packet, same NetHeader
+       framing as the world message above but its own (smaller) buffer/type -- three sends
+       per client per broadcast tick now instead of one, each individually well under a real
+       MTU. */
+    char hero_buffer[sizeof(NetHeader) + sizeof(ArenaSnapshotHeroesMsg)];
+    NetHeader hero_head = {0};
+    hero_head.type = PACKET_ARENA_SNAPSHOT_HEROES;
+    hero_head.timestamp = head.timestamp;
+    memcpy(hero_buffer, &hero_head, sizeof(NetHeader));
+
     for (int i = 0; i < lobby_size; i++) {
-        if (client_active[i]) {
-            sendto(sock, buffer, sizeof(buffer), 0, (struct sockaddr *)&clients[i], sizeof(struct sockaddr_in));
+        if (!client_active[i]) continue;
+        sendto(sock, buffer, sizeof(buffer), 0, (struct sockaddr *)&clients[i], sizeof(struct sockaddr_in));
+        for (int c = 0; c < ARENA_SNAPSHOT_HERO_CHUNKS; c++) {
+            memcpy(hero_buffer + sizeof(NetHeader), &chunks[c], sizeof(ArenaSnapshotHeroesMsg));
+            sendto(sock, hero_buffer, sizeof(hero_buffer), 0, (struct sockaddr *)&clients[i], sizeof(struct sockaddr_in));
         }
     }
 
