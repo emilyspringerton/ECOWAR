@@ -2,6 +2,21 @@
 
 ## 2026-07-29
 
+- feat(arena): embed trained bot AI weights into C + auto git-sync from Colab (S170-220,
+  S170-221). Founder: "we want to embed the weights right into the c code... we can do it all
+  with colab scripts running python to do it all / i will put the keys in MyDrive/.ssh."
+  `packages/common/gpt2_infer.c`/`.h` is a verbatim port of the sibling gpt2-alpine-c repo's own
+  C GPT-2 inference engine (fully parameterized, same file serves both repos' very different
+  model sizes). `scripts/colab_train.py` now trains a small custom GPT2Config from scratch (4
+  layers/128 dim/4 heads by default, not a fine-tune of public GPT-2-small, which at ~497MB is
+  too large to commit every run and too slow for real-time inference), exports to the flat
+  binary format that engine loads, and -- if an SSH key is present at
+  `MyDrive/.ssh/id_ed25519` -- commits and pushes it straight to `origin/main` as
+  `weights/redgarden-arena-bot.bin`. Verified end to end locally: a real exported tiny model
+  loaded cleanly through the real C loader and produced finite logits on a real forward pass.
+  5 new headless smoke tests, full suite green. Not done: wiring inference into the live bot AI
+  decision loop -- flagged honestly, not faked.
+
 - docs(arena): Colab training workflow instructions in README (S170-219). Founder: "put
   instructions in the readme for that i assume i upload the repo to drive and then what."
   Corrected that assumption -- the notebook clones REDGARDEN from GitHub inside Colab, no repo
