@@ -2,6 +2,19 @@
 
 ## 2026-07-29
 
+- fix(arena): S170-227 export bug -- exact-integer weights produced invalid C literals. Founder:
+  "can we run the unsupervised stuff here" -> "reinforcement" -- installed `gymnasium` +
+  `stable-baselines3` and ran the full RL pipeline for real for the first time, closing every
+  "not independently verified" gap the S170-225/226/227 doc comments had flagged. A real
+  4000-timestep PPO smoke run trained cleanly against `ArenaTrainingEnv` with real checkpointing
+  and evaluation. Exporting that real trained model surfaced a genuine bug
+  `write_c_header_from_layers` never hit against its earlier hand-built synthetic test network:
+  `f"{v:.8g}f"` produces invalid C literals like `0f` for exactly-integer weight values (a real
+  trained model's own untrained biases genuinely include exact zeros). Fixed with a `fmt_float()`
+  helper; re-verified end to end against the real model -- PyTorch and the compiled C header now
+  match to float32 precision. Added a `--self-test` flag covering this exact edge case going
+  forward. Full test suite green.
+
 - feat(arena): S170-227, weight export to embedded C MLP + git-sync. NORTHSTAR §21's sprint,
   fourth and final item -- closes out the full reward-driven RL pipeline. New
   `packages/common/mlp_infer.c`/`.h`: a small, generic, dependency-free dense-MLP forward pass
