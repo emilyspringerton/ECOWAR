@@ -2041,6 +2041,7 @@ static void test_team_creep_march_redirects_when_target_node_gets_captured(void)
 static void test_creep_attacks_nearby_hero(void) {
     arena_init_teams();
     for (int i = 1; i < ARENA_MAX_HEROES; i++) arena_state.heroes[i].active = 0;
+    arena_state.heroes[0].hero_id = ARENA_HERO_DUCK; /* 0 base armor -- exact hit-damage math (S170-211) */
     arena_state.heroes[0].x = arena_state.nodes[0].x;
     arena_state.heroes[0].z = arena_state.nodes[0].z;
     arena_state.heroes[0].hp = arena_state.heroes[0].max_hp = 100;
@@ -5247,6 +5248,7 @@ static void test_team_creep_still_attacks_opposing_team(void) {
     for (int i = 1; i < ARENA_MAX_HEROES; i++) arena_state.heroes[i].active = 0;
     for (int n = 0; n < ARENA_NODE_COUNT; n++) arena_state.nodes[n].owner = 1; /* team 0 owns everything -- creep has nowhere to march */
     arena_state.heroes[0].team = 1; /* the enemy, trying to flip it */
+    arena_state.heroes[0].hero_id = ARENA_HERO_DUCK; /* 0 base armor -- exact hit-damage math (S170-211) */
     float gx, gz;
     arena_graveyard_position(0, &gx, &gz);
     arena_state.heroes[0].x = gx;
@@ -5275,6 +5277,7 @@ static void test_neutral_creep_still_attacks_anyone(void) {
     for (int i = 1; i < ARENA_MAX_HEROES; i++) arena_state.heroes[i].active = 0;
     arena_state.nodes[0].owner = 0; /* neutral/contested -- creep flavor stays NEUTRAL */
     arena_state.heroes[0].team = 0;
+    arena_state.heroes[0].hero_id = ARENA_HERO_DUCK; /* 0 base armor -- exact hit-damage math (S170-211) */
     arena_state.heroes[0].x = arena_state.nodes[0].x;
     arena_state.heroes[0].z = arena_state.nodes[0].z;
     arena_state.heroes[0].hp = arena_state.heroes[0].max_hp = 100;

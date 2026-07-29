@@ -2,6 +2,17 @@
 
 ## 2026-07-29
 
+- feat(arena): S170-211, node-guardian ("jungle") creep damage now routes through `apply_armor`.
+  NORTHSTAR §20.3's first bullet, first item of the creep-overhaul batch resumed after the
+  founder lifted the code freeze. These creeps previously dealt flat, unmitigated damage via a
+  raw `apply_damage` call -- the one outlier among hero-vs-hero damage sources, all of which
+  already go through `apply_armor(raw, arena_hero_armor(target))`. Same one-line fix shape as
+  every other call site in the file. 3 existing tests asserted exact flat-damage numbers against
+  the default Unicorn hero (4 armor); updated to set the target hero to Duck (0 base armor) first
+  -- the same "exact hit-damage math" idiom `test_melee_windup_completes_and_deals_damage` already
+  uses -- rather than hand-computing new armor-adjusted magic numbers. Full test suite +
+  test_10_bots.sh green.
+
 - fix(arena): S170-228 follow-up -- CI's Linux build was broken by the RL-policy wiring.
   Founder: "the build is down when we wired the new ai brain in" -> "its an issue with the
   linux bbuild." `scripts/build.sh` and `scripts/build_training.sh` had already picked up the

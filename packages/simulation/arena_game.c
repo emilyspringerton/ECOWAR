@@ -1739,7 +1739,10 @@ void arena_tick_creeps(unsigned int dt_ms) {
             if (!target || dist < best_dist) { target = cand; best_dist = dist; }
         }
         if (target && creep->attack_cooldown_ms <= 0) {
-            apply_damage(target, (creep->flavor == ARENA_CREEP_NEUTRAL) ? ARENA_CREEP_NEUTRAL_DAMAGE : ARENA_CREEP_TEAM_DAMAGE);
+            /* S170-211: route through apply_armor like every hero-vs-hero damage source --
+               node-guardian creeps used to deal flat, unmitigated damage, the one outlier
+               NORTHSTAR §20.3 named as a likely real contributor to "too strong." */
+            apply_damage(target, apply_armor((creep->flavor == ARENA_CREEP_NEUTRAL) ? ARENA_CREEP_NEUTRAL_DAMAGE : ARENA_CREEP_TEAM_DAMAGE, arena_hero_armor(target)));
             creep->attack_cooldown_ms = ARENA_CREEP_ATTACK_COOLDOWN_MS;
         }
 
