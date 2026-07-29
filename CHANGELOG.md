@@ -2,6 +2,21 @@
 
 ## 2026-07-29
 
+- fix(arena): split PACKET_ARENA_SNAPSHOT into world + hero-chunk packets (S170-193). Founder
+  decision on the flagged MTU risk: split rather than accept fragmentation or trim the payload.
+  `ArenaSnapshotMsg` had grown to 2460 bytes (heroes[20] alone was 1680 of that) -- comfortably
+  over the typical 1500-byte Ethernet MTU, where a UDP datagram that size gets IP-fragmented and
+  losing any ONE fragment loses the WHOLE datagram. heroes[] now goes out as 2 self-contained
+  `PACKET_ARENA_SNAPSHOT_HEROES` packets (10 heroes each, each carrying its own `total_count` so
+  it never depends on arrival order) instead of living inside the world message -- new sizes
+  ~788/~856 bytes, both with real headroom under MTU. Touches all three consumers (server,
+  human client, bot); the bot's own receive-loop restructure also fixed a related latent bug
+  (prev/cur used to swap on every individual packet rather than once per drained batch, subtly
+  corrupting flock velocity inference if the bot's loop ever fell behind). Live-verified on
+  isolated ports: a 1v1 match played to a real winner with real HP changes, and a 12-hero match
+  confirmed both hero chunks (including owner slots 10/11, the second chunk) deliver real data.
+  Full sim test suite green.
+
 - docs(arena): NORTHSTAR §20, full creep overhaul -- LoL parity spec first (S170-209). Founder:
   "full creep overhaul lol parity northstar doc first currently creeps are spooky too strong and
   hard to reason about." Pins down League's real minion-wave model (melee/caster/siege roles,
