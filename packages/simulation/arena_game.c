@@ -1,6 +1,7 @@
 #include "arena_game.h"
 #include <math.h>
 #include <string.h>
+#include "../common/rl_policy_weights.h"
 
 ArenaState arena_state;
 int arena_bot_enabled = 1;
@@ -132,17 +133,20 @@ static void arena_creeps_reset(void) {
     }
 }
 
-/* ---- Tiny hand-authored feed-forward "brain" for the bot hero ----
+/* ---- Tiny hand-authored feed-forward "brain" (kept for training, see below) ----
  * Same shape as SHANKPIT's bot brain (packages/simulation/neural_net.h,
  * dense_layer(): out = activation(W*in + b)) rather than a copy of it --
  * SHANKPIT's net is trained (PyTorch-exported weights in brain_weights.h)
  * against FPS-specific inputs (yaw/pitch/strafe/shoot) that don't exist in
  * this top-down click-to-move arena. This is the same forward-pass
  * mechanism (dense layer -> ReLU -> dense layer -> Tanh) re-sized for this
- * game's inputs/outputs, with hand-picked (not trained) weights -- there's
- * no training pipeline wired up here yet. Real training data/pipeline is a
- * fast-follow; this is the honest "or equivalent" for tonight.
- */
+ * game's inputs/outputs, with hand-picked (not trained) weights.
+ *
+ * S170-228: no longer what the LIVE game's own arena_bot_tick uses for real
+ * solo-practice play (see arena_bot_tick_rl_move below, and
+ * arena_bot_tick_heuristic's own doc comment further down for exactly why
+ * this stays real, callable code instead of being deleted once the trained
+ * policy took over the live path). */
 static float dense_relu(const float *in, const float *w, const float *b, int i, int in_size) {
     float sum = b[i];
     for (int j = 0; j < in_size; j++) sum += in[j] * w[i * in_size + j];
@@ -181,6 +185,82 @@ static void bot_brain_forward(const float in[4], float out[2]) {
         for (int j = 0; j < 6; j++) sum += h[j] * w2[i * 6 + j];
         out[i] = tanhf(sum);
     }
+}
+
+/* ---- Trained reinforcement-learning "brain" for the bot hero's movement ----
+ * S170-228 (founder: "let it train longer then dump the weights into c and
+ * commit" -> "update our bots to use it instead of the hand written net"):
+ * replaces the old bot_brain_forward -- a tiny feed-forward net with
+ * HAND-PICKED (never trained) weights, explicitly flagged in its own doc
+ * comment as "the honest 'or equivalent' for tonight... real training
+ * pipeline is a fast-follow" back when it was written. NORTHSTAR §21's own
+ * reward-driven RL pipeline (S170-223..227) is that fast-follow: a real PPO
+ * policy trained against exactly this 1v1 local-demo setup (scripts/
+ * rl_train.py, ArenaTrainingEnv), exported by scripts/export_rl_policy_to_c.py
+ * into packages/common/rl_policy_weights.h's own rl_policy_forward() --
+ * genuinely learned weights, not hand-picked ones, run through the same
+ * generic packages/common/mlp_infer.c engine SHANKPIT's own precedent uses
+ * for its (also trained) bot brain.
+ *
+ * Deliberately scoped to MOVEMENT only, same "which specific piece is 'the
+ * net'" reading the founder's own phrasing ("the hand written net," not "the
+ * hand written heuristic") implies -- bot_cast_kit_if_ready below (the
+ * per-hero Q/W/R ability-casting logic, an if/else heuristic, never called a
+ * "net" anywhere in this codebase) is untouched: it's hero-aware across the
+ * full ~27-hero roster, while this trained policy only ever saw one specific
+ * hero pairing (rl_train.py's own --hero0-id/--hero1-id, Unicorn vs Duck by
+ * default) during training -- swapping it in for casting too would be a real
+ * behavior regression for every other hero, not requested and not done here.
+ *
+ * The policy's own action space is [move_x, move_z, cast_q, cast_w, cast_r]
+ * (scripts/rl_env.py's own ArenaTrainingEnv) -- only indices 0/1 are read
+ * here; the cast_* outputs are computed by the forward pass but intentionally
+ * ignored, for the same reason. */
+static void arena_bot_tick_rl_move(ArenaHero *bot, ArenaHero *foe) {
+    /* Mirror correction: training (scripts/rl_train.py's own default
+       --hero0-id/--hero1-id) always put the LEARNING side (the Agent, whose
+       actions get optimized) at owner 0, which arena_init_with_heroes spawns
+       at x=-6 -- the opposing heuristic-AI side was always owner 1, at
+       x=+6, for every single training episode, never randomized to the
+       other side. This live call site controls owner 1 (the "bot" in the
+       1v1 local demo, always the +6 side) -- feeding it raw, unmirrored
+       coordinates would show the policy an x-position range it never once
+       saw for "self" during training. Negating x before building the
+       observation (and negating action[0] back on the way out) makes owner
+       1 look, from the policy's own point of view, exactly like the -6-side
+       Agent it actually trained as -- z is untouched, since training never
+       had a z-axis asymmetry to begin with (both heroes could occupy any z
+       freely). Same 18-float layout apps/arena_training/src/headless.c's
+       own sim_get_obs() documents and scripts/rl_env.py's own OBS_*
+       constants mirror otherwise -- self first, then foe, then dx/dz. */
+    float obs[RL_POLICY_OBS_SIZE];
+    obs[0]  = (float)bot->hp;
+    obs[1]  = (float)bot->max_hp;
+    obs[2]  = (float)bot->mp;
+    obs[3]  = -bot->x;
+    obs[4]  = bot->z;
+    obs[5]  = (float)(bot->q_cooldown_ms > 0 ? bot->q_cooldown_ms : 0);
+    obs[6]  = (float)(bot->w_cooldown_ms > 0 ? bot->w_cooldown_ms : 0);
+    obs[7]  = (float)(bot->r_cooldown_ms > 0 ? bot->r_cooldown_ms : 0);
+    obs[8]  = (float)(bot->flow > 0 ? bot->flow : 0);
+    obs[9]  = (float)bot->xp;
+    obs[10] = bot->alive ? 1.0f : 0.0f;
+    obs[11] = (float)(foe->hp > 0 ? foe->hp : 0);
+    obs[12] = (float)foe->max_hp;
+    obs[13] = -foe->x;
+    obs[14] = foe->z;
+    obs[15] = foe->alive ? 1.0f : 0.0f;
+    obs[16] = (-foe->x) - (-bot->x);
+    obs[17] = foe->z - bot->z;
+
+    float action[RL_POLICY_ACTION_SIZE];
+    rl_policy_forward(obs, action);
+
+    /* action[0]/action[1] are absolute world coordinates in the policy's own
+       (mirrored) -6-side frame, already clipped to +-RL_POLICY_MOVE_TARGET_RANGE
+       by rl_policy_forward itself -- un-mirror action[0] back to owner 1's
+       real +6-side frame before applying it. z needs no such correction. */
+    arena_set_move_target(bot->owner, -action[0], action[1]);
 }
 
 /* S170-119: Arathi Basin-style 5-node spread -- two flanking nodes near each
@@ -407,6 +487,27 @@ void arena_apply_slow(int owner, int duration_ms, float pct) {
 }
 
 void arena_bot_tick(unsigned int dt_ms) {
+    (void)dt_ms;
+    ArenaHero *bot = &arena_state.heroes[1];
+    ArenaHero *foe = &arena_state.heroes[0];
+    if (!bot->alive || !foe->alive) return;
+
+    arena_bot_tick_rl_move(bot, foe);
+}
+
+/* arena_bot_tick_heuristic (S170-228): the ORIGINAL hand-picked-weight movement logic
+ * arena_bot_tick itself used before this pass -- kept, not deleted, specifically because
+ * apps/arena_training/src/headless.c's own training harness needs a STABLE, never-changing
+ * opponent to train against. If the training environment's own "opponent" (owner 1) were
+ * driven by arena_bot_tick's now-RL-policy-based movement instead, re-training would mean
+ * training against a copy of some EARLIER version of the very policy being trained -- circular,
+ * and completely broken on the very first training run, when no rl_policy_weights.h has been
+ * exported yet at all. headless.c explicitly disables arena_bot_enabled and calls this function
+ * (plus bot_cast_kit_if_ready, also kept callable from outside this file for the same reason)
+ * directly for owner 1 instead of going through arena_update's own automatic bot-tick, so
+ * training's own opponent never depends on whatever happens to currently be compiled into
+ * rl_policy_weights.h. */
+void arena_bot_tick_heuristic(unsigned int dt_ms) {
     (void)dt_ms;
     ArenaHero *bot = &arena_state.heroes[1];
     ArenaHero *foe = &arena_state.heroes[0];
@@ -4155,8 +4256,15 @@ static void tick_hero_kit(ArenaHero *h, ArenaHero *foe, ArenaHero *ally, unsigne
  * playing -- cast Q (then R, once available) whenever off cooldown and the
  * foe is within that ability's range. Not a real decision-making bot brain
  * (that's Phase E's problem, GAME_AI_NORTHSTAR.md), just enough to prove
- * the bot side can actually use a kit at all (Phase D's "both sides"). */
-static void bot_cast_kit_if_ready(ArenaHero *bot, ArenaHero *foe) {
+ * the bot side can actually use a kit at all (Phase D's "both sides").
+ *
+ * S170-228: made non-static (declared in arena_game.h) so
+ * apps/arena_training/src/headless.c can call it directly for owner 1's own
+ * casting during training -- see arena_bot_tick_heuristic's own doc comment
+ * for why training needs this and arena_bot_tick_heuristic to be stable,
+ * callable independent of arena_update's own automatic (now RL-driven)
+ * bot-tick path. */
+void bot_cast_kit_if_ready(ArenaHero *bot, ArenaHero *foe) {
     if (!bot->alive || !foe->alive) return;
     float dx = foe->x - bot->x, dz = foe->z - bot->z;
     float dist = sqrtf(dx * dx + dz * dz);

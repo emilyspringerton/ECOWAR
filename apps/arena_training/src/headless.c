@@ -19,11 +19,16 @@
  * deltas itself between consecutive sim_get_obs() calls.
  *
  * Controls hero 0 ("the Agent," matching SHANKPIT's own Player-0-is-the-Agent framing) via
- * sim_step's own action parameters. Hero 1 needs no separate opponent-AI code at all --
- * arena_bot_enabled (already 1 by default) drives it through the SAME hand-authored heuristic
- * bot AI (bot_cast_kit_if_ready/arena_bot_tick) apps/arena's own local demo already uses to play
- * against a human -- "practice against what already exists," same reasoning SHANKPIT's own
- * headless.c already established. */
+ * sim_step's own action parameters. Hero 1 (the training opponent) is driven directly by
+ * arena_bot_tick_heuristic()/bot_cast_kit_if_ready() -- NOT arena_update's own automatic
+ * arena_bot_enabled-gated bot-tick, which as of S170-228 routes arena_bot_tick() itself through
+ * whatever policy is currently compiled into packages/common/rl_policy_weights.h. Training needs
+ * a STABLE, never-changing opponent: if hero 1 were driven by the same policy currently being
+ * trained (or a stale earlier export of it), re-training would mean training against a moving
+ * target of itself -- circular, and completely broken on the very first run, before any
+ * rl_policy_weights.h has ever been exported. sim_init() disables arena_bot_enabled for exactly
+ * this reason; sim_step() calls the stable heuristic functions directly, in hero 1's own place,
+ * before arena_update() runs. */
 
 #include "../../../packages/simulation/arena_game.h"
 
@@ -52,6 +57,12 @@
 
 void sim_init(int hero0_id, int hero1_id) {
     arena_init_with_heroes((ArenaHeroID)hero0_id, (ArenaHeroID)hero1_id);
+    /* S170-228: see this file's own module doc comment -- training drives hero 1 (the
+       opponent) directly via arena_bot_tick_heuristic()/bot_cast_kit_if_ready() in sim_step
+       below, not arena_update's own automatic bot-tick, so disabling this here prevents
+       arena_update from ALSO independently ticking hero 1 a second time through whatever
+       arena_bot_tick() itself currently does. */
+    arena_bot_enabled = 0;
 }
 
 /* sim_reset: identical to sim_init -- a distinct name so the Python env's own reset() call reads
@@ -59,20 +70,27 @@ void sim_init(int hero0_id, int hero1_id) {
  * though today they're the same operation. */
 void sim_reset(int hero0_id, int hero1_id) {
     arena_init_with_heroes((ArenaHeroID)hero0_id, (ArenaHeroID)hero1_id);
+    arena_bot_enabled = 0; /* see sim_init's own comment */
 }
 
-/* sim_step: applies the Agent's (hero 0's) action, then ticks the sim forward dt_ms. move_x/
- * move_z set a new move target every call (arena_set_move_target itself is idempotent/safe to
- * call every tick, same as a human repeatedly re-clicking) -- cast_q/cast_w/cast_r are edge-
- * triggered by the CALLER (Python), not debounced here: calling arena_cast_q every tick while
- * cast_q stays 1 would just repeatedly hit its own cooldown gate and no-op, which is safe but
- * wasteful; the Python env is expected to only pass 1 the single tick it wants to actually
- * attempt that cast, matching how a real discrete action space works. */
+/* sim_step: applies the Agent's (hero 0's) action, drives hero 1 (the training opponent) with
+ * the STABLE heuristic AI directly (see this file's own module doc comment for why it can't go
+ * through arena_update's own automatic, now-RL-driven bot-tick path), then ticks the sim forward
+ * dt_ms. move_x/move_z set a new move target every call (arena_set_move_target itself is
+ * idempotent/safe to call every tick, same as a human repeatedly re-clicking) -- cast_q/cast_w/
+ * cast_r are edge-triggered by the CALLER (Python), not debounced here: calling arena_cast_q
+ * every tick while cast_q stays 1 would just repeatedly hit its own cooldown gate and no-op,
+ * which is safe but wasteful; the Python env is expected to only pass 1 the single tick it wants
+ * to actually attempt that cast, matching how a real discrete action space works. */
 void sim_step(float move_x, float move_z, int cast_q, int cast_w, int cast_r, unsigned int dt_ms) {
     arena_set_move_target(0, move_x, move_z);
     if (cast_q) arena_cast_q(0);
     if (cast_w) arena_toggle_w(0);
     if (cast_r) arena_cast_r(0);
+
+    arena_bot_tick_heuristic(dt_ms);
+    bot_cast_kit_if_ready(&arena_state.heroes[1], &arena_state.heroes[0]);
+
     arena_update(dt_ms);
 }
 

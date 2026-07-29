@@ -26,10 +26,17 @@ static ArenaProjectile *find_active_projectile(void) {
 
 static void test_movement_reaches_target(void) {
     arena_init();
+    /* S170-228: arena_bot_tick's own movement now comes from a trained RL policy (see
+       packages/common/rl_policy_weights.h), not the old fixed hand-picked net -- a learned
+       policy closing distance aggressively enough to trigger combat before hero 0 reaches a
+       short target is a real, expected behavior change, not a bug in either the trained policy
+       or hero 0's own move-target logic this test actually exists to check. Disabled/restored
+       the same way test_arena_bot_enabled_gates_kit_casts_too below already does, so this test
+       goes back to checking exactly what its own name says -- movement targeting -- independent
+       of whatever the bot AI currently does. */
+    arena_bot_enabled = 0;
     /* Hero0 starts at (-6,0); target is close (~4.2 units away, ~1s at
-       ARENA_HERO_SPEED) so it arrives long before the bot (12 units away,
-       chasing at the same speed) can close the gap into melee range and
-       end the match early. Deliberately does NOT touch the bot's HP/alive
+       ARENA_HERO_SPEED). Deliberately does NOT touch the bot's HP/alive
        state -- killing it mid-test would trigger the win condition and
        freeze arena_update() (it returns immediately once winner != 0),
        which is exactly the bug this test caught on the first pass. */
@@ -44,6 +51,7 @@ static void test_movement_reaches_target(void) {
     float dist = sqrtf(dx * dx + dz * dz);
     CHECK(dist < 0.1f, "hero reaches its move target");
     CHECK(arena_state.winner == 0, "match still in progress -- combat didn't interrupt a short move");
+    arena_bot_enabled = 1; /* restore the default for any test run after this one */
 }
 
 static void test_bounds_clamped(void) {
@@ -135,6 +143,12 @@ static void test_unicorn_q_respects_cooldown(void) {
 
 static void test_unicorn_w_regen_toggle(void) {
     arena_init();
+    /* S170-228: this test is about the W regen mechanic in isolation, not bot-vs-bot combat
+       outcome -- disabled the same way test_movement_reaches_target above now does, since a
+       full 1000ms tick is plenty of time for the trained-RL-driven bot to close distance and
+       land real damage, which would otherwise mask (or outright reverse) the regen this test
+       actually checks. */
+    arena_bot_enabled = 0;
     ArenaHero *h = &arena_state.heroes[0];
     h->hp = 50; /* below max so regen has room to matter */
     arena_toggle_w(0);
@@ -143,6 +157,7 @@ static void test_unicorn_w_regen_toggle(void) {
     CHECK(h->hp > 50, "W regenerates HP while active");
     arena_toggle_w(0);
     CHECK(h->w_active == 0, "W toggles back off");
+    arena_bot_enabled = 1; /* restore the default for any test run after this one */
 }
 
 static void test_mp_starts_full(void) {
@@ -2847,6 +2862,12 @@ static void test_paimon_w_damages_and_silences_in_range(void) {
 
 static void test_paimon_passive_silences_nearest_enemy_periodically(void) {
     arena_init_with_heroes(ARENA_HERO_UNICORN, ARENA_HERO_PAIMON);
+    /* S170-228: Paimon (hero 1, "the bot") now moves via the trained RL policy instead of the
+       old fixed net -- a single big interval-length tick is real time for it to walk away from
+       the fixed foe->x/z this test sets up, breaking the "stays within aura radius" setup this
+       test actually depends on. Disabled the same way other tests in this file already handle
+       the same root cause. */
+    arena_bot_enabled = 0;
     ArenaHero *paimon = &arena_state.heroes[1];
     ArenaHero *foe = &arena_state.heroes[0];
     foe->x = paimon->x + 2.0f; /* within ARENA_PAIMON_PASSIVE_AURA_RADIUS */
@@ -2857,6 +2878,7 @@ static void test_paimon_passive_silences_nearest_enemy_periodically(void) {
     arena_update(ARENA_PAIMON_PASSIVE_INTERVAL_MS);
 
     CHECK(foe->silenced_ms > 0, "Keeping the Peace silences the nearest enemy in range without being cast");
+    arena_bot_enabled = 1; /* restore the default for any test run after this one */
 }
 
 static void test_paimon_r_zone_damages_enemy_and_heals_ally(void) {
@@ -2976,6 +2998,10 @@ static void test_noor1_w_grants_intangibility_and_cooldown(void) {
 
 static void test_noor1_passive_silences_nearest_enemy_periodically(void) {
     arena_init_with_heroes(ARENA_HERO_UNICORN, ARENA_HERO_NOOR1);
+    /* S170-228: same root cause and fix as test_paimon_passive_silences_nearest_enemy_periodically
+       above -- the bot hero now moves via the trained RL policy, which can walk far enough
+       during one big interval-length tick to break this test's own fixed-position setup. */
+    arena_bot_enabled = 0;
     ArenaHero *noor1 = &arena_state.heroes[1];
     ArenaHero *foe = &arena_state.heroes[0];
     foe->x = noor1->x + 2.0f; /* within ARENA_NOOR1_PASSIVE_AURA_RADIUS */
@@ -2986,6 +3012,7 @@ static void test_noor1_passive_silences_nearest_enemy_periodically(void) {
     arena_update(ARENA_NOOR1_PASSIVE_INTERVAL_MS);
 
     CHECK(foe->silenced_ms > 0, "About Four Days Behind silences the nearest enemy in range without being cast");
+    arena_bot_enabled = 1; /* restore the default for any test run after this one */
 }
 
 static void test_noor1_r_zone_damages_enemy_no_ally_heal(void) {
@@ -4664,6 +4691,12 @@ static void test_ability_kill_grants_no_flow(void) {
        here, an ability, not the melee/homing-shot loop last_attacked_by_owner
        is only ever set from. */
     arena_init_with_heroes(ARENA_HERO_GHOST, ARENA_HERO_UNICORN);
+    /* S170-228: hero 1 (the 1-hp "foe" here) now moves via the trained RL policy instead of
+       the old fixed net -- a single 1000ms tick is real time for it to walk out of Ghost's own
+       R zone radius before the zone's own damage tick lands, which would mask the exact
+       mechanic (an ability finishing a kill) this test exists to check. Disabled the same way
+       other tests in this file already handle the same root cause. */
+    arena_bot_enabled = 0;
     ArenaHero *ghost = &arena_state.heroes[0];
     ArenaHero *foe = &arena_state.heroes[1];
     foe->x = ghost->x + 3.0f;
@@ -4675,6 +4708,7 @@ static void test_ability_kill_grants_no_flow(void) {
 
     CHECK(!foe->alive, "sanity: the zone actually finished the kill");
     CHECK(ghost->flow == 0, "a kill finished by an ability grants no Flow this pass -- only melee/homing-shot kills do");
+    arena_bot_enabled = 1; /* restore the default for any test run after this one */
 }
 
 static void test_flow_earned_does_not_decrease_on_purchase(void) {

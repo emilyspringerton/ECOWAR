@@ -10,10 +10,14 @@ mkdir -p "${BUILD_DIR}"
 # including this one (no display, no Xvfb). Exercises the sim logic
 # underneath apps/arena, which is otherwise unverified here until Xvfb is
 # available (see ~/sudo-queue/06-install-xvfb-for-arena-testing.sh).
+# packages/common/mlp_infer.c (S170-228): arena_game.c's own arena_bot_tick now calls
+# rl_policy_forward()/mlp_forward() -- every binary linking arena_game.c needs this object,
+# same reasoning scripts/build.sh's own comment for this already gives.
 gcc -std=c99 -O2 -Wall -Wextra -I"${ROOT_DIR}/packages" \
   -o "${BUILD_DIR}/test_arena_game" \
   "${ROOT_DIR}/tests/test_arena_game.c" \
   "${ROOT_DIR}/packages/simulation/arena_game.c" \
+  "${ROOT_DIR}/packages/common/mlp_infer.c" \
   -lm
 
 gcc -std=c99 -O2 -Wall -Wextra -I"${ROOT_DIR}/packages" \
@@ -28,6 +32,7 @@ gcc -std=c99 -O2 -Wall -Wextra -I"${ROOT_DIR}/packages" \
   "${ROOT_DIR}/tests/test_arena_replay.c" \
   "${ROOT_DIR}/packages/simulation/arena_game.c" \
   "${ROOT_DIR}/packages/simulation/arena_replay.c" \
+  "${ROOT_DIR}/packages/common/mlp_infer.c" \
   -lm
 
 # Game AI bridge: state serializer + action decoder (NORTHSTAR §12 Phase E,
@@ -37,6 +42,7 @@ gcc -std=c99 -O2 -Wall -Wextra -I"${ROOT_DIR}/packages" \
   "${ROOT_DIR}/tests/test_arena_ai_bridge.c" \
   "${ROOT_DIR}/packages/simulation/arena_game.c" \
   "${ROOT_DIR}/packages/simulation/arena_ai_bridge.c" \
+  "${ROOT_DIR}/packages/common/mlp_infer.c" \
   -lm
 
 # gpt2_infer: ported GPT-2 C inference engine (S170-220) -- same headless-testable reasoning,
@@ -55,6 +61,7 @@ gcc -std=c99 -D_DEFAULT_SOURCE -O2 -Wall -Wextra -I"${ROOT_DIR}/packages" \
   "${ROOT_DIR}/tests/test_arena_training.c" \
   "${ROOT_DIR}/apps/arena_training/src/headless.c" \
   "${ROOT_DIR}/packages/simulation/arena_game.c" \
+  "${ROOT_DIR}/packages/common/mlp_infer.c" \
   -lm
 
 # mlp_infer: the small embedded-C MLP inference engine (S170-227) for the RL policy network --

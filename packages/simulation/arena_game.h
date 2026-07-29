@@ -1699,6 +1699,15 @@ void arena_init_with_heroes(ArenaHeroID player_hero, ArenaHeroID bot_hero);
 void arena_update(unsigned int dt_ms);
 void arena_set_move_target(int owner, float x, float z);
 void arena_bot_tick(unsigned int dt_ms);
+/* arena_bot_tick_heuristic/bot_cast_kit_if_ready (S170-228): the stable, never-RL-driven
+ * heuristic bot AI arena_bot_tick itself used before this pass -- kept public specifically so
+ * apps/arena_training/src/headless.c's own training harness can drive owner 1 (the training
+ * opponent) with a fixed, independent heuristic instead of arena_update's own automatic
+ * bot-tick path, which arena_bot_tick itself now routes through the trained RL policy. See
+ * arena_bot_tick_heuristic's own doc comment in arena_game.c for the full "why training needs
+ * this" reasoning. */
+void arena_bot_tick_heuristic(unsigned int dt_ms);
+void bot_cast_kit_if_ready(ArenaHero *bot, ArenaHero *foe);
 
 /* Team-mode entry points (2026-07-24, NORTHSTAR §13 cont'd): a real N-vs-N
  * match (up to ARENA_TEAM_SIZE per side). arena_init_teams sets up
