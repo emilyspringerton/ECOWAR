@@ -2337,3 +2337,26 @@
   re-enabled -- needs a real fix (skip the restart while a spawned match server child is still
   alive / has connected players) before it's safe to leave running unattended again. Apple
   #11297.
+
+## 2026-07-29 (2)
+
+- feat(arena): promote the 5,000,000-timestep RL policy checkpoint into
+  `packages/common/rl_policy_weights.h`. Founder: "do more of the reinforcement learning i want
+  the bots to be smarter" -> "oh put the new checkpoint into the embeddings in the c and push it
+  up." Backlog item 6's queued longer PPO run (5x the S170-228 run, `scripts/rl_train.py
+  --total-timesteps 5000000`, net_arch=[64,64], default Unicorn-vs-Duck pairing) had already
+  finished (11:37 UTC) and evaluated 50W/0L/0D over 50 episodes against the heuristic bot AI it
+  trained against -- strictly more training data than the currently-live 1M-timestep policy at
+  the same eval task. Founder's follow-up explicitly simplified the ask from the originally
+  queued old-vs-new face-off (real engineering: two `MlpModel`s loaded side by side, not yet
+  built, see backlog item 6's own note) down to a direct promote -- did that: copied the trained
+  run's already-exported header over `packages/common/rl_policy_weights.h` (no code changes
+  needed, `rl_policy_forward()`'s call site in `arena_game.c` is unchanged). Full rebuild
+  (`scripts/build.sh`, exit 0) + `scripts/test_arena.sh` (all headless sim/training-obs/MLP tests
+  green) + `scripts/test_10_bots.sh` (5 concurrent matches, stable) all pass. Same scope caveat
+  as before this promotion: this policy only drives the solo 1v1 local-practice bot
+  (`arena_game.c`'s internal `arena_bot_tick`, disabled the instant a real match fills) -- has no
+  effect on `apps/arena_bot`'s separate hand-authored networked-match AI. The formal old-vs-new
+  face-off itself (backlog item 6 / Apple #11297's follow-up item 2's sibling) remains unbuilt,
+  superseded by this direct promotion per explicit founder instruction rather than left silently
+  incomplete.
