@@ -607,9 +607,12 @@ hits meant for somebody else. That line is the kit, mechanically, not just flavo
 - **Passive — Detroit's Own**: a flat, always-on armor bonus, same shape as Cain's/Gunnr's/
   Beleth's own — the tank archetype's baseline stat profile, not a conditional buff.
 - **Q — Clamp Down**: a melee-range poke that damages and roots, same shape as Paimon's Q.
-- **W — Wasn't That Shape A Second Ago**: a free toggle bonus armor, same shape as Loki's/Ada's
-  own, stacking on top of the passive rather than replacing it — MnM is armored by default and
-  more so at will.
+- **W — Burrow** (reworked S170-208, founder: "switch MnM w to burrow where he digs down below
+  the map and is untargetable in that time dealing small aoe damage when he comes back up"): a
+  real cast on a real cooldown now, not a free toggle. MnM digs below the map — untargetable and
+  rooted in place for the duration, same intangible+root combo his own R reaches for, just
+  shorter — then erupts back up at the exact spot he went under (no reposition component: he
+  "comes back up," not somewhere else), dealing a small AoE hit to whoever's standing there.
 - **R — Absorbing Hits Meant For Somebody Else**: the literal mechanical translation of
   Mid-Piano's line. Self-root + a guaranteed-survival window (HP cannot drop below 1 for the
   duration, same real damage-floor mechanic as Pizza's R) — combining two existing generic

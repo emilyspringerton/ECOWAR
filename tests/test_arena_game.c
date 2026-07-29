@@ -3461,20 +3461,89 @@ static void test_mnm_passive_grants_flat_armor(void) {
           "MnM's shell grants a flat, always-on armor bonus even with W off");
 }
 
-static void test_mnm_w_toggle_stacks_on_top_of_passive_armor(void) {
+static void test_mnm_w_burrow_grants_intangible_and_root(void) {
     arena_init_with_heroes(ARENA_HERO_UNICORN, ARENA_HERO_MNM);
     ArenaHero *mnm = &arena_state.heroes[1];
 
     arena_toggle_w(1);
 
-    CHECK(mnm->w_active == 1, "W toggles on");
-    CHECK(arena_hero_armor(mnm) == (float)(ARENA_MNM_PASSIVE_ARMOR + ARENA_MNM_W_ARMOR_BONUS),
-          "the toggle bonus stacks on top of the passive, not replaces it");
+    CHECK(mnm->intangible_ms == ARENA_MNM_BURROW_DURATION_MS, "Burrow makes MnM untargetable for its duration");
+    CHECK(mnm->rooted_ms == ARENA_MNM_BURROW_DURATION_MS, "Burrow roots MnM in place -- he resurfaces where he went under");
+    CHECK(mnm->mnm_burrow_ms == ARENA_MNM_BURROW_DURATION_MS, "Burrow's own dedicated countdown starts");
+    CHECK(mnm->w_cooldown_ms == ARENA_MNM_BURROW_COOLDOWN_MS, "Burrow starts on a real cooldown, not a free toggle");
+}
+
+static void test_mnm_w_burrow_no_longer_grants_armor(void) {
+    arena_init_with_heroes(ARENA_HERO_UNICORN, ARENA_HERO_MNM);
+    ArenaHero *mnm = &arena_state.heroes[1];
+    float before = arena_hero_armor(mnm);
 
     arena_toggle_w(1);
-    CHECK(mnm->w_active == 0, "W toggles back off");
-    CHECK(arena_hero_armor(mnm) == (float)ARENA_MNM_PASSIVE_ARMOR,
-          "toggling off drops back to just the passive base");
+
+    CHECK(arena_hero_armor(mnm) == before, "S170-208: Burrow replaced the old free armor-stack toggle -- casting it doesn't change armor at all");
+    CHECK(arena_hero_armor(mnm) == (float)ARENA_MNM_PASSIVE_ARMOR, "armor is just the flat passive now, no toggle bonus exists any more");
+}
+
+static void test_mnm_w_burrow_respects_cooldown(void) {
+    arena_init_with_heroes(ARENA_HERO_UNICORN, ARENA_HERO_MNM);
+    ArenaHero *mnm = &arena_state.heroes[1];
+
+    arena_toggle_w(1);
+    int first_burrow_ms = mnm->mnm_burrow_ms;
+    arena_toggle_w(1); /* still on cooldown -- must no-op, not refresh/stack */
+
+    CHECK(mnm->mnm_burrow_ms == first_burrow_ms, "a second Burrow attempt while on cooldown does nothing");
+}
+
+static void test_mnm_w_burrow_erupts_for_aoe_damage_on_resurface(void) {
+    /* arena_init_teams() + arena_update_teams(), not arena_init_with_heroes() +
+       arena_update() -- the latter pair runs the legacy 1v1 resolve_combat path AND the
+       internal bot AI (bot_cast_kit_if_ready fires for owner 1 every tick, S170-208's own
+       burrow gate doesn't cover ability casts, just auto-attacks), both of which would
+       contaminate the exact "no damage until the eruption" timing this test depends on.
+       Same team-mode setup test_gary_w_completes_and_deals_damage_after_full_duration and
+       test_mnm_r_survive_floor_actually_blocks_lethal_damage above already use. */
+    arena_init_teams();
+    for (int i = 2; i < ARENA_MAX_HEROES; i++) arena_state.heroes[i].active = 0;
+    arena_state.heroes[ARENA_TEAM_SIZE].active = 1;
+    arena_state.heroes[0].hero_id = ARENA_HERO_MNM;
+    arena_state.heroes[0].x = 0; arena_state.heroes[0].z = 0;
+    arena_state.heroes[ARENA_TEAM_SIZE].hero_id = ARENA_HERO_UNICORN;
+    arena_state.heroes[ARENA_TEAM_SIZE].x = 1.0f; /* within ARENA_MNM_BURROW_RADIUS when he resurfaces */
+    arena_state.heroes[ARENA_TEAM_SIZE].z = 0;
+    ArenaHero *mnm = &arena_state.heroes[0];
+    ArenaHero *foe = &arena_state.heroes[ARENA_TEAM_SIZE];
+    int foe_hp_before = foe->hp;
+
+    arena_toggle_w(0);
+    /* Two ticks spanning the full duration -- mnm_burrow_ms is decremented within
+       arena_update_teams itself (same "begin and tick-down share one call" shape as the
+       auto-attack windup elsewhere in this file), so a single oversized tick risks
+       clipping the exact zero-crossing. */
+    arena_update_teams(ARENA_MNM_BURROW_DURATION_MS - 16);
+    CHECK(foe->hp == foe_hp_before, "no eruption damage yet -- MnM is still underground");
+    arena_update_teams(32); /* crosses zero */
+
+    CHECK(mnm->mnm_burrow_ms == 0, "Burrow's countdown reaches zero and stays there");
+    CHECK(foe->hp < foe_hp_before, "the eruption on resurfacing deals AoE damage to whoever's standing there");
+}
+
+static void test_mnm_w_burrow_no_eruption_damage_out_of_radius(void) {
+    arena_init_teams();
+    for (int i = 2; i < ARENA_MAX_HEROES; i++) arena_state.heroes[i].active = 0;
+    arena_state.heroes[ARENA_TEAM_SIZE].active = 1;
+    arena_state.heroes[0].hero_id = ARENA_HERO_MNM;
+    arena_state.heroes[0].x = 0; arena_state.heroes[0].z = 0;
+    arena_state.heroes[ARENA_TEAM_SIZE].hero_id = ARENA_HERO_UNICORN;
+    arena_state.heroes[ARENA_TEAM_SIZE].x = ARENA_MNM_BURROW_RADIUS + 5.0f; /* well outside the eruption radius */
+    arena_state.heroes[ARENA_TEAM_SIZE].z = 0;
+    ArenaHero *foe = &arena_state.heroes[ARENA_TEAM_SIZE];
+    int foe_hp_before = foe->hp;
+
+    arena_toggle_w(0);
+    arena_update_teams(ARENA_MNM_BURROW_DURATION_MS + 32);
+
+    CHECK(foe->hp == foe_hp_before, "a foe standing outside the eruption radius takes no damage");
 }
 
 static void test_mnm_q_damages_and_roots_in_melee_range(void) {
@@ -5382,7 +5451,11 @@ int main(void) {
     test_beleth_r_detonates_after_fuse();
     test_beleth_r_out_of_range_whiffs();
     test_mnm_passive_grants_flat_armor();
-    test_mnm_w_toggle_stacks_on_top_of_passive_armor();
+    test_mnm_w_burrow_grants_intangible_and_root();
+    test_mnm_w_burrow_no_longer_grants_armor();
+    test_mnm_w_burrow_respects_cooldown();
+    test_mnm_w_burrow_erupts_for_aoe_damage_on_resurface();
+    test_mnm_w_burrow_no_eruption_damage_out_of_radius();
     test_mnm_q_damages_and_roots_in_melee_range();
     test_mnm_r_roots_self_and_grants_survive_floor();
     test_mnm_r_survive_floor_actually_blocks_lethal_damage();

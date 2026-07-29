@@ -562,14 +562,12 @@ static float arena_hero_base_armor(const ArenaHero *h) {
     if (h->hero_id == ARENA_HERO_BELETH) {
         return (float)ARENA_BELETH_PASSIVE_ARMOR;
     }
-    /* MnM's shell (passive + W, S170-134): a flat always-on base, same shape as Cain's/Gunnr's/
-       Beleth's own, PLUS a further toggle bonus while W is active (Loki's/Ada's own toggle
-       shape) -- the two stack, unlike Loki/Ada whose entire armor value comes only from the
-       toggle. The tank archetype's stat profile: consistently armored, more so at will. */
+    /* MnM's shell (passive, S170-134): a flat always-on base, same shape as Cain's/Gunnr's/
+       Beleth's own. Used to also get a further toggle bonus while W was active (Loki's/Ada's
+       own toggle shape) -- removed under S170-208's Burrow rework, which turned W from a free
+       stat toggle into a real cast with its own cooldown, no longer an armor stack at all. */
     if (h->hero_id == ARENA_HERO_MNM) {
-        float armor = (float)ARENA_MNM_PASSIVE_ARMOR;
-        if (h->w_active) armor += (float)ARENA_MNM_W_ARMOR_BONUS;
-        return armor;
+        return (float)ARENA_MNM_PASSIVE_ARMOR;
     }
     return 0.0f;
 }
@@ -1737,6 +1735,7 @@ void arena_hero_attack_creeps(unsigned int dt_ms) {
     for (int i = 0; i < ARENA_MAX_HEROES; i++) {
         ArenaHero *h = &arena_state.heroes[i];
         if (!h->active || !h->alive || h->attack_cooldown_ms > 0 || h->stunned_ms > 0) continue; /* S170-184 */
+        if (h->mnm_burrow_ms > 0) continue; /* S170-208: burrowed, not present to swing at anything */
         /* S170-163: Gary's basic attack is exclusively his ranged homing
            shot (arena_tick_attack_targets) -- excluded here too, same
            reasoning as the hero-vs-hero melee loop, so he can't
@@ -1908,6 +1907,7 @@ void arena_hero_attack_lane_creeps(unsigned int dt_ms) {
     for (int i = 0; i < ARENA_MAX_HEROES; i++) {
         ArenaHero *h = &arena_state.heroes[i];
         if (!h->active || !h->alive || h->attack_cooldown_ms > 0 || h->stunned_ms > 0) continue; /* S170-184 */
+        if (h->mnm_burrow_ms > 0) continue; /* S170-208: burrowed, not present to swing at anything */
         /* S170-163: same exclusion as arena_hero_attack_creeps above -- see
            that function's own comment. */
         if (h->hero_id == ARENA_HERO_GARY) continue;
@@ -1998,11 +1998,14 @@ static void resolve_combat(unsigned int dt_ms) {
     float dist = sqrtf(dx * dx + dz * dz);
     if (dist > ARENA_ATTACK_RANGE) return;
 
-    if (a->attack_cooldown_ms <= 0) {
+    /* S170-208: mnm_burrow_ms > 0 gates a hero out of this legacy 1v1 pairwise resolver the
+       same way it gates the team-mode melee/creep-attack loops -- burrowed, not present to
+       swing at anything. */
+    if (a->attack_cooldown_ms <= 0 && a->mnm_burrow_ms <= 0) {
         if (hero_is_hittable(b)) apply_damage(b, apply_armor(ARENA_ATTACK_DAMAGE, arena_hero_armor(b)));
         a->attack_cooldown_ms = ARENA_ATTACK_COOLDOWN_MS;
     }
-    if (b->attack_cooldown_ms <= 0) {
+    if (b->attack_cooldown_ms <= 0 && b->mnm_burrow_ms <= 0) {
         if (hero_is_hittable(a)) apply_damage(a, apply_armor(ARENA_ATTACK_DAMAGE, arena_hero_armor(a)));
         b->attack_cooldown_ms = ARENA_ATTACK_COOLDOWN_MS;
     }
@@ -3224,10 +3227,18 @@ void arena_toggle_w(int owner) {
         }
         break;
     case ARENA_HERO_MNM:
-        /* Wasn't That Shape A Second Ago: free toggle bonus armor, same shape as Loki's/Ada's
-           own -- arena_hero_armor() reads w_active directly for the bonus. */
-        if (!h->w_active && h->mp <= 0) return; /* S170-181: same activation-gate change as every other true toggle above */
-        h->w_active = !h->w_active;
+        /* Burrow (S170-208): a real cast now, not a free toggle -- see the header's own
+           ARENA_MNM_BURROW_* doc comment for the founder's exact phrasing. intangible_ms
+           makes him unhittable, rooted_ms keeps him from sliding anywhere while underground
+           (he resurfaces at the exact spot he went under), and mnm_burrow_ms is the
+           dedicated countdown tick_hero_kit watches to fire the eruption AoE exactly once,
+           the moment it expires. */
+        if (h->w_cooldown_ms > 0 || h->mp < ARENA_MP_COST_W) return;
+        h->mnm_burrow_ms = ARENA_MNM_BURROW_DURATION_MS;
+        h->intangible_ms = ARENA_MNM_BURROW_DURATION_MS;
+        h->rooted_ms = ARENA_MNM_BURROW_DURATION_MS;
+        h->w_cooldown_ms = cast_cooldown(h, ARENA_MNM_BURROW_COOLDOWN_MS);
+        h->mp -= ARENA_MP_COST_W;
         break;
     case ARENA_HERO_WEATHERMAN:
         /* Collects On What's Owed: instant targeted cast, not a toggle -- see
@@ -4116,6 +4127,25 @@ static void tick_hero_kit(ArenaHero *h, ArenaHero *foe, ArenaHero *ally, unsigne
             }
         }
         break;
+    case ARENA_HERO_MNM:
+        /* Burrow's own countdown, distinct from the shared intangible_ms/rooted_ms it also
+           set at cast time (see the struct field's own doc comment) -- watched here purely
+           to catch the exact tick it crosses to zero and fire the resurface eruption once,
+           not every tick spent underground. */
+        if (h->mnm_burrow_ms > 0) {
+            h->mnm_burrow_ms -= (int)dt_ms;
+            if (h->mnm_burrow_ms <= 0) {
+                h->mnm_burrow_ms = 0;
+                if (foe && hero_is_hittable(foe)) {
+                    float dx = foe->x - h->x, dz = foe->z - h->z;
+                    if (sqrtf(dx * dx + dz * dz) <= ARENA_MNM_BURROW_RADIUS) {
+                        apply_damage(foe, apply_armor(ARENA_MNM_BURROW_DAMAGE, arena_hero_armor(foe)));
+                    }
+                }
+                arena_zone_damage_creeps(h->x, h->z, ARENA_MNM_BURROW_RADIUS, h->team, ARENA_MNM_BURROW_DAMAGE);
+            }
+        }
+        break;
     default:
         break;
     }
@@ -4392,12 +4422,15 @@ static void bot_cast_kit_if_ready(ArenaHero *bot, ArenaHero *foe) {
         }
         break;
     case ARENA_HERO_MNM:
-        /* R is the survive-floor panic button, same low-HP threshold as every other hero that
-           carries one (Cain's own). W is free sustained-tankiness, toggle on early like
-           Loki's/Ada's own instinct. Q whenever in melee range and off cooldown. */
+        /* R is still the survive-floor panic button, same low-HP threshold as every other
+           hero that carries one (Cain's own) -- checked first so a near-death R always wins
+           over an opportunistic W. Burrow (S170-208) is no longer a free toggle to flip once
+           and forget -- it's cast opportunistically, in range of its own eruption radius so
+           the AoE is actually likely to land, same "off cooldown and in range" shape Q
+           already uses. Q otherwise, whenever in melee range and off cooldown. */
         if (bot->hp < bot->max_hp / 4 && bot->r_cooldown_ms <= 0) {
             arena_cast_r(bot->owner);
-        } else if (!bot->w_active) {
+        } else if (bot->w_cooldown_ms <= 0 && dist <= ARENA_MNM_BURROW_RADIUS) {
             arena_toggle_w(bot->owner);
         } else if (bot->q_cooldown_ms <= 0 && dist <= ARENA_MNM_Q_RANGE) {
             arena_cast_q(bot->owner);
@@ -4728,6 +4761,7 @@ void arena_update_teams(unsigned int dt_ms) {
         if (h->hero_id == ARENA_HERO_GARY) continue;
         if (h->stunned_ms > 0) continue; /* S170-184 */
         if (h->attack_windup_ms_remaining > 0) continue; /* already mid-windup -- arena_tick_attack_windups below owns it from here */
+        if (h->mnm_burrow_ms > 0) continue; /* S170-208: literally not on the battlefield surface while burrowed */
         if (h->attack_cooldown_ms > 0) continue;
         ArenaHero *foe = arena_nearest_enemy(i);
         if (!foe) continue;

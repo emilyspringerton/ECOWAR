@@ -111,7 +111,7 @@ static void test_hero_tags_string_covers_a_few_real_kits(void) {
     CHECK(strcmp(buf, "ranged has_homing_attack") == 0, "Gary: ranged + the one homing-attack tag in the roster");
 
     arena_hero_tags_string(ARENA_HERO_MNM, buf, sizeof(buf));
-    CHECK(strcmp(buf, "melee") == 0, "MnM: melee, no other tags -- explicitly \"melee root+damage\" per docs/HEROES_VS0.md");
+    CHECK(strcmp(buf, "melee has_stealth") == 0, "MnM: melee (Q explicitly \"melee root+damage\" per docs/HEROES_VS0.md) + has_stealth (S170-208: W Burrow grants untargetability)");
 
     arena_hero_tags_string(ARENA_HERO_DUCK, buf, sizeof(buf));
     CHECK(strcmp(buf, "melee has_knockback") == 0, "Duck: melee + knockback (Q pulls the foe, a forced displacement)");

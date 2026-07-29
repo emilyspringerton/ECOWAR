@@ -92,9 +92,10 @@ plain, real FFXI-named item (`docs/FFXI_ITEM_PARITY_SEED.md`).
 forgiving kits — no clone armies to manage (Tyler), no blink mind-games (Loki), no stealth timing
 (Frog/Ghost/NOOR-1/Bacon+Puck) — just a straightforward kit you can read at a glance:
 
-- **MnM, the Shapeshifting Crab** — *Tank.* Q is a melee poke that roots, W is a free toggle for
-  more armor on top of an already-always-on bonus, R makes you unkillable (HP can't drop below 1)
-  for a few seconds. Walk up, root, survive — about as simple as a kit gets.
+- **MnM, the Shapeshifting Crab** — *Tank.* Q is a melee poke that roots, W (Burrow) digs
+  underground on a cooldown — untargetable and rooted in place for the duration, then erupts back
+  up on the same spot for a small AoE hit — R makes you unkillable (HP can't drop below 1) for a
+  few seconds. Walk up, root, survive — about as simple as a kit gets.
 - **The Duck** — *Fighter/Assassin.* Q yanks the nearest enemy toward you and deals AD damage on
   impact; land the killing blow and E briefly makes you stronger. One button does most of the
   work.

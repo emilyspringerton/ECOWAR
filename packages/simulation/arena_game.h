@@ -846,7 +846,6 @@ typedef enum {
  * place of Tree's armor bonus): for a few seconds nothing can bring MnM below 1 HP, the shell
  * takes the hit instead of the crab underneath it. */
 #define ARENA_MNM_PASSIVE_ARMOR              6
-#define ARENA_MNM_W_ARMOR_BONUS               5 /* free toggle, no cooldown -- same convention as Loki's/Ada's own */
 #define ARENA_MNM_Q_RANGE                     2.4f /* melee-range clamp, not a skillshot */
 #define ARENA_MNM_Q_DAMAGE                    9
 #define ARENA_MNM_Q_ROOT_MS                1300
@@ -854,6 +853,18 @@ typedef enum {
 #define ARENA_MNM_R_ROOT_MS                6000
 #define ARENA_MNM_R_SURVIVE_FLOOR_MS        6000
 #define ARENA_MNM_R_COOLDOWN_MS            27000
+/* Burrow (S170-208, W rework -- founder: "switch MnM w to burrow where he digs down below
+ * the map and is untargetable in that time dealing small aoe damage when he comes back up").
+ * Replaces the old free-toggle armor stack ("Wasn't That Shape A Second Ago") with a real
+ * cast on a real cooldown: untargetable AND rooted in place for the duration (same
+ * intangible_ms + rooted_ms combo the R already reaches for, just shorter), then a small
+ * eruption AoE centered on wherever he burrowed -- "resurfaces where he burrowed, not
+ * somewhere else" per the founder's own phrasing, so no reposition component at all, unlike
+ * Donkey's own Paper Glide which this is otherwise structurally closest to. */
+#define ARENA_MNM_BURROW_DURATION_MS       1500
+#define ARENA_MNM_BURROW_COOLDOWN_MS      14000
+#define ARENA_MNM_BURROW_RADIUS               3.0f
+#define ARENA_MNM_BURROW_DAMAGE              16
 
 /* Weatherman (S170-206, TYLER multiverse_heroes.md #45, "Ao Guang's Weather-Debt Collector" --
  * NORTHSTAR §16.2). Fighter/Support, the roster's first kit built around wind/displacement
@@ -1252,6 +1263,15 @@ typedef struct {
     int donkey_fold_proc_cooldown_ms;
     int donkey_glide_cooldown_ms;
     int donkey_airborne_ms;
+    /* mnm_burrow_ms (S170-208, Burrow): dedicated countdown for MnM's own W, distinct from
+     * the shared intangible_ms/rooted_ms it also sets at cast time (same "MY window, not
+     * anyone else's" reasoning donkey_fold_ms's own comment above gives) -- tick_hero_kit
+     * watches specifically for THIS hitting zero to fire the resurface eruption exactly
+     * once, since intangible_ms/rooted_ms alone give no "did it just expire" edge of their
+     * own once other kits are also free to set them. Also gates all three auto-attack loops
+     * (hero-vs-hero, jungle creep, lane creep) while > 0 -- he's literally not present on
+     * the battlefield surface to swing at anything until he resurfaces. */
+    int mnm_burrow_ms;
     int owner; /* 0 = player, 1 = bot in the 1v1 local demo; a slot index 0..ARENA_MAX_HEROES-1 in team mode */
     int alive;
     int team;   /* 2026-07-24: which side, for team-mode nearest-enemy targeting. 1v1 local demo sets 0/1 explicitly. */

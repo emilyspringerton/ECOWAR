@@ -57,8 +57,10 @@ int arena_hero_w_is_toggle(ArenaHeroID hero_id) {
     case ARENA_HERO_ADA:
     case ARENA_HERO_GUNNR:
     case ARENA_HERO_HE_XIANGU:
-    case ARENA_HERO_MNM:
         return 1;
+    /* ARENA_HERO_MNM removed (S170-208): W stopped being a free toggle armor stack and became
+       Burrow, a real cast-time ability on its own cooldown (flat ARENA_MP_COST_W charge, same
+       model Ghost/Frog/Doc Wheel already use) -- see arena_toggle_w's own MnM case. */
     default:
         return 0;
     }
@@ -94,7 +96,7 @@ const char *arena_ability_name(ArenaHeroID hero_id, int slot) {
         [ARENA_HERO_VASSAGO]    = {"REVEAL THE GENTLE MAYBE", "THE SOFT FORESIGHT", "THE GENTLE MAYBE"},
         [ARENA_HERO_HE_XIANGU]  = {"MOTHER-OF-PEARL AND MOONLIGHT", "SELF-DENIAL", "NEVER FRAMED AS SACRIFICE"},
         [ARENA_HERO_BELETH]     = {"EVERY LOVE TRIANGLE", "HOPE IS A TERROR I LEASH WITH SONG", "THE DETONATION"},
-        [ARENA_HERO_MNM]        = {"CLAMP DOWN", "WASN'T THAT SHAPE A SECOND AGO", "ABSORBING HITS MEANT FOR SOMEBODY ELSE"},
+        [ARENA_HERO_MNM]        = {"CLAMP DOWN", "BURROW", "ABSORBING HITS MEANT FOR SOMEBODY ELSE"},
         [ARENA_HERO_WEATHERMAN] = {"BAROMETRIC SHOVE", "COLLECTS ON WHAT'S OWED", "THE DEBT COMPOUNDS"},
     };
     if (hero_id < 0 || hero_id >= ARENA_HERO_COUNT || slot < 0 || slot > 2) return "?";
@@ -134,7 +136,7 @@ const char *arena_ability_description(ArenaHeroID hero_id, int slot) {
         [ARENA_HERO_VASSAGO]    = {"DAMAGE + SILENCE NEAREST FOE", "REFUNDS AN ALLY'S NEXT CAST", "ZONE: SILENCE ONLY, NO DAMAGE"},
         [ARENA_HERO_HE_XIANGU]  = {"DAMAGE + SELF-HEAL OFF IT", "TOGGLE: BOOSTS SELF REGEN", "ZONE: HEAL ALLIES, NO DAMAGE"},
         [ARENA_HERO_BELETH]     = {"PROJECTILE: DAMAGE + BURN DOT", "SILENCE NEAREST FOE, NO DAMAGE", "MARKS A SPOT, BIG DELAYED BURST"},
-        [ARENA_HERO_MNM]        = {"MELEE ROOT + DAMAGE", "TOGGLE: EXTRA ARMOR STACKS", "SELF-ROOT + TEMPORARY DAMAGE FLOOR"},
+        [ARENA_HERO_MNM]        = {"MELEE ROOT + DAMAGE", "UNTARGETABLE, SMALL AOE ON RETURN", "SELF-ROOT + TEMPORARY DAMAGE FLOOR"},
         [ARENA_HERO_WEATHERMAN] = {"RANGED KNOCKBACK, NO DAMAGE", "GROUNDS/EXTENDS DONKEY'S GLIDE", "ZONE: DAMAGE OVER TIME"},
     };
     if (hero_id < 0 || hero_id >= ARENA_HERO_COUNT || slot < 0 || slot > 2) return "?";
@@ -190,7 +192,7 @@ static const ArenaHeroTags ARENA_HERO_TAGS[ARENA_HERO_COUNT] = {
     [ARENA_HERO_VASSAGO]    = { 1, 0, 0, 0, 0, 0 }, /* Q "ranged bolt" per docs */
     [ARENA_HERO_HE_XIANGU]  = { 0, 0, 0, 1, 0, 0 }, /* Q/W/R all heal-shaped, kit reads melee-range */
     [ARENA_HERO_BELETH]     = { 1, 0, 0, 0, 0, 0 }, /* Q projectile burn */
-    [ARENA_HERO_MNM]        = { 0, 0, 0, 0, 0, 0 }, /* Q explicitly "melee root+damage" per docs */
+    [ARENA_HERO_MNM]        = { 0, 0, 0, 0, 0, 1 }, /* Q explicitly "melee root+damage" per docs; W Burrow grants untargetability (S170-208) */
     [ARENA_HERO_WEATHERMAN] = { 1, 0, 1, 1, 0, 0 }, /* Q ranged + a real knockback (the roster's first push-outward Q); passive is a heal-shaped regen */
 };
 
