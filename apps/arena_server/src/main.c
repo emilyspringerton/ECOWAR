@@ -528,7 +528,10 @@ static void server_handle_packet(struct sockaddr_in *sender, char *buffer, int s
         if (match_phase != ARENA_PHASE_DRAFT) return; // picks only mean anything during draft
         if (size < (int)(sizeof(NetHeader) + sizeof(ArenaPickCmd))) return;
         ArenaPickCmd *cmd = (ArenaPickCmd *)(buffer + sizeof(NetHeader));
-        if (cmd->hero_id > ARENA_HERO_MNM) return; // reject anything outside the real roster
+        // S170-230: was hard-coded against ARENA_HERO_MNM, silently unpickable-over-network
+        // for every hero added since (Weatherman, now Zagan) -- compare against the real
+        // roster size instead so this doesn't go stale a third time.
+        if (cmd->hero_id < 0 || cmd->hero_id >= ARENA_HERO_COUNT) return; // reject anything outside the real roster
         if (!hero_picked[client_id]) picked_count++;
         hero_pick[client_id] = cmd->hero_id;
         hero_picked[client_id] = 1;

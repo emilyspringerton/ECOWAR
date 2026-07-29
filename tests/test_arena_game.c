@@ -4646,6 +4646,138 @@ static void test_weatherman_r_zone_damages_over_time(void) {
     CHECK(arena_state.heroes[ARENA_TEAM_SIZE].hp < foe_hp_before, "The Debt Compounds -- the zone deals real periodic damage to enemies standing in it");
 }
 
+static void test_zagan_passive_grants_flow_when_enemy_crosses_half_hp(void) {
+    /* Team mode + arena_update_teams, not arena_init_with_heroes + arena_update -- the latter
+       pair's bot_cast_kit_if_ready would fire for owner 1 every tick and contaminate the exact
+       "did the passive fire" signal this test depends on, same reasoning MnM's/Weatherman's own
+       timing tests above already give. */
+    arena_init_teams();
+    for (int i = 2; i < ARENA_MAX_HEROES; i++) arena_state.heroes[i].active = 0;
+    arena_state.heroes[ARENA_TEAM_SIZE].active = 1;
+    arena_state.heroes[ARENA_TEAM_SIZE].alive = 1;
+    arena_state.heroes[0].hero_id = ARENA_HERO_ZAGAN;
+    arena_state.heroes[ARENA_TEAM_SIZE].hero_id = ARENA_HERO_DUCK;
+    arena_state.heroes[ARENA_TEAM_SIZE].hp = arena_state.heroes[ARENA_TEAM_SIZE].max_hp / 2 - 1; /* already below 50% */
+    int flow_before = arena_state.heroes[0].flow;
+
+    arena_update_teams(16);
+
+    CHECK(arena_state.heroes[0].flow == flow_before + ARENA_ZAGAN_PASSIVE_CONFESSION_FLOW,
+          "Base Metal Screams: Zagan gains Flow the instant ANY enemy crosses below 50% HP, no proximity or damage-source requirement");
+    CHECK(arena_state.heroes[ARENA_TEAM_SIZE].zagan_confessed, "the enemy's own confessed flag is now set");
+}
+
+static void test_zagan_passive_does_not_retrigger_the_same_confession(void) {
+    arena_init_teams();
+    for (int i = 2; i < ARENA_MAX_HEROES; i++) arena_state.heroes[i].active = 0;
+    arena_state.heroes[ARENA_TEAM_SIZE].active = 1;
+    arena_state.heroes[ARENA_TEAM_SIZE].alive = 1;
+    arena_state.heroes[0].hero_id = ARENA_HERO_ZAGAN;
+    arena_state.heroes[ARENA_TEAM_SIZE].hero_id = ARENA_HERO_DUCK;
+    arena_state.heroes[ARENA_TEAM_SIZE].hp = arena_state.heroes[ARENA_TEAM_SIZE].max_hp / 2 - 1;
+
+    arena_update_teams(16); /* first crossing -- fires once */
+    int flow_after_first = arena_state.heroes[0].flow;
+    arena_update_teams(16); /* still below 50%, second tick -- should NOT fire again */
+
+    CHECK(arena_state.heroes[0].flow == flow_after_first, "one confession per life -- staying below 50% doesn't keep paying out every tick");
+}
+
+static void test_zagan_q_damages_and_shreds_armor(void) {
+    arena_init_with_heroes(ARENA_HERO_DUCK, ARENA_HERO_ZAGAN); /* Duck: 0 base armor, exact math */
+    ArenaHero *zagan = &arena_state.heroes[1];
+    ArenaHero *foe = &arena_state.heroes[0];
+    foe->x = zagan->x - 2.0f; /* within ARENA_ZAGAN_Q_RANGE */
+    foe->z = zagan->z;
+    int foe_hp_before = foe->hp;
+    float foe_armor_before = arena_hero_armor(foe);
+
+    arena_cast_q(1);
+
+    CHECK(foe->hp < foe_hp_before, "Calcination damages the foe when in range");
+    CHECK(foe->zagan_calcination_ms == ARENA_ZAGAN_Q_DURATION_MS, "Calcination starts the armor-shred debuff");
+    CHECK(arena_hero_armor(foe) == foe_armor_before - (float)ARENA_ZAGAN_Q_ARMOR_SHRED, "the shred actually reduces the foe's effective armor");
+    CHECK(zagan->q_cooldown_ms == ARENA_ZAGAN_Q_COOLDOWN_MS, "Q starts on cooldown after a landed hit");
+}
+
+static void test_zagan_q_armor_shred_expires_after_duration(void) {
+    arena_init_teams();
+    for (int i = 2; i < ARENA_MAX_HEROES; i++) arena_state.heroes[i].active = 0;
+    arena_state.heroes[ARENA_TEAM_SIZE].active = 1;
+    arena_state.heroes[ARENA_TEAM_SIZE].alive = 1;
+    arena_state.heroes[0].hero_id = ARENA_HERO_ZAGAN;
+    arena_state.heroes[0].x = 0; arena_state.heroes[0].z = 0;
+    arena_state.heroes[ARENA_TEAM_SIZE].hero_id = ARENA_HERO_DUCK;
+    arena_state.heroes[ARENA_TEAM_SIZE].x = 2.0f; arena_state.heroes[ARENA_TEAM_SIZE].z = 0;
+    ArenaHero *foe = &arena_state.heroes[ARENA_TEAM_SIZE];
+    float base_armor = arena_hero_armor(foe);
+
+    arena_cast_q(0);
+    CHECK(arena_hero_armor(foe) == base_armor - (float)ARENA_ZAGAN_Q_ARMOR_SHRED, "shred is active right after the hit");
+    arena_update_teams(ARENA_ZAGAN_Q_DURATION_MS + 32); /* past the debuff's own duration */
+
+    CHECK(foe->zagan_calcination_ms == 0, "the debuff's own countdown reaches zero and stays there");
+    CHECK(arena_hero_armor(foe) == base_armor, "armor is back to normal once Calcination expires");
+}
+
+static void test_zagan_w_stuns_foe_in_range(void) {
+    arena_init_with_heroes(ARENA_HERO_UNICORN, ARENA_HERO_ZAGAN);
+    ArenaHero *zagan = &arena_state.heroes[1];
+    ArenaHero *foe = &arena_state.heroes[0];
+    foe->x = zagan->x - 2.0f; /* within ARENA_ZAGAN_W_RANGE */
+    foe->z = zagan->z;
+
+    arena_toggle_w(1);
+
+    CHECK(foe->stunned_ms == ARENA_ZAGAN_W_STUN_MS, "The Standstill stuns a foe in range");
+    CHECK(zagan->w_cooldown_ms == ARENA_ZAGAN_W_COOLDOWN_MS, "W starts on cooldown after a landed stun");
+}
+
+static void test_zagan_w_no_effect_out_of_range(void) {
+    arena_init_with_heroes(ARENA_HERO_UNICORN, ARENA_HERO_ZAGAN);
+    ArenaHero *zagan = &arena_state.heroes[1];
+    ArenaHero *foe = &arena_state.heroes[0]; /* default spawn is 12 units away, well outside ARENA_ZAGAN_W_RANGE */
+
+    arena_toggle_w(1);
+
+    CHECK(foe->stunned_ms == 0, "no stun lands on a foe out of range");
+    CHECK(zagan->w_cooldown_ms == 0, "a whiffed W spends no cooldown, same convention every other targeted cast in this file uses");
+}
+
+static void test_zagan_r_mirrors_target_armor(void) {
+    arena_init_with_heroes(ARENA_HERO_MNM, ARENA_HERO_ZAGAN); /* MnM: flat ARENA_MNM_PASSIVE_ARMOR, a clean nonzero comparison value */
+    ArenaHero *zagan = &arena_state.heroes[1];
+    ArenaHero *target = &arena_state.heroes[0];
+    target->x = zagan->x - 2.0f; /* within ARENA_ZAGAN_R_RANGE */
+    target->z = zagan->z;
+    float zagan_armor_before = arena_hero_armor(zagan);
+
+    CHECK(zagan_armor_before != (float)ARENA_MNM_PASSIVE_ARMOR, "sanity: Zagan's own normal armor differs from MnM's, or this test proves nothing");
+
+    arena_cast_r(1);
+
+    CHECK(zagan->zagan_r_target == target->owner, "Conjunction locks onto the target's owner slot");
+    CHECK(zagan->r_active_ms == ARENA_ZAGAN_R_DURATION_MS, "R starts a real fixed duration");
+    CHECK(zagan->r_cooldown_ms == ARENA_ZAGAN_R_COOLDOWN_MS, "R starts on its own cooldown");
+    CHECK(arena_hero_armor(zagan) == (float)ARENA_MNM_PASSIVE_ARMOR, "Conjunction: Zagan's TOTAL armor becomes exactly the target's, a true mirror");
+    CHECK(arena_hero_armor(zagan) == arena_hero_armor(target), "both sides of the mirror read identical, live");
+}
+
+static void test_zagan_r_falls_back_when_target_no_longer_hittable(void) {
+    arena_init_with_heroes(ARENA_HERO_MNM, ARENA_HERO_ZAGAN);
+    ArenaHero *zagan = &arena_state.heroes[1];
+    ArenaHero *target = &arena_state.heroes[0];
+    target->x = zagan->x - 2.0f;
+    target->z = zagan->z;
+    float zagan_armor_before = arena_hero_armor(zagan);
+
+    arena_cast_r(1);
+    CHECK(arena_hero_armor(zagan) == (float)ARENA_MNM_PASSIVE_ARMOR, "sanity: the mirror is active");
+    target->alive = 0; /* target dies mid-duration */
+
+    CHECK(arena_hero_armor(zagan) == zagan_armor_before, "the mirror silently falls back to Zagan's own real armor once the target stops being hittable -- no special-case cleanup needed");
+}
+
 static void test_item_stats_apply_to_hp_mp_armor_ad_speed(void) {
     arena_init_teams();
     arena_state.heroes[0].team = 0;
@@ -5680,6 +5812,14 @@ int main(void) {
     test_weatherman_w_extends_airborne_ally();
     test_weatherman_w_noop_when_nobody_airborne();
     test_weatherman_r_zone_damages_over_time();
+    test_zagan_passive_grants_flow_when_enemy_crosses_half_hp();
+    test_zagan_passive_does_not_retrigger_the_same_confession();
+    test_zagan_q_damages_and_shreds_armor();
+    test_zagan_q_armor_shred_expires_after_duration();
+    test_zagan_w_stuns_foe_in_range();
+    test_zagan_w_no_effect_out_of_range();
+    test_zagan_r_mirrors_target_armor();
+    test_zagan_r_falls_back_when_target_no_longer_hittable();
     test_item_stats_apply_to_hp_mp_armor_ad_speed();
     test_node_guardian_kill_grants_flow_and_xp();
     test_lane_creep_kill_grants_flow_and_xp();

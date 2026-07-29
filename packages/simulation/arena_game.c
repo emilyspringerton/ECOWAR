@@ -115,6 +115,11 @@ static void arena_creeps_reset(void) {
     for (int i = 0; i < ARENA_MAX_HEROES; i++) {
         arena_state.heroes[i].cast_target = -1;
     }
+    /* zagan_r_target (S170-230): same sentinel-after-memset idiom -- 0 would wrongly mean
+       "mirroring owner slot 0's armor." */
+    for (int i = 0; i < ARENA_MAX_HEROES; i++) {
+        arena_state.heroes[i].zagan_r_target = -1;
+    }
     /* last_attacked_by_owner/equipped_item (S170-175): same sentinel-after-
        memset idiom -- 0 would wrongly mean "owner slot 0 gets kill credit"
        / "slot 0 has item #0 equipped." Covers the full ARENA_HEROES_ARRAY_SIZE
@@ -673,10 +678,33 @@ static float arena_hero_base_armor(const ArenaHero *h) {
     return 0.0f;
 }
 
+/* hero_is_hittable is defined further down this file (S170-32) -- forward-declared here so
+ * Zagan's Conjunction mirror (S170-230) below can check target validity; every other caller in
+ * this file already comes after the real definition, this is the first that doesn't. */
+static int hero_is_hittable(const ArenaHero *h);
+
 /* arena_hero_armor (S170-175): see arena_hero_base_armor's own doc comment
  * just above for why this split exists. */
 float arena_hero_armor(const ArenaHero *h) {
-    return arena_hero_base_armor(h) + (float)h->item_bonus_armor;
+    /* Zagan's Conjunction (S170-230): a TRUE mirror, not an additive steal -- for the
+       duration, Zagan's TOTAL armor (this function's whole return value, base+items both)
+       becomes exactly his locked target's, overriding the normal base+item formula entirely
+       rather than adding to it. This has to live here, not in arena_hero_base_armor, precisely
+       because it needs to override item_bonus_armor too -- a base-armor-only hook couldn't
+       cancel Zagan's own item stats out of the final total. Falls through to the normal
+       formula the instant the target stops being hittable (dies, etc.) -- no special-case
+       cleanup needed, the mirror just silently stops. */
+    if (h->hero_id == ARENA_HERO_ZAGAN && h->r_active_ms > 0 &&
+        h->zagan_r_target >= 0 && h->zagan_r_target < ARENA_MAX_HEROES) {
+        const ArenaHero *target = &arena_state.heroes[h->zagan_r_target];
+        if (hero_is_hittable(target)) return arena_hero_armor(target);
+    }
+    float total = arena_hero_base_armor(h) + (float)h->item_bonus_armor;
+    /* Zagan's Calcination (S170-230, Q): a flat armor-shred debuff, generic to any hero
+       carrying it (see zagan_calcination_ms's own struct doc comment) -- applied here, after
+       the normal formula, same layering as the mirror override above. */
+    if (h->zagan_calcination_ms > 0) total -= (float)ARENA_ZAGAN_Q_ARMOR_SHRED;
+    return total;
 }
 
 /* arena_hero_r_zone_radius: see arena_game.h's own doc comment. Doc Wheel's R (a real
@@ -2976,6 +3004,31 @@ static int mnm_cast_q(ArenaHero *mnm, ArenaHero *foe) {
     return 1;
 }
 
+/* zagan_cast_q (S170-230, Calcination): a single upfront hit plus a lingering armor-shred
+ * debuff -- see zagan_calcination_ms's own struct doc comment and arena_hero_armor for where
+ * the shred is actually applied. Deliberately no periodic burn damage on top -- this is a
+ * control/setup tool for W/R, not a DPS ability. */
+static int zagan_cast_q(ArenaHero *zagan, ArenaHero *foe) {
+    if (!hero_is_hittable(foe)) return 0;
+    float dx = foe->x - zagan->x, dz = foe->z - zagan->z;
+    if (sqrtf(dx * dx + dz * dz) > ARENA_ZAGAN_Q_RANGE) return 0;
+    apply_damage(foe, apply_armor(ARENA_ZAGAN_Q_DAMAGE, arena_hero_armor(foe)));
+    foe->zagan_calcination_ms = ARENA_ZAGAN_Q_DURATION_MS;
+    return 1;
+}
+
+/* zagan_cast_w (S170-230, The Standstill): the literal mechanical translation of "Standstill's
+ * Confessor" -- forces stillness onto an enemy. This roster's first-ever kit to call
+ * arena_apply_stun() (the generic infrastructure has existed since S170-184; no kit used it
+ * until now). */
+static int zagan_cast_w(ArenaHero *zagan, ArenaHero *foe) {
+    if (!hero_is_hittable(foe)) return 0;
+    float dx = foe->x - zagan->x, dz = foe->z - zagan->z;
+    if (sqrtf(dx * dx + dz * dz) > ARENA_ZAGAN_W_RANGE) return 0;
+    arena_apply_stun(foe->owner, ARENA_ZAGAN_W_STUN_MS);
+    return 1;
+}
+
 void arena_cast_q(int owner) {
     if (owner < 0 || owner >= ARENA_MAX_HEROES) return;
     ArenaHero *h = &arena_state.heroes[owner];
@@ -3152,6 +3205,12 @@ void arena_cast_q(int owner) {
     case ARENA_HERO_WEATHERMAN:
         if (weatherman_cast_q(h, foe)) {
             h->q_cooldown_ms = cast_cooldown(h, ARENA_WEATHERMAN_Q_COOLDOWN_MS);
+            h->mp -= ARENA_MP_COST_Q;
+        }
+        break;
+    case ARENA_HERO_ZAGAN:
+        if (zagan_cast_q(h, foe)) {
+            h->q_cooldown_ms = cast_cooldown(h, ARENA_ZAGAN_Q_COOLDOWN_MS);
             h->mp -= ARENA_MP_COST_Q;
         }
         break;
@@ -3396,6 +3455,15 @@ void arena_toggle_w(int owner) {
         if (h->w_cooldown_ms > 0 || h->mp < ARENA_MP_COST_W) return;
         if (weatherman_cast_w(h, arena_nearest_enemy(owner), arena_nearest_ally(owner))) {
             h->w_cooldown_ms = cast_cooldown(h, ARENA_WEATHERMAN_W_COOLDOWN_MS);
+            h->mp -= ARENA_MP_COST_W;
+        }
+        break;
+    case ARENA_HERO_ZAGAN:
+        /* The Standstill: instant targeted cast, not a toggle -- see zagan_cast_w's own doc
+           comment. This roster's first-ever kit to call arena_apply_stun(). */
+        if (h->w_cooldown_ms > 0 || h->mp < ARENA_MP_COST_W) return;
+        if (zagan_cast_w(h, arena_nearest_enemy(owner))) {
+            h->w_cooldown_ms = cast_cooldown(h, ARENA_ZAGAN_W_COOLDOWN_MS);
             h->mp -= ARENA_MP_COST_W;
         }
         break;
@@ -3689,6 +3757,22 @@ void arena_cast_r(int owner) {
         h->r_cooldown_ms = cast_cooldown(h, ARENA_WEATHERMAN_R_COOLDOWN_MS);
         h->mp -= ARENA_MP_COST_R;
         break;
+    case ARENA_HERO_ZAGAN:
+        /* Conjunction: locks a target hero-slot (not a fixed ground position, unlike every
+           R-zone above) -- the actual armor-mirroring happens live, every time
+           arena_hero_armor(zagan) is read, for as long as r_active_ms > 0 and the target stays
+           hittable (see that function's own doc comment). Always lands, same "real ultimate
+           commitment" convention as every other unconditional self-effect R on this roster. */
+        if (foe && hero_is_hittable(foe)) {
+            float dx = foe->x - h->x, dz = foe->z - h->z;
+            if (sqrtf(dx * dx + dz * dz) <= ARENA_ZAGAN_R_RANGE) {
+                h->zagan_r_target = foe->owner;
+                h->r_active_ms = ARENA_ZAGAN_R_DURATION_MS;
+                h->r_cooldown_ms = cast_cooldown(h, ARENA_ZAGAN_R_COOLDOWN_MS);
+                h->mp -= ARENA_MP_COST_R;
+            }
+        }
+        break;
     }
 }
 
@@ -3705,6 +3789,12 @@ static void tick_hero_kit(ArenaHero *h, ArenaHero *foe, ArenaHero *ally, unsigne
     if (h->donkey_airborne_ms > 0) {
         h->donkey_airborne_ms -= (int)dt_ms;
         if (h->donkey_airborne_ms < 0) h->donkey_airborne_ms = 0;
+    }
+    /* zagan_calcination_ms (S170-230): generic decrement, any hero can carry this debuff --
+       see arena_hero_armor for where it's actually read/applied. */
+    if (h->zagan_calcination_ms > 0) {
+        h->zagan_calcination_ms -= (int)dt_ms;
+        if (h->zagan_calcination_ms < 0) h->zagan_calcination_ms = 0;
     }
     /* Immortal's Fold (S170-206, Donkey's automatic passive -- "unfolds automatically... the
        instant the wearer's HP crosses below ARENA_DONKEY_FOLD_HP_FRACTION"). Checked here,
@@ -4295,6 +4385,31 @@ static void tick_hero_kit(ArenaHero *h, ArenaHero *foe, ArenaHero *ally, unsigne
             }
         }
         break;
+    case ARENA_HERO_ZAGAN:
+        /* Base Metal Screams (passive): checks EVERY enemy hero, not just the single nearest
+           `foe` this function is handed -- Zagan "presides," he doesn't have to be the one
+           landing the hit or even nearby, matching the lore's own omniscient framing. Loops
+           arena_state.heroes[] directly rather than threading a wider foe list through this
+           function's own signature. */
+        for (int zi = 0; zi < ARENA_MAX_HEROES; zi++) {
+            ArenaHero *e = &arena_state.heroes[zi];
+            if (!e->active || !e->alive || e->team == h->team) continue;
+            if (e->zagan_confessed) continue;
+            if (e->max_hp > 0 && e->hp * 2 <= e->max_hp) {
+                e->zagan_confessed = 1;
+                h->flow += ARENA_ZAGAN_PASSIVE_CONFESSION_FLOW;
+                h->flow_earned += ARENA_ZAGAN_PASSIVE_CONFESSION_FLOW;
+            }
+        }
+        /* Conjunction (R): no per-tick work needed beyond the generic cooldown countdown --
+           the mirror itself is computed live by arena_hero_armor every time it's read, not
+           interpolated/stored here. Just the shared duration countdown, same shape as every
+           other r_active_ms user above. */
+        if (h->r_active_ms > 0) {
+            h->r_active_ms -= (int)dt_ms;
+            if (h->r_active_ms < 0) h->r_active_ms = 0;
+        }
+        break;
     default:
         break;
     }
@@ -4604,6 +4719,20 @@ void bot_cast_kit_if_ready(ArenaHero *bot, ArenaHero *foe) {
             arena_cast_q(bot->owner);
         }
         break;
+    case ARENA_HERO_ZAGAN:
+        /* W (the stun) checked first -- landing CC before anything else matters most for a
+           control kit. R next: lock the mirror onto whoever's in range right now (the bot
+           heuristic doesn't try to reason about whether the target's armor is actually
+           favorable -- same "simple heuristic, not real strategy" scope every other bot case
+           here already accepts). Q otherwise, whenever in range and off cooldown. */
+        if (bot->w_cooldown_ms <= 0 && dist <= ARENA_ZAGAN_W_RANGE) {
+            arena_toggle_w(bot->owner);
+        } else if (bot->r_cooldown_ms <= 0 && dist <= ARENA_ZAGAN_R_RANGE) {
+            arena_cast_r(bot->owner);
+        } else if (bot->q_cooldown_ms <= 0 && dist <= ARENA_ZAGAN_Q_RANGE) {
+            arena_cast_q(bot->owner);
+        }
+        break;
     }
 }
 
@@ -4813,6 +4942,11 @@ static void arena_respawn_hero(ArenaHero *h, int slot_index) {
        already lost the cast anyway (death itself isn't one of this ability's own interrupt
        conditions, but a dead hero can't be casting by construction). */
     h->cast_target = -1;
+    /* zagan_r_target (S170-230): same sentinel-after-memset fix as attack_target/cast_target
+       above -- a fresh respawn shouldn't stay mirroring whoever happened to occupy owner slot
+       0's armor. zagan_confessed also resets: a new life gets a fresh chance to "confess." */
+    h->zagan_r_target = -1;
+    h->zagan_confessed = 0;
     arena_recompute_item_stats(h);
 }
 

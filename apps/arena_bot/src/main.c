@@ -44,7 +44,8 @@
    client and deliberately doesn't include the sim header (no direct ArenaState access, wire
    protocol only), so the roster size has to be kept in sync by hand here. Bump this alongside
    ARENA_HERO_COUNT whenever a new hero is added. */
-#define ARENA_HERO_COUNT 26
+#define ARENA_HERO_COUNT 28 /* S170-230: was stale at 26 (already 2 heroes behind -- Weatherman,
+                               now Zagan) -- bumped alongside arena_game.h's own real definition */
 
 /* ARENA_BOT_ITEM_COSTS (S170-175 Sprint 5, "bot AI shop interaction" -- explicitly deferred at
  * the time, "bots simply won't buy anything yet, flagged not faked"): same "pure network

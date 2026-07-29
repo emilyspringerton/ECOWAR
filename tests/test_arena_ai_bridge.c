@@ -116,6 +116,9 @@ static void test_hero_tags_string_covers_a_few_real_kits(void) {
     arena_hero_tags_string(ARENA_HERO_DUCK, buf, sizeof(buf));
     CHECK(strcmp(buf, "melee has_knockback") == 0, "Duck: melee + knockback (Q pulls the foe, a forced displacement)");
 
+    arena_hero_tags_string(ARENA_HERO_ZAGAN, buf, sizeof(buf));
+    CHECK(strcmp(buf, "ranged") == 0, "Zagan: ranged (Q is a real 5.0-range poke) with no other tag true -- no heal/knockback/dash/stealth anywhere in the kit");
+
     arena_hero_tags_string((ArenaHeroID)99, buf, sizeof(buf));
     CHECK(buf[0] == '\0', "an out-of-range hero_id writes an empty tag string, not garbage");
 }

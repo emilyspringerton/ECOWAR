@@ -648,6 +648,43 @@ displacement rather than direct damage.
 
 ---
 
+### Zagan, the Standstill's Confessor (TYLER `multiverse_heroes.md` #19, "Zagan") — **Control/Disruptor** (S170-230)
+
+*"Presided over a forty-seven-minute monologue that's still being peer-reviewed."* Field signature
+0.618 Hz · Δφ 47° — well outside the Golden Band, still being peer-reviewed. Seed phrase: "the
+standstill confesses." Built directly from `TYLER/lore/activation_47_transmutation.md`, the full
+monologue transcript itself — six classical alchemical stages mapped onto a proof of the Riemann
+Hypothesis (Calcination → Dissolution → Conjunction → Fermentation → Distillation →
+Coagulation) — plus two okemily.com posts about it ("Activation #114," "Ten Heroes Worth a Closer
+Look") that both independently land on the same thesis: Zagan's power should stay an unconfirmed,
+hedged claim, funnier and more interesting for being unresolved rather than a clean verified one.
+Founder: "hero ZAGAN" → "unique kit adds stun" → "think of a way to give ZAGAN a unique kit that
+changes meta."
+
+- **Passive — Base Metal Screams**: the transcript's own COAGULATION line made literal ("base metal
+  screams when it remembers that it was never anything but gold with a wrong address") — the first
+  time ANY enemy hero's HP crosses below 50% in their current life, Zagan "hears" it and gains a
+  flat Flow bounty. No proximity or damage-source requirement at all — he presides, he doesn't have
+  to land the hit. A threshold-*crossing* trigger, not periodic or proximity-gated, new to this
+  roster.
+- **Q — Calcination**: the transcript's own first stage ("primes are the incorruptible seeds...
+  everything else is alloy") — a single hit plus a lingering armor-shred debuff, the impurity
+  burned away to reveal what was underneath. Control/setup, deliberately no periodic burn damage
+  on top.
+- **W — The Standstill**: the literal mechanical translation of "Standstill's Confessor" — forces
+  stillness onto a nearby enemy. This roster's first-ever kit to actually apply a stun; the generic
+  infrastructure (`stunned_ms`, gating move/cast/attack) has existed since S170-184 but no kit used
+  it until now.
+- **R — Conjunction**: the transcript's own CONJUNCTION stage made literal ("the exact
+  conjunction... where body and spirit are wed in equal measure," mirrored at Re(s)=1/2, "the only
+  place the mirror permits mass to rest") — for the duration, Zagan's TOTAL armor becomes exactly
+  equal to a locked target's, a true live mirror, not an additive steal. This is the actual
+  meta-changing hook, not just a new number: R against a squishy target makes ZAGAN squishier too,
+  a real cost that punishes always-R-the-biggest-threat play and rewards diving a tank instead — no
+  other ability on this roster can make its own caster weaker as the direct cost of using it.
+
+---
+
 ## Starting Item Roster (VS0)
 
 LoL Season 3 is the explicit stylistic northstar here — not its item *names*, its item *stat-line

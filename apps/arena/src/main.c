@@ -1167,6 +1167,14 @@ static void draw_hero_model(ArenaHeroID hero_id, float hero_x, float hero_z, flo
             BOX(0.75f, 0.35f, 0.35f, 0.25f, 0.25f, 0.4f);
             BOX(-0.75f, 0.35f, 0.35f, 0.25f, 0.25f, 0.4f);
             break;
+        case ARENA_HERO_ZAGAN: /* the Standstill's Confessor -- tall, narrow, motionless-reading
+                                   silhouette (the stillness/confession theme, not a demon-horns
+                                   cliche): a slim body, a flat halo ring above the head (he
+                                   "presides"), a small chest-height ledger accent (S170-230) */
+            BOX(0.0f, 0.5f, 0.0f, 0.55f, 1.0f, 0.55f);
+            BOX(0.0f, 1.25f, 0.0f, 0.5f, 0.06f, 0.5f);
+            BOX(0.0f, 0.55f, 0.4f, 0.25f, 0.2f, 0.08f);
+            break;
         default:
             BOX(0.0f, 0.5f, 0.0f, 0.9f, 1.0f, 0.9f);
             break;

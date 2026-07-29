@@ -2,6 +2,33 @@
 
 ## 2026-07-29
 
+- feat(arena): S170-230, hero Zagan, "The Standstill's Confessor" -- 28th hero, Control/
+  Disruptor. Founder, across several fragmented messages: "hero ZAGAN" -> "unique kit adds
+  stun" -> "think of a way to give ZAGAN a unique kit that changes meta." Built directly from
+  `TYLER/lore/activation_47_transmutation.md` (the full 47-minute monologue transcript deriving
+  the Riemann Hypothesis through six alchemical stages) plus two okemily.com posts about it that
+  both independently land on the same thesis: Zagan's power should stay an unconfirmed, hedged
+  claim, not a clean verified one.
+  **Passive -- Base Metal Screams**: the first time ANY enemy hero's HP crosses below 50% in
+  their current life, Zagan gains a flat Flow bounty -- no proximity or damage-source
+  requirement, an event-triggered (threshold-crossing) passive shape new to this roster.
+  **Q -- Calcination**: a hit plus a lingering armor-shred debuff.
+  **W -- The Standstill**: a real stun -- this roster's first-ever kit to call
+  `arena_apply_stun()` (the generic infrastructure has existed since S170-184; no kit used it
+  until now).
+  **R -- Conjunction**, the actual meta-changing lever: for the duration, Zagan's TOTAL armor
+  (`arena_hero_armor`, base+items both) becomes exactly equal to a locked target's -- a true live
+  mirror, not an additive steal. R against a squishy target makes ZAGAN squishier too, a real
+  cost that punishes always-R-the-biggest-threat play and rewards diving a tank instead -- no
+  other ability on this roster can make its own caster weaker as the direct cost of using it.
+  Two real pre-existing bugs found and fixed alongside: `apps/arena_server/src/main.c` hard-coded
+  its hero-pick bound check against `ARENA_HERO_MNM`, silently making Weatherman unpickable over
+  the real network path since he shipped; `apps/arena_hero_name` was also missing a Weatherman
+  case entirely (fell through to "unknown"); `apps/arena_bot/src/main.c`'s own duplicated
+  `ARENA_HERO_COUNT` was stale at 26 (already a hero behind). 9 new tests (passive
+  trigger/no-retrigger, Q damage+shred+expiry, W stun in/out of range, R mirror+live-fallback),
+  plus an `arena_ai_bridge` tags-string test. Full suite (764 checks) + test_10_bots.sh green.
+
 - test(arena): S170-217, confirm last-hit already works for lane creeps. §20.3's own note:
   lane-creep-vs-lane-creep damage (`arena_tick_lane_creeps`) and hero-vs-lane-creep damage
   (`arena_hero_attack_lane_creeps`) are two independent sources converging on the same

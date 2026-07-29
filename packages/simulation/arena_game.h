@@ -238,8 +238,9 @@ typedef enum {
     ARENA_HERO_BELETH = 24, /* TYLER multiverse_heroes.md #14, "Beleth, the Detonation" (S170-93) */
     ARENA_HERO_MNM = 25, /* TYLER multiverse_heroes.md #114, "MnM, the Shapeshifting Crab" (S170-134) */
     ARENA_HERO_WEATHERMAN = 26, /* TYLER multiverse_heroes.md #45, "Ao Guang's Weather-Debt Collector" (S170-206, NORTHSTAR §16.2) */
+    ARENA_HERO_ZAGAN = 27, /* TYLER multiverse_heroes.md #19, "Zagan, the Standstill's Confessor" (S170-230) */
 } ArenaHeroID;
-#define ARENA_HERO_COUNT 27
+#define ARENA_HERO_COUNT 28
 
 /* The Unicorn — first real hero kit wired in (S170-18). */
 #define ARENA_UNICORN_ARMOR         4    /* passive: Chassis Claim, flat dmg reduction */
@@ -888,6 +889,53 @@ typedef enum {
 #define ARENA_WEATHERMAN_R_DPS              7
 #define ARENA_WEATHERMAN_R_COOLDOWN_MS     24000
 
+/* Zagan (S170-230, TYLER multiverse_heroes.md #19, "Zagan, the Standstill's Confessor"). Built
+ * directly from the lore's own primary source, TYLER/lore/activation_47_transmutation.md (the
+ * full 47-minute monologue transcript deriving the Riemann Hypothesis through six alchemical
+ * stages) plus two okemily.com blog posts ("Activation #114," "Ten Heroes Worth a Closer Look")
+ * that both independently land on the same design thesis: Zagan's power should stay an
+ * unconfirmed, hedged claim rather than a clean verified one -- funnier and more interesting for
+ * being unresolved. Founder, real-time: "hero ZAGAN" -> "unique kit adds stun" -> "think of a
+ * way to give ZAGAN a unique kit that changes meta."
+ *
+ * Passive -- Base Metal Screams: the transcript's own COAGULATION stage framing ("base metal
+ * screams when it remembers that it was never anything but gold with a wrong address") made
+ * literal -- the first time ANY enemy hero's HP crosses below 50% in their current life, Zagan
+ * "hears" it (no proximity or damage-source requirement -- he presides, he doesn't have to land
+ * the hit) and gains a flat Flow bounty. An event-triggered (threshold-crossing), not
+ * periodic/proximity-gated, passive shape -- new to this roster.
+ *
+ * Q -- Calcination: the transcript's own first stage ("primes are the incorruptible seeds...
+ * everything else is alloy") -- a burn that strips armor over its duration, the "impurity"
+ * being burned away to reveal what was underneath.
+ *
+ * W -- The Standstill: the literal mechanical translation of "Standstill's Confessor" -- forces
+ * stillness onto an enemy. This roster's first-ever kit to actually call arena_apply_stun();
+ * the generic stun infrastructure (stunned_ms, gating on move/cast/attack) has existed since
+ * S170-184 but no hero used it until now.
+ *
+ * R -- Conjunction: the actual meta-changing lever, built from the transcript's own CONJUNCTION
+ * stage ("the exact conjunction... where body and spirit are wed in equal measure," mirrored at
+ * Re(s)=1/2, "the only place the mirror permits mass to rest"). For the duration, Zagan's TOTAL
+ * armor (arena_hero_armor, base+items) becomes exactly equal to his locked target's -- a true
+ * live mirror, not an additive steal. This is deliberately NOT a strict buff: R against a
+ * squishy target makes ZAGAN squishier too, a real cost that punishes always-R-the-biggest-
+ * threat play and rewards diving a tank instead -- no other ability on this roster can make its
+ * own caster weaker as the direct cost of using it, which is the actual "changes the meta" hook,
+ * not just a new number. */
+#define ARENA_ZAGAN_PASSIVE_CONFESSION_FLOW   60
+#define ARENA_ZAGAN_Q_RANGE                    5.0f
+#define ARENA_ZAGAN_Q_DAMAGE                   6
+#define ARENA_ZAGAN_Q_ARMOR_SHRED              4
+#define ARENA_ZAGAN_Q_DURATION_MS           3000
+#define ARENA_ZAGAN_Q_COOLDOWN_MS           5000
+#define ARENA_ZAGAN_W_RANGE                    3.0f
+#define ARENA_ZAGAN_W_STUN_MS               1100
+#define ARENA_ZAGAN_W_COOLDOWN_MS          13000
+#define ARENA_ZAGAN_R_RANGE                    6.0f
+#define ARENA_ZAGAN_R_DURATION_MS           6000
+#define ARENA_ZAGAN_R_COOLDOWN_MS          32000
+
 /* Lane creep waves (S170-139). Founder: "add subsystems needed to make
  * creeps a reality" -- clarified as classic MOBA lane-pushing waves,
  * distinct from S170-51's node-guardian creeps (per-node, stationary, aggro-only).
@@ -1278,6 +1326,25 @@ typedef struct {
      * (hero-vs-hero, node-guardian creep, lane creep) while > 0 -- he's literally not present on
      * the battlefield surface to swing at anything until he resurfaces. */
     int mnm_burrow_ms;
+    /* zagan_r_target (S170-230, Conjunction): the hero-slot index R is currently locked onto,
+     * -1 sentinel (same "explicit non-zero sentinel" convention last_attacked_by_owner/
+     * cast_target already use -- 0 would wrongly mean "owner slot 0's armor"). Re-validated for
+     * hittability every tick arena_hero_armor reads it (unlike cast_target, which only
+     * validates once at cast completion) -- if the target dies or otherwise stops being
+     * hittable mid-duration, the mirror just falls back to computing Zagan's own real armor
+     * normally, no special-case cleanup needed. Reset to -1 on respawn, same as
+     * attack_target/cast_target. */
+    int zagan_r_target;
+    /* zagan_confessed (S170-230, Base Metal Screams): has THIS hero already crossed below 50%
+     * HP and triggered Zagan's passive once this life? Lives on every hero, not just Zagan's
+     * own slot, since any enemy hero could be the one who "confesses" -- harmless/unused when
+     * no Zagan is in the match. Reset to 0 on respawn (own life, own confession). */
+    int zagan_confessed;
+    /* zagan_calcination_ms (S170-230, Calcination/Q): the armor-shred debuff, lives on the
+     * TARGET (any hero can carry it), not on Zagan -- same "generic status effect any hero can
+     * carry" shape as slowed_ms/burning_ms below, decremented generically in tick_hero_kit
+     * regardless of who cast it. Read by arena_hero_armor. */
+    int zagan_calcination_ms;
     int owner; /* 0 = player, 1 = bot in the 1v1 local demo; a slot index 0..ARENA_MAX_HEROES-1 in team mode */
     int alive;
     int team;   /* 2026-07-24: which side, for team-mode nearest-enemy targeting. 1v1 local demo sets 0/1 explicitly. */
