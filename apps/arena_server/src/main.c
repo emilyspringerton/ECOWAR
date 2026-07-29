@@ -195,6 +195,21 @@ static void report_match_result(int winner) {
                             body, resp, sizeof(resp), &status) != 0 || status != 200) {
             fprintf(stderr, "WOTAN: game-result report failed for client %d (status=%d)\n", owner, status);
         }
+
+        /* hero-result (2026-07-29, IDUNA Apple #11320): same fact, a second aggregate --
+           "which heroes are strongest" (founder: "can we start crunching the data on the heroes
+           that are the strongest? ... i want to start tracking it on okemily.com"), cross-player
+           by hero_id rather than per-account. Reuses the same agent token already fetched above
+           -- IDUNA's /api/v1/redgarden/hero-result requires the same redgarden.match.write
+           permission game-result already needs, so no separate auth/permission wiring. */
+        char hero_body[128];
+        snprintf(hero_body, sizeof(hero_body),
+                 "{\"hero_id\":%d,\"result\":\"%s\"}", (int)arena_state.heroes[owner].hero_id, result);
+        if (http_post_json(iduna_host, iduna_port, "/api/v1/redgarden/hero-result", token,
+                            hero_body, resp, sizeof(resp), &status) != 0 || status != 200) {
+            fprintf(stderr, "WOTAN: hero-result report failed for client %d hero_id=%d (status=%d)\n",
+                    owner, (int)arena_state.heroes[owner].hero_id, status);
+        }
     }
 }
 

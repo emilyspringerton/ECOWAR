@@ -2465,3 +2465,11 @@
   sitting in `var/matches/` from before this fix are permanently unusable for this -- hero
   identity was simply never written down, so hero stats start from zero real games, not from
   this repo's actual match history. Full suite green.
+
+- feat(arena): report hero-level match results to IDUNA. Founder follow-up, same thread: "ok i
+  want to start tracking it on okemily.com." `report_match_result` (`apps/arena_server/src/
+  main.c`) now also POSTs `{"hero_id": N, "result": "win"|"loss"}` to IDUNA's new `POST
+  /api/v1/redgarden/hero-result` (IDUNA Apple #11320) for every owner at match end, reusing the
+  same agent token/permission (`redgarden.match.write`) the existing per-player `game-result`
+  POST already needs -- no new auth wiring. This is the durable, always-on counterpart to the
+  local `var/matches/*.jsonl` logs `scripts/hero_stats.py` reads: real matches now feed both.
