@@ -87,7 +87,7 @@ mkdir -p "${LIVE_DIR}/build"
 # inode; already-running processes keep the old inode mapped until they're
 # actually restarted below, exactly the atomic-swap pattern package
 # managers use for the same reason.
-for bin in red_garden_arena_server red_garden_arena_bot red_garden_matchmaker; do
+for bin in red_garden_arena_server red_garden_arena_bot red_garden_matchmaker red_garden_arena; do
     if [ -f "build/${bin}" ]; then
         cp "build/${bin}" "${LIVE_DIR}/build/${bin}.new"
         mv "${LIVE_DIR}/build/${bin}.new" "${LIVE_DIR}/build/${bin}"

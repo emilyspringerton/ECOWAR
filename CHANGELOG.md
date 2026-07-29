@@ -2300,3 +2300,24 @@
   19 orphaned PIDs live (back to the intended 19 bots + 1 open slot); added a `pkill -f` guard at
   the top of `run_bot_pool.sh` before it launches its own set, so a future unclean exit can't
   double up the pool again.
+- fix(arena): auto_deploy.sh never republished the human client binary. Founder, real-time
+  follow-up, after the fix above didn't resolve it: "still waiting for the queue to pop
+  somethings wrong check everything." Real root cause of the missing draft screen, more
+  fundamental than the bot-pool doubling above: `scripts/auto_deploy.sh` (systemd timer, polls
+  CI every ~10min, `var/logs/auto-deploy.log`) republishes `red_garden_arena_server`,
+  `red_garden_arena_bot`, and `red_garden_matchmaker` on every green build -- but its `for bin in
+  ...` copy loop never included `red_garden_arena`, the actual SDL2 client a human plays. Found
+  live: server/bot/matchmaker had auto-deployed commit `6349d09` at 10:10 UTC (confirmed via the
+  deploy log), but `build/red_garden_arena` was still a manual build from 06:52 UTC, several
+  hours and dozens of commits stale -- including missing Zagan (28th hero, S170-230), which
+  changes `ARENA_HERO_COUNT` and therefore wire-protocol-sized structs. The client could still
+  connect (`PACKET_CONNECT`/`PACKET_WELCOME` don't depend on hero count) but the mismatch is
+  consistent with the observed symptom: matches kept forming with 19/20 or 18/20 actually
+  connected and timing out at the 60s no-progress mark (`var/logs/matchmaker-bots.log`), i.e. the
+  human's own connection was the one silently failing, invisible bots aside. This isn't a
+  one-time staleness -- it's a standing bug: every future green CI run reintroduces the same skew
+  regardless of any one-off manual client rebuild. Fixed by adding `red_garden_arena` to
+  `auto_deploy.sh`'s publish loop (same copy-then-rename ETXTBSY-safe pattern already used for
+  the other three). Rebuilt all binaries fresh from current `main` (`scripts/build.sh`, exit 0),
+  restarted the matchmaker/bot-pool/player-pool trio live, confirmed a clean steady-state queue
+  (19 bots + 1 open human slot, no partial-connect timeouts since).
