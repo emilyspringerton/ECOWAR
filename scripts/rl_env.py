@@ -8,15 +8,24 @@ sim, in place of S170-194/195/220's own corpus-based next-token-prediction pretr
 want unsupervised learning with rewards like in the unity ml-agents plugin").
 
 Architecture (see NORTHSTAR §21.2 for the full design): hero 0 is "the Agent" (matches sibling
-SHANKPIT's own apps/training/headless.c convention, Player 0 = the trainee); hero 1 is the
-existing hand-authored heuristic bot AI (arena_bot_enabled, already on by default in the C sim --
-no separate opponent code needed, same "practice against what already exists" reasoning
-SHANKPIT's own headless.c already established).
+SHANKPIT's own apps/training/headless.c convention, Player 0 = the trainee); hero 1 is, by
+default, the existing hand-authored heuristic bot AI (arena_bot_enabled, already on by default in
+the C sim -- no separate opponent code needed, same "practice against what already exists"
+reasoning SHANKPIT's own headless.c already established). 2026-07-29, founder: "i win every game
+i need the bots to be training on the full game rl" -> "not just 2 heroes" -- ArenaTrainingEnv
+now optionally supports two real extensions on top of that default, both off unless explicitly
+requested (see its own __init__ doc comment): `randomize_heroes=True` picks a fresh random hero
+for BOTH sides every episode instead of always Unicorn-vs-Duck, and `opponent_model_path=<zip>`
+replaces the heuristic with a frozen past PPO checkpoint's own predictions -- real self-play, not
+just a stronger fixed target.
 
-Observation: the 18-float vector apps/arena_training/src/headless.c's own sim_get_obs() writes
-(self hp/max_hp/mp/x/z/q_cd/w_cd/r_cd/flow/xp/alive, foe hp/max_hp/x/z/alive, dx, dz) -- see that
-file's own doc comment for the exact index layout, mirrored here via ARENA_TRAINING_OBS_SIZE so
-the two stay in sync by construction, not by two independently-hand-maintained numbers.
+Observation: the ARENA_TRAINING_OBS_SIZE-float vector apps/arena_training/src/headless.c's own
+sim_get_obs() writes -- 18 scalar fields (self hp/max_hp/mp/x/z/q_cd/w_cd/r_cd/flow/xp/alive, foe
+hp/max_hp/x/z/alive, dx, dz) plus one-hot self hero_id and one-hot foe hero_id (added alongside
+the two extensions above -- without hero identity in the observation, a policy has no way to
+condition its behavior on which hero it's actually playing or fighting) -- see that file's own
+doc comment for the exact index layout, mirrored here via ARENA_TRAINING_OBS_SIZE so the two stay
+in sync by construction, not by two independently-hand-maintained numbers.
 
 Action: a 5-float Box -- [move_x, move_z, cast_q, cast_w, cast_r]. move_x/move_z are passed
 straight through to sim_step (arena_set_move_target's own range, roughly the map's own
@@ -48,7 +57,16 @@ import math
 import os
 import random
 
-ARENA_TRAINING_OBS_SIZE = 18
+# ARENA_HERO_COUNT (2026-07-29, founder: "not just 2 heroes"): hand-synced copy of
+# packages/simulation/arena_game.h's own real constant, same "no C header access" reasoning
+# ARENA_HALF_EXTENT below already documents for itself. Bump alongside that constant whenever a
+# new hero is added.
+ARENA_HERO_COUNT = 28
+
+# 18 scalar fields + one-hot self hero_id (ARENA_HERO_COUNT-wide) + one-hot foe hero_id -- must
+# match apps/arena_training/src/headless.c's own ARENA_TRAINING_OBS_SIZE exactly (that file's own
+# doc comment has the full index layout and the "why one-hot" reasoning).
+ARENA_TRAINING_OBS_SIZE = 18 + 2 * ARENA_HERO_COUNT
 
 # Index layout -- must match apps/arena_training/src/headless.c's own sim_get_obs() doc comment
 # exactly. Named here so reward computation below reads by name, not by magic index number.
@@ -70,6 +88,8 @@ OBS_FOE_Z = 14
 OBS_FOE_ALIVE = 15
 OBS_DX = 16
 OBS_DZ = 17
+OBS_SELF_HERO_ONEHOT_START = 18
+OBS_FOE_HERO_ONEHOT_START = 18 + ARENA_HERO_COUNT
 
 # S170-223's own reward design (NORTHSTAR §21.2) -- dense per-tick shaping (small, so it can't
 # outweigh actually engaging) plus a dominant sparse terminal win/loss term (the real objective).
@@ -137,6 +157,12 @@ def load_lib(lib_path=None):
         ctypes.c_float, ctypes.c_float, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_uint,
     ]
     lib.sim_step.restype = None
+    lib.sim_step_both.argtypes = [
+        ctypes.c_float, ctypes.c_float, ctypes.c_int, ctypes.c_int, ctypes.c_int,
+        ctypes.c_float, ctypes.c_float, ctypes.c_int, ctypes.c_int, ctypes.c_int,
+        ctypes.c_uint,
+    ]
+    lib.sim_step_both.restype = None
     lib.sim_get_obs.argtypes = [ctypes.c_int, ctypes.POINTER(ctypes.c_float)]
     lib.sim_get_obs.restype = ctypes.c_int
     lib.sim_get_done.argtypes = []
@@ -209,15 +235,51 @@ try:
         metadata = {"render_modes": []}
 
         def __init__(self, lib_path=None, hero0_id=ARENA_HERO_UNICORN, hero1_id=ARENA_HERO_DUCK,
-                     dt_ms=16, max_episode_ticks=3000):
+                     dt_ms=16, max_episode_ticks=3000, randomize_heroes=False,
+                     opponent_model_path=None):
+            """randomize_heroes/opponent_model_path (2026-07-29, founder: "not just 2 heroes" /
+            "how do we combine heuristics with the ml model" thread -> self-play): both default
+            to the ORIGINAL fixed-Unicorn-vs-Duck, heuristic-opponent behavior, so anything
+            already calling this class (eval loops, the old smoke test) keeps working unchanged
+            unless it explicitly opts in.
+
+            randomize_heroes=True: reset() picks a fresh, independent random hero_id (0..
+            ARENA_HERO_COUNT-1) for BOTH hero0 and hero1 every episode instead of always using
+            the fixed hero0_id/hero1_id passed in here -- the only way the network can ever learn
+            hero-conditioned behavior is by actually seeing every hero, on both sides, repeatedly
+            (see headless.c's own ARENA_TRAINING_OBS_SIZE doc comment for the one-hot encoding
+            half of this same fix).
+
+            opponent_model_path, if given: loads a FROZEN Stable-Baselines3 PPO checkpoint (a
+            past training run's own ppo_arena_*.zip) and uses ITS predictions to drive hero 1
+            every step, instead of the stable hand-authored heuristic -- real self-play, not just
+            "train against a stronger fixed heuristic." Frozen deliberately, not the live model
+            currently being trained: predicting from a model that's simultaneously being updated
+            by the SAME .learn() call would mean training against a constantly-shifting target of
+            itself, circular in the same way sim_step's own module doc comment already named for
+            why hero 1 can't be routed through arena_bot_tick()'s own live-policy path during
+            training. Iterative self-play (train gen N+1 against a frozen gen N, promote, repeat
+            in a LATER run against gen N+1) is the intended real-world usage -- this class only
+            needs to support "the opponent is some fixed policy," not manage that generational
+            loop itself."""
             super().__init__()
             self.lib = load_lib(lib_path)
             self.hero0_id = hero0_id
             self.hero1_id = hero1_id
             self.dt_ms = dt_ms
             self.max_episode_ticks = max_episode_ticks
+            self.randomize_heroes = randomize_heroes
             self._tick = 0
             self._prev_obs = None
+
+            self.opponent_model = None
+            if opponent_model_path:
+                # Deferred import, same reasoning every other SB3 import in this codebase uses
+                # (scripts/rl_train.py's own module doc comment) -- this class must stay
+                # importable without stable_baselines3 installed for anything not using
+                # self-play.
+                from stable_baselines3 import PPO
+                self.opponent_model = PPO.load(opponent_model_path)
 
             self.observation_space = spaces.Box(
                 low=-1e4, high=1e4, shape=(ARENA_TRAINING_OBS_SIZE,), dtype=np.float32
@@ -232,13 +294,22 @@ try:
                 dtype=np.float32,
             )
 
-        def _read_obs(self):
+        def _read_obs(self, owner=0):
             buf = (ctypes.c_float * ARENA_TRAINING_OBS_SIZE)()
-            self.lib.sim_get_obs(0, buf)
+            self.lib.sim_get_obs(owner, buf)
             return np.array(buf[:], dtype=np.float32)
 
         def reset(self, *, seed=None, options=None):
             super().reset(seed=seed)
+            # Hero-pair randomization (2026-07-29, "not just 2 heroes"): picked fresh each
+            # episode, independently for each side -- a mirror match (both sides the same hero)
+            # is a real, valid matchup too, not excluded. self.hero0_id/hero1_id still get
+            # updated (not just local variables) so sim_get_obs's own one-hot blocks, built from
+            # arena_state.heroes[i].hero_id on the C side, line up with whatever this Python
+            # object believes the current pairing is, for anything that inspects it mid-episode.
+            if self.randomize_heroes:
+                self.hero0_id = random.randrange(ARENA_HERO_COUNT)
+                self.hero1_id = random.randrange(ARENA_HERO_COUNT)
             self.lib.sim_reset(self.hero0_id, self.hero1_id)
             # Spawn-position randomization (2026-07-29, see MOVE_TARGET_RANGE's own doc comment
             # above for the full "why" -- this is the other half of that same fix). Without
@@ -274,7 +345,26 @@ try:
             cast_w = 1 if action[3] > 0 else 0
             cast_r = 1 if action[4] > 0 else 0
 
-            self.lib.sim_step(move_x, move_z, cast_q, cast_w, cast_r, self.dt_ms)
+            if self.opponent_model is not None:
+                # Real self-play: hero 1's own action comes from the frozen opponent model's own
+                # prediction against ITS OWN point-of-view observation (sim_get_obs(1, ...) is
+                # already a genuine perspective flip -- "self" is hero 1, "foe" is hero 0 -- not
+                # a raw re-read of hero 0's own obs), not the stable heuristic. Sampled
+                # (deterministic=False), not argmaxed -- a frozen opponent that always plays its
+                # single most-likely action every tick is a much easier, less realistic target
+                # than the same policy's own real action distribution, which is what a live
+                # opponent (this same model, earlier, when IT was training) actually explored.
+                obs1 = self._read_obs(owner=1)
+                action1, _ = self.opponent_model.predict(obs1, deterministic=False)
+                move_x1 = float(action1[0])
+                move_z1 = float(action1[1])
+                cast_q1 = 1 if action1[2] > 0 else 0
+                cast_w1 = 1 if action1[3] > 0 else 0
+                cast_r1 = 1 if action1[4] > 0 else 0
+                self.lib.sim_step_both(move_x, move_z, cast_q, cast_w, cast_r,
+                                        move_x1, move_z1, cast_q1, cast_w1, cast_r1, self.dt_ms)
+            else:
+                self.lib.sim_step(move_x, move_z, cast_q, cast_w, cast_r, self.dt_ms)
             self._tick += 1
 
             obs = self._read_obs()

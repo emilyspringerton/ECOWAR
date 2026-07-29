@@ -59,7 +59,24 @@ def parse_args():
                    help="which hero ID the Agent plays -- default 0 (Unicorn), matching "
                         "scripts/rl_env.py's own default")
     p.add_argument("--hero1-id", type=int, default=int(os.environ.get("RL_HERO1_ID", 1)),
-                   help="which hero ID the heuristic-AI opponent plays -- default 1 (Duck)")
+                   help="which hero ID the heuristic-AI opponent plays -- default 1 (Duck). "
+                        "Ignored during training if --randomize-heroes is set (still used for "
+                        "the final eval pass, which stays on a fixed pairing for a stable, "
+                        "comparable-across-runs metric)")
+    p.add_argument("--randomize-heroes", action="store_true",
+                   help="2026-07-29, founder: 'not just 2 heroes' -- pick a fresh random hero "
+                        "for both sides every training episode instead of always "
+                        "--hero0-id/--hero1-id. Needs the one-hot hero-id observation fields "
+                        "(always present now, see scripts/rl_env.py) to actually learn anything "
+                        "hero-specific from this")
+    p.add_argument("--self-play-opponent", default=os.environ.get("RL_SELF_PLAY_OPPONENT", None),
+                   help="2026-07-29, founder: 'i need the bots to be training on the full game "
+                        "rl' -- path to a frozen past PPO checkpoint (.zip) whose own "
+                        "predictions drive hero 1 during training, instead of the stable "
+                        "heuristic. Real self-play: train gen N+1 against a frozen gen N, then "
+                        "point a LATER run's --self-play-opponent at gen N+1's own checkpoint to "
+                        "keep climbing. Omit to keep training against the heuristic (unchanged "
+                        "default behavior)")
     p.add_argument("--output-dir", default=os.environ.get("RL_OUTPUT_DIR", "rl_checkpoints"))
     p.add_argument("--save-freq", type=int, default=int(os.environ.get("RL_SAVE_FREQ", 20_000)),
                    help="save a checkpoint every N timesteps, in addition to the final save")
@@ -83,7 +100,7 @@ def parse_args():
     return p.parse_args()
 
 
-def make_env(lib_path, hero0_id, hero1_id):
+def make_env(lib_path, hero0_id, hero1_id, randomize_heroes=False, opponent_model_path=None):
     """Factory closure for SB3's VecEnv constructors (each parallel env needs its own callable,
     not a shared instance -- SB3's own documented pattern)."""
     def _init():
@@ -92,7 +109,9 @@ def make_env(lib_path, hero0_id, hero1_id):
         # pip_install()-gated imports already use for torch/transformers).
         sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
         from rl_env import ArenaTrainingEnv
-        return ArenaTrainingEnv(lib_path=lib_path, hero0_id=hero0_id, hero1_id=hero1_id)
+        return ArenaTrainingEnv(lib_path=lib_path, hero0_id=hero0_id, hero1_id=hero1_id,
+                                 randomize_heroes=randomize_heroes,
+                                 opponent_model_path=opponent_model_path)
     return _init
 
 
@@ -102,7 +121,12 @@ def main():
     from stable_baselines3 import PPO
     from stable_baselines3.common.vec_env import SubprocVecEnv, DummyVecEnv
 
-    env_fns = [make_env(args.lib_path, args.hero0_id, args.hero1_id) for _ in range(args.n_envs)]
+    env_fns = [
+        make_env(args.lib_path, args.hero0_id, args.hero1_id,
+                 randomize_heroes=args.randomize_heroes,
+                 opponent_model_path=args.self_play_opponent)
+        for _ in range(args.n_envs)
+    ]
     # DummyVecEnv (single process) when n_envs==1 -- SubprocVecEnv's own process-pool overhead
     # isn't worth it for a single env, same reasoning SB3's own docs give.
     vec_env = DummyVecEnv(env_fns) if args.n_envs == 1 else SubprocVecEnv(env_fns)
@@ -127,7 +151,8 @@ def main():
     )
 
     print(f"Training PPO: total_timesteps={args.total_timesteps} n_envs={args.n_envs} "
-          f"net_arch={args.net_arch} hero0={args.hero0_id} hero1={args.hero1_id}")
+          f"net_arch={args.net_arch} hero0={args.hero0_id} hero1={args.hero1_id} "
+          f"randomize_heroes={args.randomize_heroes} self_play_opponent={args.self_play_opponent}")
     print("Reward function: NORTHSTAR §21.2 / scripts/rl_env.py's own compute_reward() -- "
           "damage dealt/taken, kill/death, Flow/XP, alive bonus, terminal win/loss.")
 
@@ -185,6 +210,35 @@ def main():
     print(f"Eval results: {wins}W {losses}L {draws}D over {args.eval_episodes} episodes "
           f"({100.0 * wins / args.eval_episodes:.1f}% win rate vs. the heuristic bot AI)")
 
+    # Second eval pass, only when self-play was actually used: "did the new generation actually
+    # beat the frozen opponent it just trained against" is a real, different question from "does
+    # it still beat the original heuristic" above -- the heuristic eval alone can't answer it
+    # (a policy could get worse against a strong self-play opponent while still comfortably
+    # beating the much weaker fixed heuristic, and this would silently miss that regression).
+    if args.self_play_opponent:
+        print(f"\nEvaluating over {args.eval_episodes} episodes against the self-play opponent "
+              f"({args.self_play_opponent})...")
+        opponent_eval_env = ArenaTrainingEnv(
+            lib_path=args.lib_path, hero0_id=args.hero0_id, hero1_id=args.hero1_id,
+            opponent_model_path=args.self_play_opponent,
+        )
+        sp_wins = sp_losses = sp_draws = 0
+        for ep in range(args.eval_episodes):
+            obs, _ = opponent_eval_env.reset()
+            terminated = truncated = False
+            while not (terminated or truncated):
+                action, _ = model.predict(obs, deterministic=True)
+                obs, reward, terminated, truncated, info = opponent_eval_env.step(action)
+            winner = info.get("winner", 0)
+            if winner == 1:
+                sp_wins += 1
+            elif winner == 2:
+                sp_losses += 1
+            else:
+                sp_draws += 1
+        print(f"Eval results vs self-play opponent: {sp_wins}W {sp_losses}L {sp_draws}D over "
+              f"{args.eval_episodes} episodes ({100.0 * sp_wins / args.eval_episodes:.1f}% win rate)")
+
     header_path = None
     if not args.skip_export:
         from export_rl_policy_to_c import extract_layers_from_sb3_policy, write_c_header_from_layers
@@ -204,10 +258,19 @@ def main():
         print(f"C inference header: {header_path} (packages/common/mlp_infer.h's own MlpModel "
               f"format -- see that header's own doc comment, and rl_policy_forward() inside the "
               f"generated file, for how to call it)")
-    print("This is a trained PPO policy against the EXISTING heuristic bot AI only (NORTHSTAR")
-    print("§21.3: self-play/curriculum explicitly out of scope for this first pass).")
-    print("NOT done: wiring rl_policy_forward() into the LIVE bot AI decision loop -- this")
-    print("pipeline trains + exports + syncs the policy, nothing in a real match calls it yet.")
+    if args.self_play_opponent:
+        print(f"Trained via self-play against {args.self_play_opponent}"
+              + (", with hero pairings randomized every episode." if args.randomize_heroes else "."))
+        print("For a further generation: point a later run's --self-play-opponent at THIS run's")
+        print(f"own {final_path}.zip to keep climbing.")
+    else:
+        print("Trained against the existing heuristic bot AI only"
+              + (", with hero pairings randomized every episode." if args.randomize_heroes else "."))
+        print("For real self-play instead: --self-play-opponent <a past run's ppo_arena_*.zip>.")
+    print("rl_policy_forward() is already wired into apps/arena_bot's real networked match bots")
+    print("(REDGARDEN Apple #11301) and arena_game.c's solo-practice bot (S170-228) -- promoting")
+    print("this run's exported header (above) into packages/common/rl_policy_weights.h is enough")
+    print("for both to pick it up, no further live-integration work needed.")
     print("File a completion Apple and mark the relevant EMILY/BACKLOG.md item done.")
     print("=" * 60)
 

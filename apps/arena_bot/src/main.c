@@ -697,6 +697,31 @@ static float rl_engage_confidence(const BotSnapshotView *cur, int self_owner, in
     return confidence;
 }
 
+/* arena_rl_fill_hero_onehot (2026-07-29, founder: "not just 2 heroes"): same one-hot encoding
+ * apps/arena_training/src/headless.c's own sim_get_obs() writes during training and
+ * packages/simulation/arena_game.c's own copy of this exact helper writes for the solo-practice
+ * bot -- duplicated here rather than shared across a header, same "pure ctypes/wire-protocol
+ * client, no direct C header access to the sim" reasoning this file's own ARENA_HERO_COUNT
+ * duplicate already documents for itself. Guarded by RL_POLICY_OBS_SIZE (see arena_game.c's own
+ * copy of this exact guard for the full "why" -- an older, narrower-input model genuinely
+ * doesn't have these input slots, and writing past the end of an 18-float obs[] stack array
+ * would be real out-of-bounds corruption) -- safe to land this source change before a matching
+ * wider-input model is trained and promoted. */
+#if RL_POLICY_OBS_SIZE >= (18 + 2 * ARENA_HERO_COUNT)
+static void arena_rl_fill_hero_onehot(float *obs, int self_hero, int foe_hero) {
+    for (int i = 0; i < ARENA_HERO_COUNT; i++) {
+        obs[18 + i] = 0.0f;
+        obs[18 + ARENA_HERO_COUNT + i] = 0.0f;
+    }
+    if (self_hero >= 0 && self_hero < ARENA_HERO_COUNT) obs[18 + self_hero] = 1.0f;
+    if (foe_hero >= 0 && foe_hero < ARENA_HERO_COUNT) obs[18 + ARENA_HERO_COUNT + foe_hero] = 1.0f;
+}
+#else
+static void arena_rl_fill_hero_onehot(float *obs, int self_hero, int foe_hero) {
+    (void)obs; (void)self_hero; (void)foe_hero;
+}
+#endif
+
 static void rl_engage_nudge(const BotSnapshotView *cur, int self_owner, int foe_owner,
                              float *out_dx, float *out_dz) {
     const ArenaHeroSnapshot *self_h = &cur->heroes[self_owner];
@@ -721,6 +746,7 @@ static void rl_engage_nudge(const BotSnapshotView *cur, int self_owner, int foe_
     obs[15] = foe_h->alive ? 1.0f : 0.0f;
     obs[16] = (-foe_h->x) - (-self_h->x);
     obs[17] = foe_h->z - self_h->z;
+    arena_rl_fill_hero_onehot(obs, self_h->hero_id, foe_h->hero_id);
 
     float action[RL_POLICY_ACTION_SIZE];
     rl_policy_forward(obs, action);

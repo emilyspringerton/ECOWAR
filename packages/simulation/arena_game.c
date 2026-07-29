@@ -192,6 +192,35 @@ static void bot_brain_forward(const float in[4], float out[2]) {
     }
 }
 
+/* arena_rl_fill_hero_onehot (2026-07-29, founder: "not just 2 heroes"): writes the one-hot
+ * self/foe hero_id blocks apps/arena_training/src/headless.c's own sim_get_obs() writes during
+ * training (see that function's own ARENA_TRAINING_OBS_SIZE doc comment for the full "why
+ * one-hot" reasoning) -- kept in sync here so a LIVE observation is built exactly the same way a
+ * TRAINING one is, index for index. Guarded by RL_POLICY_OBS_SIZE itself (defined in the
+ * generated packages/common/rl_policy_weights.h, only as large as whatever model was actually
+ * exported) rather than assuming the wider shape unconditionally -- an older, narrower-input
+ * model (pre-2026-07-29, 18 floats, no hero identity at all) genuinely doesn't have these input
+ * slots, and writing past the end of an 18-float `obs[RL_POLICY_OBS_SIZE]` stack array would be
+ * real out-of-bounds corruption, not just wasted work. This is what makes it safe to land this
+ * source change BEFORE a matching wider-input model is trained and promoted -- the code compiles
+ * either way, and only actually writes/reads the one-hot blocks once the promoted model's own
+ * header says they exist. */
+#if RL_POLICY_OBS_SIZE >= (18 + 2 * ARENA_HERO_COUNT)
+static void arena_rl_fill_hero_onehot(float *obs, ArenaHeroID self_hero, ArenaHeroID foe_hero) {
+    for (int i = 0; i < ARENA_HERO_COUNT; i++) {
+        obs[18 + i] = 0.0f;
+        obs[18 + ARENA_HERO_COUNT + i] = 0.0f;
+    }
+    if (self_hero >= 0 && self_hero < ARENA_HERO_COUNT) obs[18 + self_hero] = 1.0f;
+    if (foe_hero >= 0 && foe_hero < ARENA_HERO_COUNT) obs[18 + ARENA_HERO_COUNT + foe_hero] = 1.0f;
+}
+#else
+/* Narrower model still live -- no-op, see this block's own doc comment above. */
+static void arena_rl_fill_hero_onehot(float *obs, ArenaHeroID self_hero, ArenaHeroID foe_hero) {
+    (void)obs; (void)self_hero; (void)foe_hero;
+}
+#endif
+
 /* ---- Trained reinforcement-learning "brain" for the bot hero's movement ----
  * S170-228 (founder: "let it train longer then dump the weights into c and
  * commit" -> "update our bots to use it instead of the hand written net"):
@@ -253,6 +282,7 @@ static void arena_bot_tick_rl_move(ArenaHero *bot, ArenaHero *foe) {
     obs[15] = foe->alive ? 1.0f : 0.0f;
     obs[16] = (-foe->x) - (-bot->x);
     obs[17] = foe->z - bot->z;
+    arena_rl_fill_hero_onehot(obs, bot->hero_id, foe->hero_id);
 
     float action[RL_POLICY_ACTION_SIZE];
     rl_policy_forward(obs, action);
@@ -294,6 +324,7 @@ static void arena_bot_tick_rl_cast(ArenaHero *bot, ArenaHero *foe) {
     obs[15] = foe->alive ? 1.0f : 0.0f;
     obs[16] = (-foe->x) - (-bot->x);
     obs[17] = foe->z - bot->z;
+    arena_rl_fill_hero_onehot(obs, bot->hero_id, foe->hero_id);
 
     float action[RL_POLICY_ACTION_SIZE];
     rl_policy_forward(obs, action);

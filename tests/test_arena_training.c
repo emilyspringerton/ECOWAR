@@ -16,12 +16,17 @@
 void sim_init(int hero0_id, int hero1_id);
 void sim_reset(int hero0_id, int hero1_id);
 void sim_step(float move_x, float move_z, int cast_q, int cast_w, int cast_r, unsigned int dt_ms);
+void sim_step_both(float move_x0, float move_z0, int cast_q0, int cast_w0, int cast_r0,
+                    float move_x1, float move_z1, int cast_q1, int cast_w1, int cast_r1,
+                    unsigned int dt_ms);
 int sim_get_obs(int owner, float *out_obs);
 int sim_get_done(void);
 int sim_get_winner(void);
 void sim_set_hero_position(int owner, float x, float z);
 
-#define ARENA_TRAINING_OBS_SIZE 18
+/* Mirrors headless.c's own #define exactly -- see that file's own doc comment for the layout
+   (18 scalar fields + one-hot self hero_id + one-hot foe hero_id). */
+#define ARENA_TRAINING_OBS_SIZE (18 + 2 * ARENA_HERO_COUNT)
 
 static int failures = 0;
 
@@ -134,6 +139,57 @@ static void test_sim_set_hero_position_relocates_and_updates_obs(void) {
     CHECK(fabsf(obs[17] - expect_dz) < 0.001f, "and dz");
 }
 
+/* Hero one-hot blocks (2026-07-29, founder: "not just 2 heroes"). See
+   ARENA_TRAINING_OBS_SIZE's own doc comment in headless.c for the full "why one-hot" reasoning. */
+static void test_hero_onehot_blocks_are_correct_and_disjoint(void) {
+    sim_init(ARENA_HERO_GARY, ARENA_HERO_ZAGAN);
+    float obs[ARENA_TRAINING_OBS_SIZE];
+    sim_get_obs(0, obs);
+
+    for (int i = 0; i < ARENA_HERO_COUNT; i++) {
+        float expect_self = (i == ARENA_HERO_GARY) ? 1.0f : 0.0f;
+        float expect_foe = (i == ARENA_HERO_ZAGAN) ? 1.0f : 0.0f;
+        if (obs[18 + i] != expect_self) {
+            printf("FAIL: self hero one-hot index %d = %f, want %f\n", i, obs[18 + i], expect_self);
+            failures++;
+        }
+        if (obs[18 + ARENA_HERO_COUNT + i] != expect_foe) {
+            printf("FAIL: foe hero one-hot index %d = %f, want %f\n", i, obs[18 + ARENA_HERO_COUNT + i], expect_foe);
+            failures++;
+        }
+    }
+    printf("PASS: self hero one-hot is 1.0 at ARENA_HERO_GARY and 0.0 everywhere else\n");
+    printf("PASS: foe hero one-hot is 1.0 at ARENA_HERO_ZAGAN and 0.0 everywhere else\n");
+
+    /* Flip perspective -- owner 1's own "self" one-hot should be Zagan's, its "foe" one-hot
+       should be Gary's, same symmetry test_obs_is_symmetric_between_owner_0_and_1 already
+       exercises for the scalar fields. */
+    float obs1[ARENA_TRAINING_OBS_SIZE];
+    sim_get_obs(1, obs1);
+    CHECK(obs1[18 + ARENA_HERO_ZAGAN] == 1.0f, "owner 1's own self one-hot is Zagan (the hero it's actually playing)");
+    CHECK(obs1[18 + ARENA_HERO_COUNT + ARENA_HERO_GARY] == 1.0f, "owner 1's foe one-hot is Gary");
+}
+
+/* sim_step_both (2026-07-29, self-play): real self-play needs BOTH heroes driven by external
+   actions, not the stable heuristic sim_step's own internal call drives hero 1 with. */
+static void test_sim_step_both_moves_both_heroes_independently(void) {
+    sim_init(ARENA_HERO_UNICORN, ARENA_HERO_DUCK);
+    float obs0[ARENA_TRAINING_OBS_SIZE], obs1[ARENA_TRAINING_OBS_SIZE];
+    sim_get_obs(0, obs0);
+    sim_get_obs(1, obs1);
+    float hero0_start_x = obs0[3], hero1_start_x = obs1[3];
+
+    /* hero 0 moves right (+x), hero 1 moves further right too (away from hero 0, +x from its
+       own +6 starting position) -- two genuinely different, externally-driven targets, neither
+       coming from the heuristic. */
+    sim_step_both(100.0f, 0.0f, 0, 0, 0, 100.0f, 0.0f, 0, 0, 0, 16);
+
+    sim_get_obs(0, obs0);
+    sim_get_obs(1, obs1);
+    CHECK(obs0[3] > hero0_start_x, "sim_step_both moves hero 0 toward its own given target");
+    CHECK(obs1[3] > hero1_start_x, "sim_step_both ALSO moves hero 1 toward its own given target -- not driven by the stable heuristic");
+}
+
 int main(void) {
     test_sim_init_sets_up_two_full_health_heroes();
     test_obs_is_symmetric_between_owner_0_and_1();
@@ -142,6 +198,8 @@ int main(void) {
     test_sim_reset_restores_full_health_and_clears_winner();
     test_dx_dz_reflect_real_relative_position();
     test_sim_set_hero_position_relocates_and_updates_obs();
+    test_hero_onehot_blocks_are_correct_and_disjoint();
+    test_sim_step_both_moves_both_heroes_independently();
 
     printf("\n%s\n", failures == 0 ? "ALL PASS" : "SOME FAILED");
     return failures == 0 ? 0 : 1;

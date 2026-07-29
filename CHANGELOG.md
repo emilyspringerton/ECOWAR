@@ -2546,3 +2546,32 @@
   either way -- harmless, since the matchmaker execs `server_bin` fresh per spawn regardless of
   whether this restart happens. Timer intentionally still left stopped (not re-enabled as part of
   this commit) pending a live verification pass.
+
+- feat(arena): full-roster self-play RL infrastructure. Founder: "ok but i win every game i need
+  the bots to be training on the full game rl" -> "not just 2 heroes." True 20v20 team-mode
+  training (nodes, objectives, 19 other live agents) is a much larger, separate undertaking --
+  scoped down to the achievable real slice: self-play (train against a frozen past checkpoint
+  instead of the fixed heuristic) across the WHOLE hero roster, not just the original fixed
+  Unicorn-vs-Duck pairing. Real gap found and fixed first: the observation the network trains on
+  never included hero identity AT ALL (hp/position/cooldowns are hero-agnostic) -- a policy
+  trained across multiple heroes without this literally cannot condition its behavior on which
+  hero it's playing or fighting. `ARENA_TRAINING_OBS_SIZE` grows from 18 to `18 + 2*ARENA_HERO_COUNT`
+  (one-hot self hero_id + one-hot foe hero_id, one-hot rather than a raw scalar since hero IDs are
+  an unordered categorical set with no real ordinal relationship a small MLP could otherwise
+  infer). New `sim_step_both()` (`apps/arena_training/src/headless.c`) applies real external
+  actions to BOTH heroes instead of driving hero 1 through the stable heuristic -- what actual
+  self-play needs (`sim_get_obs`'s own doc comment had already flagged it as symmetric "in case a
+  later pass wants... self-play"). `scripts/rl_env.py`'s `ArenaTrainingEnv` gained
+  `randomize_heroes=True` (fresh random hero for both sides every episode) and
+  `opponent_model_path=<zip>` (a frozen SB3 checkpoint's own predictions drive hero 1, sampled
+  not argmaxed) -- both off by default, so nothing already calling this class changes behavior
+  unless it opts in. `scripts/rl_train.py` exposes both as `--randomize-heroes`/
+  `--self-play-opponent`, plus a second eval pass (vs the self-play opponent, not just the
+  heuristic) when self-play was used. Live consumers (`arena_game.c`'s two RL call sites,
+  `apps/arena_bot`'s `rl_engage_nudge`) updated to build the same wider observation --
+  deliberately guarded by `#if RL_POLICY_OBS_SIZE >= (18 + 2*ARENA_HERO_COUNT)` so this lands
+  safely BEFORE a matching wider-input model exists: built and tested clean against the
+  currently-live 18-input model (guard picks the no-op branch, zero behavior change), and will
+  automatically activate once a new model is promoted. 2 new C tests (one-hot correctness,
+  `sim_step_both`). Full suite green. A real full-roster self-play training run follows in a
+  separate commit once it completes.

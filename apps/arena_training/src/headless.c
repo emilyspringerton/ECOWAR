@@ -33,27 +33,38 @@
 #include "../../../packages/simulation/arena_game.h"
 
 /* ARENA_TRAINING_OBS_SIZE: the exact, documented layout sim_get_obs() writes into out_obs.
- * Index  Field
- *   0    self hp
- *   1    self max_hp
- *   2    self mp
- *   3    self x
- *   4    self z
- *   5    self q_cooldown_ms
- *   6    self w_cooldown_ms
- *   7    self r_cooldown_ms
- *   8    self flow
- *   9    self xp
- *  10    self alive (0.0 or 1.0)
- *  11    foe hp
- *  12    foe max_hp
- *  13    foe x
- *  14    foe z
- *  15    foe alive (0.0 or 1.0)
- *  16    dx (foe x - self x)
- *  17    dz (foe z - self z)
- */
-#define ARENA_TRAINING_OBS_SIZE 18
+ * Index      Field
+ *   0        self hp
+ *   1        self max_hp
+ *   2        self mp
+ *   3        self x
+ *   4        self z
+ *   5        self q_cooldown_ms
+ *   6        self w_cooldown_ms
+ *   7        self r_cooldown_ms
+ *   8        self flow
+ *   9        self xp
+ *  10        self alive (0.0 or 1.0)
+ *  11        foe hp
+ *  12        foe max_hp
+ *  13        foe x
+ *  14        foe z
+ *  15        foe alive (0.0 or 1.0)
+ *  16        dx (foe x - self x)
+ *  17        dz (foe z - self z)
+ *  18..45    self hero_id, one-hot (ARENA_HERO_COUNT-wide)
+ *  46..73    foe hero_id, one-hot (ARENA_HERO_COUNT-wide)
+ *
+ * The two one-hot blocks (2026-07-29, founder: "not just 2 heroes" -- see the module doc
+ * comment's own history for the full "train across the roster + self-play" thread) are new:
+ * every earlier pass's network had literally no way to know which hero it was controlling or
+ * fighting -- indices 0-17 alone are hero-agnostic (hp/position/cooldowns mean the same thing
+ * regardless of kit), so a policy trained only on Unicorn-vs-Duck couldn't meaningfully condition
+ * on hero identity even if scripts/rl_env.py started randomizing hero0_id/hero1_id per episode.
+ * One-hot rather than a raw scalar hero_id specifically because hero IDs are an unordered
+ * categorical set (Unicorn=0 is not "closer" to Duck=1 than to Zagan=27 in any real sense) -- a
+ * bare scalar would bake in a false ordinal relationship a small MLP has no way to undo. */
+#define ARENA_TRAINING_OBS_SIZE (18 + 2 * ARENA_HERO_COUNT)
 
 void sim_init(int hero0_id, int hero1_id) {
     arena_init_with_heroes((ArenaHeroID)hero0_id, (ArenaHeroID)hero1_id);
@@ -115,6 +126,33 @@ void sim_step(float move_x, float move_z, int cast_q, int cast_w, int cast_r, un
     arena_update(dt_ms);
 }
 
+/* sim_step_both (2026-07-29, founder: "not just 2 heroes" / self-play): applies REAL actions to
+ * BOTH heroes instead of driving hero 1 through the stable heuristic -- what actual self-play
+ * needs. Python is expected to call sim_get_obs(1, ...) to get hero 1's own mirrored-perspective
+ * observation (sim_get_obs's own doc comment already flagged it as symmetric "in case a later
+ * pass wants... self-play"), run it through whatever policy is standing in for the opponent this
+ * training run (a frozen past checkpoint -- see scripts/rl_env.py's own doc comment for why a
+ * frozen snapshot, not the live-updating model, avoids the "training against a moving target of
+ * itself" circularity sim_step's own module doc comment already named), and pass its action back
+ * in here. arena_bot_enabled is already 0 (sim_init/sim_reset), so arena_update() below won't
+ * ALSO independently drive hero 1 a second time on top of these explicit actions -- same gating
+ * sim_step's own heuristic path already relies on. */
+void sim_step_both(float move_x0, float move_z0, int cast_q0, int cast_w0, int cast_r0,
+                    float move_x1, float move_z1, int cast_q1, int cast_w1, int cast_r1,
+                    unsigned int dt_ms) {
+    arena_set_move_target(0, move_x0, move_z0);
+    if (cast_q0) arena_cast_q(0);
+    if (cast_w0) arena_toggle_w(0);
+    if (cast_r0) arena_cast_r(0);
+
+    arena_set_move_target(1, move_x1, move_z1);
+    if (cast_q1) arena_cast_q(1);
+    if (cast_w1) arena_toggle_w(1);
+    if (cast_r1) arena_cast_r(1);
+
+    arena_update(dt_ms);
+}
+
 /* sim_get_obs: writes ARENA_TRAINING_OBS_SIZE floats for `owner`'s own point of view (0 = the
  * Agent's own perspective, 1 = the opponent's -- exposed symmetrically in case a later pass
  * wants to observe both sides, e.g. for self-play; NORTHSTAR §21.3 explicitly defers self-play
@@ -147,6 +185,20 @@ int sim_get_obs(int owner, float *out_obs) {
 
     out_obs[16] = foe->x - self->x;
     out_obs[17] = foe->z - self->z;
+
+    /* One-hot hero identity blocks -- see ARENA_TRAINING_OBS_SIZE's own doc comment above for
+       why one-hot, not a raw scalar. Zeroed first since self->hero_id/foe->hero_id are each only
+       ever one index into their own ARENA_HERO_COUNT-wide block. */
+    for (int i = 0; i < ARENA_HERO_COUNT; i++) {
+        out_obs[18 + i] = 0.0f;
+        out_obs[18 + ARENA_HERO_COUNT + i] = 0.0f;
+    }
+    if (self->hero_id >= 0 && self->hero_id < ARENA_HERO_COUNT) {
+        out_obs[18 + self->hero_id] = 1.0f;
+    }
+    if (foe->hero_id >= 0 && foe->hero_id < ARENA_HERO_COUNT) {
+        out_obs[18 + ARENA_HERO_COUNT + foe->hero_id] = 1.0f;
+    }
 
     return ARENA_TRAINING_OBS_SIZE;
 }
