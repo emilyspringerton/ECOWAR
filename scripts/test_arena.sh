@@ -47,8 +47,19 @@ gcc -std=c99 -O2 -Wall -Wextra -I"${ROOT_DIR}/packages" \
   "${ROOT_DIR}/packages/common/gpt2_infer.c" \
   -lm
 
+# arena_training: the ctypes-callable RL environment API (S170-224, NORTHSTAR §21) -- exercised
+# directly from C here (same functions ctypes calls from Python), no Python/ctypes needed to
+# catch a regression in this repo's own test suite.
+gcc -std=c99 -D_DEFAULT_SOURCE -O2 -Wall -Wextra -I"${ROOT_DIR}/packages" \
+  -o "${BUILD_DIR}/test_arena_training" \
+  "${ROOT_DIR}/tests/test_arena_training.c" \
+  "${ROOT_DIR}/apps/arena_training/src/headless.c" \
+  "${ROOT_DIR}/packages/simulation/arena_game.c" \
+  -lm
+
 "${BUILD_DIR}/test_arena_game"
 "${BUILD_DIR}/test_mat4"
 "${BUILD_DIR}/test_arena_replay"
 "${BUILD_DIR}/test_arena_ai_bridge"
 "${BUILD_DIR}/test_gpt2_infer"
+"${BUILD_DIR}/test_arena_training"
