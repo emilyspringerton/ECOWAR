@@ -2,6 +2,14 @@
 
 ## 2026-07-29
 
+- feat(arena): Haste Trinket, modest 6% CDR passive (S170-207). Founder: "add a haste trinket" ->
+  "passive haste lowers cd and auto attack cd make it a modest improvement 6%." New Trinket-slot
+  item (900 Flow) reducing ability cooldowns and auto-attack cooldown by 6%, via a new
+  `bonus_cdr_pct` item stat summed into `item_bonus_cdr_pct` and applied by a shared `apply_cdr()`
+  helper wired into `cast_cooldown()` (Q/W/R) and all 4 auto-attack cooldown assignment sites.
+  Deliberately does not touch windup duration -- matches NORTHSTAR §17.1's documented real-League
+  behavior that attack speed compresses backswing/cooldown but not the windup fraction itself.
+
 - feat(arena): Weatherman + Donkey, NORTHSTAR §16 (S170-206). Founder: "add the weatherman and
   donkey" -> [clarified Donkey's "owner" ambiguity] -> "donkey should be an item" -> "3.2k flow"
   -> "tilda should make the hero do the paper airplane glide thing" -> "longish range high speed
