@@ -2,6 +2,17 @@
 
 ## 2026-07-29
 
+- docs(arena): NORTHSTAR §20, full creep overhaul -- LoL parity spec first (S170-209). Founder:
+  "full creep overhaul lol parity northstar doc first currently creeps are spooky too strong and
+  hard to reason about." Pins down League's real minion-wave model (melee/caster/siege roles,
+  automatic wave clashes, minion-aggro-redirect on champion attacks, gold-is-individual/XP-is-
+  shared last-hit split, deny, structure pressure) against REDGARDEN's own two separate creep
+  systems. Headline finding: lane creeps are the closer analog but collapsed to one role with no
+  aggro-redirect/deny/XP-share; jungle creeps aren't League jungle camps at all -- they're node-
+  ownership guardians dealing flat unmitigated damage (no `apply_armor` call), wearing jungle-
+  creep terminology that's itself likely part of the "hard to reason about" complaint. Proposes a
+  sequenced target design without deciding any numeric retuning -- spec pass only, no code.
+
 - feat(arena): MnM W rework -- Burrow, replacing the free toggle armor stack (S170-208). Founder:
   "switch MnM w to burrow where he digs down below the map and is untargetable in that time
   dealing small aoe damage when he comes back up." W is now a real cast (14s cooldown, flat
