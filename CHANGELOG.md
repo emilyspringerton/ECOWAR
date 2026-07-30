@@ -2698,3 +2698,26 @@
   the numbers open to tuning" precedent this file uses elsewhere. Full suite green (690 assertions
   across all 7 test binaries), `scripts/build.sh` clean, `scripts/test_10_bots.sh` unaffected
   (Card-RTS matchmaker, not this system).
+
+- fix(arena): towers were unkillable in practice, and one-shotting anyone who tried. Founder,
+  first playtest: "towers are basically invincible and can never be destroyed" -> "the color is
+  changing scale down the tower max hp some its taking way too long and the tower just kos even
+  tanks." Two real, independent bugs:
+
+  1. **Starvation bug.** A node-guardian creep sits at the exact same (x,z) as its node's tower.
+     `arena_hero_attack_creeps` runs before `arena_hero_attack_towers` every tick and both share
+     the same once-per-cooldown attack slot on a hero -- whenever the creep was alive it always
+     won, permanently starving the tower of any damage at all. Fixed at the source:
+     `arena_tick_creeps` no longer lets a node's neutral creep spawn while that node's own tower
+     is still alive (one guardian per phase -- the tower is it until it falls, then the creep
+     resumes exactly as before). New test proves it: tick creeps, confirm none spawned, confirm a
+     hero's attack actually lands on the tower.
+  2. **Bad numbers.** `ARENA_TOWER_MAX_HP` (1600) was sized against the 8-damage basic attack
+     without weighing it against a hero's own 100 base HP -- ~200 solo hits, unkillable on any
+     real match timescale. `ARENA_TOWER_DAMAGE` (40) was 40% of a hero's base HP per hit, a
+     literal 2-3 shot kill on anyone regardless of build. Rebalanced directly against the hero HP
+     scale: `ARENA_TOWER_MAX_HP` 1600 -> 420 (~30-45s of one hero's sustained fire, ~10-15s for 3
+     heroes focusing together -- a real decision, not a wall or a coinflip), `ARENA_TOWER_DAMAGE`
+     40 -> 14 (chips, doesn't delete). Still a judgment call pending further live tuning.
+
+  Full suite green (692 assertions), build clean.

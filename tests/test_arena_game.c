@@ -1285,6 +1285,32 @@ static void test_tower_attacks_nearby_hero(void) {
     CHECK(arena_state.heroes[0].hp < hp_before, "a living tower auto-attacks a hero standing in its aggro radius");
 }
 
+static void test_hero_damages_tower_even_with_creep_alive_at_same_spot(void) {
+    /* 2026-07-30, founder real-time: "towers are basically invincible and can never be
+       destroyed." Real bug: the node-guardian creep at this same node sits at the exact same
+       (x,z) as the tower, and arena_hero_attack_creeps (which runs first every tick) always won
+       the hero's once-per-cooldown attack whenever the creep was alive, permanently starving the
+       tower of any damage. Fixed by never letting that creep spawn while the tower still stands
+       (see arena_tick_creeps' own doc comment) -- this test proves the fix: tick creeps first (so
+       a creep would exist here if the bug were still present), then confirm the creep never
+       actually spawned and a hero's attack lands on the tower instead. */
+    arena_init_teams();
+    for (int i = 1; i < ARENA_MAX_HEROES; i++) arena_state.heroes[i].active = 0;
+    arena_towers_reset();
+    arena_state.heroes[0].x = arena_state.towers[0].x;
+    arena_state.heroes[0].z = arena_state.towers[0].z;
+    arena_state.heroes[0].attack_cooldown_ms = 0;
+    int tower_hp_before = arena_state.towers[0].hp;
+
+    arena_tick_creeps(16); /* would spawn the neutral creep here if the starvation bug still existed */
+    CHECK(!arena_state.creeps[0].alive, "the node-guardian creep does not spawn while its node's tower is still alive");
+
+    arena_hero_attack_creeps(16); /* no-op: nothing alive to attack */
+    arena_hero_attack_towers(16);
+
+    CHECK(arena_state.towers[0].hp < tower_hp_before, "a hero's attack lands on the tower, unblocked by a co-located creep");
+}
+
 static void test_tree_doubles_channel_speed(void) {
     arena_init_teams();
     for (int i = 1; i < ARENA_MAX_HEROES; i++) arena_state.heroes[i].active = 0;
@@ -5845,6 +5871,7 @@ int main(void) {
     test_tower_destroyed_removes_capture_block();
     test_hero_attack_towers_damages_and_kills_it();
     test_tower_attacks_nearby_hero();
+    test_hero_damages_tower_even_with_creep_alive_at_same_spot();
     test_tree_doubles_channel_speed();
     test_flamel_mark_speeds_up_channel_on_marked_ground();
     test_pizza_corrupts_any_channel_regardless_of_side();

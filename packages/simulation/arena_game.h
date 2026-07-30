@@ -187,14 +187,24 @@ typedef enum {
  * destroyed -- this is a ONE-TIME early-game gate, not a recurring one; a torn-down tower's node
  * behaves exactly like it always has (arena_tick_nodes simply stops checking a dead tower).
  * Reuses the exact hero-vs-creep combat shape (flat damage in, apply_armor'd damage out, last-hit
- * kill credit via last_attacked_by_owner) rather than inventing a new one. HP/damage/reward
- * numbers are a judgment call, not founder-specified -- sized to force a real early commitment
- * (more than one hero can solo down quickly) and pay out more than a node-guardian creep
- * (ARENA_NODE_GUARDIAN_KILL_FLOW 150) without approaching a full hero kill (ARENA_HERO_KILL_FLOW
- * 1000), same "spec the model, leave the numbers open to tuning" precedent NORTHSTAR §17.5/§20.4
- * already established elsewhere in this file. */
-#define ARENA_TOWER_MAX_HP              1600
-#define ARENA_TOWER_DAMAGE              40
+ * kill credit via last_attacked_by_owner) rather than inventing a new one.
+ *
+ * 2026-07-30, founder real-time after first playtest: "towers are basically invincible and can
+ * never be destroyed" -> "the color is changing scale down the tower max hp some its taking way
+ * too long and the tower just kos even tanks." Two real, independent problems, both fixed
+ * together: (1) HP was sized against ARENA_ATTACK_DAMAGE (8) without weighing it against a
+ * hero's own base HP (100) -- 1600 meant 200 solo hits, effectively unkillable in a real match's
+ * timescale. (2) 40 flat damage every ARENA_TOWER_ATTACK_COOLDOWN_MS is 40% of a hero's BASE hp
+ * per hit -- a 2-3 shot kill on anyone, "tank" or not, this early. Rebalanced against the hero
+ * HP scale directly rather than against other creep numbers: MAX_HP now costs a real early
+ * commitment (roughly 30-45s of a lone hero's sustained fire, ~10-15s for 3 heroes focusing
+ * together -- a genuine teamfight-or-skip decision, not a wall) without being a coinflip solo
+ * dive; DAMAGE now chips (~15% of base HP per hit) rather than deletes, so a hero can trade a few
+ * hits while working on it instead of getting 2-shot for trying. Still a judgment call pending
+ * further live tuning, not re-derived from founder-specified numbers -- same "spec the model,
+ * leave the numbers open" precedent NORTHSTAR §17.5/§20.4 already established. */
+#define ARENA_TOWER_MAX_HP              420
+#define ARENA_TOWER_DAMAGE              14
 #define ARENA_TOWER_ATTACK_COOLDOWN_MS  1000
 #define ARENA_TOWER_AGGRO_RADIUS        6.0f /* wider than ARENA_NODE_CAPTURE_RADIUS (5.0) -- already threatening before anyone gets close enough to even attempt a channel */
 #define ARENA_TOWER_KILL_FLOW           400

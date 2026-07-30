@@ -1855,6 +1855,15 @@ void arena_tick_creeps(unsigned int dt_ms) {
         ArenaNode *node = &arena_state.nodes[i];
 
         if (!creep->alive) {
+            /* 2026-07-30: a node-guardian creep never spawns while its own node's tower still
+               stands -- both sit at the exact same (x,z), and a hero's attack is a once-per-
+               cooldown resource arena_hero_attack_creeps (which runs first every tick) always
+               wins if the creep is alive, permanently starving the tower of any damage at all.
+               Real bug behind the founder's own "towers are basically invincible" report. One
+               guardian per phase: the tower is it until it falls, then the neutral creep resumes
+               exactly as it always has (this check simply stops it from spawning early, it
+               doesn't change anything about ITS OWN behavior once the tower is gone). */
+            if (arena_state.towers[i].alive) continue;
             creep->respawn_ms_remaining -= (int)dt_ms;
             if (creep->respawn_ms_remaining <= 0) creep_spawn(creep, node);
             continue;
