@@ -2835,3 +2835,13 @@
   bot-pool matchmaker to pick up the new binary, confirmed a fresh match reports real data readable
   at both `localhost:8080` and the public `okemily.com/api/` proxy, confirmed
   `okemily.com/live-match.html` serves (200) and renders it.
+
+- balance(arena): Gary's auto-attack range and all three abilities doubled. Founder: "double the
+  range of gary auto attack and abilities." `ARENA_GARY_ATTACK_RANGE`/`Q_RANGE`/`W_RANGE`/
+  `R_RANGE` all doubled (6/6/9/6 -> 12/12/18/12). Checked every call site before changing anything:
+  targeting checks, the homing auto-attack's own projectile `max_range`, Q's projectile
+  `max_range` (`ARENA_GARY_Q_RANGE` itself, not a separate literal), and the bot AI's own decision
+  distances all key off these named constants already, so doubling the `#define`s alone is
+  sufficient -- no other call site needed touching. Existing tests reference the constants
+  themselves (`ARENA_GARY_Q_RANGE - 1.0f`, etc.), never a hardcoded literal, so they scaled
+  automatically with zero test changes needed. Full suite green, build clean.
