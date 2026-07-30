@@ -567,8 +567,15 @@ or magical one — the roster's own honesty about who actually gets credited.
   own — the shieldmaiden's stance, always ready for the fight everyone else dismissed.
 - **Q — Argued With a Raven**: a plain melee-range strike, damage only, no status effect — a
   correction, not a flourish.
-- **W — Three More Things**: a free toggle, no cooldown, self-regen while active, same shape as
-  Flute Debt's Recouping Interest — being quietly right keeps paying off over time.
+- **W — Consecration** (2026-07-30, founder: "gunnr w switch it to consecration just like wow" ->
+  "same dot cast radius cd"): no longer a free toggle self-regen — a real WoW Paladin Consecration,
+  a ground zone at Gunnr's own feet on a real cooldown, damaging any enemy standing in it every
+  second for its duration. A shieldmaiden holding ground, not kiting for sustain. DPS/radius/
+  duration/cooldown copied from Ghost's own Recital zone (the simplest existing "flat DPS zone, no
+  extra mechanic" template) — unlike Ghost's, Gunnr's has no ally-heal side, matching real
+  Consecration's enemies-only damage. Reuses the same `r_zone_x`/`r_zone_z`/`r_active_ms` state
+  every other zone ability already shares, just triggered from W instead of R — a zone is a zone
+  regardless of which slot cast it.
 - **R — Valhalla Has Yet To Admit It**: an execute-scaled burst, same shape as Morrigan's/Cain's Q
   — the vindication finally lands, hardest against a target who's already nearly beaten.
 

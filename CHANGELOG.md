@@ -2852,3 +2852,23 @@
   8.88/8.88/13.32/8.88, written as a visible multiplier chain (`6.0f * 2.0f * 0.74f`) rather than
   a pre-computed literal, same traceable-scaling convention this file already uses elsewhere.
   Full suite green, build clean.
+
+- feat(arena): Gunnr's W is now Consecration, just like WoW. Founder: "gunnr w switch it to
+  consecration just like wow" -> "same dot cast radius cd." Was a free toggle self-regen
+  (`ARENA_GUNNR_W_REGEN_PER_SEC`, removed) -- now a real cast on a real cooldown: a ground zone at
+  Gunnr's own feet that damages any enemy standing in it every second for its duration, no target
+  needed to cast (Consecration lands at your own position, not someone else's). Reuses the exact
+  `r_zone_x`/`r_zone_z`/`r_active_ms`/`r_zone_tick_ms` fields and `arena_hero_r_zone_radius`
+  dispatch every other zone ability (Ghost/Flamel/Morrigan/Paimon/NOOR-1/Vassago/He Xiangu's own
+  R's) already shares -- a zone is a zone regardless of which slot cast it; Gunnr's is simply the
+  first one triggered from W instead of R. DPS/radius/duration/cooldown copied from Ghost's own R
+  zone (the simplest existing "flat DPS zone, no extra mechanic" template, per the founder's own
+  "same dot cast radius cd") as literal values into Gunnr's own named constants, not aliased, so
+  the two stay independently tunable later -- unlike Ghost's version, no ally-heal side, matching
+  real Consecration's enemies-only damage. Updated everywhere the old toggle was referenced:
+  `arena_hero_w_is_toggle` (Gunnr removed -- W is a real cast now), the ability-name/description
+  HUD tables ("CONSECRATION" / "ZONE: DAMAGE OVER TIME AT SELF"), the AI-bridge hero tags
+  (`is_ranged` flips true, `has_heal` drops), and the bot AI heuristic (casts whenever off
+  cooldown and a foe is close enough to be caught in it, same shape Ghost's own bot logic already
+  uses, instead of "toggle on once and leave it"). One test replaced (asserted the exact free-
+  toggle-regen behavior this removes), two new ones added. Full suite green, build clean.

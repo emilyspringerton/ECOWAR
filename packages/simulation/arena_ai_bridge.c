@@ -57,12 +57,14 @@ int arena_hero_w_is_toggle(ArenaHeroID hero_id) {
     case ARENA_HERO_BACON_PUCK:
     case ARENA_HERO_ABRAHAM:
     case ARENA_HERO_ADA:
-    case ARENA_HERO_GUNNR:
     case ARENA_HERO_HE_XIANGU:
         return 1;
     /* ARENA_HERO_MNM removed (S170-208): W stopped being a free toggle armor stack and became
        Burrow, a real cast-time ability on its own cooldown (flat ARENA_MP_COST_W charge, same
-       model Ghost/Frog/Doc Wheel already use) -- see arena_toggle_w's own MnM case. */
+       model Ghost/Frog/Doc Wheel already use) -- see arena_toggle_w's own MnM case.
+       ARENA_HERO_GUNNR removed (2026-07-30): W stopped being a free toggle self-regen and became
+       Consecration, a real cast-time ground zone on its own cooldown -- same reasoning as MnM's
+       own removal just above. */
     default:
         return 0;
     }
@@ -94,7 +96,7 @@ const char *arena_ability_name(ArenaHeroID hero_id, int slot) {
         [ARENA_HERO_PAIMON]     = {"TEACHES ALL ARTS", "SPEAKS WITH TOTAL AUTHORITY", "TWO HUNDRED LEGIONS"},
         [ARENA_HERO_NOOR1]      = {"FILE WHAT IS ACTUALLY THERE", "SENT IN CLEAN", "DO NOT APPROACH"},
         [ARENA_HERO_CAIN]       = {"THE FIRST MURDER", "CURSED TO WANDER", "THE MARK"},
-        [ARENA_HERO_GUNNR]      = {"ARGUED WITH A RAVEN", "THREE MORE THINGS", "VALHALLA HAS YET TO ADMIT IT"},
+        [ARENA_HERO_GUNNR]      = {"ARGUED WITH A RAVEN", "CONSECRATION", "VALHALLA HAS YET TO ADMIT IT"}, /* 2026-07-30: W renamed, "just like wow" */
         [ARENA_HERO_VASSAGO]    = {"REVEAL THE GENTLE MAYBE", "THE SOFT FORESIGHT", "THE GENTLE MAYBE"},
         [ARENA_HERO_HE_XIANGU]  = {"MOTHER-OF-PEARL AND MOONLIGHT", "SELF-DENIAL", "NEVER FRAMED AS SACRIFICE"},
         [ARENA_HERO_BELETH]     = {"EVERY LOVE TRIANGLE", "HOPE IS A TERROR I LEASH WITH SONG", "THE DETONATION"},
@@ -135,7 +137,7 @@ const char *arena_ability_description(ArenaHeroID hero_id, int slot) {
         [ARENA_HERO_PAIMON]     = {"DAMAGE + ROOT NEAREST FOE", "DAMAGE + SILENCE NEAREST FOE", "ZONE: DAMAGE FOES, HEAL ALLIES"},
         [ARENA_HERO_NOOR1]      = {"PROJECTILE: DAMAGE + ROOT", "SELF UNTARGETABLE FOR A WINDOW", "COLD ZONE, DAMAGE ONLY"},
         [ARENA_HERO_CAIN]       = {"DAMAGE, MORE AT LOW TARGET HP", "DASH AWAY FROM FOE, CLEANSE SELF", "TEMPORARY DAMAGE FLOOR (CAN'T DIE)"},
-        [ARENA_HERO_GUNNR]      = {"MELEE-RANGE DIRECT STRIKE", "TOGGLE: SELF HP REGEN", "DAMAGE, MORE AT LOW TARGET HP"},
+        [ARENA_HERO_GUNNR]      = {"MELEE-RANGE DIRECT STRIKE", "ZONE: DAMAGE OVER TIME AT SELF", "DAMAGE, MORE AT LOW TARGET HP"},
         [ARENA_HERO_VASSAGO]    = {"DAMAGE + SILENCE NEAREST FOE", "REFUNDS AN ALLY'S NEXT CAST", "ZONE: SILENCE ONLY, NO DAMAGE"},
         [ARENA_HERO_HE_XIANGU]  = {"DAMAGE + SELF-HEAL OFF IT", "TOGGLE: BOOSTS SELF REGEN", "ZONE: HEAL ALLIES, NO DAMAGE"},
         [ARENA_HERO_BELETH]     = {"PROJECTILE: DAMAGE + BURN DOT", "SILENCE NEAREST FOE, NO DAMAGE", "MARKS A SPOT, BIG DELAYED BURST"},
@@ -192,7 +194,7 @@ static const ArenaHeroTags ARENA_HERO_TAGS[ARENA_HERO_COUNT] = {
     [ARENA_HERO_PAIMON]     = { 1, 0, 0, 1, 0, 0 }, /* Q "ranged bolt" per docs, R heals allies */
     [ARENA_HERO_NOOR1]      = { 1, 0, 0, 0, 0, 1 }, /* Q projectile, W untargetable */
     [ARENA_HERO_CAIN]       = { 0, 0, 0, 0, 1, 0 }, /* W dash away from the foe */
-    [ARENA_HERO_GUNNR]      = { 0, 0, 0, 1, 0, 0 }, /* Q explicitly "melee-range direct strike" per docs; W self-regen */
+    [ARENA_HERO_GUNNR]      = { 1, 0, 0, 0, 0, 0 }, /* 2026-07-30: W is now Consecration, a real zone damage tool -- is_ranged flips true, has_heal drops (the old self-regen toggle is gone); Q still explicitly "melee-range direct strike" per docs */
     [ARENA_HERO_VASSAGO]    = { 1, 0, 0, 0, 0, 0 }, /* Q "ranged bolt" per docs */
     [ARENA_HERO_HE_XIANGU]  = { 0, 0, 0, 1, 0, 0 }, /* Q/W/R all heal-shaped, kit reads melee-range */
     [ARENA_HERO_BELETH]     = { 1, 0, 0, 0, 0, 0 }, /* Q projectile burn */

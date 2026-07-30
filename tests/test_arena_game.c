@@ -3424,17 +3424,38 @@ static void test_gunnr_q_out_of_range_whiffs(void) {
     CHECK(gunnr->q_cooldown_ms == 0, "Q out of range does not start its cooldown");
 }
 
-static void test_gunnr_w_is_a_free_toggle_regen(void) {
+static void test_gunnr_w_consecration_starts_zone_at_own_feet_on_cooldown(void) {
+    /* 2026-07-30, founder: "gunnr w switch it to consecration just like wow" -- W is now a real
+       cast on a real cooldown (was a free toggle), a ground zone at Gunnr's OWN position, not a
+       targeted ability -- no foe needs to be nearby to cast it at all. */
     arena_init_with_heroes(ARENA_HERO_UNICORN, ARENA_HERO_GUNNR);
     ArenaHero *gunnr = &arena_state.heroes[1];
-    gunnr->hp = 50;
+    int mp_before = gunnr->mp;
 
     arena_toggle_w(1);
-    CHECK(gunnr->w_active, "W toggles on");
-    CHECK(gunnr->w_cooldown_ms == 0, "W is a free toggle, no cooldown");
 
-    arena_update(1000); /* one full second of regen */
-    CHECK(gunnr->hp > 50, "Three More Things regenerates HP while toggled on");
+    CHECK(gunnr->r_active_ms == ARENA_GUNNR_W_DURATION_MS, "Consecration starts its zone duration on cast");
+    CHECK(gunnr->r_zone_x == gunnr->x && gunnr->r_zone_z == gunnr->z, "the zone is centered on Gunnr's own position");
+    CHECK(gunnr->w_cooldown_ms == ARENA_GUNNR_W_COOLDOWN_MS, "W starts on its own real cooldown after cast, no longer a free toggle");
+    CHECK(gunnr->mp < mp_before, "casting Consecration spends mana, unlike the old free toggle");
+}
+
+static void test_gunnr_w_consecration_damages_foe_over_time(void) {
+    arena_init_with_heroes(ARENA_HERO_UNICORN, ARENA_HERO_GUNNR);
+    ArenaHero *gunnr = &arena_state.heroes[1];
+    ArenaHero *foe = &arena_state.heroes[0];
+    foe->x = gunnr->x + 2.0f; /* within ARENA_GUNNR_W_RADIUS */
+    foe->z = gunnr->z;
+    int foe_hp_before = foe->hp;
+
+    arena_toggle_w(1);
+
+    /* Same "at least one DPS-worth, not exact equality" reasoning
+       test_ghost_r_zone_damages_foe_over_time already documents -- Gunnr occupies the bot slot
+       here too, so the same arena_update call may also land a real auto-attack. */
+    arena_update(1000); /* one full zone tick */
+    CHECK(foe->hp <= foe_hp_before - ARENA_GUNNR_W_DPS,
+          "Consecration deals at least one DPS-worth of damage per second the foe stands in it");
 }
 
 static void test_gunnr_r_executes_harder_at_low_hp(void) {
@@ -6035,7 +6056,8 @@ int main(void) {
     test_gunnr_passive_grants_flat_armor();
     test_gunnr_q_damages_in_melee_range();
     test_gunnr_q_out_of_range_whiffs();
-    test_gunnr_w_is_a_free_toggle_regen();
+    test_gunnr_w_consecration_starts_zone_at_own_feet_on_cooldown();
+    test_gunnr_w_consecration_damages_foe_over_time();
     test_gunnr_r_executes_harder_at_low_hp();
     test_gunnr_r_out_of_range_whiffs_but_still_starts_cooldown();
     test_vassago_passive_regenerates_hp();

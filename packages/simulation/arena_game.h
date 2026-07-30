@@ -820,15 +820,31 @@ typedef enum {
 /* Gunnr (S170-93): passive flat armor bonus, always on -- "quietly been right about three more
  * things," the shieldmaiden's stance, same shape as Cain's own passive. Q a melee-range direct
  * strike, no status effect -- "argued with a raven and was right," a plain correction, not a
- * flourish. W a free toggle self-regen, same shape as Flute Debt's Recouping Interest -- being
- * quietly right keeps paying off over time. R an execute-scaled burst, same shape as Morrigan's/
- * Cain's Q -- "Valhalla has yet to admit it," the vindication finally landing hardest against a
- * target who's already nearly beaten. */
+ * flourish. R an execute-scaled burst, same shape as Morrigan's/Cain's Q -- "Valhalla has yet to
+ * admit it," the vindication finally landing hardest against a target who's already nearly beaten.
+ *
+ * 2026-07-30, founder: "gunnr w switch it to consecration just like wow" -- W was a free toggle
+ * self-regen (ARENA_GUNNR_W_REGEN_PER_SEC, removed); now a real WoW Paladin Consecration: a
+ * ground zone at Gunnr's own feet, on a real cooldown, that damages any enemy standing in it every
+ * second for its duration -- a shieldmaiden holding ground, not kiting for sustain. Reuses the
+ * exact r_zone_x/z/r_active_ms/r_zone_tick_ms fields and arena_hero_r_zone_radius dispatch every
+ * other zone ability (Ghost/Flamel/Morrigan/Paimon/NOOR-1/Vassago/He Xiangu's own R's) already
+ * shares -- a zone is a zone regardless of which slot cast it, same "reuse the existing shape"
+ * discipline this file already holds itself to elsewhere; Gunnr's is simply the first one
+ * triggered from W instead of R. Founder, same-turn follow-up: "same dot cast radius cd" -- DPS/
+ * radius/duration/cooldown copied from Ghost's own R zone (ARENA_GHOST_R_DPS/RADIUS/
+ * DURATION_MS/COOLDOWN_MS, the simplest existing "flat DPS zone, no extra mechanic" template --
+ * unlike Ghost's own version, Gunnr's has no ally-heal side, matching real Consecration's
+ * enemies-only damage). Copied as literal values into Gunnr's own named constants rather than
+ * aliased to Ghost's, so the two stay independently tunable later. */
 #define ARENA_GUNNR_PASSIVE_ARMOR            4
 #define ARENA_GUNNR_Q_RANGE                  2.2f  /* melee range -- close, not a skillshot */
 #define ARENA_GUNNR_Q_DAMAGE                10
 #define ARENA_GUNNR_Q_COOLDOWN_MS         3200
-#define ARENA_GUNNR_W_REGEN_PER_SEC          4
+#define ARENA_GUNNR_W_RADIUS                 4.0f  /* Consecration -- same as ARENA_GHOST_R_RADIUS */
+#define ARENA_GUNNR_W_DURATION_MS         4000      /* same as ARENA_GHOST_R_DURATION_MS */
+#define ARENA_GUNNR_W_DPS                     6     /* same as ARENA_GHOST_R_DPS -- damage/sec to enemies standing in the zone */
+#define ARENA_GUNNR_W_COOLDOWN_MS        20000      /* same as ARENA_GHOST_R_COOLDOWN_MS */
 #define ARENA_GUNNR_R_RANGE                  6.0f
 #define ARENA_GUNNR_R_DAMAGE_BASE           10   /* at 100% target HP */
 #define ARENA_GUNNR_R_DAMAGE_LOW_HP         24   /* at ~0% target HP -- an execute */

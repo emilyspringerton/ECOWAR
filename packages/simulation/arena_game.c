@@ -820,10 +820,15 @@ float arena_hero_armor(const ArenaHero *h) {
  * ARENA_DOC_WHEEL_R_RADIUS-sized burst, ARENA_HERO_DOC_WHEEL) is deliberately NOT included here
  * -- it's a one-shot heal-and-cleanse applied instantly at cast time with no persisting
  * r_zone_x/z/r_active_ms state to render a lingering circle from (see its own cast-site comment
- * above), unlike every hero below whose R genuinely lingers on the ground for r_active_ms. */
+ * above), unlike every hero below whose kit genuinely lingers on the ground for r_active_ms. Name
+ * kept as "r_zone" for every hero here even though Gunnr's Consecration (2026-07-30) is cast from
+ * W, not R -- the underlying field/dispatch shape is generic ("this hero has an active ground
+ * zone"), not actually R-specific, and renaming the whole shared mechanism for one hero's slot
+ * choice isn't worth the churn. */
 float arena_hero_r_zone_radius(ArenaHeroID hero_id) {
     switch (hero_id) {
         case ARENA_HERO_GHOST:     return ARENA_GHOST_R_RADIUS;
+        case ARENA_HERO_GUNNR:     return ARENA_GUNNR_W_RADIUS; /* 2026-07-30: Consecration, cast from W not R -- see that constant's own doc comment */
         case ARENA_HERO_FLAMEL:    return ARENA_FLAMEL_R_RADIUS;
         case ARENA_HERO_MORRIGAN:  return ARENA_MORRIGAN_R_RADIUS;
         case ARENA_HERO_PAIMON:    return ARENA_PAIMON_R_RADIUS;
@@ -3651,10 +3656,19 @@ void arena_toggle_w(int owner) {
         }
         break;
     case ARENA_HERO_GUNNR:
-        /* Three More Things: free toggle, no cooldown -- tick_hero_kit reads w_active
-           directly for the regen, same shape as Flute Debt's Recouping Interest. */
-        if (!h->w_active && h->mp <= 0) return; /* S170-181: activating no longer charges a flat cost, just requires some mana to sustain -- see ARENA_MP_DRAIN_W_PER_SEC; toggling off is always free */
-        h->w_active = !h->w_active;
+        /* Consecration (2026-07-30, founder: "gunnr w switch it to consecration just like wow"):
+           a real cast on a real cooldown now, not a free toggle -- a ground zone at Gunnr's own
+           feet, same r_zone_x/z/r_active_ms/r_zone_tick_ms fields every other zone ability
+           already shares (see tick_hero_kit's own GUNNR case for the damage tick). No target
+           needed to cast (unlike most abilities in this file, Consecration is cast at your own
+           position, not someone else's), so no hittable-foe gate here -- only cooldown/mana. */
+        if (h->w_cooldown_ms > 0 || h->mp < ARENA_MP_COST_W) return;
+        h->r_zone_x = h->x;
+        h->r_zone_z = h->z;
+        h->r_zone_tick_ms = 0;
+        h->r_active_ms = ARENA_GUNNR_W_DURATION_MS;
+        h->w_cooldown_ms = cast_cooldown(h, ARENA_GUNNR_W_COOLDOWN_MS);
+        h->mp -= ARENA_MP_COST_W;
         break;
     case ARENA_HERO_VASSAGO: {
         /* The Soft Foresight, extended: grants the nearest ally next_cast_refund, same
@@ -4428,12 +4442,23 @@ static void tick_hero_kit(ArenaHero *h, ArenaHero *foe, ArenaHero *ally, unsigne
         }
         break;
     case ARENA_HERO_GUNNR:
-        /* Three More Things: same toggle-regen shape as Flute Debt's Recouping Interest --
-           being quietly right keeps paying off over time. */
-        if (h->w_active && h->alive) {
-            float regen = ARENA_GUNNR_W_REGEN_PER_SEC * ((float)dt_ms / 1000.0f);
-            h->hp += (int)regen;
-            if (h->hp > h->max_hp) h->hp = h->max_hp;
+        /* Consecration (2026-07-30): same fixed-interval zone-tick idiom as Ghost's own R zone
+           (ARENA_HERO_GHOST's case above) -- enemies-only damage, no ally-heal side (real WoW
+           Consecration doesn't heal allies either), so this is simpler than Ghost's own version. */
+        if (h->r_active_ms > 0) {
+            h->r_active_ms -= (int)dt_ms;
+            if (h->r_active_ms < 0) h->r_active_ms = 0;
+            h->r_zone_tick_ms += (int)dt_ms;
+            while (h->r_zone_tick_ms >= 1000) {
+                h->r_zone_tick_ms -= 1000;
+                if (hero_is_hittable(foe)) {
+                    float dx = foe->x - h->r_zone_x, dz = foe->z - h->r_zone_z;
+                    if (sqrtf(dx * dx + dz * dz) <= ARENA_GUNNR_W_RADIUS) {
+                        apply_damage(foe, apply_armor(ARENA_GUNNR_W_DPS, arena_hero_armor(foe)));
+                    }
+                }
+                arena_zone_damage_creeps(h->r_zone_x, h->r_zone_z, ARENA_GUNNR_W_RADIUS, h->team, ARENA_GUNNR_W_DPS);
+            }
         }
         break;
     case ARENA_HERO_VASSAGO:
@@ -4908,10 +4933,11 @@ void bot_cast_kit_if_ready(ArenaHero *bot, ArenaHero *foe) {
         }
         break;
     case ARENA_HERO_GUNNR:
-        /* W is free sustain, toggle on early like Loki's/Flute Debt's own
-           instinct. Q whenever in melee range and off cooldown. R when the
-           foe is close enough for the execute to matter. */
-        if (!bot->w_active) {
+        /* Consecration (2026-07-30) is a real cast on a real cooldown now, not a free toggle --
+           same "cast the zone whenever off cooldown and the foe is close enough to actually be
+           caught in it" heuristic Ghost's own R-zone bot logic already uses. Q whenever in melee
+           range and off cooldown. R when the foe is close enough for the execute to matter. */
+        if (bot->w_cooldown_ms <= 0 && dist <= ARENA_GUNNR_W_RADIUS) {
             arena_toggle_w(bot->owner);
         } else if (bot->q_cooldown_ms <= 0 && dist <= ARENA_GUNNR_Q_RANGE) {
             arena_cast_q(bot->owner);
