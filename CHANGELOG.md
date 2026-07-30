@@ -2845,3 +2845,10 @@
   sufficient -- no other call site needed touching. Existing tests reference the constants
   themselves (`ARENA_GARY_Q_RANGE - 1.0f`, etc.), never a hardcoded literal, so they scaled
   automatically with zero test changes needed. Full suite green, build clean.
+
+- balance(arena): Gary's ranges pulled back 26% off the doubled values. Founder follow-up:
+  "reduce garys range by 26%." Applied as an additional `* 0.74f` factor on top of the doubling
+  above -- `ARENA_GARY_ATTACK_RANGE`/`Q_RANGE`/`W_RANGE`/`R_RANGE` go from 12/12/18/12 to
+  8.88/8.88/13.32/8.88, written as a visible multiplier chain (`6.0f * 2.0f * 0.74f`) rather than
+  a pre-computed literal, same traceable-scaling convention this file already uses elsewhere.
+  Full suite green, build clean.

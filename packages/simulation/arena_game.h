@@ -37,8 +37,12 @@
  * Every call site already keys off these named constants rather than a hardcoded literal
  * (targeting checks, the homing auto-attack's own max_range, Q's projectile max_range, even the
  * bot AI's own decision distances), so doubling the #defines alone is sufficient -- confirmed by
- * reading every use site before changing this, not assumed. */
-#define ARENA_GARY_ATTACK_RANGE (6.0f * 2.0f)
+ * reading every use site before changing this, not assumed.
+ * 2026-07-30 follow-up, founder: "reduce garys range by 26%" -- applied as an additional * 0.74f
+ * factor on top of the doubling above (12/12/18/12 -> 8.88/8.88/13.32/8.88), same "write the
+ * scaling as a visible multiplier, not a pre-computed literal" convention this file already uses
+ * elsewhere (e.g. the golden-ratio map-scale constants) so the history stays traceable. */
+#define ARENA_GARY_ATTACK_RANGE (6.0f * 2.0f * 0.74f)
 #define ARENA_GARY_ATTACK_SPEED 14.0f
 #define ARENA_GARY_ATTACK_DAMAGE 7
 #define ARENA_GARY_ATTACK_COOLDOWN_MS 900
@@ -619,10 +623,10 @@ typedef enum {
  * re-checked (still alive, still in range of where the cast began) only at completion, not
  * continuously -- stepping out of range mid-cast still costs Gary the cast, exactly like a
  * foe dodging his Q's travel time. */
-#define ARENA_GARY_Q_RANGE          (6.0f * 2.0f) /* 2026-07-30: doubled, see ARENA_GARY_ATTACK_RANGE's own doc comment */
+#define ARENA_GARY_Q_RANGE          (6.0f * 2.0f * 0.74f) /* 2026-07-30: doubled, then reduced 26%, see ARENA_GARY_ATTACK_RANGE's own doc comment */
 #define ARENA_GARY_Q_DAMAGE         11
 #define ARENA_GARY_Q_COOLDOWN_MS    3500
-#define ARENA_GARY_W_RANGE          (9.0f * 2.0f) /* 2026-07-30: doubled, see ARENA_GARY_ATTACK_RANGE's own doc comment -- same reach the old Q-range toggle used to grant, now also doubled */
+#define ARENA_GARY_W_RANGE          (9.0f * 2.0f * 0.74f) /* 2026-07-30: doubled, then reduced 26%, see ARENA_GARY_ATTACK_RANGE's own doc comment -- same reach the old Q-range toggle used to grant, now also rescaled */
 #define ARENA_GARY_W_DAMAGE         30    /* real burst -- comparable to a strong R-tier ultimate elsewhere on the roster, not a Q-tier poke */
 #define ARENA_GARY_W_CAST_MS        1500  /* stand-still wind-up; interruptible the whole time */
 #define ARENA_GARY_W_COOLDOWN_MS    6000
@@ -636,7 +640,7 @@ typedef enum {
  * shift ~2.5 units off the original line. */
 #define ARENA_GARY_Q_PROJECTILE_SPEED  14.0f
 #define ARENA_GARY_Q_PROJECTILE_RADIUS 0.6f
-#define ARENA_GARY_R_RANGE          (6.0f * 2.0f) /* 2026-07-30: doubled, see ARENA_GARY_ATTACK_RANGE's own doc comment */
+#define ARENA_GARY_R_RANGE          (6.0f * 2.0f * 0.74f) /* 2026-07-30: doubled, then reduced 26%, see ARENA_GARY_ATTACK_RANGE's own doc comment */
 #define ARENA_GARY_R_ROOT_MS        2000
 #define ARENA_GARY_R_COOLDOWN_MS    16000
 
