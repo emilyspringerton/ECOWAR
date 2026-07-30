@@ -1223,6 +1223,68 @@ static void test_node_already_owned_by_present_team_has_no_channel(void) {
     CHECK(arena_state.nodes[0].owner == 1, "owner is unchanged since there was nothing to capture");
 }
 
+/* Node towers (2026-07-30, founder: "add towers around the nodes so beginning of game is a
+ * little slower"). arena_towers_reset() is called explicitly in each of these -- unlike
+ * arena_creeps_reset, it is deliberately NOT part of arena_init_teams() itself (see that
+ * function's own doc comment), so every OTHER test above/below that calls arena_init_teams()
+ * without also calling this keeps seeing towers at their memset-zero default (alive=0, a no-op),
+ * exactly the pre-tower behavior they were already written against. */
+static void test_tower_blocks_capture_while_alive(void) {
+    arena_init_teams();
+    for (int i = 1; i < ARENA_MAX_HEROES; i++) arena_state.heroes[i].active = 0;
+    arena_towers_reset();
+    arena_state.heroes[0].x = arena_state.nodes[0].x;
+    arena_state.heroes[0].z = arena_state.nodes[0].z;
+
+    arena_tick_nodes(ARENA_NODE_CAPTURE_CHANNEL_MS);
+
+    CHECK(arena_state.towers[0].alive, "sanity: the tower is alive");
+    CHECK(arena_state.nodes[0].capturing_team == -1, "no channel starts while the node's tower is alive");
+    CHECK(arena_state.nodes[0].capture_progress_ms == 0, "no progress accrues while blocked by a tower");
+    CHECK(arena_state.nodes[0].owner == 0, "the node never flips while its tower stands, even after a full channel's worth of time");
+}
+
+static void test_tower_destroyed_removes_capture_block(void) {
+    arena_init_teams();
+    for (int i = 1; i < ARENA_MAX_HEROES; i++) arena_state.heroes[i].active = 0;
+    arena_towers_reset();
+    arena_state.towers[0].alive = 0; /* as if it had already been destroyed */
+    arena_state.heroes[0].x = arena_state.nodes[0].x;
+    arena_state.heroes[0].z = arena_state.nodes[0].z;
+
+    arena_tick_nodes(ARENA_NODE_CAPTURE_CHANNEL_MS);
+
+    CHECK(arena_state.nodes[0].owner == 1, "once the tower is gone, the node captures exactly like it always could");
+}
+
+static void test_hero_attack_towers_damages_and_kills_it(void) {
+    arena_init_teams();
+    for (int i = 1; i < ARENA_MAX_HEROES; i++) arena_state.heroes[i].active = 0;
+    arena_towers_reset();
+    arena_state.towers[0].hp = arena_state.towers[0].max_hp = ARENA_ATTACK_DAMAGE; /* exactly one hit from dying */
+    arena_state.heroes[0].x = arena_state.towers[0].x;
+    arena_state.heroes[0].z = arena_state.towers[0].z;
+    arena_state.heroes[0].attack_cooldown_ms = 0;
+
+    arena_hero_attack_towers(16);
+
+    CHECK(!arena_state.towers[0].alive, "a tower dies once a hero's attack exhausts its HP");
+    CHECK(arena_state.heroes[0].flow >= ARENA_TOWER_KILL_FLOW, "the killer is paid the tower kill bounty");
+}
+
+static void test_tower_attacks_nearby_hero(void) {
+    arena_init_teams();
+    for (int i = 1; i < ARENA_MAX_HEROES; i++) arena_state.heroes[i].active = 0;
+    arena_towers_reset();
+    arena_state.heroes[0].x = arena_state.towers[0].x;
+    arena_state.heroes[0].z = arena_state.towers[0].z;
+    int hp_before = arena_state.heroes[0].hp;
+
+    arena_tick_towers(16);
+
+    CHECK(arena_state.heroes[0].hp < hp_before, "a living tower auto-attacks a hero standing in its aggro radius");
+}
+
 static void test_tree_doubles_channel_speed(void) {
     arena_init_teams();
     for (int i = 1; i < ARENA_MAX_HEROES; i++) arena_state.heroes[i].active = 0;
@@ -5779,6 +5841,10 @@ int main(void) {
     test_node_channel_interrupted_by_mixed_presence_loses_all_progress();
     test_node_channel_interrupted_when_capturing_team_leaves();
     test_node_already_owned_by_present_team_has_no_channel();
+    test_tower_blocks_capture_while_alive();
+    test_tower_destroyed_removes_capture_block();
+    test_hero_attack_towers_damages_and_kills_it();
+    test_tower_attacks_nearby_hero();
     test_tree_doubles_channel_speed();
     test_flamel_mark_speeds_up_channel_on_marked_ground();
     test_pizza_corrupts_any_channel_regardless_of_side();

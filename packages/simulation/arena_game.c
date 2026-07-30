@@ -362,6 +362,20 @@ static void arena_nodes_reset_layout(void) {
     }
 }
 
+/* arena_towers_reset: see the header declaration's own doc comment. Must run after
+ * arena_nodes_reset_layout -- reads arena_state.nodes[n].x/z, which that function just set. */
+void arena_towers_reset(void) {
+    for (int n = 0; n < ARENA_NODE_COUNT; n++) {
+        ArenaTower *tower = &arena_state.towers[n];
+        tower->x = arena_state.nodes[n].x;
+        tower->z = arena_state.nodes[n].z;
+        tower->max_hp = tower->hp = ARENA_TOWER_MAX_HP;
+        tower->alive = 1;
+        tower->attack_cooldown_ms = 0;
+        tower->last_attacked_by_owner = -1;
+    }
+}
+
 /* arena_obstacles_reset_layout (S170-138, "add rocks and trees so we
  * naturally start to create some lanes"): two mirrored jungle walls, one
  * between each team's spawn column and that side's flank nodes (Stables/
@@ -483,6 +497,11 @@ void arena_init_with_heroes(ArenaHeroID player_hero, ArenaHeroID bot_hero) {
     arena_powerups_reset_layout(); /* S170-190 */
     arena_obstacles_reset_layout();
     arena_creeps_reset();
+    /* Deliberately no arena_towers_reset() here -- towers (2026-07-30) are team-mode only, same
+       scope lane creep waves already carry ("pushing toward the enemy spawn" isn't a meaningful
+       concept in 1v1 practice). Left at memset-zero (alive=0), so arena_tick_towers/
+       arena_hero_attack_towers are no-ops for this whole 1v1 path -- not called from arena_update
+       at all, see that function's own doc comment. */
 
     arena_state.winner = 0;
 }
@@ -1121,6 +1140,13 @@ void arena_tick_nodes(unsigned int dt_ms) {
                 else if (stealthed_only_1 && !stealthed_only_0) exclusive_team = 1;
             }
         }
+
+        /* 2026-07-30, founder: "add towers around the nodes so beginning of game is a little
+           slower" -- a living tower blocks capture outright, the same way mixed/corrupted
+           presence does below, regardless of how exclusive the presence actually is. This is
+           the entire mechanism that makes the early game slower: nobody can even START a
+           channel on this node until its tower is destroyed. */
+        if (arena_state.towers[n].alive) exclusive_team = -1;
 
         /* Damage interrupts the capture, same trigger as real WoW Arathi
            Basin's flag channel (S170-51 cont'd) -- checked before anything
@@ -1996,6 +2022,76 @@ void arena_hero_attack_creeps(unsigned int dt_ms) {
                 creep_die(creep, &arena_state.nodes[c]);
             }
             break; /* one creep target per hero per attack, same as hero-vs-hero */
+        }
+    }
+}
+
+/* tower_die: same shape as creep_die above, minus the flavor-specific capture-bonus/heal branches
+ * a tower has no flavor to key off of -- just last-hit kill credit, permanently. */
+static void tower_die(ArenaTower *tower) {
+    tower->alive = 0; /* permanent -- no respawn, see the ARENA_TOWER_MAX_HP header comment for why */
+    if (tower->last_attacked_by_owner < 0) return;
+    ArenaHero *killer = &arena_state.heroes[tower->last_attacked_by_owner];
+    killer->flow += ARENA_TOWER_KILL_FLOW;
+    killer->flow_earned += ARENA_TOWER_KILL_FLOW;
+    killer->xp += ARENA_TOWER_KILL_XP;
+}
+
+/* arena_tick_towers: see the header declaration's own doc comment. */
+void arena_tick_towers(unsigned int dt_ms) {
+    for (int n = 0; n < ARENA_NODE_COUNT; n++) {
+        ArenaTower *tower = &arena_state.towers[n];
+        if (!tower->alive) continue;
+        if (tower->attack_cooldown_ms > 0) tower->attack_cooldown_ms -= (int)dt_ms;
+
+        ArenaHero *target = NULL;
+        float best_dist = 0.0f;
+        for (int h = 0; h < ARENA_MAX_HEROES; h++) {
+            ArenaHero *cand = &arena_state.heroes[h];
+            if (!cand->active || !hero_is_hittable(cand)) continue;
+            float dx = cand->x - tower->x, dz = cand->z - tower->z;
+            float dist = sqrtf(dx * dx + dz * dz);
+            if (dist > ARENA_TOWER_AGGRO_RADIUS) continue;
+            if (!target || dist < best_dist) { target = cand; best_dist = dist; }
+        }
+        if (target && tower->attack_cooldown_ms <= 0) {
+            apply_damage(target, apply_armor(ARENA_TOWER_DAMAGE, arena_hero_armor(target)));
+            tower->attack_cooldown_ms = ARENA_TOWER_ATTACK_COOLDOWN_MS;
+        }
+    }
+}
+
+/* arena_hero_attack_towers: see the header declaration's own doc comment. */
+void arena_hero_attack_towers(unsigned int dt_ms) {
+    (void)dt_ms; /* attack_cooldown_ms is ticked in tick_hero_kit/resolve_combat already; this only spends it */
+    for (int i = 0; i < ARENA_MAX_HEROES; i++) {
+        ArenaHero *h = &arena_state.heroes[i];
+        if (!h->active || !h->alive || h->attack_cooldown_ms > 0 || h->stunned_ms > 0) continue;
+        if (h->mnm_burrow_ms > 0) continue;
+        if (h->hero_id == ARENA_HERO_GARY) continue; /* same homing-only-basic-attack exclusion as arena_hero_attack_creeps */
+
+        ArenaHero *foe = arena_nearest_enemy(i);
+        if (foe && hero_is_hittable(foe)) {
+            float dx = foe->x - h->x, dz = foe->z - h->z;
+            if (sqrtf(dx * dx + dz * dz) <= ARENA_ATTACK_RANGE) continue; /* already busy with an enemy hero this tick */
+        }
+
+        for (int n = 0; n < ARENA_NODE_COUNT; n++) {
+            ArenaTower *tower = &arena_state.towers[n];
+            if (!tower->alive) continue;
+            float dx = tower->x - h->x, dz = tower->z - h->z;
+            if (sqrtf(dx * dx + dz * dz) > ARENA_ATTACK_RANGE) continue;
+
+            /* Towers have no armor stat, same "flat damage" convention arena_hero_attack_creeps
+               already uses for creeps -- see that function's own comment. */
+            tower->hp -= ARENA_ATTACK_DAMAGE + arena_hero_bonus_ad(h);
+            tower->last_attacked_by_owner = i;
+            h->attack_cooldown_ms = apply_cdr(h, ARENA_ATTACK_COOLDOWN_MS);
+            if (tower->hp <= 0) {
+                tower->hp = 0;
+                tower_die(tower);
+            }
+            break; /* one tower target per hero per attack, same as creeps/hero-vs-hero */
         }
     }
 }
@@ -4887,6 +4983,8 @@ void arena_update(unsigned int dt_ms) {
     update_hero_motion(&arena_state.heroes[1], dt_sec);
     arena_tick_creeps(dt_ms);
     arena_hero_attack_creeps(dt_ms);
+    /* Node towers (2026-07-30) are team-mode only, same scope as lane creep waves just below --
+       not called here at all, see arena_towers_reset's own doc comment above. */
     /* Lane creep waves (S170-139) are team-mode only, unlike node-guardian creeps --
        "pushing toward the enemy spawn" isn't a meaningful concept in this
        1v1 practice demo (no team-wide push objective exists here at all),
@@ -4985,6 +5083,13 @@ void arena_init_teams(void) {
     arena_powerups_reset_layout(); /* S170-190 */
     arena_obstacles_reset_layout();
     arena_creeps_reset();
+    /* Deliberately no arena_towers_reset() here -- this shared sim-level function is also called
+       directly by ~300 existing unit tests that place heroes at convenient coordinates never
+       expecting anything to auto-attack them there (some literally at the Blacksmith node's own
+       (0,0)). Left at memset-zero (alive=0) by default; the real server calls
+       arena_towers_reset() itself immediately after calling this function for an actual team-mode
+       match (apps/arena_server/src/main.c) -- see that call site's own doc comment for why it
+       lives there instead of here. */
     /* S170-139: lane creep waves get a short grace period before the first
        wave, same real-MOBA precedent as ARENA_LANE_WAVE_INITIAL_DELAY_MS's
        own doc comment -- memset already zeroed this to 0 (instant spawn),
@@ -5186,6 +5291,8 @@ void arena_update_teams(unsigned int dt_ms) {
     }
     arena_tick_creeps(dt_ms);
     arena_hero_attack_creeps(dt_ms);
+    arena_tick_towers(dt_ms);
+    arena_hero_attack_towers(dt_ms);
     arena_tick_lane_creeps(dt_ms);
     arena_hero_attack_lane_creeps(dt_ms);
 

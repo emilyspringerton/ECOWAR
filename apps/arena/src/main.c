@@ -652,6 +652,20 @@ static void net_poll_snapshots(uint32_t now_ms) {
                         dst->flavor = (ArenaCreepFlavor)msg->creeps[i].flavor;
                     }
                 }
+                /* 2026-07-30: node towers -- always fully populated, same convention as
+                   node-guardian creeps just above. */
+                {
+                    int twcount = ARENA_SNAPSHOT_TOWER_COUNT;
+                    if (twcount > ARENA_NODE_COUNT) twcount = ARENA_NODE_COUNT;
+                    for (int i = 0; i < twcount; i++) {
+                        ArenaTower *dst = &arena_state.towers[i];
+                        dst->x = msg->towers[i].x;
+                        dst->z = msg->towers[i].z;
+                        dst->hp = msg->towers[i].hp;
+                        dst->max_hp = msg->towers[i].max_hp;
+                        dst->alive = msg->towers[i].alive;
+                    }
+                }
                 /* S170-190: powerups -- always fully populated, same convention as
                    node-guardian creeps just above. */
                 {
@@ -2934,6 +2948,40 @@ int main(int argc, char *argv[]) {
             glUniformMatrix4fv_(loc_mvp, 1, GL_FALSE, aamvp.m);
             glUniformMatrix4fv_(loc_model, 1, GL_FALSE, aamodel.m);
             glUniform4f_(loc_color, cr_r, cr_g, cr_b, 0.3f);
+            draw_mesh(&ring_mesh);
+        }
+
+        /* Node towers (2026-07-30, founder: "add towers around the nodes so beginning of game is
+           a little slower"). Deliberately NOT team-relative/flavor-colored like node-guardian
+           creeps -- a tower is always neutral-hostile to both teams, so it stays a fixed stone
+           gray regardless of who's looking, distinct from every team-colored thing already on
+           this map. Tall base+spire silhouette (unlike the squat creep box or the shop's own
+           base+counter shape) reads as "structure," matching this map's own real MOBA turret
+           precedent. Color darkens toward damaged-red as HP drops -- the "legible before you
+           need it" telegraph this session's own NORTHSTAR §22.5 named as a real gap for jungle
+           camps applies just as much here: a nearly-dead tower should read as nearly dead at a
+           glance, not just via a number. Aggro-radius ring reuses the exact same ring_mesh idiom
+           node-guardian creeps already use just above, for the same "see the boundary before
+           taking a hit" reason. */
+        for (int n = 0; n < ARENA_NODE_COUNT; n++) {
+            ArenaTower *tw = &arena_state.towers[n];
+            if (!tw->alive) continue;
+            float hp_frac = tw->max_hp > 0 ? (float)tw->hp / (float)tw->max_hp : 0.0f;
+            float tw_r = 0.55f + 0.35f * (1.0f - hp_frac); /* healthy: neutral gray, damaged: reddening */
+            float tw_g = 0.55f * hp_frac + 0.15f * (1.0f - hp_frac);
+            float tw_b = 0.6f * hp_frac + 0.15f * (1.0f - hp_frac);
+            glUniform4f_(loc_color, tw_r * 0.6f, tw_g * 0.6f, tw_b * 0.6f, 1.0f); /* base */
+            draw_hero_box(tw->x, tw->z, 0.0f, 0.7f, 0.0f, 1.0f, 0.7f, 1.0f, 1.0f, &vp, loc_mvp, loc_model, &cube_mesh);
+            glUniform4f_(loc_color, tw_r, tw_g, tw_b, 1.0f); /* spire */
+            draw_hero_box(tw->x, tw->z, 0.0f, 2.2f, 0.0f, 0.55f, 1.8f, 0.55f, 1.0f, &vp, loc_mvp, loc_model, &cube_mesh);
+
+            Mat4 twtr = mat4_translate(tw->x, 0.03f, tw->z);
+            Mat4 twsc = mat4_scale(ARENA_TOWER_AGGRO_RADIUS, 1.0f, ARENA_TOWER_AGGRO_RADIUS);
+            Mat4 twmodel = mat4_multiply(&twtr, &twsc);
+            Mat4 twmvp = mat4_multiply(&vp, &twmodel);
+            glUniformMatrix4fv_(loc_mvp, 1, GL_FALSE, twmvp.m);
+            glUniformMatrix4fv_(loc_model, 1, GL_FALSE, twmodel.m);
+            glUniform4f_(loc_color, 0.85f, 0.85f, 0.9f, 0.3f);
             draw_mesh(&ring_mesh);
         }
 

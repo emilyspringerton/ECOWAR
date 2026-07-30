@@ -340,6 +340,22 @@ typedef struct {
 // ARENA_MAX_CREEPS, same duplication reasoning as the others above.
 #define ARENA_SNAPSHOT_CREEP_COUNT 5
 
+// Per-node tower state (2026-07-30, founder: "add towers around the nodes so beginning of game is
+// a little slower"). Same "always fully populated, index-matched to nodes[]" convention as
+// ArenaCreepSnapshot -- one tower per node, dead ones just sit at alive=0 forever (no respawn, so
+// no flavor field needed either: a tower is always neutral-hostile to both teams for as long as
+// it's alive, nothing to distinguish over the wire).
+typedef struct {
+    float x, z;
+    uint16_t hp;
+    uint16_t max_hp;
+    uint8_t alive;
+} ArenaTowerSnapshot;
+
+// ARENA_SNAPSHOT_TOWER_COUNT must match packages/simulation/arena_game.h's
+// ARENA_NODE_COUNT, same duplication reasoning as every other ARENA_SNAPSHOT_* size constant.
+#define ARENA_SNAPSHOT_TOWER_COUNT 5
+
 // Per-powerup state (S170-190, Warsong Gulch-style Berserker/Regen pickups). Unlike fountains
 // (static/deterministic, never synced -- see arena_fountain_position's own doc comment),
 // powerups have real dynamic state (grabbed or not) that changes from real gameplay events, so
@@ -393,6 +409,7 @@ typedef struct {
     uint8_t projectile_count; /* S170-136 */
     ArenaProjectileSnapshot projectiles[ARENA_SNAPSHOT_MAX_PROJECTILES];
     ArenaCreepSnapshot creeps[ARENA_SNAPSHOT_CREEP_COUNT]; /* S170-146 */
+    ArenaTowerSnapshot towers[ARENA_SNAPSHOT_TOWER_COUNT]; /* 2026-07-30 */
     ArenaPowerupSnapshot powerups[ARENA_SNAPSHOT_POWERUP_COUNT]; /* S170-190 */
     uint8_t lane_creep_count; /* S170-146 */
     ArenaLaneCreepSnapshot lane_creeps[ARENA_SNAPSHOT_MAX_LANE_CREEPS];

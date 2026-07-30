@@ -176,6 +176,30 @@ typedef enum {
 #define ARENA_CREEP_TEAM_KILL_HEAL                20   /* home-turf resupply, owning team only */
 #define ARENA_CREEP_TEAM_KILL_DENY_CAPTURE_BONUS_MS 1500 /* counter-play: farming an enemy's own node-guardian creep helps flip their node */
 
+/* Node towers (2026-07-30, founder: "add towers around the nodes so beginning of game is a
+ * little slower"). One permanent, neutral tower per node (towers[n] belongs to nodes[n], same
+ * index-matched convention as ArenaCreep), hostile to both teams equally -- unlike node-guardian
+ * creeps, a tower has no flavor/owner, because the whole point is gating capture BEFORE anyone
+ * owns anything. arena_tick_nodes checks tower->alive before it will let a channel start or
+ * continue on that node at all: while the tower stands, the node can't flip to either team, full
+ * stop, no exceptions. Real MOBA turret precedent (nobody caps a base objective while its own
+ * defenses stand) directly matching the founder's own "slower start" framing. Never respawns once
+ * destroyed -- this is a ONE-TIME early-game gate, not a recurring one; a torn-down tower's node
+ * behaves exactly like it always has (arena_tick_nodes simply stops checking a dead tower).
+ * Reuses the exact hero-vs-creep combat shape (flat damage in, apply_armor'd damage out, last-hit
+ * kill credit via last_attacked_by_owner) rather than inventing a new one. HP/damage/reward
+ * numbers are a judgment call, not founder-specified -- sized to force a real early commitment
+ * (more than one hero can solo down quickly) and pay out more than a node-guardian creep
+ * (ARENA_NODE_GUARDIAN_KILL_FLOW 150) without approaching a full hero kill (ARENA_HERO_KILL_FLOW
+ * 1000), same "spec the model, leave the numbers open to tuning" precedent NORTHSTAR §17.5/§20.4
+ * already established elsewhere in this file. */
+#define ARENA_TOWER_MAX_HP              1600
+#define ARENA_TOWER_DAMAGE              40
+#define ARENA_TOWER_ATTACK_COOLDOWN_MS  1000
+#define ARENA_TOWER_AGGRO_RADIUS        6.0f /* wider than ARENA_NODE_CAPTURE_RADIUS (5.0) -- already threatening before anyone gets close enough to even attempt a channel */
+#define ARENA_TOWER_KILL_FLOW           400
+#define ARENA_TOWER_KILL_XP             40
+
 /* Team-scale arena (2026-07-24, NORTHSTAR §13 cont'd): the array grows from
  * 2 to ARENA_MAX_HEROES so a full 10v10 match fits in the same ArenaState
  * the 1v1 local demo and apps/arena_server (1v1) already use. The 1v1 path
@@ -1714,6 +1738,17 @@ typedef struct {
     int last_attacked_by_owner; /* -1 = never hit since spawning, else the owner index of whoever last damaged it -- who gets credit on the kill */
 } ArenaCreep;
 
+/* ArenaTower (2026-07-30): one per node, index-matched (towers[n] belongs to nodes[n]). See the
+ * ARENA_TOWER_MAX_HP header comment above for the full design. No flavor/respawn fields, unlike
+ * ArenaCreep -- a tower is always neutral-hostile to both teams and never comes back once dead. */
+typedef struct {
+    float x, z;
+    int hp, max_hp;
+    int alive;
+    int attack_cooldown_ms;
+    int last_attacked_by_owner; /* -1 = never hit since spawning, else who gets kill credit */
+} ArenaTower;
+
 /* ArenaProjectile (S170-136, on-hit status effects generalized S170-140): a
  * real travelling skill-shot, not an instant hit. Straight-line, no homing:
  * velocity is fixed at spawn from the caster's position toward the target's
@@ -1785,6 +1820,7 @@ typedef struct {
     ArenaHero heroes[ARENA_HEROES_ARRAY_SIZE]; /* S170-141: real per-player range 0..ARENA_MAX_HEROES-1, puppet-clone range after it -- see ARENA_HEROES_ARRAY_SIZE's own doc comment */
     ArenaNode nodes[ARENA_NODE_COUNT];
     ArenaCreep creeps[ARENA_MAX_CREEPS];
+    ArenaTower towers[ARENA_NODE_COUNT]; /* 2026-07-30: index-matched to nodes, same convention as creeps */
     ArenaProjectile projectiles[ARENA_MAX_PROJECTILES];
     ArenaObstacle obstacles[ARENA_OBSTACLE_COUNT];
     ArenaPowerup powerups[ARENA_POWERUP_COUNT]; /* S170-190 */
@@ -2111,6 +2147,43 @@ void arena_tick_projectiles(unsigned int dt_ms);
  * arena_update() and arena_update_teams(), after resolve_combat/the melee
  * loop so hero-vs-hero combat is always resolved first each tick. */
 void arena_hero_attack_creeps(unsigned int dt_ms);
+
+/* arena_towers_reset (2026-07-30): (re)spawns every node's tower at full HP, positioned exactly
+ * at its node's own (x,z) -- must run AFTER arena_nodes_reset_layout so node positions already
+ * exist to read. Unlike arena_creeps_reset, sets `alive`/`hp` directly rather than relying on a
+ * lazy tick-driven first-spawn -- towers exist from tick 0, there's no "grace period before the
+ * jungle populates" the way creeps' own respawn-timer-starts-at-0 convention implies.
+ *
+ * Deliberately NOT called from arena_init_teams() itself, unlike arena_creeps_reset -- that
+ * shared sim-level function is also called directly by ~300 existing unit tests that place heroes
+ * at convenient coordinates (some literally at the Blacksmith node's own (0,0)) never expecting
+ * anything to auto-attack them there. Towers default to dead (memset-zero alive=0) everywhere
+ * except the one real call site that matters: apps/arena_server/src/main.c calls this explicitly
+ * immediately after its own arena_init_teams() call, for real team-mode matches only. Not called
+ * for 1v1 (arena_init_with_heroes/arena_init) at all -- towers are team-mode only, same scope as
+ * lane creep waves. */
+void arena_towers_reset(void);
+
+/* arena_tick_towers (2026-07-30): ticks every living tower's attack cooldown and has it
+ * auto-attack the nearest hittable hero of EITHER team within ARENA_TOWER_AGGRO_RADIUS (unlike
+ * node-guardian creeps, a tower has no owning team to spare from its own aggro -- it's neutral
+ * infrastructure standing in the way of BOTH sides' capture attempts equally). Does not itself
+ * apply hero-side damage to the tower -- that's arena_hero_attack_towers, same "two independent
+ * halves of combat" split arena_tick_creeps/arena_hero_attack_creeps already established. Called
+ * from arena_update_teams() only -- see arena_towers_reset's own doc comment for why towers are
+ * team-mode only; a no-op everywhere else since every tower is left dead (alive=0) by default. */
+void arena_tick_towers(unsigned int dt_ms);
+
+/* arena_hero_attack_towers (2026-07-30): same shape as arena_hero_attack_creeps -- each active,
+ * alive hero without a closer enemy hero or creep already occupying its attack this tick
+ * (checked via the same shared attack_cooldown_ms gate both functions read/write) instead
+ * auto-attacks a living tower within ARENA_ATTACK_RANGE if one's there. On a kill, grants
+ * ARENA_TOWER_KILL_FLOW/XP to whoever landed it (last_attacked_by_owner, same last-hit-credit
+ * convention as every other killable entity in this file) and permanently sets the tower dead --
+ * no respawn, see the ARENA_TOWER_MAX_HP header comment for why. Called from arena_update_teams()
+ * only, same team-mode-only scope as arena_tick_towers, after arena_hero_attack_creeps so a hero
+ * already mid-swing on a creep this tick doesn't also get a free tower hit. */
+void arena_hero_attack_towers(unsigned int dt_ms);
 
 /* arena_tick_lane_creeps (S170-139): see the header comment above
  * ARENA_LANE_WAYPOINT_COUNT for the full design. Advances each team's wave

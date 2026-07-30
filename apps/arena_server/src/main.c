@@ -454,6 +454,16 @@ static void server_broadcast(void) {
         msg.creeps[i].alive = (uint8_t)cr->alive;
         msg.creeps[i].flavor = (uint8_t)cr->flavor;
     }
+    /* 2026-07-30: node towers -- always fully populated (one per node, a dead one just sits at
+       alive=0 forever, no respawn), same convention as node-guardian creeps just above. */
+    for (int i = 0; i < ARENA_SNAPSHOT_TOWER_COUNT; i++) {
+        ArenaTower *tw = &arena_state.towers[i];
+        msg.towers[i].x = tw->x;
+        msg.towers[i].z = tw->z;
+        msg.towers[i].hp = (uint16_t)(tw->hp > 0 ? tw->hp : 0);
+        msg.towers[i].max_hp = (uint16_t)tw->max_hp;
+        msg.towers[i].alive = (uint8_t)tw->alive;
+    }
     /* S170-190: powerups are always fully populated (fixed at ARENA_POWERUP_COUNT), same
        "not sparse-packed" convention as node-guardian creeps just above. */
     for (int i = 0; i < ARENA_SNAPSHOT_POWERUP_COUNT; i++) {
@@ -549,8 +559,23 @@ static void server_handle_packet(struct sockaddr_in *sender, char *buffer, int s
                 // straight to a live match.
                 if (client_count == lobby_size) {
                     arena_bot_enabled = 0;
-                    if (lobby_size == 2) arena_init(); /* 1v1: keeps the exact proven local-demo spawn/state shape */
-                    else arena_init_teams();           /* team mode: N-hero spawn, all placeholder hero_id until picks land */
+                    if (lobby_size == 2) {
+                        arena_init(); /* 1v1: keeps the exact proven local-demo spawn/state shape */
+                    } else {
+                        arena_init_teams(); /* team mode: N-hero spawn, all placeholder hero_id until picks land */
+                        /* 2026-07-30, founder: "add towers around the nodes so beginning of game
+                           is a little slower" -- team-mode only, same "doesn't make sense in solo
+                           practice" scope lane creep waves already carry (see
+                           arena_tick_lane_creeps' own doc comment). Deliberately NOT inside
+                           arena_init_teams() itself: that shared sim-level function is also called
+                           directly by ~300 existing unit tests that place heroes at convenient
+                           coordinates (some literally at the Blacksmith node's own (0,0)) never
+                           expecting anything to auto-attack them there -- towers defaulting to
+                           dead everywhere except this one real match-start call site keeps every
+                           existing test's behavior unchanged while still shipping the real
+                           feature for actual matches. */
+                        arena_towers_reset();
+                    }
                     match_phase = ARENA_PHASE_DRAFT;
                     printf("Lobby full (%d players) -- internal bot AI disabled, entering draft.\n", lobby_size);
                 }

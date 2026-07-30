@@ -2664,3 +2664,37 @@
   principle for §22.2's own placeholder/window boss, not resolved). Named what does NOT transfer
   just as explicitly: the multi-biome map concept (Verdant Wilds/Ash Barrens/Frozen Reach/Blighted
   Grid) is a real, bigger, separate idea, explicitly out of scope here. No code changes.
+
+- feat(arena): node towers -- "add towers around the nodes so beginning of game is a little
+  slower." One neutral `ArenaTower` per node (all 5, index-matched to `nodes[]`), hostile to both
+  teams equally, that directly gates `arena_tick_nodes`' own capture channel: `arena_tick_nodes`
+  now forces `exclusive_team = -1` for any node whose tower is still alive, so neither team can
+  even START a capture channel there -- the actual mechanism making the opening node-grab race
+  slower, per the founder's own framing. Reuses the exact hero-vs-creep combat shape (flat damage
+  taken, `apply_armor`'d damage dealt to heroes, last-hit kill credit via
+  `last_attacked_by_owner`) rather than inventing a new one; never respawns once destroyed, a
+  one-time early-game gate. Superseded NORTHSTAR §19.5's original single-lane-tower proposal --
+  see that section's own update note for the full "what shipped vs. what was specced" story.
+
+  Team-mode only, deliberately NOT wired into `arena_init_teams()`/`arena_creeps_reset()`'s own
+  shared init path -- that function is called directly by ~300 existing unit tests that place
+  heroes at convenient coordinates (some literally at the Blacksmith node's own map-center (0,0))
+  never expecting anything to auto-attack them there. Towers default to dead (memset-zero) unless
+  `arena_towers_reset()` is called explicitly, which now happens exactly once, in
+  `apps/arena_server/src/main.c` right after a real team-mode match's own `arena_init_teams()`
+  call -- every existing test's behavior is unchanged, the 1v1 local demo never sees towers at
+  all (same scope lane creep waves already carry), and real matches get the full feature. Four
+  new dedicated tests cover the capture-block/unblock, hero-kills-tower, and tower-attacks-hero
+  paths explicitly (previously-failing pre-existing capture-channel tests needed zero changes
+  once the shared-init-path fix above landed).
+
+  Wire-synced end to end: `ArenaTowerSnapshot` (x/z/hp/max_hp/alive) added to
+  `ArenaSnapshotMsg`, populated server-side, applied client-side. Rendered in
+  `apps/arena/src/main.c`: a tall stone-gray base+spire silhouette (distinct from every other
+  shape on the map), darkening toward red as HP drops -- the same "telegraph state before it
+  matters" instinct NORTHSTAR §22.5 named as a real gap for jungle camps, applied here too -- plus
+  the same aggro-radius ring idiom node-guardian creeps already use. `ARENA_TOWER_MAX_HP`/
+  `DAMAGE`/`KILL_FLOW`/`XP` are judgment calls, not founder-specified, same "spec the model, leave
+  the numbers open to tuning" precedent this file uses elsewhere. Full suite green (690 assertions
+  across all 7 test binaries), `scripts/build.sh` clean, `scripts/test_10_bots.sh` unaffected
+  (Card-RTS matchmaker, not this system).

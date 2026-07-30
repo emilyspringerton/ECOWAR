@@ -1640,8 +1640,9 @@ specced, spent in a real two-shop item system (§19.3, generic/weird/specific ti
 FFXI+WoW equip system), with a character stat pane and shop panel affordance, bot AI shop
 interaction, and hero-kill assists (§19.2's own "fed by kills" extended to whoever contributed,
 not just the killing blow, S170-187) all live. Full sprint history: `EMILY/BACKLOG.md` S170-175
-(sprints 1-5) and S170-187. **§19.5 (structures) is still spec only, no code yet** -- the
-"push payoff" gap it names is still real and still open; nothing below has changed that half.
+(sprints 1-5) and S170-187. **§19.5 (structures) is now built too (2026-07-30), in a materially
+different shape than originally specced below** -- see §19.5's own update note for exactly what
+shipped versus what this section originally proposed.
 
 Founder, real-time: **"continue the backlog for redgarden."** Picks up the earlier sprint plan's
 own items 4 and 5, both explicitly flagged as needing "a real design pass of its own before any
@@ -1734,7 +1735,7 @@ choose a build path via level-up screen." A real ability-point system is a legit
 expansion once this simpler shape is live and proven fun, not a prerequisite for shipping *an*
 economy at all.
 
-### 19.5 Structures: single-lane, matching the map this actually is -- still spec only, no code yet
+### 19.5 Structures: single-lane, matching the map this actually is -- original spec, superseded below
 
 REDGARDEN's map is Arathi-Basin-shaped -- open field, 5 nodes, **no 3-lane structure** the way a
 classic MOBA base has. Lane creep waves (S170-139) already march a single lane: each team's own
@@ -1757,6 +1758,25 @@ a tower has, just one lane instead of three).
   gold/tempo; whether a destroyed structure ever respawns (real MOBA precedent says no, permanent
   loss of that lane's defense) or this map's own graveyard/wave-respawn conventions suggest
   otherwise.
+
+**Superseded (2026-07-30): what actually got built is node towers, not lane towers.** Founder,
+real-time: "add towers around the nodes so beginning of game is a little slower" -- a different,
+more specific ask than this section's own original single-lane-defense proposal above. Rather than
+one structure per team gating the lane-creep push, what shipped is **one neutral tower per node
+(all 5, `ArenaTower`, index-matched to `nodes[]`)**, hostile to BOTH teams equally, that directly
+gates `arena_tick_nodes`' own capture channel: while a node's tower is alive, that node cannot be
+captured by either side, full stop -- the actual mechanism that makes "the beginning of game" (the
+opening node-grab race) slower, rather than this section's own original "slows the lane push"
+framing. Reuses the exact hero-vs-creep combat shape (flat damage in, `apply_armor`'d damage out,
+last-hit kill credit) rather than inventing a new one; never respawns once destroyed, a one-time
+early-game gate rather than a recurring lane defense. Team-mode only (no towers in the 1v1 local
+demo), same scope lane creep waves already carry. `ARENA_TOWER_MAX_HP`/`DAMAGE`/`KILL_FLOW`/`XP`
+are judgment calls, not founder-specified, same "spec the model, leave the numbers open" precedent
+this file uses elsewhere. This section's original single-lane-structure idea is not built and has
+no current plan to be -- node towers cover the actual ask; a separate lane-push structure remains
+a real, still-open idea if a future pass wants it, but is not scheduled. Wire-synced
+(`ArenaTowerSnapshot`) and rendered client-side (tall stone-gray spire, darkening toward red as HP
+drops, aggro-radius ring) -- the full loop a real online match needs, not just server logic.
 
 ### 19.6 Cooking direction, updated
 
