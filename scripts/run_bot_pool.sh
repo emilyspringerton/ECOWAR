@@ -33,6 +33,12 @@
 #                                              # deliberate but short-lived; a human being able to
 #                                              # queue into :7778 mattered more once the stats
 #                                              # pipeline itself had already been proven working.
+#                                              # 2026-07-30, same-day follow-up again, founder:
+#                                              # "bring bot pool back up to 20" -- live systemd
+#                                              # unit back to 20. This script's own default here
+#                                              # still stays 19 for any other/manual invocation;
+#                                              # only the live systemd unit tracks the current
+#                                              # founder-chosen count.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 

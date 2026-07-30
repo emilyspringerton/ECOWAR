@@ -2880,3 +2880,13 @@
   credentials, hero-result reporting) is unaffected -- that fix stands regardless of bot count,
   it was only the 20th bot that guaranteed a match without a human present. Deployed live:
   redeployed the unit file and restarted the service, confirmed 19 bot processes running.
+
+- ops(arena): bot pool back up to 20, same day. Founder: "bring bot pool back up to 20." Back to
+  the self-sustaining-match tradeoff -- `redgarden-bot-pool.service` -> `run_bot_pool.sh 20`.
+  Deployed live: redeployed the unit and restarted, confirmed 20 bot processes running. Separately
+  from this specific change: today's input-lag investigation traced the actual cause to repeated
+  manual `systemctl restart` calls made to verify each incremental balance/feature change live
+  immediately, which (unlike `scripts/auto_deploy.sh`'s own already-match-aware restart guard)
+  killed in-progress matches outright -- going forward, live redeploys should default to
+  auto-deploy's own scheduled, match-aware cycle rather than an immediate manual restart per
+  change, unless a change is specifically being verified live on request.
