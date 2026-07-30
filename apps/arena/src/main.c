@@ -55,6 +55,8 @@ static int my_owner = 0; /* which arena_state.heroes[] slot is "me" -- 0 in loca
 static int show_apm = 0;
 static int show_ability_help = 0; /* S170-151, founder: "H should show an overlay with character ability descriptions" */
 static int shop_open = 0; /* S170-175, founder: "do a first pass shop interface" -- B toggles, same "works in any mode" precedent as F11/H */
+static int shop_page = 0; /* S170-231, founder: "too many items per page more pages navigate pages with shift 1 2 3" -- 0-indexed, Shift+1/2/3 jump straight to page 1/2/3 */
+static int shop_was_in_range = 0; /* S170-231, founder: "pop the shop window up when you get close to the shop enough to buy" -- edge-triggered latch for the proximity auto-open/close below, so it only fires on the in-range/out-of-range transition and never fights a manual B press made while standing still */
 
 /* Shop panel layout (S170-175): shared by the click hit-test in the event
  * loop and the draw call in the render pass, so a click always lands on
@@ -65,16 +67,26 @@ static int shop_open = 0; /* S170-175, founder: "do a first pass shop interface"
  * there's no staleness to guard against). */
 #define SHOP_ROW_H 20.0f
 #define SHOP_COL_W 260.0f
-#define SHOP_BUY_COLS 2
-/* S170-210: was a hardcoded 12 (matched the original 24-item catalog's even
- * split), which silently clipped the shop panel's render loop AND its click
- * hit-test at item_id 23 -- Blink Dagger (24), Donkey (25), and Haste
- * Trinket (26) rendered nowhere and couldn't be bought at all once the
- * catalog grew past ARENA_ITEM_COUNT 24. Col 0 stays the 12 SPECIFIC
- * weapons; col 1 now holds all 15 of WEIRD weapons + GENERIC + the three
- * newest items. Bump this again (or rebalance the two columns) the next
- * time ARENA_ITEM_COUNT grows past what col 1 can hold. */
-#define SHOP_ITEMS_PER_COL 15
+/* S170-231: replaced the old 2-column x 15-row single giant page (S170-210's
+ * fix -- all 27 items visible and clickable at once, founder: "too many
+ * items per page") with a single buy column, one page of SHOP_ITEMS_PER_PAGE
+ * at a time. 9 was chosen to exactly match the existing 1-9 quick-buy
+ * keybind range, so every item on screen always has a live keybind instead
+ * of only the first 9 of a much longer list. SHOP_PAGE_COUNT is a ceiling
+ * division so it grows on its own the next time ARENA_ITEM_COUNT grows,
+ * the self-scaling behavior SHOP_ITEMS_PER_COL was supposed to have but
+ * didn't (S170-210 had to hand-bump it). */
+#define SHOP_ITEMS_PER_PAGE 9
+#define SHOP_PAGE_COUNT ((ARENA_ITEM_COUNT + SHOP_ITEMS_PER_PAGE - 1) / SHOP_ITEMS_PER_PAGE)
+#define SHOP_PAGE_BTN_W 30.0f
+#define SHOP_PAGE_BTN_H 18.0f
+#define SHOP_PAGE_BTN_GAP 6.0f
+/* Panel height needs to fit whichever column has more rows: the buy column
+ * now only ever shows SHOP_ITEMS_PER_PAGE items plus one row's worth of
+ * height for the page buttons above it, but the equipped/sell column still
+ * always shows every ARENA_ITEM_SLOT_COUNT loadout slot at once -- it isn't
+ * the catalog, so pagination doesn't apply to it. */
+#define SHOP_PANEL_ROWS ((SHOP_ITEMS_PER_PAGE + 1) > ARENA_ITEM_SLOT_COUNT ? (SHOP_ITEMS_PER_PAGE + 1) : ARENA_ITEM_SLOT_COUNT)
 static void shop_panel_origin(int win_w, int win_h, float *sp_x, float *sp_y_top) {
     (void)win_w;
     *sp_x = 40.0f;
@@ -2198,6 +2210,26 @@ int main(int argc, char *argv[]) {
             arena_log_elapsed_ms += dt;
         }
 
+        /* Shop proximity auto-open/close (S170-231, founder: "have it pop the shop
+           window up when you get close to the shop enough to buy"): edge-triggered
+           against the exact same ARENA_SHOP_RADIUS arena_shop_buy itself enforces
+           server-side around the player's OWN team's shop (arena_shop_position), so
+           "the panel is showing" and "you're actually close enough to buy" always
+           agree. Edge-triggered on shop_was_in_range rather than "open whenever in
+           range every frame" so it doesn't fight the manual B toggle -- closing the
+           panel with B while standing in range stays closed until you actually leave
+           and come back, and a manual B-open isn't stomped shut again next frame. */
+        if (!observing && my_owner >= 0 && my_owner < ARENA_MAX_HEROES && arena_state.heroes[my_owner].alive) {
+            ArenaHero *shop_me = &arena_state.heroes[my_owner];
+            float shx, shz;
+            arena_shop_position(shop_me->team, &shx, &shz);
+            float sdx = shop_me->x - shx, sdz = shop_me->z - shz;
+            int shop_in_range = (sdx * sdx + sdz * sdz) <= (ARENA_SHOP_RADIUS * ARENA_SHOP_RADIUS);
+            if (shop_in_range && !shop_was_in_range) shop_open = 1;
+            else if (!shop_in_range && shop_was_in_range) shop_open = 0;
+            shop_was_in_range = shop_in_range;
+        }
+
         SDL_Event e;
         while (SDL_PollEvent(&e)) {
             if (e.type == SDL_QUIT) running = 0;
@@ -2240,19 +2272,27 @@ int main(int argc, char *argv[]) {
             if (e.type == SDL_KEYDOWN && e.key.keysym.sym == SDLK_b) {
                 shop_open = !shop_open; /* S170-175, same "works in any mode" precedent as F11/H above -- arena_shop_buy/sell themselves reject a purchase made out of range, so toggling far from a shop is harmless, not broken */
             }
-            /* Quick-buy (S170-175, cross-cutting UI constraint NORTHSTAR §2: "both keybind
-               and click paths must resolve instantly, no menu-diving"): 1-9 buys the
-               corresponding item in the shop panel's left column (catalog items 0-8) the
-               instant it's pressed, no confirm step -- the keybind-path half of that
-               constraint, mirroring real MOBA quick-buy hotkeys. Only live while the panel
-               is open, same "the affordance you're looking at is the one the key acts on"
-               rule the QWE ability keys already follow. */
+            /* Quick-buy + page nav (S170-175, extended S170-231 founder: "navigate pages
+               with shift 1 2 3"): plain 1-9 buys the corresponding item on the CURRENT
+               page the instant it's pressed, no confirm step -- the keybind-path half of
+               NORTHSTAR §2's "both keybind and click paths must resolve instantly"
+               constraint, mirroring real MOBA quick-buy hotkeys. Shift+1/2/3 jumps
+               straight to that page instead of buying -- reuses the exact keys the
+               founder already associates with "the shop," rather than inventing a
+               separate pair of prev/next keys. Only live while the panel is open, same
+               "the affordance you're looking at is the one the key acts on" rule the QWE
+               ability keys already follow. */
             if (shop_open && !observing && e.type == SDL_KEYDOWN &&
                 e.key.keysym.sym >= SDLK_1 && e.key.keysym.sym <= SDLK_9) {
-                int item_id = (int)(e.key.keysym.sym - SDLK_1);
-                if (item_id < ARENA_ITEM_COUNT) {
-                    if (net_mode) net_send_shop_buy(item_id);
-                    else arena_shop_buy(my_owner, item_id);
+                int slot_in_page = (int)(e.key.keysym.sym - SDLK_1);
+                if (e.key.keysym.mod & KMOD_SHIFT) {
+                    if (slot_in_page < SHOP_PAGE_COUNT) shop_page = slot_in_page;
+                } else {
+                    int item_id = shop_page * SHOP_ITEMS_PER_PAGE + slot_in_page;
+                    if (item_id < ARENA_ITEM_COUNT) {
+                        if (net_mode) net_send_shop_buy(item_id);
+                        else arena_shop_buy(my_owner, item_id);
+                    }
                 }
             }
             /* Shop panel clicks (S170-175): the click-path half of the same instant-resolve
@@ -2277,30 +2317,40 @@ int main(int argc, char *argv[]) {
                 float bx = (float)e.button.x, by = (float)(win_h - e.button.y);
                 float sp_x, sp_y_top;
                 shop_panel_origin(win_w, win_h, &sp_x, &sp_y_top);
-                float panel_w = (float)SHOP_BUY_COLS * SHOP_COL_W + SHOP_COL_W + 40.0f;
-                float panel_h = (float)SHOP_ITEMS_PER_COL * SHOP_ROW_H + 40.0f;
+                float panel_w = SHOP_COL_W + SHOP_COL_W + 40.0f;
+                float panel_h = (float)SHOP_PANEL_ROWS * SHOP_ROW_H + 40.0f;
                 if (bx >= sp_x - 10.0f && bx <= sp_x - 10.0f + panel_w &&
                     by >= sp_y_top - panel_h && by <= sp_y_top + 26.0f) {
                     shop_click_consumed = 1;
                 }
                 int handled = 0;
-                for (int col = 0; col < SHOP_BUY_COLS && !handled; col++) {
-                    float col_x = sp_x + (float)col * SHOP_COL_W;
-                    for (int row = 0; row < SHOP_ITEMS_PER_COL; row++) {
-                        int item_id = col * SHOP_ITEMS_PER_COL + row;
-                        if (item_id >= ARENA_ITEM_COUNT) break;
-                        float row_top = sp_y_top - (float)row * SHOP_ROW_H;
-                        float row_bottom = row_top - (SHOP_ROW_H - 2.0f);
-                        if (bx >= col_x && bx <= col_x + SHOP_COL_W - 8.0f && by >= row_bottom && by <= row_top) {
-                            if (net_mode) net_send_shop_buy(item_id);
-                            else arena_shop_buy(my_owner, item_id);
-                            handled = 1;
-                            break;
-                        }
+                /* Page-nav buttons (S170-231, "and buttons" -- the click-path affordance
+                   for the same page switch Shift+1/2/3 does by keybind): sit in the band
+                   directly above the buy list, one small box per page, current page drawn
+                   highlighted solid in the render pass below. Checked before the buy grid
+                   since they occupy the row directly above it. */
+                for (int p = 0; p < SHOP_PAGE_COUNT && !handled; p++) {
+                    float btn_x = sp_x + (float)p * (SHOP_PAGE_BTN_W + SHOP_PAGE_BTN_GAP);
+                    float btn_top = sp_y_top;
+                    float btn_bottom = sp_y_top - SHOP_PAGE_BTN_H;
+                    if (bx >= btn_x && bx <= btn_x + SHOP_PAGE_BTN_W && by >= btn_bottom && by <= btn_top) {
+                        shop_page = p;
+                        handled = 1;
+                    }
+                }
+                for (int row = 0; row < SHOP_ITEMS_PER_PAGE && !handled; row++) {
+                    int item_id = shop_page * SHOP_ITEMS_PER_PAGE + row;
+                    if (item_id >= ARENA_ITEM_COUNT) break;
+                    float row_top = sp_y_top - SHOP_ROW_H - (float)row * SHOP_ROW_H;
+                    float row_bottom = row_top - (SHOP_ROW_H - 2.0f);
+                    if (bx >= sp_x && bx <= sp_x + SHOP_COL_W - 8.0f && by >= row_bottom && by <= row_top) {
+                        if (net_mode) net_send_shop_buy(item_id);
+                        else arena_shop_buy(my_owner, item_id);
+                        handled = 1;
                     }
                 }
                 if (!handled) {
-                    float sell_x = sp_x + (float)SHOP_BUY_COLS * SHOP_COL_W + 20.0f;
+                    float sell_x = sp_x + SHOP_COL_W + 20.0f;
                     for (int slot = 0; slot < ARENA_ITEM_SLOT_COUNT; slot++) {
                         float row_top = sp_y_top - (float)slot * SHOP_ROW_H;
                         float row_bottom = row_top - (SHOP_ROW_H - 2.0f);
@@ -3595,8 +3645,8 @@ int main(int argc, char *argv[]) {
             ArenaHero *me = &arena_state.heroes[my_owner];
             float sp_x, sp_y_top;
             shop_panel_origin(win_w, win_h, &sp_x, &sp_y_top);
-            float panel_w = (float)SHOP_BUY_COLS * SHOP_COL_W + SHOP_COL_W + 40.0f;
-            float panel_h = (float)SHOP_ITEMS_PER_COL * SHOP_ROW_H + 40.0f;
+            float panel_w = SHOP_COL_W + SHOP_COL_W + 40.0f;
+            float panel_h = (float)SHOP_PANEL_ROWS * SHOP_ROW_H + 40.0f;
             glEnable(GL_BLEND);
             glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
             glColor4f(0.05f, 0.08f, 0.1f, 0.92f);
@@ -3615,24 +3665,45 @@ int main(int argc, char *argv[]) {
             snprintf(hbuf, sizeof(hbuf), "SHOP -- FLOW %d (B TO CLOSE)", me->flow);
             draw_string(hbuf, sp_x, sp_y_top + 8.0f, 10);
 
-            for (int col = 0; col < SHOP_BUY_COLS; col++) {
-                float col_x = sp_x + (float)col * SHOP_COL_W;
-                for (int row = 0; row < SHOP_ITEMS_PER_COL; row++) {
-                    int item_id = col * SHOP_ITEMS_PER_COL + row;
-                    if (item_id >= ARENA_ITEM_COUNT) break;
-                    const ArenaItemDef *def = &ARENA_ITEMS[item_id];
-                    float row_y = sp_y_top - (float)row * SHOP_ROW_H - 12.0f;
-                    if (me->flow >= def->cost) glColor3f(0.5f, 0.9f, 0.5f);
-                    else glColor3f(0.6f, 0.35f, 0.35f);
-                    char keybind_prefix[4] = "";
-                    if (col == 0 && row < 9) snprintf(keybind_prefix, sizeof(keybind_prefix), "%d ", row + 1);
-                    char rowbuf[64];
-                    snprintf(rowbuf, sizeof(rowbuf), "%s%s %d", keybind_prefix, def->name, def->cost);
-                    draw_string(rowbuf, col_x, row_y, 7);
+            /* Page-nav buttons (S170-231, "and buttons"): one small box per page,
+               current page filled solid amber, others outlined only -- same
+               affordability-color-coding instinct the item rows below already use
+               to make state legible at a glance, applied here to "which page." Click
+               hit-test for these lives in the event loop above, same box geometry. */
+            for (int p = 0; p < SHOP_PAGE_COUNT; p++) {
+                float btn_x = sp_x + (float)p * (SHOP_PAGE_BTN_W + SHOP_PAGE_BTN_GAP);
+                float btn_top = sp_y_top;
+                float btn_bottom = sp_y_top - SHOP_PAGE_BTN_H;
+                if (p == shop_page) {
+                    glColor3f(0.75f, 0.6f, 0.15f);
+                    glRectf(btn_x, btn_bottom, btn_x + SHOP_PAGE_BTN_W, btn_top);
+                    glColor3f(0.05f, 0.05f, 0.05f);
+                } else {
+                    glColor3f(0.3f, 0.3f, 0.32f);
+                    glBegin(GL_LINE_LOOP);
+                    glVertex2f(btn_x, btn_bottom); glVertex2f(btn_x + SHOP_PAGE_BTN_W, btn_bottom);
+                    glVertex2f(btn_x + SHOP_PAGE_BTN_W, btn_top); glVertex2f(btn_x, btn_top);
+                    glEnd();
+                    glColor3f(0.7f, 0.7f, 0.72f);
                 }
+                char pbuf[4];
+                snprintf(pbuf, sizeof(pbuf), "%d", p + 1);
+                draw_string(pbuf, btn_x + 9.0f, btn_bottom + 4.0f, 8);
             }
 
-            float sell_x = sp_x + (float)SHOP_BUY_COLS * SHOP_COL_W + 20.0f;
+            for (int row = 0; row < SHOP_ITEMS_PER_PAGE; row++) {
+                int item_id = shop_page * SHOP_ITEMS_PER_PAGE + row;
+                if (item_id >= ARENA_ITEM_COUNT) break;
+                const ArenaItemDef *def = &ARENA_ITEMS[item_id];
+                float row_y = sp_y_top - SHOP_ROW_H - (float)row * SHOP_ROW_H - 12.0f;
+                if (me->flow >= def->cost) glColor3f(0.5f, 0.9f, 0.5f);
+                else glColor3f(0.6f, 0.35f, 0.35f);
+                char rowbuf[64];
+                snprintf(rowbuf, sizeof(rowbuf), "%d %s %d", row + 1, def->name, def->cost);
+                draw_string(rowbuf, sp_x, row_y, 7);
+            }
+
+            float sell_x = sp_x + SHOP_COL_W + 20.0f;
             glColor3f(0.85f, 0.85f, 0.9f);
             draw_string("EQUIPPED (CLICK TO SELL)", sell_x, sp_y_top + 8.0f, 8);
             for (int slot = 0; slot < ARENA_ITEM_SLOT_COUNT; slot++) {

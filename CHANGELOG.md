@@ -2627,3 +2627,24 @@
   real, honest consequence of the new range (96.0) now exceeding `ARENA_HALF_EXTENT` (~51.78): a
   glide from map center hits the existing map-boundary clamp before reaching the full nominal
   range, not a bug. Full suite green.
+
+- feat(arena): shop UI/UX overhaul -- proximity auto-open, pagination, on-screen page buttons
+  (S170-231). Three founder asks in one pass: (1) "pop the shop window up when you get close to
+  the shop enough to buy" -- the panel now opens/closes itself against the exact same
+  `ARENA_SHOP_RADIUS` `arena_shop_buy` enforces server-side, edge-triggered on the in-range/
+  out-of-range transition so it never fights a manual B press (close it while standing there and
+  it stays closed until you actually leave and come back). (2) "too many items per page more
+  pages" -- replaced the old 2-column x 15-row single page (S170-210's fix, all 27 items visible
+  and clickable at once) with a single buy column showing `SHOP_ITEMS_PER_PAGE` (9) items at a
+  time, `SHOP_PAGE_COUNT` a ceiling division so it grows on its own the next time the catalog
+  does, 9 chosen to exactly match the existing 1-9 quick-buy range so every visible item always
+  has a live keybind. "navigate pages with shift 1 2 3" -- Shift+1/2/3 jumps straight to that
+  page; plain 1-9 still quick-buys within the current page. (3) "and buttons" -- three small
+  clickable page-number boxes drawn above the buy list (current page filled solid, others
+  outlined), same click-and-keybind-both-resolve-instantly convention NORTHSTAR §2 already
+  requires. Equipped/sell column is untouched by pagination (it's the loadout, not the catalog).
+  `apps/arena/src/main.c` only -- a client-only change with no automated coverage in this
+  headless environment (`scripts/test_arena.sh` exercises the sim under `packages/simulation`,
+  never `apps/arena`'s own SDL2/OpenGL client code, same gap its own comment already admits
+  pending Xvfb). Verified by a clean `scripts/build.sh` with no new warnings; UI behavior itself
+  is unverified until Xvfb is available or a founder plays a live client build.
