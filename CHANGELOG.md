@@ -2806,3 +2806,20 @@
   on its own. Verified live: a match spawned immediately after the restart. `scripts/
   run_bot_pool.sh`'s own default argument left at 19 for any other/manual invocation; only the
   live systemd unit changed.
+
+- feat(arena): live-match spectator reporting. Founder: "i want to watch the match on my phone
+  web view" -> "live text dashboard." New `report_live_match_state()` in `apps/arena_server`,
+  called every `LIVE_MATCH_REPORT_INTERVAL_MS` (3s) while `ARENA_PHASE_LIVE` -- posts a compact
+  JSON summary (phase, elapsed, resource race, node ownership, tower HP, per-hero HP/K/D/Flow) to
+  IDUNA's new `POST /api/v1/redgarden/live-match`, same WOTAN agent/permission
+  (`redgarden.match.write`) `report_match_result` already uses, a third aggregate over the same
+  authoritative state. Unlike `report_match_result` (fires once, at match end), this fires
+  repeatedly through the whole match, so the login token is cached and reused (5-min refresh)
+  rather than re-authenticating every single interval -- a real, avoidable extra HTTP round-trip
+  otherwise. Best-effort: a failed POST just means the spectator dashboard is a few seconds
+  stale, not worth failing loudly over. New `OKEMILY/live-match.html` -- a plain polling dashboard
+  (no game rendering, a real WebGL/canvas spectator client would be a much bigger separate build),
+  mobile-first single column, auto-refreshes every 3s. Verified live end to end: restarted the
+  bot-pool matchmaker to pick up the new binary, confirmed a fresh match reports real data readable
+  at both `localhost:8080` and the public `okemily.com/api/` proxy, confirmed
+  `okemily.com/live-match.html` serves (200) and renders it.

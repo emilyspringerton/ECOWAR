@@ -223,6 +223,83 @@ static unsigned int get_server_time(void) {
 #endif
 }
 
+// ---- Live match spectator reporting (2026-07-30, founder: "i want to watch the match on my
+// phone web view") -- periodic POST of a compact match-state summary to IDUNA's own
+// /api/v1/redgarden/live-match, which holds only the latest one for a simple polling web
+// dashboard (okemily.com) to read back. Same WOTAN agent/permission (redgarden.match.write) as
+// report_match_result below, a third aggregate over the same authoritative game-server state, not
+// a new trust boundary. Token is cached and reused across calls (unlike report_match_result,
+// which only ever runs once at match end) -- this fires every LIVE_MATCH_REPORT_INTERVAL_MS
+// throughout the whole match, and re-logging in every single call would be a real, avoidable
+// extra HTTP round-trip on top of the report itself. Best-effort: a failed POST here just means
+// the spectator dashboard is a few seconds stale, not a real error worth failing loudly over --
+// same reasoning IDUNA being briefly unreachable already doesn't stop a match from playing out. ----
+#define LIVE_MATCH_REPORT_INTERVAL_MS 3000
+#define LIVE_MATCH_TOKEN_REFRESH_MS   300000 /* 5 min -- cheap insurance against the JWT expiring mid-match, not measured against its actual TTL */
+static char live_match_token[2048] = "";
+static unsigned int live_match_token_fetched_ms = 0;
+
+static void report_live_match_state(void) {
+    if (!iduna_agent_configured) return;
+
+    unsigned int now = get_server_time();
+    if (live_match_token[0] == '\0' || (now - live_match_token_fetched_ms) > LIVE_MATCH_TOKEN_REFRESH_MS) {
+        char resp[2048];
+        int status = 0;
+        char login_body[512];
+        snprintf(login_body, sizeof(login_body),
+                 "{\"agent_name\":\"%s\",\"agent_secret\":\"%s\"}",
+                 iduna_agent_name, iduna_agent_secret);
+        if (http_post_json(iduna_host, iduna_port, "/api/v1/auth/agent", NULL,
+                            login_body, resp, sizeof(resp), &status) != 0 || status != 200) {
+            return; /* best-effort -- try again next interval */
+        }
+        if (!http_extract_json_string_field(resp, "access_token", live_match_token, sizeof(live_match_token))) {
+            return;
+        }
+        live_match_token_fetched_ms = now;
+    }
+
+    /* 16384: generous headroom over the realistic worst case (a full 20-hero roster at
+       ~100 bytes/hero plus the fixed nodes/towers/wrapper overhead comes to well under 3KB) --
+       same "size for real worst case, not exactly today's numbers" caution this file's other
+       fixed buffers already take. */
+    char body[16384];
+    int n = 0;
+    n += snprintf(body + n, sizeof(body) - n,
+                  "{\"phase\":%d,\"match_elapsed_ms\":%d,\"winner\":%d,\"resources\":[%d,%d],\"nodes\":[",
+                  match_phase, arena_state.match_elapsed_ms, arena_state.winner,
+                  arena_state.resources[0], arena_state.resources[1]);
+    for (int i = 0; i < ARENA_NODE_COUNT && n < (int)sizeof(body); i++) {
+        n += snprintf(body + n, sizeof(body) - n, "%s{\"owner\":%d,\"capturing_team\":%d}",
+                      i == 0 ? "" : ",", arena_state.nodes[i].owner, arena_state.nodes[i].capturing_team);
+    }
+    n += snprintf(body + n, sizeof(body) - n, "],\"towers\":[");
+    for (int i = 0; i < ARENA_NODE_COUNT && n < (int)sizeof(body); i++) {
+        ArenaTower *tw = &arena_state.towers[i];
+        n += snprintf(body + n, sizeof(body) - n, "%s{\"alive\":%s,\"hp\":%d,\"max_hp\":%d}",
+                      i == 0 ? "" : ",", tw->alive ? "true" : "false", tw->hp > 0 ? tw->hp : 0, tw->max_hp);
+    }
+    n += snprintf(body + n, sizeof(body) - n, "],\"heroes\":[");
+    for (int i = 0; i < lobby_size && n < (int)sizeof(body); i++) {
+        ArenaHero *h = &arena_state.heroes[i];
+        n += snprintf(body + n, sizeof(body) - n,
+                      "%s{\"owner\":%d,\"team\":%d,\"hero_id\":%d,\"hp\":%d,\"max_hp\":%d,"
+                      "\"alive\":%s,\"kills\":%d,\"deaths\":%d,\"flow\":%d}",
+                      i == 0 ? "" : ",", i, h->team, (int)h->hero_id,
+                      h->hp > 0 ? h->hp : 0, h->max_hp, h->alive ? "true" : "false",
+                      h->kills, h->deaths, h->flow > 0 ? h->flow : 0);
+    }
+    n += snprintf(body + n, sizeof(body) - n, "]}");
+    if (n >= (int)sizeof(body)) return; /* truncated -- drop rather than POST a corrupt/incomplete JSON body */
+
+    char resp[256];
+    int status = 0;
+    http_post_json(iduna_host, iduna_port, "/api/v1/redgarden/live-match", live_match_token,
+                    body, resp, sizeof(resp), &status);
+    if (status == 401) live_match_token[0] = '\0'; /* force a fresh login next interval */
+}
+
 // ---- match event log (same schema arena_replay.c already parses for the
 // 1v1 case, so observer-mode/S170-30 keeps working against real 1v1
 // networked matches; team-mode matches get their own generalized snapshot
@@ -724,6 +801,7 @@ int main(int argc, char *argv[]) {
     int running = 1;
     int last_winner_logged = 0;
     unsigned int snapshot_log_timer_ms = 0;
+    unsigned int live_match_report_timer_ms = 0; /* 2026-07-30: see report_live_match_state's own doc comment */
     /* Shutdown countdown once the match ends -- found live, 2026-07-24: this
        process used to just loop forever after match_end, still broadcasting
        PACKET_ARENA_SNAPSHOT every 16ms to clients that had long since moved
@@ -769,6 +847,11 @@ int main(int argc, char *argv[]) {
                 snapshot_log_timer_ms = 0;
                 match_log_snapshot();
                 corpus_log_tick(get_server_time()); /* S170-194: same 500ms cadence as the match-replay snapshot above, one sensible shared throttle rather than a second independent timer */
+            }
+            live_match_report_timer_ms += 16;
+            if (live_match_report_timer_ms >= LIVE_MATCH_REPORT_INTERVAL_MS) {
+                live_match_report_timer_ms = 0;
+                report_live_match_state();
             }
             if (arena_state.winner != 0 && !last_winner_logged) {
                 match_log_win(arena_state.winner);
