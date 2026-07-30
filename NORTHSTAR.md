@@ -2268,13 +2268,83 @@ layout (`arena_obstacles_reset_layout`, S170-138/191) as the actual terrain they
 - **Wire/HUD work**: a visible leash-range or aggro-range ring (same idiom §20.3 already proposes
   for node-guardians, S170-200's existing R-zone-circle convention) would matter at least as much
   here as it does there, given these camps are explicitly meant to be routeable/learnable terrain,
-  but is not scoped further in this section.
+  but is not scoped further in this section. §22.5 adds a related detail: a growing/pulsing
+  telegraph over the last few seconds of a camp's respawn timer, same legibility instinct.
+- **Do camps grant a real player-power buff on kill** (§22.5), and if so, on what infrastructure
+  -- extend the existing Warsong-Gulch-style map powerups (S170-190), extend the generic
+  status-effect fields (`stunned_ms`/`slowed_ms`-shaped), or something new? Not decided here.
 
 This section's job -- resolve §20.4's deferred architecture question, name what actually
 transfers from the founder's own cited inspiration source versus what doesn't, and ground the
 "alive" half of the design in a real, already-tested reference system (GFD's mob/NM packages)
 rather than inventing a third parallel creature model -- is done. No code changes accompany this
 section; implementation is separate, future work.
+
+### 22.5 ECOWAR wiki follow-up (2026-07-30): what else transfers, and what doesn't
+
+Founder, real-time, after §22.1-22.4 above already landed: "continue the jungle creep work -
+check the EMILY wiki on github for ecowar" -> "i know thats another version of the game but some
+of the bvibes are useful." Cloned `EMILY.wiki` fresh and read all three of its RED GARDEN origin
+documents in full: `ECOWAR-game-spec-1.md`, `ECOWAR-game-spec-2.md`, and
+`REDGARDEN-(ECOWAR)-SPEC-3.md`. Same discipline as §22.1: name what actually transfers,
+independent of the rest, rather than treating this as a blueprint -- the founder's own framing is
+explicit that ECOWAR is "another version of the game," not this one.
+
+**First finding: spec-2 and spec-3 add nothing new.** Spec-2's "16 Units + 8 Structures" roster
+(Militia, Scout, Swarmlings, Ravager, Hexbound, Verdant Behemoth, Shade Stalker, ...) is the same
+material §22.1 already pulled from `REDGARDEN/wiki/SPEC-4` -- both documents are separate copies/
+revisions of the same underlying Card-RTS design conversation, not independent sources. Spec-3 is
+purely a scope/sequencing memo for that Card-RTS's first vertical slice (grid size, which 4 cards
+ship first, a 5-day build order) -- entirely about `packages/simulation/local_game.c`'s domain,
+nothing MOBA-shaped in it at all. Neither changes anything already written in §22.1-22.4.
+
+**Second finding: spec-1 has one genuinely new, MOBA-shaped section §22.1 didn't have a source
+for yet** -- "6. Jungle Camps & Dragons (MOBA DNA)," explicitly labeled as such in the original
+document, distinct from the Card-RTS unit-roster material around it. Three concrete ideas from it
+that are real gaps in §22.1-22.4 as written so far, named honestly against what would need to
+exist first:
+
+1. **Camps should visibly telegraph before they spawn/respawn**, not just pop back into existence
+   on a bare timer the way §22.2's placeholder/window/respawn state machine currently implies. A
+   real MOBA precedent (and the one this source names outright) for making the jungle "feel alive"
+   rather than mechanical -- a growing/pulsing visual over the last few seconds of the respawn
+   timer, same "the affordance is legible before you need it" instinct already behind this arena's
+   own fountain-radius ring (S170-147) and R-zone-circle convention (S170-200). Needs no new
+   system, just a wire/HUD detail on top of §22.2's own respawn timer -- folded into §22.4's
+   existing "wire/HUD work" open question rather than a new one.
+2. **Camps granting a real, temporary player-power buff on kill is a genuinely missing mechanic**,
+   not just a naming detail. §22.1/§22.2 as written only give a jungle camp two rewards: kill
+   credit (tag-on-first-hit) and presumably gold/loot, the same shape node-guardians and lane
+   creeps already have. This source's "Neutral Camps... provide buffs" is the actual load-bearing
+   MOBA jungle mechanic real games use it for (Dota's camp-stack buffs, League's own smite-buffs)
+   that nothing in §22 currently specs at all -- a jungle camp that only pays gold isn't
+   meaningfully different from a lane creep that pays more gold. This is a real, new open question
+   (added to §22.4 below), not resolved here: REDGARDEN has no existing "temporary buff applied to
+   a hero" primitive to hang this on (the closest analogs are the Warsong-Gulch-style map powerups,
+   S170-190, and status-effect fields like `stunned_ms`/`slowed_ms` -- neither is quite "buff," both
+   are candidate infrastructure to extend rather than something to build from zero).
+3. **A boss's death should change something about how the rest of the match plays, not just grant
+   a buff and end the fight.** This source's per-biome dragon effects (accelerates decay / spreads
+   villages / mutates automata rules) don't transfer literally -- REDGARDEN's arena has no biome
+   system (see below) for a biome-specific effect to key off of -- but the underlying pattern is
+   real and cheap to keep in mind for whoever eventually builds §22.2's placeholder/window boss:
+   its death should be a match-altering event (a global buff to the killing team, a permanent map
+   change, an alert every player sees), not merely "a bigger creep with more HP and better loot."
+   Not resolved here, just named so it isn't lost.
+
+**What does NOT transfer, named explicitly:** spec-1's multi-biome map concept (Verdant Wilds /
+Ash Barrens / Frozen Reach / Blighted Grid, each with its own gameplay-altering rules and its own
+dragon) is a much larger, separate idea than "jungle camps" -- REDGARDEN's arena is one map with
+one jungle-obstacle layout (`arena_obstacles_reset_layout`), not a set of biome zones, and nothing
+in this session's scope is proposing to build one. Worth remembering as a real, bigger future
+idea if the jungle work above ever ships and the map wants more variety, but it is explicitly out
+of scope for §22 and not added to §22.4's open-question list -- naming it here is enough.
+
+This closes out the founder's "continue the jungle creep work... check the EMILY wiki" direction:
+both ECOWAR-sourced documents beyond SPEC-4 have now been read, what transfers has been named
+(camp spawn telegraph, camp buffs as a real missing mechanic, boss-death-as-match-event as a
+design pattern), and what doesn't (the Card-RTS material already covered via SPEC-4, and the
+multi-biome map idea) has been named just as explicitly. No code changes accompany this section.
 
 ## 23. Expanded item roster — more FFXI-DNA items, more effect variety (2026-07-30) -- spec only, no code yet
 

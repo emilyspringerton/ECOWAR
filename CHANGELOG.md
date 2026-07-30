@@ -2648,3 +2648,19 @@
   never `apps/arena`'s own SDL2/OpenGL client code, same gap its own comment already admits
   pending Xvfb). Verified by a clean `scripts/build.sh` with no new warnings; UI behavior itself
   is unverified until Xvfb is available or a founder plays a live client build.
+
+- docs(arena): NORTHSTAR §22.5, ECOWAR wiki follow-up. Founder, real-time: "continue the jungle
+  creep work - check the EMILY wiki on github for ecowar" -> "i know thats another version of the
+  game but some of the bvibes are useful." Read all three EMILY.wiki ECOWAR documents in full.
+  Spec-2/spec-3 added nothing new -- same Card-RTS unit roster §22.1 already sourced from
+  `REDGARDEN/wiki/SPEC-4` (two copies of the same underlying design conversation), plus a
+  vertical-slice sequencing memo entirely about `local_game.c`'s domain. Spec-1's own "Jungle
+  Camps & Dragons (MOBA DNA)" section, though, named three real things §22 hadn't covered yet:
+  camps should visibly telegraph before spawning/respawning (folded into §22.4's existing wire/HUD
+  open question), camps granting a real temporary player-power buff on kill is a genuinely missing
+  mechanic distinct from kill-credit/gold (new §22.4 open question -- no existing buff primitive to
+  hang it on yet, closest candidates named: S170-190 map powerups, or the generic status-effect
+  field shape), and a boss's death should alter the match, not just end a fight (named as a design
+  principle for §22.2's own placeholder/window boss, not resolved). Named what does NOT transfer
+  just as explicitly: the multi-biome map concept (Verdant Wilds/Ash Barrens/Frozen Reach/Blighted
+  Grid) is a real, bigger, separate idea, explicitly out of scope here. No code changes.
