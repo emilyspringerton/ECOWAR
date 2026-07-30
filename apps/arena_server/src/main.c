@@ -271,8 +271,9 @@ static void report_live_match_state(void) {
                   match_phase, arena_state.match_elapsed_ms, arena_state.winner,
                   arena_state.resources[0], arena_state.resources[1]);
     for (int i = 0; i < ARENA_NODE_COUNT && n < (int)sizeof(body); i++) {
-        n += snprintf(body + n, sizeof(body) - n, "%s{\"owner\":%d,\"capturing_team\":%d}",
-                      i == 0 ? "" : ",", arena_state.nodes[i].owner, arena_state.nodes[i].capturing_team);
+        ArenaNode *nd = &arena_state.nodes[i];
+        n += snprintf(body + n, sizeof(body) - n, "%s{\"owner\":%d,\"capturing_team\":%d,\"x\":%.1f,\"z\":%.1f}",
+                      i == 0 ? "" : ",", nd->owner, nd->capturing_team, nd->x, nd->z);
     }
     n += snprintf(body + n, sizeof(body) - n, "],\"towers\":[");
     for (int i = 0; i < ARENA_NODE_COUNT && n < (int)sizeof(body); i++) {
@@ -283,12 +284,16 @@ static void report_live_match_state(void) {
     n += snprintf(body + n, sizeof(body) - n, "],\"heroes\":[");
     for (int i = 0; i < lobby_size && n < (int)sizeof(body); i++) {
         ArenaHero *h = &arena_state.heroes[i];
+        /* x/z (2026-07-30, founder: "can we get coords too and show a little map with emojis")
+           -- %.1f is plenty of precision for a small spectator map (a tenth of a unit is well
+           under one emoji-marker's own on-screen size) and keeps the payload smaller than a full
+           float's worth of decimal digits would for no real benefit here. */
         n += snprintf(body + n, sizeof(body) - n,
                       "%s{\"owner\":%d,\"team\":%d,\"hero_id\":%d,\"hp\":%d,\"max_hp\":%d,"
-                      "\"alive\":%s,\"kills\":%d,\"deaths\":%d,\"flow\":%d}",
+                      "\"alive\":%s,\"kills\":%d,\"deaths\":%d,\"flow\":%d,\"x\":%.1f,\"z\":%.1f}",
                       i == 0 ? "" : ",", i, h->team, (int)h->hero_id,
                       h->hp > 0 ? h->hp : 0, h->max_hp, h->alive ? "true" : "false",
-                      h->kills, h->deaths, h->flow > 0 ? h->flow : 0);
+                      h->kills, h->deaths, h->flow > 0 ? h->flow : 0, h->x, h->z);
     }
     n += snprintf(body + n, sizeof(body) - n, "]}");
     if (n >= (int)sizeof(body)) return; /* truncated -- drop rather than POST a corrupt/incomplete JSON body */

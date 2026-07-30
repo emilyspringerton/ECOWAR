@@ -2578,6 +2578,18 @@
 
 ## 2026-07-30
 
+- feat(arena): live-match reporting now includes hero and node coordinates. Founder: "can we get
+  coords too and show a little map with emojis." `report_live_match_state()`'s JSON payload
+  gained `x`/`z` (`%.1f` precision -- plenty for a small spectator map, keeps the payload smaller
+  than full float precision would for no real benefit here) on every node and every hero entry.
+  No IDUNA changes needed -- the live-match store already holds the posted body as an opaque
+  blob, so new fields just pass through. `OKEMILY/live-match.html` gained a mini-map card:
+  node-owner-colored squares as a spatial reference layer, hero emoji markers (team-ringed,
+  dead heroes render grayscale at their last known position rather than vanishing) on top, both
+  scaled off a hand-synced `ARENA_HALF_EXTENT`. Verified live: restarted the bot-pool matchmaker
+  to pick up the new binary, confirmed a fresh match reports real `x`/`z` values readable at
+  `localhost:8080`.
+
 - docs(arena): NORTHSTAR §22, real jungle camps -- mob roster + GFD-pattern lifecycle (spec only,
   no code yet). Founder: "we want to make the jungle more dynamic and alive those concepts come
   from the original game" -> "the jungle right now is like nothing we need more going on" ->
