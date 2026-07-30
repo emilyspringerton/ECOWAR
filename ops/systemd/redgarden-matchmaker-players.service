@@ -12,6 +12,10 @@
 # ever been started manually. No bot is ever pointed at this port -- pool separation is
 # operational (two matchmaker processes, two ports), not access control inside the matchmaker
 # itself.
+#
+# EnvironmentFile (2026-07-30): same real bug/fix as redgarden-matchmaker-bots.service's own doc
+# comment -- this matchmaker also spawns arena_server as a child, and needs the same
+# IDUNA_AGENT_NAME/IDUNA_AGENT_SECRET to report match/hero results for any real match played here.
 
 [Unit]
 Description=REDGARDEN arena matchmaker — player-only pool (:7779, 1v1)
@@ -21,6 +25,7 @@ After=network-online.target
 Type=simple
 WorkingDirectory=/home/fatbaby/REDGARDEN
 Environment=REDGARDEN_TICKET_SECRET=test-secret-for-vs0-vs1-validation
+EnvironmentFile=/home/fatbaby/REDGARDEN/var/redgarden-iduna-agent.env
 ExecStart=/home/fatbaby/REDGARDEN/build/red_garden_matchmaker \
     --listen-port 7779 \
     --lobby-size 2 \

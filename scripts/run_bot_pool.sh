@@ -11,6 +11,21 @@
 #                                              # stay open or a human can never queue in
 #                                              # (S170-66: pool used to launch all N and the
 #                                              # lobby was permanently full of bots).
+#                                              # 2026-07-30, founder: "add a 20th bot and ensure
+#                                              # stats is working" -- ops/systemd/
+#                                              # redgarden-bot-pool.service now explicitly passes
+#                                              # 20, deliberately re-accepting the exact tradeoff
+#                                              # S170-66 moved away from: with only 19 queued,
+#                                              # apps/matchmaker never reaches lobby_size on its
+#                                              # own (`queue_count >= lobby_size`), so no match --
+#                                              # and no hero-result stat -- was ever generated
+#                                              # without a human filling the 20th slot. 20 bots
+#                                              # makes the pool fully self-sustaining, at the cost
+#                                              # of no human ever being able to queue into :7778
+#                                              # again (the player-only pool, :7779, is
+#                                              # unaffected). This script's own default here stays
+#                                              # 19 for any other/manual invocation; only the live
+#                                              # systemd unit was changed.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 

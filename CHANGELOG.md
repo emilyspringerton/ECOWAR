@@ -2779,3 +2779,30 @@
   of every binary that sends or receives the changed structs; will get real validation once
   auto-deploy picks this commit up for a live match, same as every other networked change this
   session.
+
+- fix(ops): hero-leaderboard was empty because match-result reporting was silently disabled all
+  session. Founder: "ensure stats is working." Real root cause: neither
+  `redgarden-matchmaker-bots.service` nor `redgarden-matchmaker-players.service` ever set
+  `IDUNA_AGENT_NAME`/`IDUNA_AGENT_SECRET` -- both spawn `arena_server` as a child (`--server-bin`),
+  which inherits the unit's own environment, so every real match printed "WARNING:
+  IDUNA_AGENT_NAME/IDUNA_AGENT_SECRET not set -- WOTAN match-result reporting disabled" and never
+  reported a single hero-result, even though the `REDGARDEN-BOTS` IDUNA agent (with the exact
+  `redgarden.match.write` permission needed) had already been fully provisioned since
+  2026-07-24 -- the credential just never made it into these two unit files. Fixed via a new
+  gitignored `var/redgarden-iduna-agent.env` (secret lives only there, sourced from
+  `IDUNA/var/agent-secrets.env`'s own `IDUNA_SECRET_REDGARDEN_BOTS`), loaded via
+  `EnvironmentFile=` in both units. Verified live: the newest spawned match server now prints
+  "IDUNA agent configured: name=REDGARDEN-BOTS... (WOTAN match-result reporting available)"
+  instead of the warning.
+
+  Second, related fix -- founder: "add a 20th bot": `apps/matchmaker` only ever spawns a match
+  once its queue reaches `lobby_size` exactly (`while (queue_count >= lobby_size)`). With the
+  pool at 19 bots (S170-66's own deliberate "leave a human slot open" choice) and no human
+  queued, the bot-pool lobby (`:7778`) sat at 19/20 forever -- no match, and therefore no
+  hero-result data, was ever generated without a human filling the last slot. Bumped
+  `redgarden-bot-pool.service` to 20 bots, deliberately re-accepting the tradeoff S170-66 moved
+  away from (no human can queue into `:7778` anymore -- the player-only pool at `:7779` is
+  unaffected) in exchange for a fully self-sustaining pool that keeps generating real match data
+  on its own. Verified live: a match spawned immediately after the restart. `scripts/
+  run_bot_pool.sh`'s own default argument left at 19 for any other/manual invocation; only the
+  live systemd unit changed.
