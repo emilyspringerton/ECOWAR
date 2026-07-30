@@ -2135,3 +2135,143 @@ which is the wrong shape for a small fixed-size-vector policy net.
   itself (the solo 1v1 local-practice mode, `arena_game.c`'s own `arena_bot_tick`) has called
   `rl_policy_forward()` since S170-228 already; what was missing until now was the real
   networked-match path.
+
+## 22. Real jungle camps — mob roster + GFD-pattern lifecycle (2026-07-30) -- spec only, no code yet
+
+Founder, real-time: "we want to make the jungle more dynamic and alive those concepts come from
+the original game" -> "the jungle right now is like nothing we need more going on" -> "use it as
+inspiration in terms of mob types and write it into a northstar." Resolves §20.4's own open
+question left deliberately unanswered one day ago: **REDGARDEN builds a genuinely separate true
+jungle-camp system alongside the existing node-guardian creeps (`ArenaCreep`), not a rework of
+them in place.** §20.4's own reasoning for why that's the lower-risk default still holds --
+node-guardians are a capture-point mechanic wearing jungle terminology (§20.2 already
+established this in detail); a real jungle camp is a different game object with a different job
+(routeable neutral ground a player learns and plays around, not a thing that marches at you
+because of who owns a node). This section is that second system's design.
+
+### 22.1 Where the mob-type ideas come from, and what actually transfers
+
+The founder pointed at `REDGARDEN/wiki/SPEC-4` ("RED GARDEN: CORE SYSTEMS IMPLEMENTATION") as the
+inspiration source -- a full three-file C spec (`entity_behaviors.h`/`grid_tick.h`/
+`card_system.h`) for a completely different, unbuilt game mode: a deck-based Card-RTS layered on
+a Conway's-Game-of-Life living map. That whole system is NOT what's being adopted here -- it
+targets `packages/simulation/local_game.c`'s own card/deck/influence economy (a different game
+mode from the arena/MOBA this whole file specs), and its `Entity`/`GridCell` type names collide
+outright with `local_game.h`'s own existing, incompatible definitions of both (checked directly:
+`local_game.h`'s `Entity` is `id/type/owner/grid_x/grid_z/x/z/hp/cooldown_ms`; SPEC-4's is a much
+richer combat-AI struct — dropping SPEC-4's headers in as-is would not compile against the
+existing card-RTS code). None of that is what "use it as inspiration" is asking for. Two ideas
+FROM it genuinely transfer to the arena jungle, independent of the rest of the spec:
+
+1. **A tiered mob roster with distinct archetypes, not one flat stat block.** SPEC-4's
+   `ENTITY_STAT_TABLE`/`AI_WEIGHT_TABLE` give each of 16 unit types a real personality: a
+   frontline brawler that clumps and fights (Militia), a kiting ranged harasser that never lets
+   melee close (Scout), a zerg-rush swarm that dies fast but comes in numbers (Swarmling), an
+   objective-hunter that ignores units in favor of structures (Ravager), a pure-support buffer
+   that never attacks (Hexbound/Tidecaller), an anchor tank (Behemoth), a high-threat assassin
+   that targets whoever hits hardest (Shade), an AoE caster (Pyromancer), and escalating elite/
+   boss tiers up to a deterministic Dragon. REDGARDEN's current node-guardian creeps have exactly
+   one behavior each (sit still, or march at a node) -- nothing like this variety exists anywhere
+   in the arena today.
+2. **Weighted, per-archetype target scoring**, not a single hardcoded rule. SPEC-4's
+   `find_best_target()` scores every valid enemy on a weighted sum (closest / lowest-HP /
+   highest-threat, each archetype's own `AIWeights` picking which terms matter and by how much)
+   instead of always picking one fixed criterion. REDGARDEN's current jungle/lane creep AI always
+   just targets nearest-hero-or-nearest-creep -- adopting a weighted-scoring model (ported as a
+   design pattern in C, not literal shared code, matching how this file already treats every
+   other cross-language/cross-repo borrowing) is a real, load-bearing upgrade independent of
+   anything else in SPEC-4.
+
+**What does NOT transfer:** the card/deck/hand/influence economy (that's `local_game.c`'s own
+domain, a different game mode this file's own header table already separates from the arena);
+the Conway grid-cell ecology (`grid_tick.h`'s conversion/corruption/stability simulation) --
+REDGARDEN's arena already has its OWN living-board layer (§1's automata grid, referenced
+throughout §8) and does not need a second, competing one grafted in from a different spec;
+SPEC-4's own generic-fantasy names (Militia, Ravager, Behemoth, Hexbound) -- see §22.4's open
+question on tone.
+
+### 22.2 The other half: §8's own GFD-graft direction, not abandoned
+
+§8 already committed to a specific architecture for this, before SPEC-4 ever entered the
+conversation: "grafted directly onto the mob/NM/loot systems already real and working in
+`GoblinFoxDragon`'s MUD... rather than building a second, separate creature system from scratch."
+Checked directly (`GoblinFoxDragon/server/mob/mob.go`, `server/nm/nm.go`): GFD's mob system is a
+real, tested (2,509 lines across mob/nm, with real test coverage) Go state machine --
+`Idle → Pursuing → [leash exceeded] → Returning → Idle`, `Dead` as an absorbing state, tag-on-
+first-hit claim rules (FFXI-style: whoever lands the first hit gets kill credit/loot rights,
+permanent for the mob's lifetime, matching this arena's own existing last-hit-shaped reward
+philosophy §20.2 already confirmed) -- plus a separate NM (Notorious Monster) package implementing
+FFXI's real placeholder/window/respawn model: a rare monster either spawns in a probabilistic time
+window after a specific weaker "placeholder" mob dies, or on its own fixed schedule, with a
+configurable respawn timer once killed.
+
+A literal code graft isn't possible -- GFD is a Go MUD server process, REDGARDEN's arena is a C
+simulation with a completely different runtime, tick model, and network protocol. "Graft" here
+means what every other cross-language borrowing in this file already means: port the DESIGN
+(state machine shape, tag-on-first-hit, placeholder/window/respawn), not the code. Concretely:
+
+- **Camp state machine**, one enum per camp instead of the aggro-radius-only shape node-guardians
+  use today: `IDLE → PURSUING → RETURNING (leash exceeded) → DEAD → (respawn timer) → IDLE`.
+  Leash range keeps a camp from being kited across the whole map (a real, current gap: nothing
+  stops a hero from pulling a node-guardian creep arbitrarily far from its node today).
+- **Tag-on-first-hit**, reusing the exact `last_attacked_by_owner` sentinel convention
+  `apply_damage`'s own hero-kill-credit logic already established this session (§20.2's own "gold
+  is precise and individual" confirmation applies here too) -- whoever lands the first hit on a
+  camp claims kill credit for its lifetime, no last-hit-sniping from a third party who did
+  nothing but land the final blow.
+- **A placeholder/window/respawn boss**, the single biggest "the jungle feels alive and
+  important" lever available: one rare, powerful, roaming elite camp (SPEC-4's own Dragon tier is
+  the right shape, not necessarily the right name -- §22.4) that only becomes killable after its
+  weaker placeholder camp(s) die and a window opens, matching League's Baron Nashor/Dota's
+  Roshan real-MOBA precedent of a single epic, contestable, game-swinging objective the whole map
+  reacts to. SPEC-4's own "deterministic dragon" section (seed RNG off spawn-tick + frame-count,
+  no `rand()` calls) is directly reusable for exactly the reason it names: client/server
+  determinism for a networked boss fight, and REDGARDEN's arena already has a server-authoritative
+  tick this slots into cleanly.
+
+### 22.3 How this coexists with node-guardians and lane creeps
+
+Three creature systems, three different jobs, deliberately not merged (extends §20.2's own "two
+entirely separate systems... map onto DIFFERENT halves of League's model" finding to three):
+
+| System | What it actually is | Status |
+|---|---|---|
+| Lane creeps (`ArenaLaneCreep`) | League's minion-wave analog -- automatic, aggro-based, pushes a lane | Built (S170-139), role-split proposed in §20.3 |
+| Node-guardian creeps (`ArenaCreep`) | Capture-point guardian, reflavored/reframed per §20.3/§20.4 | Built (S170-51/161), armor/legibility fixes proposed in §20.3 |
+| **Real jungle camps (this section)** | **Routeable neutral ground with real archetype variety + a rare boss objective** | **Spec only, this section** |
+
+None of §22's proposed camps live on or near the 5 capture nodes (that ground already belongs to
+node-guardians) -- they occupy the open jungle terrain between nodes/lanes that §8 already named
+as needing "real geography... rather than being placed arbitrarily," using the jungle obstacle
+layout (`arena_obstacles_reset_layout`, S170-138/191) as the actual terrain they inhabit.
+
+### 22.4 Open questions, not resolved here
+
+- **Tone**: REDGARDEN's actual hero roster is absurdist (Unicorn, Duck, Bacon Puck, Flute Debt,
+  Zagan) -- SPEC-4's generic-dark-fantasy camp names (Ravager, Behemoth, Hexbound, Voidreaver)
+  read tonally mismatched against it. Real MOBA precedent cuts both ways (Dota's own jungle
+  camps -- Centaurs, Satyrs, Wolves -- are played dead straight even against a wildly varied hero
+  cast), so this isn't automatically wrong, but it's a real choice, not resolved here: keep
+  SPEC-4's archetypes as reskinned-straight jungle fauna (serious tone, comic relief stays on the
+  hero side only), or run every camp name through the same absurdist voice the hero roster and
+  `TYLER/just_a_duck.md`'s own source material already established. Whoever picks this section up
+  should decide before naming a single camp.
+- **Exact roster size and numbers.** Same "spec the model, not the numbers" discipline §17.5/§20.4
+  already applied -- how many camp archetypes REDGARDEN actually needs (SPEC-4's own 16-unit tier
+  list is almost certainly more than a first pass needs), and all HP/damage/respawn/leash-range
+  values, are explicitly not decided here.
+- **Where exactly camps sit on the map** and how many total (SPEC-4's own card-RTS had no jungle
+  geography to place them against; REDGARDEN's does, via the existing obstacle layout) is a
+  concrete follow-up, not resolved here.
+- **Does the placeholder/window boss need its own dedicated node**, or does it roam freely across
+  the whole jungle the way GFD's own roaming mobs do? Not decided here.
+- **Wire/HUD work**: a visible leash-range or aggro-range ring (same idiom §20.3 already proposes
+  for node-guardians, S170-200's existing R-zone-circle convention) would matter at least as much
+  here as it does there, given these camps are explicitly meant to be routeable/learnable terrain,
+  but is not scoped further in this section.
+
+This section's job -- resolve §20.4's deferred architecture question, name what actually
+transfers from the founder's own cited inspiration source versus what doesn't, and ground the
+"alive" half of the design in a real, already-tested reference system (GFD's mob/NM packages)
+rather than inventing a third parallel creature model -- is done. No code changes accompany this
+section; implementation is separate, future work.

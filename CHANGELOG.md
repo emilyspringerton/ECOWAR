@@ -2575,3 +2575,25 @@
   automatically activate once a new model is promoted. 2 new C tests (one-hot correctness,
   `sim_step_both`). Full suite green. A real full-roster self-play training run follows in a
   separate commit once it completes.
+
+## 2026-07-30
+
+- docs(arena): NORTHSTAR §22, real jungle camps -- mob roster + GFD-pattern lifecycle (spec only,
+  no code yet). Founder: "we want to make the jungle more dynamic and alive those concepts come
+  from the original game" -> "the jungle right now is like nothing we need more going on" ->
+  "use it as inspiration in terms of mob types and write it into a northstar." Resolves §20.4's
+  own deliberately-deferred question: REDGARDEN builds a genuinely separate true jungle-camp
+  system alongside the existing node-guardian creeps, not a rework of them in place. Reviewed
+  `REDGARDEN/wiki/SPEC-4` (a full Card-RTS spec for a different, unbuilt game mode -- its
+  `Entity`/`GridCell` types collide outright with `local_game.h`'s own existing, incompatible
+  definitions, checked directly) and identified the two ideas that actually transfer to the
+  arena jungle independent of the rest of that spec: a tiered mob roster with real per-archetype
+  personality (frontline brawler / kiter / swarm / objective-hunter / pure support / assassin /
+  boss, instead of one flat behavior), and weighted per-archetype target scoring instead of a
+  single hardcoded targeting rule. Grounded the "alive" half in §8's own already-decided
+  architecture (grafting the DESIGN, not the code, from GoblinFoxDragon's real, tested mob/NM
+  packages -- checked directly: a real Idle/Pursuing/Returning/Dead state machine with leash
+  range, tag-on-first-hit kill credit, and an FFXI-style placeholder/window/respawn model for a
+  rare roaming boss). Flags real open questions rather than presuming answers: tone (SPEC-4's
+  generic-fantasy camp names vs. REDGARDEN's own absurdist roster), exact roster size/numbers,
+  map placement, and HUD legibility work. No code changes.
