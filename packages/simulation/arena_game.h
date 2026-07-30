@@ -1245,8 +1245,20 @@ extern const ArenaItemDef ARENA_ITEMS[];
 #define ARENA_DONKEY_FOLD_PROC_COOLDOWN_MS 30000
 #define ARENA_DONKEY_FOLD_FIGHT_RADIUS 4.0f  /* "fights for you" -- same modest melee-adjacent scale as this file's other passive-aura radii */
 #define ARENA_DONKEY_FOLD_FIGHT_DPS 6
-#define ARENA_DONKEY_GLIDE_RANGE 16.0f
-#define ARENA_DONKEY_GLIDE_DURATION_MS 600   /* airborne/untargetable window -- real transit time, not an instant blink */
+/* 2026-07-30, founder: "donkey glide needs to be 6 times as far" -- RANGE alone going 16->96
+ * wouldn't actually change anything: the glide's real reach is bounded by how far
+ * ARENA_DONKEY_GLIDE_SPEED_MULT*ARENA_HERO_SPEED can travel within
+ * ARENA_DONKEY_GLIDE_DURATION_MS (the original 16.0 was sized to match speed*duration almost
+ * exactly, per this comment's own original "covers the full range comfortably inside the
+ * duration window" note) -- setting a farther unreachable target just means the hero coasts
+ * toward it at normal speed, fully targetable again, once the airborne window ends early. Scaled
+ * DURATION 6x alongside RANGE (not SPEED_MULT) so the extra distance reads as a genuinely longer
+ * multi-second glide across the map -- matching Paper Glide's own established "bigger, slower
+ * escape tool" identity (this comment's own doc text a few lines up) -- rather than an
+ * ~5x-faster near-instant zip that SPEED_MULT scaling would have produced instead. Speed itself
+ * (28 units/sec) is untouched. */
+#define ARENA_DONKEY_GLIDE_RANGE (16.0f * 6.0f)
+#define ARENA_DONKEY_GLIDE_DURATION_MS (600 * 6)   /* airborne/untargetable window -- real transit time, not an instant blink */
 #define ARENA_DONKEY_GLIDE_SPEED_MULT 7.0f   /* on top of ARENA_HERO_SPEED -- covers the full range comfortably inside the duration window above */
 #define ARENA_DONKEY_GLIDE_COOLDOWN_MS 120000
 

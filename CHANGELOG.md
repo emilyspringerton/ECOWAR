@@ -2597,3 +2597,33 @@
   rare roaming boss). Flags real open questions rather than presuming answers: tone (SPEC-4's
   generic-fantasy camp names vs. REDGARDEN's own absurdist roster), exact roster size/numbers,
   map placement, and HUD legibility work. No code changes.
+
+- docs(arena): NORTHSTAR §23, expanded item roster -- more FFXI-DNA items, more effect variety
+  (spec only, no code yet). Founder: "do a northstar for expanded items we just need more more
+  variety more different effects etc same DNA ffxi item names even the stats on some may be
+  useful to design the items system." Named the current real ceiling: `ArenaItemDef` has exactly
+  six flat additive stat fields and only two items (Blink Dagger, Donkey) with a genuinely new
+  mechanic beyond those six numbers. Also named, plainly, a real standing tension worth having on
+  the record: `docs/FFXI_ITEM_PARITY_SEED.md`'s own header states its real FFXI names are "not
+  for direct use in the shipped game" (meant as `gpt2-alpine-c` seed data for a DIFFERENT
+  project's original names) -- REDGARDEN's actual live 27-item catalog already uses 24 of them
+  verbatim anyway, a choice `ArenaItemTier`'s own code comment already states plainly. The
+  founder's own framing this pass reads as a clear choice to keep doing this, not a gap -- not
+  re-litigated, just put on the record. Translated real FFXI mechanic archetypes (latent/
+  conditional effects, proc effects, regen/refresh, relic-tier unique-mechanic weapons,
+  enmity-adjacent aggro items, elemental resistance) into concrete `ArenaItemDef`-shaped
+  categories, each with its own honest prerequisite named (RNG doesn't exist yet -- §17.2 already
+  flagged this independently; damage typing doesn't exist; enmity/threat doesn't exist). No code
+  changes.
+
+- fix(arena): Donkey's Paper Glide covers 6x the distance. Founder, real-time: "donkey glide
+  needs to be 6 times as far." Scaled `ARENA_DONKEY_GLIDE_DURATION_MS` 6x alongside
+  `ARENA_DONKEY_GLIDE_RANGE` (not `ARENA_DONKEY_GLIDE_SPEED_MULT`) -- bumping RANGE alone
+  wouldn't have changed anything real: the glide's actual reach is bounded by how far
+  speed*duration can travel within the airborne window, and the original 16.0 was sized to
+  almost exactly match that. Scaling duration instead of speed keeps the escape reading as a
+  genuinely longer multi-second glide (matching Paper Glide's own established "bigger, slower
+  escape tool" identity) rather than an ~5x-faster near-instant zip. One test fixed to assert the
+  real, honest consequence of the new range (96.0) now exceeding `ARENA_HALF_EXTENT` (~51.78): a
+  glide from map center hits the existing map-boundary clamp before reaching the full nominal
+  range, not a bug. Full suite green.

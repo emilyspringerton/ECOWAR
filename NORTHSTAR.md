@@ -2275,3 +2275,132 @@ transfers from the founder's own cited inspiration source versus what doesn't, a
 "alive" half of the design in a real, already-tested reference system (GFD's mob/NM packages)
 rather than inventing a third parallel creature model -- is done. No code changes accompany this
 section; implementation is separate, future work.
+
+## 23. Expanded item roster — more FFXI-DNA items, more effect variety (2026-07-30) -- spec only, no code yet
+
+Founder, real-time: "do a northstar for expanded items we just need more more variety more
+different effects etc same DNA ffxi item names even the stats on some may be useful to design the
+items system." Same discipline §20/§22 already applied: name the current shape and its real gap
+before proposing numbers.
+
+### 23.1 Current shape (grounded in the actual code)
+
+27 items live (`ARENA_ITEMS`, `packages/simulation/arena_game.c`), across 11 equip slots
+(`ArenaItemSlot`) and 3 purely cosmetic tiers (`ArenaItemTier` -- the tier label doesn't affect
+mechanics at all, just how the shop groups things). Mechanically, `ArenaItemDef` has exactly six
+stat fields, all flat and additive: `bonus_ad`, `bonus_max_hp`, `bonus_max_mp`, `bonus_armor`,
+`bonus_move_speed`, `bonus_cdr_pct` (the newest, S170-207) -- every item in the catalog is a
+weighted combination of those six numbers, with exactly **two** exceptions that introduce a real
+new mechanic instead of just stats: Blink Dagger (S170-205, an instant tilde-bound teleport) and
+Donkey (S170-206, an HP-threshold-triggered damage floor + fight-back, plus a separate
+tilde-bound glide). Haste Trinket (S170-207) is the newest *stat*, not mechanic -- the first item
+whose bonus compresses time (cooldown %) rather than adding a flat number.
+
+**The FFXI-names choice is already made, already shipped, and already self-aware about the
+tension it creates.** `ArenaItemTier`'s own doc comment states it plainly: `ARENA_ITEM_TIER_
+GENERIC` is "real FFXI names, used verbatim" and `ARENA_ITEM_TIER_WEIRD` is "real FFXI end-game
+weapons with real unusual reputations (Kraken Club, Ridill)." This is a real, direct divergence
+from `docs/FFXI_ITEM_PARITY_SEED.md`'s own explicitly stated purpose, worth naming plainly rather
+than glossing over: that doc's own header says its real FFXI names are "**not for direct use in
+the shipped game**" and exist purely as seed/training material for `gpt2-alpine-c` to generate
+KNIGHTS_OF_THE_VOID's own *original* names from ("reframed, not reproduced," the same relationship
+`TYLER/multiverse_heroes.md` has to its own real-world mythology sources) -- explicitly "for true
+ip." REDGARDEN's actual shipped catalog took the shortcut that doc was written specifically to
+avoid: 24 of 27 current items are exact, verbatim, real Square Enix trademarked names (Kraken
+Club, Ridill, Haubergeon, Peace Earring, and so on), not generated originals. The founder's own
+framing this pass ("same DNA ffxi item names") reads as a clear, informed choice to keep doing
+this, not a gap to silently fix -- so this section does NOT propose ripping out or renaming the
+existing 27. It's named here so the choice is on the record as a real, live IP-exposure decision
+rather than something nobody noticed, and so whoever eventually ships this commercially can weigh
+it explicitly rather than discover it later.
+
+### 23.2 What "more variety, more different effects" actually means mechanically
+
+Six flat stats is a real, narrow ceiling -- most of what makes FFXI's own item system feel deep
+isn't more slots, it's **effect categories this engine has never had at all**. Concretely, real
+FFXI mechanic archetypes that translate into genuinely new `ArenaItemDef` fields (or small new
+subsystems), each grounded in a shape this codebase already has partial precedent for:
+
+- **Latent effects (conditional stats).** Real FFXI convention: "Latent effect: activates when HP
+  is less than 25%." REDGARDEN already has exactly this SHAPE, just not generalized -- Donkey's
+  own Immortal's Fold (`ARENA_DONKEY_FOLD_HP_FRACTION`) is a hard-coded, single-item version of a
+  latent effect. Generalizing it (a `latent_hp_threshold`/`latent_bonus_*` pair any item could
+  set, not just Donkey's own hardcoded one) turns one bespoke mechanic into a real, reusable
+  category -- "clutch" items that come online only when a fight is going badly, real FFXI/DOTA
+  design language neither this catalog nor any real MOBA item shop typically has.
+- **Proc effects (Store TP+, Zanshin, Subtle Blow, Triple/Double Attack).** Real FFXI weapons
+  frequently grant a chance-based bonus on a normal hit -- extra damage, an extra attack, reduced
+  chance of being interrupted. This engine has genuinely never needed randomness before (§17.2,
+  researching auto-attack parity, already found and flagged "no RNG at all exists yet" as a real
+  gap) -- a proc-based item is real, new engine work (a seeded RNG source, `bonus_proc_chance`/
+  `bonus_proc_effect` fields), not a stat-table addition, and should be scoped as such rather than
+  hand-waved into "just add a field."
+- **Regen/Refresh (ticking HP/MP).** A flat `bonus_hp_regen_per_sec`/`bonus_mp_regen_per_sec` --
+  mechanically trivial (this file already has `ARENA_MP_REGEN_PER_SEC`/`_IN_COMBAT_PER_SEC` as
+  roster-wide constants; an item-driven per-hero addition on top is the same shape `bonus_cdr_pct`
+  already proved out for cooldowns). The easiest category here to actually ship first.
+- **Relic/Mythic/Empyrean-tier unique-mechanic weapons.** `ARENA_ITEM_TIER_WEIRD` already exists
+  as exactly this concept for exactly two items (Kraken Club's stat SHAPE, Ridill's own real
+  "chance to double-attack" reputation -- currently unimplemented as an actual proc, just
+  flavor-matched stats per that tier's own doc comment) -- expanding this tier with more real FFXI
+  relic-class weapons (Aymur, the seed doc's own §6), each given ONE genuinely unique mechanic
+  (following Blink Dagger/Donkey's own precedent of "one new primitive per item," not a shared
+  generic system), is the highest-ceiling, most "more different effects" category directly
+  requested, at the cost of being the most individually-bespoke to build (no shared plumbing
+  reduces the per-item cost the way a generalized proc/latent/regen field would).
+- **Enmity-adjacent aggro manipulation.** Real FFXI gear routinely raises/lowers "enmity" (how
+  strongly a mob targets you). REDGARDEN's own creep/tower aggro (node-guardians, lane creeps,
+  §19.5's proposed structures) currently has no threat/enmity concept at all -- just aggro-radius
+  and (for structures) whoever's simply standing in range. An item that makes a hero more/less of
+  a creep-aggro priority is a real, novel tank/support item category, but needs a real enmity
+  primitive built first (bigger scope, flagged here as the least shovel-ready of this list, not
+  attempted without that prerequisite).
+- **Elemental/damage-type resistance.** Real FFXI gear routinely resists specific elements. This
+  engine has exactly one damage type today (physical, mitigated by `arena_hero_armor()`) -- no
+  magic/physical split, no elements. An elemental-resistance item literally cannot exist until
+  REDGARDEN decides whether it ever wants damage types at all, a genuinely bigger design question
+  this section does not resolve (see §23.4) -- named here as the one FFXI category that doesn't
+  translate without a prerequisite decision nobody's made yet, not silently dropped.
+
+### 23.3 Roster expansion, following the existing per-slot/per-category shape
+
+Not a full item-by-item list (same "representative, not exhaustive" discipline
+`FFXI_ITEM_PARITY_SEED.md` itself already uses, and the same restraint §22's own roster section
+took) -- a real expansion pass should roughly double-to-triple the current 27 against the SAME 11
+slots, using the seed doc's own already-curated real-name lists (`docs/FFXI_ITEM_PARITY_SEED.md`
+§3/§4/§6) as the literal source list to pull additional verbatim names from, consistent with
+§23.1's "this choice is already made" framing -- e.g., real weapon-skill-category names not yet
+represented at all in the live 12 SPECIFIC weapons (Hand-to-Hand: Life Knuckles; Katana: Kikoku;
+Archery: Composite Bow; Marksmanship: Firebird Musketoon), and the seed doc's own real armor lists
+for slots that currently have only one GENERIC item each (Head: Chivalrous Chain, Genin Kabuto
+alongside the existing Optical Hat; Earrings/Rings: Bat Earring, Toreador's Ring, Sniper's Ring
+alongside Peace Earring/Astral Ring). Each new item should be assigned to ONE of §23.2's categories
+on purpose (not just a new stat-line permutation of the existing six flat fields), so the roster
+actually grows in *kind*, not just count -- the founder's own explicit ask.
+
+### 23.4 Open questions, not resolved here
+
+- **RNG.** Proc effects (§23.2) are gated on this engine gaining a real random-number source at
+  all -- §17.2 already named this gap for auto-attack parity reasons; this section independently
+  arrives at the same prerequisite from the item side. Whoever builds either should probably build
+  the RNG primitive once, shared.
+- **Damage types.** Elemental resistance items have no meaning until REDGARDEN decides whether
+  magic/physical (or full elemental) damage typing is ever wanted at all -- a real, separate design
+  question, not decided here, and probably out of scope unless a real need for it shows up
+  elsewhere first (e.g., a caster hero whose kit wants "true damage" or "magic damage" as a
+  distinct category).
+- **Enmity/threat.** A real aggro-priority system for creeps/towers doesn't exist yet at all --
+  needed before any enmity-flavored item means anything mechanically.
+- **Generalizing Donkey's latent-effect shape** into a reusable `ArenaItemDef` field (§23.2) versus
+  leaving it as Donkey's own bespoke mechanic and hand-building each new latent item the same
+  one-off way Blink Dagger/Donkey themselves were built -- both are legitimate, not decided here.
+- **Exact stats/costs/counts** for any new item -- same "spec the model, not the numbers"
+  discipline every other spec-only section in this file already applies.
+- **The IP question named in §23.1** is explicitly not re-litigated or resolved here -- flagged as
+  a live, informed, standing decision, not reopened.
+
+This section's job -- name the real ceiling on "more variety" (six flat stats, two bespoke
+mechanics), translate real FFXI mechanic archetypes into concrete new `ArenaItemDef`-shaped
+categories with honest prerequisites named per category, and put the already-made "verbatim real
+names" choice on the record rather than let it stay an implicit, unexamined precedent -- is done.
+No code changes accompany this section; implementation is separate, future work.

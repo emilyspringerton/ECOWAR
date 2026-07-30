@@ -4481,7 +4481,14 @@ static void test_donkey_glide_moves_away_from_nearest_enemy(void) {
 
     CHECK(arena_state.heroes[0].moving, "glide sets a real move target and starts moving toward it");
     CHECK(arena_state.heroes[0].target_x < 0.0f, "the destination is AWAY from the foe (west), a real escape, not toward it");
-    CHECK(fabsf(arena_state.heroes[0].target_x - (-ARENA_DONKEY_GLIDE_RANGE)) < 0.01f, "covers the full documented glide range");
+    /* 2026-07-30, founder: "donkey glide needs to be 6 times as far" -- ARENA_DONKEY_GLIDE_RANGE
+       (96.0, post-6x) now exceeds ARENA_HALF_EXTENT (~51.78), so a glide starting from map
+       center (as this test's hero does) hits arena_set_move_target's own map-boundary clamp
+       before ever reaching the full nominal range -- a real, honest consequence of the range
+       now being larger than half the map, not a bug. Asserts the clamped value instead of the
+       raw range, same as this test would need to for ANY move target past the map edge. */
+    CHECK(fabsf(arena_state.heroes[0].target_x - (-ARENA_HALF_EXTENT)) < 0.01f,
+          "glides toward the full range, clamped to the map boundary since 6x range now exceeds ARENA_HALF_EXTENT");
     CHECK(arena_state.heroes[0].donkey_airborne_ms == ARENA_DONKEY_GLIDE_DURATION_MS, "airborne window starts at its full duration");
     CHECK(arena_state.heroes[0].intangible_ms == ARENA_DONKEY_GLIDE_DURATION_MS, "untargetable for the same window");
     CHECK(arena_state.heroes[0].donkey_glide_cooldown_ms == ARENA_DONKEY_GLIDE_COOLDOWN_MS, "cooldown is spent on a real glide");
