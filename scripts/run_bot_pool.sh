@@ -26,6 +26,13 @@
 #                                              # unaffected). This script's own default here stays
 #                                              # 19 for any other/manual invocation; only the live
 #                                              # systemd unit was changed.
+#                                              # 2026-07-30, same-day follow-up, founder: "take the
+#                                              # bot pool back down to 19" -- the live systemd unit
+#                                              # reverted back to 19, matching this script's own
+#                                              # default again. The self-sustaining tradeoff was
+#                                              # deliberate but short-lived; a human being able to
+#                                              # queue into :7778 mattered more once the stats
+#                                              # pipeline itself had already been proven working.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 

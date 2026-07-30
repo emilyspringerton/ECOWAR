@@ -2872,3 +2872,11 @@
   cooldown and a foe is close enough to be caught in it, same shape Ghost's own bot logic already
   uses, instead of "toggle on once and leave it"). One test replaced (asserted the exact free-
   toggle-regen behavior this removes), two new ones added. Full suite green, build clean.
+
+- ops(arena): bot pool back down to 19. Founder, same-day follow-up: "take the bot pool back down
+  to 19." Reverts the 20-bot self-sustaining-pool change from earlier today --
+  `redgarden-bot-pool.service` back to `run_bot_pool.sh 19`, restoring the "one slot must stay
+  open, a human can queue into `:7778`" default. The stats pipeline itself (IDUNA agent
+  credentials, hero-result reporting) is unaffected -- that fix stands regardless of bot count,
+  it was only the 20th bot that guaranteed a match without a human present. Deployed live:
+  redeployed the unit file and restarted the service, confirmed 19 bot processes running.
