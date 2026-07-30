@@ -1273,6 +1273,10 @@ static void test_hero_attack_towers_damages_and_kills_it(void) {
 }
 
 static void test_tower_attacks_nearby_hero(void) {
+    /* 2026-07-30, founder: "show the tower damage as projectiles" -- arena_tick_towers now only
+       spawns a travelling ArenaProjectile, it no longer applies damage instantly; a second
+       arena_tick_projectiles call is what actually resolves the hit, same two-step shape every
+       other projectile-based attack in this file already has. */
     arena_init_teams();
     for (int i = 1; i < ARENA_MAX_HEROES; i++) arena_state.heroes[i].active = 0;
     arena_towers_reset();
@@ -1281,8 +1285,9 @@ static void test_tower_attacks_nearby_hero(void) {
     int hp_before = arena_state.heroes[0].hp;
 
     arena_tick_towers(16);
+    arena_tick_projectiles(16);
 
-    CHECK(arena_state.heroes[0].hp < hp_before, "a living tower auto-attacks a hero standing in its aggro radius");
+    CHECK(arena_state.heroes[0].hp < hp_before, "a living tower's projectile hits a hero standing in its aggro radius");
 }
 
 static void test_hero_damages_tower_even_with_creep_alive_at_same_spot(void) {

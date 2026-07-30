@@ -2721,3 +2721,23 @@
      40 -> 14 (chips, doesn't delete). Still a judgment call pending further live tuning.
 
   Full suite green (692 assertions), build clean.
+
+- feat(arena): tower attacks are now real projectiles, not instant hits. Founder: "show the tower
+  damage as projectiles." `arena_tick_towers` now fires an ordinary `ArenaProjectile` (same
+  system Gary's homing auto-attack and every ability skill-shot already use) toward its target
+  instead of calling `apply_damage` directly -- a visible, in-flight shot instead of damage just
+  silently appearing. Deliberately non-homing (an ordinary skill-shot toward the target's position
+  at the moment the tower fires) since a tower has no real hero `owner` to thread through the
+  homing-reward path safely; new `ARENA_PROJECTILE_NO_OWNER` (255) sentinel tells both the sim
+  (never dereferences `heroes[owner]` for a non-homing shot anyway) and the client draw code
+  (added an explicit bounds check before the existing `heroes[p->owner]` self/ally/enemy color
+  lookup, which would otherwise read out of bounds) that this shot has no firing hero. `team` is
+  set to the opposite of the actual target's team, the same "which side this shot can hit" trick
+  every other projectile already relies on, just computed from the target since a tower has no
+  team of its own. Rendered in a fixed neutral ember-orange, matching the tower's own stone/ember
+  visual theme rather than borrowing a hero-relative color that wouldn't mean anything here. Speed/
+  radius reuse Gary's own basic-attack numbers as a reasonable reference point. Zero wire-protocol
+  changes needed -- `ArenaProjectileSnapshot.owner` was already `uint8_t`, 255 fits it exactly.
+  One existing test updated to resolve the hit through `arena_tick_projectiles` (the two-step
+  spawn-then-resolve shape every projectile-based attack already has) instead of expecting instant
+  damage. Full suite green, build clean.

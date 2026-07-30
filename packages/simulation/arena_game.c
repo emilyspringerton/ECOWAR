@@ -2064,7 +2064,17 @@ void arena_tick_towers(unsigned int dt_ms) {
             if (!target || dist < best_dist) { target = cand; best_dist = dist; }
         }
         if (target && tower->attack_cooldown_ms <= 0) {
-            apply_damage(target, apply_armor(ARENA_TOWER_DAMAGE, arena_hero_armor(target)));
+            /* 2026-07-30, founder: "show the tower damage as projectiles" -- a real travelling
+               shot instead of an instant, invisible hit. Non-homing (see ARENA_PROJECTILE_NO_OWNER's
+               own header doc comment for why); `team` is set to the OPPOSITE of the target's own
+               team purely so the shared hit-filter in arena_tick_projectiles (`foe->team ==
+               p->team` skips) resolves to "can hit target->team," the same trick every other
+               projectile in this file relies on, just computed from the target instead of a
+               firing hero since a tower has no team of its own. */
+            arena_spawn_projectile(ARENA_PROJECTILE_NO_OWNER, 1 - target->team, ARENA_HERO_UNICORN,
+                tower->x, tower->z, target->x, target->z,
+                ARENA_TOWER_PROJECTILE_SPEED, ARENA_TOWER_PROJECTILE_RADIUS,
+                ARENA_TOWER_DAMAGE, ARENA_TOWER_PROJECTILE_MAX_RANGE);
             tower->attack_cooldown_ms = ARENA_TOWER_ATTACK_COOLDOWN_MS;
         }
     }

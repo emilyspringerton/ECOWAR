@@ -209,6 +209,27 @@ typedef enum {
 #define ARENA_TOWER_AGGRO_RADIUS        6.0f /* wider than ARENA_NODE_CAPTURE_RADIUS (5.0) -- already threatening before anyone gets close enough to even attempt a channel */
 #define ARENA_TOWER_KILL_FLOW           400
 #define ARENA_TOWER_KILL_XP             40
+/* 2026-07-30, founder: "show the tower damage as projectiles" -- a tower's shot is now a real
+ * travelling ArenaProjectile (same system Gary's homing auto-attack and every ability skill-shot
+ * already use) instead of an instant, invisible hit, so a shot is visible and dodgeable in
+ * principle rather than damage just silently appearing. Deliberately NON-homing (an ordinary
+ * skill-shot toward the target's position at the moment the tower fires, same "ability shots grant
+ * no kill credit" scope Tyler's Q/Ghost's Q already hold to) -- a tower has no real hero `owner`
+ * to safely thread through the homing-reward path (arena_tick_projectiles only ever dereferences
+ * `heroes[p->owner]` inside the homing branch, which staying non-homing never enters), and
+ * ARENA_PROJECTILE_NO_OWNER below tells the client draw code to skip its own owner-based
+ * self/ally/enemy color lookup and use a fixed neutral tower-shot color instead. Speed/radius
+ * borrow Gary's own basic-attack numbers as a reasonable "ranged auto-attack" reference point --
+ * max_range is a hair past ARENA_TOWER_AGGRO_RADIUS so a shot at a target right at the edge of
+ * aggro range never legitimately whiffs from falling just short. */
+#define ARENA_TOWER_PROJECTILE_SPEED    14.0f
+#define ARENA_TOWER_PROJECTILE_RADIUS   0.6f
+#define ARENA_TOWER_PROJECTILE_MAX_RANGE (ARENA_TOWER_AGGRO_RADIUS + 2.0f)
+/* Sentinel ArenaProjectile.owner value meaning "no owning hero" (a tower's shot, not a hero's) --
+ * 255 fits the wire snapshot's uint8_t and is always outside the real 0..ARENA_MAX_HEROES-1 range,
+ * so both a stale `heroes[owner]` read attempt and the client's own bounds check can treat it as an
+ * unambiguous "not a real hero slot" signal. */
+#define ARENA_PROJECTILE_NO_OWNER       255
 
 /* Team-scale arena (2026-07-24, NORTHSTAR §13 cont'd): the array grows from
  * 2 to ARENA_MAX_HEROES so a full 10v10 match fits in the same ArenaState

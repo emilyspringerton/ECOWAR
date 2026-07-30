@@ -3040,7 +3040,15 @@ int main(int argc, char *argv[]) {
             /* p->team isn't synced over the wire (owner is enough -- the
                firer's team is already known client-side via the heroes
                array, no need for a second field carrying the same fact). */
-            if (p->owner == my_owner) {
+            if (p->owner < 0 || p->owner >= ARENA_MAX_HEROES) {
+                /* 2026-07-30: a tower's shot (ARENA_PROJECTILE_NO_OWNER over the wire) has no real
+                   hero slot to look up -- indexing heroes[p->owner] here would read out of bounds.
+                   Fixed neutral ember-orange instead of the self/ally/enemy convention below,
+                   matching the tower's own stone-and-ember visual theme (see the tower draw pass'
+                   own doc comment) rather than borrowing a hero-relative color that wouldn't mean
+                   anything for a shot with no firing hero. */
+                glUniform4f_(loc_color, 0.95f, 0.45f, 0.1f, 1.0f); /* tower shot: ember orange */
+            } else if (p->owner == my_owner) {
                 glUniform4f_(loc_color, 0.1f, 0.95f, 1.0f, 1.0f); /* my own shot: bright cyan-white */
             } else if (arena_state.heroes[p->owner].team == arena_state.heroes[my_owner].team) {
                 glUniform4f_(loc_color, 0.4f, 0.6f, 1.0f, 1.0f); /* ally's shot: light blue */
