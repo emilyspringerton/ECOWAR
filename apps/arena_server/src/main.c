@@ -350,6 +350,62 @@ static void server_net_init(int port) {
     printf("ARENA SERVER LISTENING ON PORT %d\nWaiting for %d players...\n", port, lobby_size);
 }
 
+/* fill_hero_snapshot (2026-07-30, extracted while wiring Tyler's clone pool onto the wire for
+ * the first time): every per-field copy from a real ArenaHero to its wire ArenaHeroSnapshot,
+ * shared between the real-player loop and the new clone loop below rather than duplicated --
+ * clones need every one of these same fields (position, HP, cooldowns, status effects, etc.) to
+ * render and read correctly client-side, exactly like any other hero. is_clone/clone_owner are
+ * the only fields the CALLER still sets itself, since a real hero and a clone entry set them
+ * differently (see each call site). */
+static void fill_hero_snapshot(ArenaHeroSnapshot *hs, const ArenaHero *h) {
+    hs->x = h->x;
+    hs->z = h->z;
+    hs->hp = (uint16_t)(h->hp > 0 ? h->hp : 0);
+    hs->max_hp = (uint16_t)h->max_hp;
+    hs->alive = (uint8_t)h->alive;
+    hs->hero_id = (uint8_t)h->hero_id;
+    hs->cast_flash_slot = (uint8_t)h->cast_flash_slot;
+    /* S170-137: cooldown/mp can both dip transiently negative between
+       ticks (see tick_hero_kit's own `-= dt_ms`, never clamped back to
+       0 until the next `> 0` gate) -- clamp before the signed->unsigned
+       narrowing, same convention as hp's own clamp just above. */
+    hs->q_cooldown_ms = (uint16_t)(h->q_cooldown_ms > 0 ? h->q_cooldown_ms : 0);
+    hs->w_cooldown_ms = (uint16_t)(h->w_cooldown_ms > 0 ? h->w_cooldown_ms : 0);
+    hs->r_cooldown_ms = (uint16_t)(h->r_cooldown_ms > 0 ? h->r_cooldown_ms : 0);
+    hs->mp = (uint8_t)(h->mp > 0 ? h->mp : 0);
+    hs->attack_target = (int8_t)h->attack_target; /* S170-162 */
+    hs->flow = (uint16_t)(h->flow > 0 ? h->flow : 0); /* S170-175 */
+    hs->flow_earned = (uint16_t)h->flow_earned;
+    hs->xp = (uint16_t)h->xp;
+    hs->kills = (uint8_t)h->kills;
+    hs->deaths = (uint8_t)h->deaths;
+    for (int s = 0; s < ARENA_SNAPSHOT_ITEM_SLOT_COUNT; s++) {
+        hs->equipped_item[s] = (int8_t)h->equipped_item[s];
+    }
+    hs->w_active = (uint8_t)h->w_active; /* S170-180 bugfix */
+    /* S170-184 bugfix: status effects were never synced at all, see ArenaHeroSnapshot's
+       own doc comment. Clamp before the signed->unsigned narrowing, same convention as
+       cooldowns' own clamp above (these can dip transiently negative between ticks too). */
+    hs->silenced_ms = (uint16_t)(h->silenced_ms > 0 ? h->silenced_ms : 0);
+    hs->rooted_ms = (uint16_t)(h->rooted_ms > 0 ? h->rooted_ms : 0);
+    hs->intangible_ms = (uint16_t)(h->intangible_ms > 0 ? h->intangible_ms : 0);
+    hs->burning_ms = (uint16_t)(h->burning_ms > 0 ? h->burning_ms : 0);
+    hs->survive_floor_ms = (uint16_t)(h->survive_floor_ms > 0 ? h->survive_floor_ms : 0);
+    hs->stunned_ms = (uint16_t)(h->stunned_ms > 0 ? h->stunned_ms : 0);
+    hs->slowed_ms = (uint16_t)(h->slowed_ms > 0 ? h->slowed_ms : 0);
+    hs->slow_pct_x100 = (uint8_t)(h->slow_pct * 100.0f);
+    hs->berserker_ms = (uint16_t)(h->berserker_ms > 0 ? h->berserker_ms : 0); /* S170-190 */
+    hs->regen_ms = (uint16_t)(h->regen_ms > 0 ? h->regen_ms : 0);
+    hs->r_zone_x = h->r_zone_x; /* S170-200 */
+    hs->r_zone_z = h->r_zone_z;
+    hs->r_active_ms = (uint16_t)(h->r_active_ms > 0 ? h->r_active_ms : 0);
+    hs->casting_slot = (uint8_t)h->casting_slot; /* S170-203 */
+    hs->cast_time_remaining_ms = (uint16_t)(h->cast_time_remaining_ms > 0 ? h->cast_time_remaining_ms : 0);
+    hs->cast_total_ms = (uint16_t)(h->cast_total_ms > 0 ? h->cast_total_ms : 0);
+    hs->blink_cooldown_ms = (uint16_t)(h->blink_cooldown_ms > 0 ? h->blink_cooldown_ms : 0); /* S170-205 */
+    hs->donkey_glide_cooldown_ms = (uint16_t)(h->donkey_glide_cooldown_ms > 0 ? h->donkey_glide_cooldown_ms : 0); /* S170-206 */
+}
+
 static void server_broadcast(void) {
     /* S170-193: heroes[] now goes out as ARENA_SNAPSHOT_HERO_CHUNKS separate
        PACKET_ARENA_SNAPSHOT_HEROES packets instead of living inside this
@@ -371,53 +427,27 @@ static void server_broadcast(void) {
     for (int i = 0; i < lobby_size; i++) {
         ArenaHero *h = &arena_state.heroes[i];
         ArenaHeroSnapshot *hs = &chunks[i / ARENA_SNAPSHOT_HERO_CHUNK_SIZE].heroes[i % ARENA_SNAPSHOT_HERO_CHUNK_SIZE];
-        hs->x = h->x;
-        hs->z = h->z;
-        hs->hp = (uint16_t)(h->hp > 0 ? h->hp : 0);
-        hs->max_hp = (uint16_t)h->max_hp;
-        hs->alive = (uint8_t)h->alive;
-        hs->hero_id = (uint8_t)h->hero_id;
-        hs->cast_flash_slot = (uint8_t)h->cast_flash_slot;
-        /* S170-137: cooldown/mp can both dip transiently negative between
-           ticks (see tick_hero_kit's own `-= dt_ms`, never clamped back to
-           0 until the next `> 0` gate) -- clamp before the signed->unsigned
-           narrowing, same convention as hp's own clamp just above. */
-        hs->q_cooldown_ms = (uint16_t)(h->q_cooldown_ms > 0 ? h->q_cooldown_ms : 0);
-        hs->w_cooldown_ms = (uint16_t)(h->w_cooldown_ms > 0 ? h->w_cooldown_ms : 0);
-        hs->r_cooldown_ms = (uint16_t)(h->r_cooldown_ms > 0 ? h->r_cooldown_ms : 0);
-        hs->mp = (uint8_t)(h->mp > 0 ? h->mp : 0);
-        hs->attack_target = (int8_t)h->attack_target; /* S170-162 */
-        hs->flow = (uint16_t)(h->flow > 0 ? h->flow : 0); /* S170-175 */
-        hs->flow_earned = (uint16_t)h->flow_earned;
-        hs->xp = (uint16_t)h->xp;
-        hs->kills = (uint8_t)h->kills;
-        hs->deaths = (uint8_t)h->deaths;
-        for (int s = 0; s < ARENA_SNAPSHOT_ITEM_SLOT_COUNT; s++) {
-            hs->equipped_item[s] = (int8_t)h->equipped_item[s];
-        }
-        hs->w_active = (uint8_t)h->w_active; /* S170-180 bugfix */
-        /* S170-184 bugfix: status effects were never synced at all, see ArenaHeroSnapshot's
-           own doc comment. Clamp before the signed->unsigned narrowing, same convention as
-           cooldowns' own clamp above (these can dip transiently negative between ticks too). */
-        hs->silenced_ms = (uint16_t)(h->silenced_ms > 0 ? h->silenced_ms : 0);
-        hs->rooted_ms = (uint16_t)(h->rooted_ms > 0 ? h->rooted_ms : 0);
-        hs->intangible_ms = (uint16_t)(h->intangible_ms > 0 ? h->intangible_ms : 0);
-        hs->burning_ms = (uint16_t)(h->burning_ms > 0 ? h->burning_ms : 0);
-        hs->survive_floor_ms = (uint16_t)(h->survive_floor_ms > 0 ? h->survive_floor_ms : 0);
-        hs->stunned_ms = (uint16_t)(h->stunned_ms > 0 ? h->stunned_ms : 0);
-        hs->slowed_ms = (uint16_t)(h->slowed_ms > 0 ? h->slowed_ms : 0);
-        hs->slow_pct_x100 = (uint8_t)(h->slow_pct * 100.0f);
-        hs->berserker_ms = (uint16_t)(h->berserker_ms > 0 ? h->berserker_ms : 0); /* S170-190 */
-        hs->regen_ms = (uint16_t)(h->regen_ms > 0 ? h->regen_ms : 0);
-        hs->r_zone_x = h->r_zone_x; /* S170-200 */
-        hs->r_zone_z = h->r_zone_z;
-        hs->r_active_ms = (uint16_t)(h->r_active_ms > 0 ? h->r_active_ms : 0);
-        hs->casting_slot = (uint8_t)h->casting_slot; /* S170-203 */
-        hs->cast_time_remaining_ms = (uint16_t)(h->cast_time_remaining_ms > 0 ? h->cast_time_remaining_ms : 0);
-        hs->cast_total_ms = (uint16_t)(h->cast_total_ms > 0 ? h->cast_total_ms : 0);
-        hs->blink_cooldown_ms = (uint16_t)(h->blink_cooldown_ms > 0 ? h->blink_cooldown_ms : 0); /* S170-205 */
-        hs->donkey_glide_cooldown_ms = (uint16_t)(h->donkey_glide_cooldown_ms > 0 ? h->donkey_glide_cooldown_ms : 0); /* S170-206 */
+        fill_hero_snapshot(hs, h);
+        hs->is_clone = 0;
+        hs->clone_owner = -1;
         msg.picked[i] = (uint8_t)hero_picked[i];
+    }
+    /* 2026-07-30, Tyler "Divided We Stand" rework -- founder: "his kit was stubbed in." Real gap
+       found while building independent clone control: this loop only ever covered
+       0..lobby_size-1, so Tyler's puppet clones (ARENA_MAX_HEROES..ARENA_HEROES_ARRAY_SIZE-1)
+       were NEVER synced to any client at all -- they existed and fought server-side but were
+       completely invisible in every real networked match. Always fully populated regardless of
+       `is_clone` (an inactive slot just carries is_clone=0, matching the "always synced, dead
+       ones just sit inert" convention creeps/towers already use), so a freed clone slot
+       correctly disappears client-side the instant it dies, no lingering stale entry. */
+    for (int i = ARENA_MAX_HEROES; i < ARENA_HEROES_ARRAY_SIZE; i++) {
+        ArenaHero *h = &arena_state.heroes[i];
+        ArenaHeroSnapshot *hs = &chunks[i / ARENA_SNAPSHOT_HERO_CHUNK_SIZE].heroes[i % ARENA_SNAPSHOT_HERO_CHUNK_SIZE];
+        int occupied = h->active && h->is_clone;
+        hs->is_clone = (uint8_t)occupied;
+        hs->clone_owner = occupied ? (int8_t)h->clone_owner : -1;
+        if (!occupied) continue; /* leave the rest of the entry zeroed -- an empty slot */
+        fill_hero_snapshot(hs, h);
     }
     msg.winner = (uint8_t)arena_state.winner;
     msg.phase = (uint8_t)match_phase;
@@ -621,7 +651,15 @@ static void server_handle_packet(struct sockaddr_in *sender, char *buffer, int s
     if (head->type == PACKET_ARENA_MOVE) {
         if (size < (int)(sizeof(NetHeader) + sizeof(ArenaMoveCmd))) return;
         ArenaMoveCmd *cmd = (ArenaMoveCmd *)(buffer + sizeof(NetHeader));
-        arena_set_move_target(client_id, cmd->target_x, cmd->target_z);
+        /* 2026-07-30, Tyler clone-control rework: unit_owner names which of the sender's OWN
+           units (itself, or one of its own active puppet clones) this command is for --
+           arena_owner_controls is the same trust boundary this handler always enforced (a client
+           can only ever affect its own hero), just widened to a small owned set instead of
+           exactly one slot. An unauthorized unit_owner is silently dropped, same "malformed/
+           out-of-bounds input is just ignored" convention every other handler here already uses. */
+        if (arena_owner_controls(client_id, cmd->unit_owner)) {
+            arena_set_move_target(cmd->unit_owner, cmd->target_x, cmd->target_z);
+        }
     } else if (head->type == PACKET_ARENA_CAST) {
         if (size < (int)(sizeof(NetHeader) + sizeof(ArenaCastCmd))) return;
         ArenaCastCmd *cmd = (ArenaCastCmd *)(buffer + sizeof(NetHeader));
@@ -636,7 +674,11 @@ static void server_handle_packet(struct sockaddr_in *sender, char *buffer, int s
     } else if (head->type == PACKET_ARENA_ATTACK) {
         if (size < (int)(sizeof(NetHeader) + sizeof(ArenaAttackCmd))) return;
         ArenaAttackCmd *cmd = (ArenaAttackCmd *)(buffer + sizeof(NetHeader));
-        arena_set_attack_target(client_id, cmd->target_owner);
+        /* Same commander_unit authorization as PACKET_ARENA_MOVE above -- see that branch's own
+           doc comment. */
+        if (arena_owner_controls(client_id, cmd->commander_unit)) {
+            arena_set_attack_target(cmd->commander_unit, cmd->target_owner);
+        }
     } else if (head->type == PACKET_ARENA_SHOP_BUY) {
         if (size < (int)(sizeof(NetHeader) + sizeof(ArenaShopBuyCmd))) return;
         ArenaShopBuyCmd *cmd = (ArenaShopBuyCmd *)(buffer + sizeof(NetHeader));

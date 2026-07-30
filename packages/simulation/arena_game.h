@@ -1954,6 +1954,11 @@ void arena_set_hover_target(int owner, int target);
  * second code path here. */
 void arena_set_attack_target(int owner, int target);
 
+/* arena_owner_controls (2026-07-30, Tyler "Divided We Stand" rework): see the .c definition's own
+ * doc comment for the full design. True if `sender_owner` may issue a move/attack command for
+ * `target_owner` -- itself, or one of its own active puppet clones. */
+int arena_owner_controls(int sender_owner, int target_owner);
+
 /* arena_apply_stun (S170-184, founder: "add more status effects use GFD [as a reference]" --
  * GoblinFoxDragon's server/status package, Paralyze): the kit-wiring hook for the generic
  * stunned_ms field (see its own doc comment on ArenaHero). Blocks movement, casting, and

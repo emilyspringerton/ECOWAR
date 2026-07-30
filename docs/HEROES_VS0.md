@@ -216,17 +216,51 @@ landing spot). Concentrates the whole clone army's arrival damage onto the one e
 to -- the real "full-team dive tool" identity, expressed through this engine's existing simplified
 hit model.
 
-**What's still simplified, flagged not faked:** clones are melee-only -- they don't independently
-cast Q/W/R (only Tyler's own real input drives ability casts), so "every melee attack from TYLER or
-any clone" applies Geostrike's DoT for Tyler's own hits only, not the clones'. Clones aren't
-targetable by jungle/lane creeps or projectiles (only real hero-vs-hero melee sees them) and don't
-participate in node-capture presence -- narrower blast radius on purpose, so this pass didn't need
-to touch the creep/projectile/capture systems' own loops (and their existing test coverage) to ship
-the core "real bodies, shared fate, move and fight together" identity. Simulated in team mode only
-(`arena_update_teams`) -- the 1v1 local practice demo's own tick functions are hardcoded to exactly
-two heroes and don't loop over the puppet range at all, so casting R there still grants the
-self-buff but any claimed clone slot sits inert, unmoved and non-combatant, until a real team match
-runs it.
+**2026-07-30, "Divided We Stand" rework -- founder: "his kit was stubbed in" / "clones multi
+control drag click all of it."** Two real, separate gaps closed in the same pass:
+
+1. **Clones were never actually visible in a real networked match at all.** The hero-snapshot
+   wire-sync loop only ever covered owner slots 0..lobby_size-1 -- Tyler's puppet-clone pool
+   (`ARENA_MAX_HEROES..ARENA_HEROES_ARRAY_SIZE-1`) existed and fought server-side since S170-141,
+   but no client, not even Tyler's own, ever received a single byte of clone state over the wire.
+   Not a control-scheme gap underneath a working render -- a rendering gap the control-scheme work
+   below surfaced. Fixed: `ArenaHeroSnapshot` gained `is_clone`/`clone_owner`, the hero-chunk system
+   widened to cover the full clone-inclusive range (`ARENA_SNAPSHOT_HEROES_ARRAY_SIZE`, chunk size
+   10->14, still exactly 2 chunks -- no new MTU-fragmentation risk), and `apps/arena` gained a
+   dedicated clone-body draw pass (`draw_hero_model`, same self/team/enemy relationship-color
+   convention real heroes use) plus real floating health bars for clones.
+2. **"Mirror Tyler's own move-target every tick" was never true Meepo parity -- it was the
+   opposite of it.** Real Meepo nets are independently commanded; this engine's own puppets just
+   auto-followed whatever Tyler himself clicked, with no way to split them up at all. Removed
+   entirely (`arena_update_teams` no longer has any clone-specific tick logic -- a clone is just
+   another hero with its own real `target_x`/`target_z`/`moving` state now, ticked by the exact
+   same generic motion loop everyone else uses). New `arena_owner_controls(sender, target)`
+   authorizes a client to command itself OR one of its own active clones; `PACKET_ARENA_MOVE`/
+   `PACKET_ARENA_ATTACK` both gained a `unit_owner`/`commander_unit` field naming which of the
+   sender's own units a given command is for. Client-side, `apps/arena` gained real RTS drag-select
+   (industry-standard drag-vs-click disambiguation on mouse-up, no new keybind): a plain click
+   commands whatever's currently selected (defaults to just Tyler himself, so every other hero's
+   muscle memory is completely unaffected), dragging a box over Tyler's own clones selects them
+   individually for their own move/attack commands, exactly like a real Meepo player splits their
+   army. `apps/arena_bot`'s own 19-real-bot pool updated too (its move/attack senders now populate
+   the new field explicitly with its own owner slot -- an uninitialized stack byte there would have
+   been a real, silent authorization-check bug).
+
+**What's still simplified, flagged not faked:** clones are still melee-only -- they don't
+independently cast Q/W/R (only Tyler's own real input drives ability casts), so "every melee
+attack from TYLER or any clone" applies Geostrike's DoT for Tyler's own hits only, not the clones'.
+Clones still aren't targetable by jungle/lane creeps or projectiles (only real hero-vs-hero melee
+sees them) and don't participate in node-capture presence. No bot AI exists for independently
+piloting a bot-controlled Tyler's own clones (a bot always just commands its own single body,
+same as before this rework) -- a real, separate, much bigger scope than client-side human control.
+A clone's on-screen facing is computed fresh each frame from its own current move target rather
+than the smoothed per-frame tracking real heroes get (`hero_facing_rad`) -- a clone snaps to face
+its target instantly instead of easing into it, and clones don't get the move/cast squish-pulse
+animation real heroes do -- both real, minor rendering simplifications, not incorrect gameplay.
+Still simulated in team mode only (`arena_update_teams`) -- the 1v1 local practice demo's own tick
+functions are hardcoded to exactly two heroes and don't loop over the puppet range at all, so
+casting R there still grants the self-buff but any claimed clone slot sits inert, unmoved and
+non-combatant, until a real team match runs it.
 
 - **Q — Earthbind** *(original design)*: Fires a net at a target area; any enemy hit is rooted and
   treated as a bigger hitbox for a few seconds (classic setup for the blink-strike below).

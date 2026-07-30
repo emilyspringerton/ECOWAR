@@ -381,7 +381,15 @@ static int net_find_and_connect(const char *mm_host, int mm_port) {
     return net_connect(mm_host, game_port);
 }
 
-static void net_send_move(float x, float z) {
+/* net_send_move (unit_owner added 2026-07-30, Tyler clone-control rework -- founder: "clones
+ * multi control drag click all of it"): which of the LOCAL PLAYER'S OWN commandable units (its
+ * own hero, or one of its own active Tyler clones) this specific move command is for. Almost
+ * always just my_owner (every hero except Tyler always has exactly one controllable unit, so
+ * every call site not touched by the new selection system still passes my_owner and behaves
+ * byte-for-byte as before). Server-side authorization (arena_owner_controls) is what actually
+ * enforces a client can't move anything it doesn't control -- this is just which of the caller's
+ * own units the command names. */
+static void net_send_move(int unit_owner, float x, float z) {
     char buf[sizeof(NetHeader) + sizeof(ArenaMoveCmd)];
     NetHeader *h = (NetHeader *)buf;
     memset(h, 0, sizeof(NetHeader));
@@ -389,22 +397,26 @@ static void net_send_move(float x, float z) {
     ArenaMoveCmd *cmd = (ArenaMoveCmd *)(buf + sizeof(NetHeader));
     cmd->target_x = x;
     cmd->target_z = z;
+    cmd->unit_owner = (uint8_t)unit_owner;
     sendto(net_sock, buf, sizeof(buf), 0, (struct sockaddr *)&net_server_addr, sizeof(net_server_addr));
 }
 
 /* net_send_attack (S170-162, NORTHSTAR SS17's click-to-attack system):
- * PACKET_ARENA_ATTACK's client-side sender -- locks the local hero onto
+ * PACKET_ARENA_ATTACK's client-side sender -- locks commander_unit onto
  * target_owner. Sent instead of (never alongside) net_send_move whenever
  * the click landed on a live enemy hero, matching SS17.1's "right-click
  * ground vs right-click a unit" split, just on this game's own established
- * single-left-click convention rather than LoL's literal right-click. */
-static void net_send_attack(int target_owner) {
+ * single-left-click convention rather than LoL's literal right-click.
+ * commander_unit (2026-07-30, same clone-control rework as net_send_move's own unit_owner): which
+ * of the local player's own units does the locking. */
+static void net_send_attack(int commander_unit, int target_owner) {
     char buf[sizeof(NetHeader) + sizeof(ArenaAttackCmd)];
     NetHeader *h = (NetHeader *)buf;
     memset(h, 0, sizeof(NetHeader));
     h->type = PACKET_ARENA_ATTACK;
     ArenaAttackCmd *cmd = (ArenaAttackCmd *)(buf + sizeof(NetHeader));
     cmd->target_owner = (uint8_t)target_owner;
+    cmd->commander_unit = (uint8_t)commander_unit;
     sendto(net_sock, buf, sizeof(buf), 0, (struct sockaddr *)&net_server_addr, sizeof(net_server_addr));
 }
 
@@ -455,6 +467,40 @@ static void net_send_active_item(void) {
  * same latency class as any other "read last frame's computed HUD state"
  * value in this file. */
 static int g_hover_target = -1;
+
+/* g_last_vp (2026-07-30, Tyler clone-control rework): the view-projection matrix from the most
+ * recently rendered frame, needed so the drag-select box-test (event-loop code, which runs
+ * BEFORE this frame's own `vp` is computed in the render pass further down) can call
+ * world_to_screen at all -- same "up to one frame stale, imperceptible at any real frame rate"
+ * idiom g_hover_target's own doc comment just above already establishes for exactly this reason.
+ * Updated once per frame right after `vp` itself is computed in the render pass. */
+static Mat4 g_last_vp;
+
+/* Multi-unit selection + drag-select (2026-07-30, Tyler "Divided We Stand" rework -- founder:
+ * "clones multi control drag click all of it"): real RTS multi-unit control, now that clones are
+ * independently commandable (the old auto-follow-Tyler mirroring is gone, see
+ * arena_update_teams' own doc comment in arena_game.c). selected_unit_count == 0 is the default
+ * and ONLY state every hero other than Tyler (and Tyler himself before ever dragging) will ever
+ * be in -- it means "nothing explicitly selected," which selected_or_self() below resolves to
+ * {my_owner}, so every existing single-click-to-move/attack behavior is completely unchanged
+ * unless a player actually drags a selection box over their own clones. */
+#define ARENA_MAX_SELECTED_UNITS (1 + ARENA_TYLER_R_CLONE_COUNT)
+static int selected_units[ARENA_MAX_SELECTED_UNITS];
+static int selected_unit_count = 0;
+static int left_drag_active = 0;         /* true from a qualifying LEFT mousedown until the matching mouseup */
+static int left_drag_start_x = 0, left_drag_start_y = 0; /* raw SDL screen coords (top-down) at mousedown */
+#define ARENA_DRAG_SELECT_THRESHOLD_PX 6.0f /* below this on release, it's an ordinary click; at or above, a box-select */
+
+/* selected_or_self: the actual list of units the next click/drag-release command should act on.
+ * Fills `out` (must hold at least ARENA_MAX_SELECTED_UNITS ints) and returns how many. */
+static int selected_or_self(int *out) {
+    if (selected_unit_count == 0) {
+        out[0] = my_owner;
+        return 1;
+    }
+    for (int i = 0; i < selected_unit_count; i++) out[i] = selected_units[i];
+    return selected_unit_count;
+}
 
 static void net_send_cast(int slot, int hover_target) {
     char buf[sizeof(NetHeader) + sizeof(ArenaCastCmd)];
@@ -524,7 +570,24 @@ static void net_poll_snapshots(uint32_t now_ms) {
                 int base = chunk->chunk_index * ARENA_SNAPSHOT_HERO_CHUNK_SIZE;
                 for (int j = 0; j < ARENA_SNAPSHOT_HERO_CHUNK_SIZE; j++) {
                     int i = base + j;
-                    if (i >= chunk->total_count || i >= ARENA_SNAPSHOT_MAX_HEROES) break;
+                    /* 2026-07-30, Tyler clone-control rework: outer bound widened from
+                       ARENA_SNAPSHOT_MAX_HEROES (20, real heroes only) to
+                       ARENA_SNAPSHOT_HEROES_ARRAY_SIZE (28, + Tyler's clone pool) -- see
+                       ArenaHeroSnapshot's own is_clone/clone_owner doc comment in protocol.h for
+                       why clones need syncing at all. A real-hero slot the current lobby doesn't
+                       use (i >= chunk->total_count) is `continue`d, not `break`ed, so the scan
+                       keeps going far enough to still reach the clone range later in this same
+                       chunk -- `break` here would have silently dropped every clone again. */
+                    if (i >= ARENA_SNAPSHOT_HEROES_ARRAY_SIZE) break;
+                    int is_clone_slot = (i >= ARENA_SNAPSHOT_MAX_HEROES);
+                    if (!is_clone_slot && i >= chunk->total_count) continue;
+                    if (is_clone_slot && !chunk->heroes[j].is_clone) {
+                        /* An empty clone slot -- explicitly clear active so a clone that just
+                           died (shared fate or otherwise) disappears client-side the instant its
+                           slot frees, same "no lingering corpse" behavior the sim itself has. */
+                        arena_state.heroes[i].active = 0;
+                        continue;
+                    }
                     ArenaHero *dst = &arena_state.heroes[i];
                     dst->x = chunk->heroes[j].x;
                     dst->z = chunk->heroes[j].z;
@@ -532,8 +595,23 @@ static void net_poll_snapshots(uint32_t now_ms) {
                     dst->max_hp = chunk->heroes[j].max_hp;
                     dst->alive = chunk->heroes[j].alive;
                     dst->active = 1;
-                    dst->team = (i < chunk->total_count / 2) ? 0 : 1;
                     dst->hero_id = (ArenaHeroID)chunk->heroes[j].hero_id;
+                    if (is_clone_slot) {
+                        /* A clone's slot index falls outside the normal "first half team 0,
+                           second half team 1" range the ordinary derivation below assumes -- it
+                           inherits its owner's own already-known team instead. Safe regardless of
+                           chunk arrival order: a hero's team never changes mid-match, so whatever
+                           value is already sitting in arena_state.heroes[clone_owner].team (from
+                           this tick or an earlier one) is always correct. */
+                        dst->is_clone = 1;
+                        dst->clone_owner = chunk->heroes[j].clone_owner;
+                        dst->team = (dst->clone_owner >= 0 && dst->clone_owner < ARENA_MAX_HEROES)
+                            ? arena_state.heroes[dst->clone_owner].team : 0;
+                    } else {
+                        dst->is_clone = 0;
+                        dst->clone_owner = -1;
+                        dst->team = (i < chunk->total_count / 2) ? 0 : 1;
+                    }
                     /* S170-137: ability-tile readiness needs real cooldown/mana state, not the
                        zeroed default net_mode left them at forever (see the field's own doc
                        comment in protocol.h). */
@@ -2384,42 +2462,92 @@ int main(int argc, char *argv[]) {
              * an observer can look around freely. S170-229: !shop_click_consumed
              * -- see that variable's own doc comment above; a click the shop
              * panel already handled (or that just landed on its own blank
-             * space) must not also fall through and move the player. */
+             * space) must not also fall through and move the player.
+             *
+             * 2026-07-30, Tyler clone-control rework: this used to act directly on
+             * SDL_MOUSEBUTTONDOWN. Now it only RECORDS the down-position here -- the actual
+             * decision (was this a click or a drag-select?) happens on mouse-UP below, the
+             * standard RTS/MOBA convention (League, Dota, WC3 all resolve it exactly this way)
+             * that needs no new keybind. For every hero except Tyler (and Tyler himself unless
+             * he's actually dragged a selection box), selected_unit_count stays 0 forever, so
+             * the mouseup branch below resolves to exactly one commander (my_owner) and behaves
+             * byte-for-byte like the old mousedown-triggered code -- zero behavior change for
+             * the other 27 heroes' existing muscle memory. */
             if (!observing && !shop_click_consumed && e.type == SDL_MOUSEBUTTONDOWN && e.button.button == SDL_BUTTON_LEFT &&
                 arena_state.winner == 0) {
-                /* S170-162, NORTHSTAR SS17.1's "right-click ground vs
-                   right-click a unit" split, on this game's own established
-                   single-left-click convention: a click that landed on a
-                   LIVE ENEMY hero (g_hover_target, already computed every
-                   frame for hover-casting, S170-143 -- reused rather than
-                   a second hit-test) sends an attack-target lock instead of
-                   a move command. A click on empty ground, an ally, or a
-                   dead hero still falls through to the ordinary move below,
-                   unchanged. Team-mode only (net_lobby_size > 2) -- the
-                   attack-target system itself is team-mode-only
-                   server-side (see arena_tick_attack_targets), so sending
-                   the command in a 1v1 net match would just be a no-op the
-                   server silently ignores. */
-                int enemy_click_target = -1;
-                if (net_mode && net_lobby_size > 2 && g_hover_target >= 0 && g_hover_target < net_lobby_size
-                    && my_owner >= 0 && my_owner < ARENA_MAX_HEROES) {
-                    ArenaHero *hovered = &arena_state.heroes[g_hover_target];
-                    if (hovered->active && hovered->alive && hovered->team != arena_state.heroes[my_owner].team) {
-                        enemy_click_target = g_hover_target;
+                left_drag_active = 1;
+                left_drag_start_x = e.button.x;
+                left_drag_start_y = e.button.y;
+            }
+            if (!observing && left_drag_active && e.type == SDL_MOUSEBUTTONUP && e.button.button == SDL_BUTTON_LEFT) {
+                left_drag_active = 0;
+                float ddx = (float)(e.button.x - left_drag_start_x);
+                float ddy = (float)(e.button.y - left_drag_start_y);
+                if (arena_state.winner == 0 && sqrtf(ddx * ddx + ddy * ddy) >= ARENA_DRAG_SELECT_THRESHOLD_PX) {
+                    /* Box-select: which of the local player's own units (itself, or its own
+                       active Tyler clones) fall inside the screen-space rectangle the drag
+                       spanned. Reuses g_last_vp (see its own doc comment) since this frame's own
+                       vp isn't computed yet at this point in the loop, same reasoning
+                       g_hover_target's one-frame staleness already established. An empty box
+                       (nothing of the player's own falls inside it) resets to "just self" rather
+                       than leaving the player stuck with zero controllable units -- real RTS
+                       precedent for "you can never fully deselect your only unit." */
+                    float rx0 = fminf((float)left_drag_start_x, (float)e.button.x);
+                    float rx1 = fmaxf((float)left_drag_start_x, (float)e.button.x);
+                    float ry0 = fminf((float)left_drag_start_y, (float)e.button.y);
+                    float ry1 = fmaxf((float)left_drag_start_y, (float)e.button.y);
+                    int new_units[ARENA_MAX_SELECTED_UNITS];
+                    int new_count = 0;
+                    for (int cand = 0; cand < ARENA_HEROES_ARRAY_SIZE && new_count < ARENA_MAX_SELECTED_UNITS; cand++) {
+                        ArenaHero *ch = &arena_state.heroes[cand];
+                        if (!ch->active || !ch->alive) continue;
+                        if (cand != my_owner && !(ch->is_clone && ch->clone_owner == my_owner)) continue;
+                        float sx, sy;
+                        if (!world_to_screen(&g_last_vp, ch->x, 1.0f, ch->z, win_w, win_h, &sx, &sy)) continue;
+                        float sy_top = (float)win_h - sy; /* world_to_screen's sy is bottom-up, drag coords are SDL top-down */
+                        if (sx >= rx0 && sx <= rx1 && sy_top >= ry0 && sy_top <= ry1) {
+                            new_units[new_count++] = cand;
+                        }
                     }
-                }
-                if (enemy_click_target >= 0) {
-                    net_send_attack(enemy_click_target);
+                    selected_unit_count = new_count;
+                    for (int i = 0; i < new_count; i++) selected_units[i] = new_units[i];
                     apm_record_action(now);
-                } else {
-                    float gx, gz;
-                    float focus_x = arena_state.heroes[my_owner].x, focus_z = arena_state.heroes[my_owner].z;
-                    if (screen_to_ground(e.button.x, e.button.y, win_w, win_h, 60.0f,
-                                         focus_x, focus_z, &gx, &gz)) {
-                        if (net_mode) net_send_move(gx, gz);
-                        else arena_set_move_target(my_owner, gx, gz);
-                        spawn_ring(gx, gz);
+                } else if (arena_state.winner == 0) {
+                    /* An ordinary click -- same attack-vs-move decision as before (S170-162,
+                       NORTHSTAR SS17.1's "right-click ground vs right-click a unit" split), now
+                       dispatched to every currently-selected unit instead of hardcoded to
+                       my_owner. */
+                    int commanders[ARENA_MAX_SELECTED_UNITS];
+                    int commander_count = selected_or_self(commanders);
+
+                    int enemy_click_target = -1;
+                    if (net_mode && net_lobby_size > 2 && g_hover_target >= 0 && g_hover_target < net_lobby_size
+                        && my_owner >= 0 && my_owner < ARENA_MAX_HEROES) {
+                        ArenaHero *hovered = &arena_state.heroes[g_hover_target];
+                        if (hovered->active && hovered->alive && hovered->team != arena_state.heroes[my_owner].team) {
+                            enemy_click_target = g_hover_target;
+                        }
+                    }
+                    if (enemy_click_target >= 0) {
+                        /* Team-mode-only, same reasoning the original single-unit version of
+                           this branch already documented -- enemy_click_target can only ever be
+                           set under net_mode && net_lobby_size > 2 above, so every commander here
+                           is real, net_send_attack is always the right call, no local-mode
+                           fallback needed (Tyler's own clones are team-mode only too). */
+                        for (int k = 0; k < commander_count; k++) net_send_attack(commanders[k], enemy_click_target);
                         apm_record_action(now);
+                    } else {
+                        float gx, gz;
+                        float focus_x = arena_state.heroes[my_owner].x, focus_z = arena_state.heroes[my_owner].z;
+                        if (screen_to_ground(e.button.x, e.button.y, win_w, win_h, 60.0f,
+                                             focus_x, focus_z, &gx, &gz)) {
+                            for (int k = 0; k < commander_count; k++) {
+                                if (net_mode) net_send_move(commanders[k], gx, gz);
+                                else arena_set_move_target(commanders[k], gx, gz);
+                            }
+                            spawn_ring(gx, gz);
+                            apm_record_action(now);
+                        }
                     }
                 }
             }
@@ -2473,6 +2601,7 @@ int main(int argc, char *argv[]) {
                     memset(rings, 0, sizeof(rings));
                     win_logged = 0;
                     net_picked = 0;
+                    selected_unit_count = 0; /* 2026-07-30: a stale clone owner-index from the previous match means nothing in this one */
                     net_phase = ARENA_PHASE_WAITING;
                     draw_queuing_screen(win, win_w, win_h);
                     int reconnected = queue_host ? net_find_and_connect(queue_host, queue_port)
@@ -2494,6 +2623,7 @@ int main(int argc, char *argv[]) {
                     memset(rings, 0, sizeof(rings));
                     arena_log_open(); /* fresh match -> fresh log file, S170-29 */
                     win_logged = 0;
+                    selected_unit_count = 0;
                 }
             }
             /* The Unicorn's kit (docs/HEROES_VS0.md) — the local player's own
@@ -2725,6 +2855,7 @@ int main(int argc, char *argv[]) {
         Mat4 view = mat4_orbit_view(focus_x, 0, focus_z, cam_yaw, cam_pitch, cam_dist);
         Mat4 proj = mat4_perspective(60.0f, (float)win_w / (float)win_h, 0.1f, 100.0f);
         Mat4 vp = mat4_multiply(&proj, &view);
+        g_last_vp = vp; /* 2026-07-30: see this variable's own doc comment -- next frame's drag-select box-test reads this */
 
         glUseProgram_(prog);
         glUniform3f_(loc_light, 0.4f, 0.8f, 0.3f);
@@ -2898,6 +3029,57 @@ int main(int argc, char *argv[]) {
                 glDepthMask(GL_TRUE);
                 glDisable(GL_BLEND);
             }
+        }
+
+        /* Tyler's puppet clones (2026-07-30, "his kit was stubbed in" -- real gap found while
+           building independent clone control: clones have existed and fought server-side since
+           S170-141, but were never drawn at all -- this loop, hero_facing_rad[]/squish_age_ms[]
+           above are all sized exactly ARENA_MAX_HEROES, so simply widening the real-hero loop
+           above to ARENA_HEROES_ARRAY_SIZE would read those two arrays out of bounds for every
+           clone slot. Kept deliberately separate and simpler instead of resizing and re-verifying
+           several tightly-coupled per-hero tracking arrays shared with real heroes: facing is
+           computed inline from the clone's own current target direction (no smoothed per-frame
+           tracking the way hero_facing_rad gets for real heroes -- a clone snaps to face its
+           target instantly rather than easing into it, a real but minor simplification, flagged
+           not faked) and squish is fixed at 1.0 (no move/cast pulse animation). Same self/team/
+           enemy relationship-color convention as real heroes: `clone_owner == my_owner` reads as
+           "one of MY OWN clones" (bright cyan, same as piloting the real body), same
+           team-vs-team check otherwise. */
+        for (int i = ARENA_MAX_HEROES; i < ARENA_HEROES_ARRAY_SIZE; i++) {
+            ArenaHero *h = &arena_state.heroes[i];
+            if (!h->active || !h->alive) continue;
+            float clone_facing = 0.0f;
+            float cfdx = h->target_x - h->x, cfdz = h->target_z - h->z;
+            if (cfdx * cfdx + cfdz * cfdz > 0.0001f) clone_facing = atan2f(cfdx, cfdz);
+            if (h->clone_owner == my_owner) {
+                glUniform4f_(loc_color, 0.1f, 0.8f, 0.95f, 1.0f); /* my own clone: bright cyan, same as piloting the real body */
+            } else if (h->team == arena_state.heroes[my_owner].team) {
+                glUniform4f_(loc_color, 0.15f, 0.35f, 0.95f, 1.0f); /* ally's clone: blue */
+            } else {
+                glUniform4f_(loc_color, 0.95f, 0.25f, 0.15f, 1.0f); /* enemy's clone: red */
+            }
+            draw_hero_model(h->hero_id, h->x, h->z, clone_facing, 1.0f, &vp, loc_mvp, loc_model, &cube_mesh);
+        }
+
+        /* Selection rings (2026-07-30, "clones multi control drag click all of it"): a ring
+           under every currently drag-selected unit (self and/or owned clones), same ring_mesh
+           idiom the aggro-radius circles below already use. Only drawn once selected_unit_count
+           is actually nonzero -- the default "nothing explicitly selected, just controlling
+           myself" state (every hero except Tyler, forever) shows nothing extra at all, zero
+           visual change for the other 27 heroes. */
+        for (int s = 0; s < selected_unit_count; s++) {
+            int sel = selected_units[s];
+            if (sel < 0 || sel >= ARENA_HEROES_ARRAY_SIZE) continue;
+            ArenaHero *sh = &arena_state.heroes[sel];
+            if (!sh->active || !sh->alive) continue;
+            Mat4 seltr = mat4_translate(sh->x, 0.03f, sh->z);
+            Mat4 selsc = mat4_scale(1.1f, 1.0f, 1.1f);
+            Mat4 selmodel = mat4_multiply(&seltr, &selsc);
+            Mat4 selmvp = mat4_multiply(&vp, &selmodel);
+            glUniformMatrix4fv_(loc_mvp, 1, GL_FALSE, selmvp.m);
+            glUniformMatrix4fv_(loc_model, 1, GL_FALSE, selmodel.m);
+            glUniform4f_(loc_color, 0.3f, 1.0f, 0.3f, 0.8f); /* bright green -- "selected," distinct from every relationship/threat color already in use */
+            draw_mesh(&ring_mesh);
         }
 
         /* Node-guardian creeps (S170-51, rendered for the first time S170-145 --
@@ -3255,13 +3437,22 @@ int main(int argc, char *argv[]) {
         /* Per-hero floating health bars (S170-89: "health bar hovers over hero") -- every
            alive hero, not just YOU/nearest-enemy's fixed HUD bars, so a 20-hero team match
            actually shows damage landing on whoever's in view. Reuses the same vp matrix the
-           3D pass just drew with, projected into this 2D HUD's pixel space. */
-        for (int i = 0; i < ARENA_MAX_HEROES; i++) {
+           3D pass just drew with, projected into this 2D HUD's pixel space.
+           2026-07-30: widened to ARENA_HEROES_ARRAY_SIZE so Tyler's clones get real health bars
+           too -- safe here (unlike the hero-model draw loop above) since this loop only ever
+           reads arena_state.heroes[] fields directly, no separate ARENA_MAX_HEROES-sized side
+           array to worry about. */
+        for (int i = 0; i < ARENA_HEROES_ARRAY_SIZE; i++) {
             ArenaHero *h = &arena_state.heroes[i];
             if (!h->alive) continue;
             float sx, sy;
             if (!world_to_screen(&vp, h->x, 1.6f, h->z, win_w, win_h, &sx, &sy)) continue;
             if (sx < -40 || sx > win_w + 40 || sy < -20 || sy > win_h + 20) continue;
+            /* is_mine (2026-07-30): "this is a unit I pilot" -- true for my own real hero (the
+               only way this could ever be true before clones existed) OR one of my own active
+               Tyler clones, so a clone I command gets the same "this is mine" cyan treatment my
+               own body already gets, not the generic ally-blue every teammate's clone also uses. */
+            int is_mine = (i == my_owner) || (h->is_clone && h->clone_owner == my_owner);
             float frac = h->max_hp > 0 ? (float)h->hp / h->max_hp : 0.0f;
             float bw = 40.0f, bh = 5.0f;
             glColor3f(0.1f, 0.1f, 0.1f);
@@ -3269,7 +3460,7 @@ int main(int argc, char *argv[]) {
             glVertex2f(sx - bw / 2, sy); glVertex2f(sx + bw / 2, sy);
             glVertex2f(sx + bw / 2, sy + bh); glVertex2f(sx - bw / 2, sy + bh);
             glEnd();
-            if (i == my_owner) glColor3f(0.1f, 0.8f, 0.95f);
+            if (is_mine) glColor3f(0.1f, 0.8f, 0.95f);
             else if (h->team == arena_state.heroes[my_owner].team) glColor3f(0.15f, 0.55f, 0.95f);
             else glColor3f(0.9f, 0.25f, 0.15f);
             glBegin(GL_QUADS);
@@ -3315,7 +3506,7 @@ int main(int argc, char *argv[]) {
                (rooted name color, cast flashes) already hold themselves
                to. O(hero count) extra scan per hero, cheap at this
                roster's real size (<=20). */
-            for (int a = 0; a < ARENA_MAX_HEROES; a++) {
+            for (int a = 0; a < ARENA_HEROES_ARRAY_SIZE; a++) {
                 ArenaHero *attacker = &arena_state.heroes[a];
                 if (a == i || !attacker->active || !attacker->alive) continue;
                 if (attacker->attack_target != i) continue;
@@ -3348,7 +3539,7 @@ int main(int argc, char *argv[]) {
             if (h->rooted_ms > 0) glColor3f(0.25f, 0.95f, 0.35f);
             draw_string(arena_hero_name(h->hero_id), sx - bw / 2, sy + bh + 2.0f, 10);
             if (h->rooted_ms > 0) {
-                if (i == my_owner) glColor3f(0.1f, 0.8f, 0.95f);
+                if (is_mine) glColor3f(0.1f, 0.8f, 0.95f);
                 else if (h->team == arena_state.heroes[my_owner].team) glColor3f(0.15f, 0.55f, 0.95f);
                 else glColor3f(0.9f, 0.25f, 0.15f);
             }
@@ -3360,7 +3551,7 @@ int main(int argc, char *argv[]) {
             if (hero_status_label(h, status_buf, sizeof(status_buf))) {
                 glColor3f(0.95f, 0.75f, 0.15f);
                 draw_string(status_buf, sx - bw / 2, sy + bh + 14.0f, 9);
-                if (i == my_owner) glColor3f(0.1f, 0.8f, 0.95f);
+                if (is_mine) glColor3f(0.1f, 0.8f, 0.95f);
                 else if (h->team == arena_state.heroes[my_owner].team) glColor3f(0.15f, 0.55f, 0.95f);
                 else glColor3f(0.9f, 0.25f, 0.15f);
             }

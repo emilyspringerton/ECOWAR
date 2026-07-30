@@ -4204,7 +4204,34 @@ static void test_tyler_r_spawns_clones_linked_to_caster(void) {
     CHECK(clone_count == ARENA_TYLER_R_CLONE_COUNT, "R spawns the documented number of clones");
 }
 
-static void test_tyler_clones_mirror_move_target_and_fight(void) {
+static void test_tyler_clone_stays_put_without_its_own_command(void) {
+    /* 2026-07-30, Tyler "Divided We Stand" rework -- founder: "clones multi control drag click
+       all of it." Real Meepo parity means each net is independently commanded, not an auto-
+       following puppet -- replaces the old test of the exact opposite behavior (S170-141's
+       "clones mirror Tyler's own move-target," now deliberately removed). */
+    arena_init_teams();
+    for (int i = 1; i < ARENA_MAX_HEROES; i++) arena_state.heroes[i].active = 0;
+    arena_state.heroes[0].hero_id = ARENA_HERO_TYLER;
+    arena_state.heroes[0].x = 0; arena_state.heroes[0].z = 0;
+
+    arena_cast_r(0);
+    arena_set_move_target(0, 20.0f, 0.0f); /* Tyler's own move command only */
+
+    for (int i = 0; i < 30; i++) arena_update_teams(16);
+
+    int any_clone_moved = 0;
+    for (int i = ARENA_MAX_HEROES; i < ARENA_HEROES_ARRAY_SIZE; i++) {
+        ArenaHero *c = &arena_state.heroes[i];
+        if (c->active && (fabsf(c->x - 0.0f) > 0.5f || fabsf(c->z - 0.0f) > 0.5f)) any_clone_moved = 1;
+    }
+    CHECK(!any_clone_moved, "a clone does NOT auto-follow Tyler's own move command anymore -- it needs its own");
+}
+
+static void test_tyler_clone_moves_and_fights_on_its_own_independent_command(void) {
+    /* The other half of the same rework: a clone given its OWN explicit move command (exactly
+       the way a real player would drag-select it and click, see apps/arena's own selection UI)
+       advances and fights through the generic combat loop, completely independent of whatever
+       Tyler himself is doing. */
     arena_init_teams();
     for (int i = 1; i < ARENA_MAX_HEROES; i++) arena_state.heroes[i].active = 0;
     arena_state.heroes[ARENA_TEAM_SIZE].active = 1;
@@ -4213,26 +4240,46 @@ static void test_tyler_clones_mirror_move_target_and_fight(void) {
     arena_state.heroes[0].x = 0; arena_state.heroes[0].z = 0;
 
     arena_cast_r(0);
-    arena_set_move_target(0, 20.0f, 0.0f);
+    int clone_owner = -1;
+    for (int i = ARENA_MAX_HEROES; i < ARENA_HEROES_ARRAY_SIZE; i++) {
+        if (arena_state.heroes[i].active) { clone_owner = i; break; }
+    }
+    CHECK(clone_owner >= 0, "sanity: a clone actually spawned");
 
-    /* Place a lone enemy exactly where the clone army is marching through,
-       far from Tyler himself, so only a clone (not the real Tyler) can be
-       the one that actually lands the hit -- proves clones fight through
-       the same generic combat loop, not a special-cased one. */
+    /* Tyler himself gets no command at all -- only the clone does. */
+    arena_set_move_target(clone_owner, 20.0f, 0.0f);
+
+    /* Place a lone enemy exactly where the clone is marching through, far from Tyler himself, so
+       only the clone (not the real Tyler, who never moved) can be the one that lands the hit. */
     arena_state.heroes[ARENA_TEAM_SIZE].x = 1.0f;
     arena_state.heroes[ARENA_TEAM_SIZE].z = 0.5f;
     int foe_hp_before = arena_state.heroes[ARENA_TEAM_SIZE].hp;
 
     for (int i = 0; i < 30; i++) arena_update_teams(16);
 
-    int any_clone_moved = 0;
-    for (int i = ARENA_MAX_HEROES; i < ARENA_HEROES_ARRAY_SIZE; i++) {
-        ArenaHero *c = &arena_state.heroes[i];
-        if (c->active && c->x > 0.5f) any_clone_moved = 1;
-    }
-    CHECK(any_clone_moved, "clones mirror Tyler's own move-click and actually advance");
+    CHECK(arena_state.heroes[0].x < 1.0f, "sanity: Tyler himself never moved, no command was sent to him");
+    CHECK(arena_state.heroes[clone_owner].x > 0.5f, "the clone advances on its own explicit move command");
     CHECK(arena_state.heroes[ARENA_TEAM_SIZE].hp < foe_hp_before,
-          "an enemy near the marching clone army takes real damage -- clones fight through the generic melee loop");
+          "an enemy near the independently-commanded clone takes real damage -- fights through the generic melee loop");
+}
+
+static void test_arena_owner_controls_self_and_own_clones_only(void) {
+    arena_init_teams();
+    for (int i = 1; i < ARENA_MAX_HEROES; i++) arena_state.heroes[i].active = 0;
+    arena_state.heroes[0].hero_id = ARENA_HERO_TYLER;
+    arena_cast_r(0);
+    int clone_owner = -1;
+    for (int i = ARENA_MAX_HEROES; i < ARENA_HEROES_ARRAY_SIZE; i++) {
+        if (arena_state.heroes[i].active) { clone_owner = i; break; }
+    }
+    CHECK(clone_owner >= 0, "sanity: a clone actually spawned");
+
+    CHECK(arena_owner_controls(0, 0), "Tyler controls himself");
+    CHECK(arena_owner_controls(0, clone_owner), "Tyler controls his own active clone");
+    CHECK(!arena_owner_controls(1, clone_owner), "a different owner does not control Tyler's clone");
+    CHECK(!arena_owner_controls(0, 1), "Tyler does not control another real hero's slot");
+    CHECK(!arena_owner_controls(0, -1), "an out-of-range target is never controlled by anyone");
+    CHECK(!arena_owner_controls(0, ARENA_HEROES_ARRAY_SIZE), "an out-of-range target past the end is never controlled by anyone");
 }
 
 static void test_tyler_w_teleports_the_whole_clone_army(void) {
@@ -6088,7 +6135,9 @@ int main(void) {
     test_ability_kill_grants_no_flow();
     test_flow_earned_does_not_decrease_on_purchase();
     test_respawn_preserves_economy_and_equipped_items();
-    test_tyler_clones_mirror_move_target_and_fight();
+    test_tyler_clone_stays_put_without_its_own_command();
+    test_tyler_clone_moves_and_fights_on_its_own_independent_command();
+    test_arena_owner_controls_self_and_own_clones_only();
     test_tyler_shared_fate_clone_death_kills_tyler_and_siblings();
     test_tyler_death_kills_his_clones_too();
     test_clone_kill_credits_tyler_not_the_clone();

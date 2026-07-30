@@ -88,12 +88,21 @@ typedef struct {
 // ---- apps/arena_server wire structs (2026-07-24 pivot: the MOBA is the
 // product) ----
 
-// PACKET_ARENA_MOVE payload: a new move target for the sending client's own
-// hero. No owner field -- the server infers "which hero" from which client
-// slot sent the packet (same trust model as PACKET_CARD_PLAY / client_id).
+// PACKET_ARENA_MOVE payload: a new move target for one of the sending client's own commandable
+// units. unit_owner (2026-07-30, Tyler "Divided We Stand" rework -- founder: "clones multi
+// control drag click all of it") is which owner slot this specific command is FOR -- almost
+// always the sender's own hero slot (the pre-existing, only-ever-possible behavior before this),
+// but a player currently playing Tyler with active clones can also target one of THOSE slots
+// directly, now that clones are independently commandable instead of auto-mirroring Tyler's own
+// move-target. The server still infers WHO sent this (same client_id trust model as
+// PACKET_CARD_PLAY) -- unit_owner only says which of that sender's OWN units the command is for,
+// and is rejected (see arena_owner_controls) if it names anything the sender doesn't actually
+// control, same trust boundary this packet already had, just widened from exactly one controllable
+// slot to a small owned set.
 typedef struct {
     float target_x;
     float target_z;
+    uint8_t unit_owner;
 } ArenaMoveCmd;
 
 // PACKET_ARENA_CAST payload: which ability slot (0=Q, 1=W, 2=R) to cast.
@@ -127,6 +136,12 @@ typedef struct {
 // behavior §17.1 documents for real League.
 typedef struct {
     uint8_t target_owner;
+    // commander_unit (2026-07-30, same Tyler clone-control rework as ArenaMoveCmd's own
+    // unit_owner): which of the sender's OWN units should execute this attack-command --
+    // target_owner above is the ENEMY being locked onto, this is which of the sender's
+    // controllable slots (self, or one of Tyler's own active clones) does the locking. Same
+    // arena_owner_controls authorization as the move command.
+    uint8_t commander_unit;
 } ArenaAttackCmd;
 
 // PACKET_ARENA_SHOP_BUY payload (S170-175, NORTHSTAR §19's shop system):
@@ -163,6 +178,19 @@ typedef struct {
     uint16_t max_hp;
     uint8_t alive;
     uint8_t hero_id;
+    // is_clone/clone_owner (2026-07-30, Tyler "Divided We Stand" rework -- founder: "his kit
+    // was stubbed in" / "clones multi control drag click all of it"): real gap found while
+    // building independent clone control -- these puppet slots (ARENA_MAX_HEROES..
+    // ARENA_HEROES_ARRAY_SIZE-1) were never synced to ANY client at all before this (the hero-
+    // chunk loop only ever covered 0..lobby_size-1), so Tyler's clones existed and fought
+    // server-side but were completely invisible in every real networked match -- not a control-
+    // scheme gap, a rendering gap underneath it. clone_owner is -1 (int8_t) for a real hero,
+    // else the owner slot of the Tyler that owns this puppet -- the client needs this both to
+    // know which slots are its OWN commandable units (clone_owner == my_owner) and to derive
+    // team correctly, since a clone's slot index falls outside the normal "first half team 0,
+    // second half team 1" range the ordinary per-hero team-derivation formula below assumes.
+    uint8_t is_clone;
+    int8_t clone_owner;
     // cast_flash_slot (S170-124, "particle effects for spells"): 0 = none,
     // 1/2/3 = Q/W/R -- set the tick a cast clears its gate (alive, not
     // silenced, off cooldown), regardless of whether it goes on to hit
@@ -285,6 +313,14 @@ typedef struct {
 // rather than included, since protocol.h is a lower-level shared header
 // that doesn't otherwise depend on the sim package.
 #define ARENA_SNAPSHOT_MAX_HEROES 20
+
+// ARENA_SNAPSHOT_HEROES_ARRAY_SIZE mirrors arena_game.h's ARENA_HEROES_ARRAY_SIZE (ARENA_MAX_HEROES
+// + ARENA_MAX_CLONE_SLOTS = 20+8 = 28) -- the full addressable hero-slot range including Tyler's
+// puppet-clone pool, same duplication reasoning as ARENA_SNAPSHOT_MAX_HEROES above. Distinct from
+// it on purpose: ARENA_SNAPSHOT_MAX_HEROES/lobby_size still means exactly what it always has (how
+// many REAL player slots this match uses, the team-split-math bound) -- this constant only widens
+// how much of heroes[] the chunk system below addresses, so clone slots get synced too.
+#define ARENA_SNAPSHOT_HEROES_ARRAY_SIZE 28
 
 // Per-node territory state broadcast in PACKET_ARENA_SNAPSHOT (S170-87 fix
 // -- this didn't exist before, and its absence is the real root cause of
@@ -439,11 +475,21 @@ typedef struct {
 // are actually meaningful" bound both need it, and either chunk can
 // legitimately arrive before or after the world packet, or before or after
 // the OTHER chunk, on any given tick.
-#define ARENA_SNAPSHOT_HERO_CHUNK_SIZE 10
-#define ARENA_SNAPSHOT_HERO_CHUNKS (ARENA_SNAPSHOT_MAX_HEROES / ARENA_SNAPSHOT_HERO_CHUNK_SIZE) /* 2, with the current 20-hero roster cap */
+// 2026-07-30: widened from 10 to 14 (chunk COUNT stays 2 -- 28/14 -- so no new MTU-fragmentation
+// risk, same reasoning as the S170-193 split this already is) so the chunk range covers
+// ARENA_SNAPSHOT_HEROES_ARRAY_SIZE (28, real heroes + Tyler's clone pool) instead of just
+// ARENA_SNAPSHOT_MAX_HEROES (20, real heroes only) -- clone slots were never synced to any
+// client before this, see is_clone/clone_owner's own doc comment on ArenaHeroSnapshot above. 14
+// heroes' worth is still comfortably under the ~1500-byte MTU this split was built to respect.
+#define ARENA_SNAPSHOT_HERO_CHUNK_SIZE 14
+#define ARENA_SNAPSHOT_HERO_CHUNKS (ARENA_SNAPSHOT_HEROES_ARRAY_SIZE / ARENA_SNAPSHOT_HERO_CHUNK_SIZE) /* 2 */
 typedef struct {
     uint8_t chunk_index;  /* 0..ARENA_SNAPSHOT_HERO_CHUNKS-1 -- which slice of heroes[] this is */
-    uint8_t total_count;  /* same value as ArenaSnapshotMsg.count -- duplicated so this chunk is self-contained */
+    uint8_t total_count;  /* real lobby size only (same value as ArenaSnapshotMsg.count) -- NOT the
+                              clone-inclusive ARENA_SNAPSHOT_HEROES_ARRAY_SIZE, still exactly what
+                              the team-split math (`i < total_count / 2`) needs for REAL hero slots;
+                              clone-range slots (i >= ARENA_SNAPSHOT_MAX_HEROES) are never gated on
+                              this, see the client's own apply-loop doc comment for why */
     ArenaHeroSnapshot heroes[ARENA_SNAPSHOT_HERO_CHUNK_SIZE]; /* owner slots [chunk_index*ARENA_SNAPSHOT_HERO_CHUNK_SIZE .. +SIZE) */
 } ArenaSnapshotHeroesMsg;
 

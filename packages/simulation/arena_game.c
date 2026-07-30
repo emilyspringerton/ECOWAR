@@ -514,7 +514,13 @@ void arena_init(void) {
 }
 
 void arena_set_move_target(int owner, float x, float z) {
-    if (owner < 0 || owner >= ARENA_MAX_HEROES) return;
+    /* 2026-07-30, Tyler clone-control rework: widened from ARENA_MAX_HEROES to
+       ARENA_HEROES_ARRAY_SIZE so a puppet clone slot can receive its own independent move
+       command directly, instead of only ever being driven by the now-removed "mirror Tyler's
+       own move-target every tick" logic in arena_update_teams. Authorization (is the caller
+       actually allowed to command this slot) is the caller's job, same as it always has been --
+       see arena_owner_controls, used by the server's own packet handler. */
+    if (owner < 0 || owner >= ARENA_HEROES_ARRAY_SIZE) return;
     if (x < -ARENA_HALF_EXTENT) x = -ARENA_HALF_EXTENT;
     if (x > ARENA_HALF_EXTENT) x = ARENA_HALF_EXTENT;
     if (z < -ARENA_HALF_EXTENT) z = -ARENA_HALF_EXTENT;
@@ -551,8 +557,26 @@ void arena_set_move_target(int owner, float x, float z) {
 /* arena_set_attack_target (S170-162): see header declaration's doc
  * comment. */
 void arena_set_attack_target(int owner, int target) {
-    if (owner < 0 || owner >= ARENA_MAX_HEROES) return;
+    /* 2026-07-30, Tyler clone-control rework: widened same as arena_set_move_target above, so a
+       clone slot can be given its own independent attack-target lock too. */
+    if (owner < 0 || owner >= ARENA_HEROES_ARRAY_SIZE) return;
     arena_state.heroes[owner].attack_target = target;
+}
+
+/* arena_owner_controls (2026-07-30, Tyler "Divided We Stand" rework -- founder: "clones multi
+ * control drag click all of it"): does `sender_owner` have authority to issue a command for
+ * `target_owner`? True for the trivial case (a hero commanding itself, the only case that existed
+ * before this) and for a clone whose `clone_owner` names `sender_owner` -- i.e. Tyler can command
+ * himself or any of his own active clones, nobody else can command anybody else's. Used by the
+ * server's own PACKET_ARENA_MOVE/PACKET_ARENA_ATTACK handlers to validate the new unit_owner/
+ * commander_unit fields before acting on them, same trust boundary this game has always drawn at
+ * "a client can only ever affect its own hero," just widened from exactly one owned slot to a
+ * small owned set. */
+int arena_owner_controls(int sender_owner, int target_owner) {
+    if (target_owner < 0 || target_owner >= ARENA_HEROES_ARRAY_SIZE) return 0;
+    if (target_owner == sender_owner) return 1;
+    ArenaHero *target = &arena_state.heroes[target_owner];
+    return target->active && target->is_clone && target->clone_owner == sender_owner;
 }
 
 /* arena_apply_stun/arena_apply_slow (S170-184): see header declarations' own doc comments.
@@ -5289,20 +5313,15 @@ void arena_update_teams(unsigned int dt_ms) {
 
     arena_tick_respawns(dt_ms);
 
-    /* S170-141: Tyler's puppet clones mirror his own move-target every tick
-       before motion runs -- click once, the whole clone army goes with him.
-       A small per-clone offset (index-based, deterministic) keeps a clone
-       army from stacking exactly on top of Tyler and each other. */
-    for (int i = ARENA_MAX_HEROES; i < ARENA_HEROES_ARRAY_SIZE; i++) {
-        ArenaHero *clone = &arena_state.heroes[i];
-        if (!clone->active || !clone->alive) continue;
-        ArenaHero *tyler = &arena_state.heroes[clone->clone_owner];
-        float offset = (float)(i - ARENA_MAX_HEROES + 1) * 0.9f;
-        clone->target_x = tyler->target_x + offset;
-        clone->target_z = tyler->target_z + offset;
-        clone->moving = tyler->moving;
-    }
-
+    /* 2026-07-30, Tyler "Divided We Stand" rework -- founder: "clones multi control drag click
+       all of it." Removed the old "clones mirror Tyler's own move-target every tick" block that
+       lived here (S170-141) -- true Meepo parity means each net is independently commanded, not
+       auto-following. Clones now just have real target_x/target_z/moving state of their own,
+       set directly by arena_set_move_target (widened to accept clone owner slots) exactly like
+       any other hero, and driven by the exact same update_hero_motion loop right below --
+       nothing clone-specific left to do here at all. A freshly-spawned clone simply sits still
+       at Tyler's position (tyler_spawn_clones' own spawn point) until its owner gives it an
+       explicit command, same as a real Meepo net does the instant it lands. */
     for (int i = 0; i < ARENA_HEROES_ARRAY_SIZE; i++) {
         ArenaHero *h = &arena_state.heroes[i];
         if (!h->active) continue;

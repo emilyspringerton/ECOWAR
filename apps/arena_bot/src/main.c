@@ -371,6 +371,13 @@ static void send_move(float x, float z) {
     ArenaMoveCmd *cmd = (ArenaMoveCmd *)(buf + sizeof(NetHeader));
     cmd->target_x = x;
     cmd->target_z = z;
+    /* unit_owner (2026-07-30, Tyler clone-control rework): this bot only ever controls its own
+       single body -- no bot AI for independently piloting Tyler's clones exists (a separate,
+       much bigger scope than this pass), so always naming my_owner here matches this bot's own
+       pre-existing behavior exactly. Left uninitialized, this byte would be whatever garbage sat
+       on the stack, which the server's arena_owner_controls check would then reject or
+       (worse, coincidentally) accept -- real bug this explicit assignment avoids. */
+    cmd->unit_owner = (uint8_t)my_owner;
     sendto(sock, buf, sizeof(buf), 0, (struct sockaddr *)&server_addr, sizeof(server_addr));
 }
 
@@ -403,6 +410,7 @@ static void send_attack(int target_owner) {
     h->type = PACKET_ARENA_ATTACK;
     ArenaAttackCmd *cmd = (ArenaAttackCmd *)(buf + sizeof(NetHeader));
     cmd->target_owner = (uint8_t)target_owner;
+    cmd->commander_unit = (uint8_t)my_owner; /* 2026-07-30: same reasoning as send_move's own unit_owner */
     sendto(sock, buf, sizeof(buf), 0, (struct sockaddr *)&server_addr, sizeof(server_addr));
 }
 

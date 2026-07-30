@@ -2741,3 +2741,41 @@
   One existing test updated to resolve the hit through `arena_tick_projectiles` (the two-step
   spawn-then-resolve shape every projectile-based attack already has) instead of expecting instant
   damage. Full suite green, build clean.
+
+- feat(arena): Tyler "Divided We Stand" rework -- real independent clone control + a real
+  visibility bug fixed underneath it. Founder: "his kit was stubbed in" -> "clones multi control
+  drag click all of it" -> "divided we stand rework." Two separate gaps closed:
+
+  1. **Clones were never synced to any client at all.** The hero-snapshot chunk system only ever
+     covered owner slots 0..lobby_size-1 -- Tyler's puppet-clone pool existed and fought
+     server-side since S170-141 but was completely invisible in every real networked match, not
+     just hard to control. `ArenaHeroSnapshot` gained `is_clone`/`clone_owner`; the chunk system
+     widened to `ARENA_SNAPSHOT_HEROES_ARRAY_SIZE` (28, chunk size 10->14, still exactly 2 chunks,
+     no new MTU risk); `apps/arena_server`'s broadcast loop now syncs the full clone range;
+     `apps/arena` applies it and gained a dedicated clone-body draw pass + real floating health
+     bars for clones (kept deliberately separate from the real-hero draw loop, which shares
+     several `ARENA_MAX_HEROES`-sized tracking arrays -- widening it directly would have read
+     those out of bounds for every clone index).
+  2. **"Mirror Tyler's move-target every tick" was the opposite of Meepo parity.** Removed
+     entirely; a clone is now just another hero with its own real target/moving state, ticked by
+     the same generic motion loop everyone else uses. New `arena_owner_controls(sender, target)`
+     authorizes a client to command itself or one of its own active clones;
+     `arena_set_move_target`/`arena_set_attack_target` widened to accept clone owner slots;
+     `PACKET_ARENA_MOVE`/`PACKET_ARENA_ATTACK` gained `unit_owner`/`commander_unit` fields, server-
+     validated before acting. `apps/arena` gained real RTS drag-select (drag-vs-click resolved on
+     mouse-up, the standard convention, no new keybind) with a green selection ring; every hero
+     other than Tyler is completely unaffected (selection defaults to "just self" forever).
+     `apps/arena_bot`'s move/attack senders updated to populate the new field explicitly (an
+     uninitialized stack byte there would have been a real, silent auth-check bug for the live
+     19-bot pool).
+
+  One existing test replaced (the old "clones mirror Tyler" test asserted the exact behavior this
+  rework removes) and three new ones added (clone stays put without its own command, clone moves/
+  fights on an independent command, `arena_owner_controls` authorization). Full suite green (814
+  assertions across all 7 test binaries), build clean across every real binary that sends or
+  receives the changed structs (`arena`, `arena_server`, `arena_bot`). Live network round-trip not independently smoke-tested this pass (would have
+  required touching the already-running production matchmaker/bot-pool services) -- relying on
+  full sim-level coverage of the new authorization/widening logic plus a from-source clean build
+  of every binary that sends or receives the changed structs; will get real validation once
+  auto-deploy picks this commit up for a live match, same as every other networked change this
+  session.
