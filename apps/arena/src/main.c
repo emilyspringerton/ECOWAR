@@ -1650,9 +1650,40 @@ static void draw_queuing_screen(SDL_Window *win, int win_w, int win_h) {
 #define DRAFT_GRID_COLS 6
 #define DRAFT_CELL_W 190.0f
 #define DRAFT_CELL_H 56.0f
-static void draft_grid_origin(int win_w, int win_h, float *gx0, float *gy_top) {
-    *gx0 = win_w / 2.0f - (DRAFT_GRID_COLS * DRAFT_CELL_W) / 2.0f;
+
+/* draft_grid_origin: centers the grid, but clamps/shrinks it to the actual window bounds.
+ *
+ * Before this fix, gx0/gy_top were computed purely from DRAFT_GRID_COLS*DRAFT_CELL_W centered
+ * on win_w/2 with no clamp -- fine at the 1280x720 default, but the window is resizable
+ * (win_w/win_h track SDL_WINDOWEVENT_RESIZED), and on any narrower window (e.g. ~960px, a
+ * common non-fullscreen/half-screen size) the rightmost column (hero_id % 6 == 5, which
+ * includes Tyler at hero_id 17) rendered mostly or fully past the right edge -- unclickable
+ * or only clickable in a sliver with its own label cut off, so a player who happened to want
+ * a hero in that column could never send PACKET_ARENA_PICK. Server-side that's indistinguishable
+ * from an AFK client: match sits at N/20 picked forever and dies on the 60s no-progress
+ * timeout (see the resend-on-unpick comment near net_last_pick_send_ms above -- that fix
+ * covers a pick getting dropped in flight, not a pick that can never be clicked in the first
+ * place). Returns the cell size actually used so callers hit-test/draw against the same
+ * shrunk grid, not the nominal DRAFT_CELL_W/H. */
+static void draft_grid_origin(int win_w, int win_h, float *gx0, float *gy_top, float *cell_w, float *cell_h) {
+    int rows = (ARENA_HERO_COUNT + DRAFT_GRID_COLS - 1) / DRAFT_GRID_COLS;
+    float cw = DRAFT_CELL_W, ch = DRAFT_CELL_H;
+    float grid_w = DRAFT_GRID_COLS * cw;
+    float grid_h_avail = (float)win_h - 150.0f; /* leave room for the title/subtitle above */
+    if (grid_w > (float)win_w) {
+        cw = (float)win_w / DRAFT_GRID_COLS;
+        grid_w = (float)win_w;
+    }
+    if ((float)rows * ch > grid_h_avail && grid_h_avail > 0.0f) {
+        ch = grid_h_avail / (float)rows;
+    }
+    float gx = win_w / 2.0f - grid_w / 2.0f;
+    if (gx < 0.0f) gx = 0.0f;
+    if (gx + grid_w > win_w) gx = (float)win_w - grid_w;
+    *gx0 = gx;
     *gy_top = win_h - 130.0f;
+    *cell_w = cw;
+    *cell_h = ch;
 }
 
 /* draft_screen_hero_at: hit-test a screen-space point (SDL's top-down mouse coords, NOT this
@@ -1660,14 +1691,14 @@ static void draft_grid_origin(int win_w, int win_h, float *gx0, float *gy_top) {
  * Returns the hero_id under that point, or -1 if none. */
 static int draft_screen_hero_at(int mouse_x, int mouse_y, int win_w, int win_h) {
     float bx = (float)mouse_x, by = (float)(win_h - mouse_y);
-    float gx0, gy_top;
-    draft_grid_origin(win_w, win_h, &gx0, &gy_top);
+    float gx0, gy_top, cell_w, cell_h;
+    draft_grid_origin(win_w, win_h, &gx0, &gy_top, &cell_w, &cell_h);
     for (int hero_id = 0; hero_id < ARENA_HERO_COUNT; hero_id++) {
         int col = hero_id % DRAFT_GRID_COLS, row = hero_id / DRAFT_GRID_COLS;
-        float cell_x = gx0 + (float)col * DRAFT_CELL_W;
-        float cell_top = gy_top - (float)row * DRAFT_CELL_H;
-        float cell_bottom = cell_top - (DRAFT_CELL_H - 6.0f);
-        if (bx >= cell_x + 3.0f && bx <= cell_x + DRAFT_CELL_W - 3.0f && by >= cell_bottom && by <= cell_top) {
+        float cell_x = gx0 + (float)col * cell_w;
+        float cell_top = gy_top - (float)row * cell_h;
+        float cell_bottom = cell_top - (cell_h - 6.0f);
+        if (bx >= cell_x + 3.0f && bx <= cell_x + cell_w - 3.0f && by >= cell_bottom && by <= cell_top) {
             return hero_id;
         }
     }
@@ -1689,25 +1720,25 @@ static void draw_draft_screen(SDL_Window *win, int win_w, int win_h, int hover_h
     glColor3f(0.6f, 0.7f, 0.65f);
     draw_string("CLICK A TILE TO DRAFT IT", win_w / 2.0f - 160.0f, win_h - 90.0f, 10);
 
-    float gx0, gy_top;
-    draft_grid_origin(win_w, win_h, &gx0, &gy_top);
+    float gx0, gy_top, cell_w, cell_h;
+    draft_grid_origin(win_w, win_h, &gx0, &gy_top, &cell_w, &cell_h);
     for (int hero_id = 0; hero_id < ARENA_HERO_COUNT; hero_id++) {
         int col = hero_id % DRAFT_GRID_COLS, row = hero_id / DRAFT_GRID_COLS;
-        float cell_x = gx0 + (float)col * DRAFT_CELL_W;
-        float cell_top = gy_top - (float)row * DRAFT_CELL_H;
-        float cell_bottom = cell_top - (DRAFT_CELL_H - 6.0f);
+        float cell_x = gx0 + (float)col * cell_w;
+        float cell_top = gy_top - (float)row * cell_h;
+        float cell_bottom = cell_top - (cell_h - 6.0f);
         int hovered = (hero_id == hover_hero_id);
         glColor4f(hovered ? 0.2f : 0.1f, hovered ? 0.45f : 0.18f, hovered ? 0.25f : 0.16f, 0.9f);
-        glRectf(cell_x + 3.0f, cell_bottom, cell_x + DRAFT_CELL_W - 3.0f, cell_top);
+        glRectf(cell_x + 3.0f, cell_bottom, cell_x + cell_w - 3.0f, cell_top);
         glColor3f(hovered ? 0.6f : 0.35f, hovered ? 1.0f : 0.55f, hovered ? 0.7f : 0.5f);
         glLineWidth(hovered ? 2.0f : 1.0f);
         glBegin(GL_LINE_LOOP);
-        glVertex2f(cell_x + 3.0f, cell_bottom); glVertex2f(cell_x + DRAFT_CELL_W - 3.0f, cell_bottom);
-        glVertex2f(cell_x + DRAFT_CELL_W - 3.0f, cell_top); glVertex2f(cell_x + 3.0f, cell_top);
+        glVertex2f(cell_x + 3.0f, cell_bottom); glVertex2f(cell_x + cell_w - 3.0f, cell_bottom);
+        glVertex2f(cell_x + cell_w - 3.0f, cell_top); glVertex2f(cell_x + 3.0f, cell_top);
         glEnd();
         glLineWidth(1.0f);
         glColor3f(hovered ? 0.9f : 0.75f, hovered ? 1.0f : 0.85f, hovered ? 0.95f : 0.8f);
-        draw_string(arena_hero_name(hero_id), cell_x + 12.0f, cell_bottom + (DRAFT_CELL_H - 6.0f) / 2.0f - 4.0f, 9);
+        draw_string(arena_hero_name(hero_id), cell_x + 12.0f, cell_bottom + (cell_h - 6.0f) / 2.0f - 4.0f, 9);
     }
     SDL_GL_SwapWindow(win);
 }
