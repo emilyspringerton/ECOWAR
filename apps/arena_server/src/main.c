@@ -833,6 +833,13 @@ int main(int argc, char *argv[]) {
             if (lobby_size > ARENA_MAX_HEROES) lobby_size = ARENA_MAX_HEROES;
         }
     }
+    /* No srand() call existed anywhere in this file before (found while wiring The Cart's real
+       rand()-based delivery outcomes, NORTHSTAR §24 Milestone 2, 2026-07-31) -- rand() without
+       this would use the C library's default seed (1) every single server process start,
+       making a "random" delivery completely predictable across restarts on the one binary that
+       actually arbitrates real networked matches. apps/arena and apps/arena_bot already seed
+       their own local RNG the same way; this was the one binary that never needed it before. */
+    srand((unsigned int)time(NULL) ^ (unsigned int)getpid());
     load_ticket_secret();
     load_iduna_agent_config();
     server_net_init(port);

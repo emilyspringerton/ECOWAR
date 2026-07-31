@@ -3620,6 +3620,86 @@ static void test_warrior_skillchain_window_expires(void) {
     CHECK(foe->skillchain_flash_tier == 0, "no chain closes once the pending window has expired");
 }
 
+/* The Cart (TYLER multiverse_heroes.md #10, NORTHSTAR §24 Milestone 2, 2026-07-31). */
+
+static void test_cart_q_heals_self_capped_at_max(void) {
+    arena_init_with_heroes(ARENA_HERO_UNICORN, ARENA_HERO_CART);
+    ArenaHero *cart = &arena_state.heroes[1];
+    cart->hp = cart->max_hp - 3; /* less than ARENA_CART_Q_HEAL away from full, forces the cap */
+
+    arena_cast_q(1);
+
+    CHECK(cart->hp == cart->max_hp, "Q heals the Cart, capped at max_hp rather than overhealing");
+    CHECK(cart->q_cooldown_ms == ARENA_CART_Q_COOLDOWN_MS, "Q starts on cooldown after use");
+}
+
+static void test_cart_w_opens_a_zone_at_own_position(void) {
+    arena_init_with_heroes(ARENA_HERO_UNICORN, ARENA_HERO_CART);
+    ArenaHero *cart = &arena_state.heroes[1];
+
+    arena_toggle_w(1);
+
+    CHECK(cart->r_active_ms == ARENA_CART_W_DURATION_MS, "W opens the delivery zone for its real duration");
+    CHECK(cart->r_zone_x == cart->x && cart->r_zone_z == cart->z, "the zone is centered on the Cart's own position, no target needed");
+    CHECK(cart->zone_radius == ARENA_CART_W_RADIUS, "zone_radius records W's own radius, not R's");
+    CHECK(cart->w_cooldown_ms == ARENA_CART_W_COOLDOWN_MS, "W starts on cooldown after cast");
+}
+
+static void test_cart_r_zone_is_bigger_and_longer_cooldown_than_w(void) {
+    /* Real, structural check on the constants themselves -- same "R is the bigger version of the
+       kit's theme" convention every other hero's own R follows (Warrior's Frostbite > Power
+       Slash, etc.), pinned down for the Cart's own delivery zone. */
+    CHECK(ARENA_CART_R_RADIUS > ARENA_CART_W_RADIUS, "R's delivery zone reaches farther than W's");
+    CHECK(ARENA_CART_R_COOLDOWN_MS > ARENA_CART_W_COOLDOWN_MS, "R's longer reach costs a longer cooldown");
+}
+
+static void test_cart_zone_triggers_delivery_on_contact_then_deactivates(void) {
+    arena_init_with_heroes(ARENA_HERO_UNICORN, ARENA_HERO_CART);
+    /* Same "isolate from the internal practice-opponent AI" fix
+       test_arena_bot_enabled_gates_kit_casts_too's own comment documents -- without this, the
+       Cart's own bot_cast_kit_if_ready heuristic (owner 1 is bot-driven by default) immediately
+       re-casts R right after this test's own manual W cast, since both start off cooldown and
+       W/R share the same r_zone fields (see arena_cast_r's own CART case doc comment). Every
+       other hero's own zone tests never hit this because their W/R don't share overwriteable
+       state the way the Cart's do. */
+    arena_bot_enabled = 0;
+    ArenaHero *cart = &arena_state.heroes[1];
+    ArenaHero *other = &arena_state.heroes[0];
+    other->x = cart->x + 1.0f; /* well within ARENA_CART_W_RADIUS (3.0) */
+    other->z = cart->z;
+    int hp_before = other->hp, mp_before = other->mp, flow_before = other->flow;
+    int hp_max_before = other->hp == other->max_hp;
+
+    arena_toggle_w(1);
+    arena_update(100); /* one real tick -- the sweep runs every tick, not on a fixed interval like a DPS zone */
+
+    CHECK(cart->r_active_ms == 0, "the zone deactivates immediately once it delivers -- single-use, not a repeat-tick zone");
+    /* Exactly one of 4 real outcomes landed -- don't assert which (real rand()), just that
+       SOMETHING real happened rather than nothing. hp_max_before guards against a false negative
+       if the heal outcome rolled but other was already at full HP. */
+    int something_changed = (other->hp != hp_before) || (other->mp != mp_before) ||
+                             (other->flow != flow_before) || (other->slowed_ms > 0) || hp_max_before;
+    CHECK(something_changed, "the delivery zone applies one of its 4 real outcomes to whoever steps in, ally or foe");
+    arena_bot_enabled = 1; /* restore the default for any test run after this one */
+}
+
+static void test_cart_zone_can_trigger_on_the_cart_itself(void) {
+    /* "nobody, including its own controller, gets to request what" -- the Cart's own lore.
+       With no other hero in range, the zone must still be able to fire on the Cart itself, not
+       silently expire unused. */
+    arena_init_with_heroes(ARENA_HERO_UNICORN, ARENA_HERO_CART);
+    arena_bot_enabled = 0; /* see the sibling test above for why this is needed here */
+    ArenaHero *cart = &arena_state.heroes[1];
+    ArenaHero *other = &arena_state.heroes[0];
+    other->x = cart->x + 500.0f; /* far outside any real zone radius */
+
+    arena_toggle_w(1);
+    arena_update(100);
+
+    CHECK(cart->r_active_ms == 0, "with nobody else in range, the zone fires on the Cart's own controller instead of expiring unused");
+    arena_bot_enabled = 1; /* restore the default for any test run after this one */
+}
+
 static void test_vassago_passive_regenerates_hp(void) {
     arena_init_with_heroes(ARENA_HERO_UNICORN, ARENA_HERO_VASSAGO);
     ArenaHero *vassago = &arena_state.heroes[1];
@@ -6187,6 +6267,11 @@ int main(void) {
     test_warrior_r_frostbite_hits_hardest();
     test_warrior_q_then_r_closes_a_real_skillchain();
     test_warrior_skillchain_window_expires();
+    test_cart_q_heals_self_capped_at_max();
+    test_cart_w_opens_a_zone_at_own_position();
+    test_cart_r_zone_is_bigger_and_longer_cooldown_than_w();
+    test_cart_zone_triggers_delivery_on_contact_then_deactivates();
+    test_cart_zone_can_trigger_on_the_cart_itself();
     test_vassago_passive_regenerates_hp();
     test_vassago_q_damages_and_silences_in_range();
     test_vassago_q_out_of_range_whiffs();

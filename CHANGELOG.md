@@ -2,6 +2,28 @@
 
 ## 2026-07-31
 
+- feat(arena): The Cart (hero #30, `ARENA_HERO_CART`) -- TYLER `multiverse_heroes.md` #10,
+  `NORTHSTAR.md` §24 Milestone 2, founder pick from §7's own queue (the one entry never built).
+  Real lore constraint honored, not overridden: the compendium's own 2026-07-23 gameplay note
+  already named the Cart's whole identity as "nobody, including its own controller, gets to
+  request what" -- asked directly whether to honor or override that for a WC3-style
+  directly-commanded kit (this session's own AskUserQuestion), founder chose to honor it.
+  Indirect-Control, same archetype §16.1 already built for Donkey. Q is a small self-heal
+  ("Maintenance" -- the Cart isn't a combatant per its own lore). W/R ("No Requester in the
+  Ledger" / "Already Waiting") open a delivery zone at the Cart's own position -- whoever steps
+  in first (ally, enemy, or the Cart's own controller, no team check) gets one of 4 real,
+  equally-weighted outcomes (heal/mana/slow/Flow), not always good, single-use. First hero with
+  TWO zone-shaped abilities sharing the same r_zone fields every other zone hero already uses --
+  last-cast-wins if both are active, a real interaction no prior kit could reach, documented not
+  hidden. New `zone_radius` field on `ArenaHero` (every zone hero before this had exactly one
+  zone, so radius was always just a constant, never needed storing). Real bug caught by the
+  build itself: `apps/arena_server` never called `srand()` -- `rand()` would have used the C
+  library's default seed (1) every server restart, making "random" deliveries fully predictable
+  in real matches; fixed there, matching the pattern `apps/arena`/`apps/arena_bot` already used.
+  5 new tests, including one proving the zone still fires on the Cart's own controller when
+  nobody else is in range. `scripts/build.sh` clean, full `scripts/test_arena.sh` suite green,
+  `scripts/test_10_bots.sh` stable.
+
 - docs(northstar): §24.3.1 CORRECTION -- started Milestone 1 (generalize the clone mechanism off
   Tyler-only) and found, by checking every real gate directly rather than assuming, that it's
   already generic: `arena_owner_controls`, `tyler_clone_cascade_kill`, the hittable/targeting

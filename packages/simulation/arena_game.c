@@ -1,5 +1,6 @@
 #include "arena_game.h"
 #include <math.h>
+#include <stdlib.h>
 #include <string.h>
 #include "../common/rl_policy_weights.h"
 
@@ -3270,6 +3271,46 @@ static int warrior_cast_r(ArenaHero *warrior, ArenaHero *foe) {
     return 1;
 }
 
+/* cart_cast_q: minimal self-maintenance heal -- the Cart's own lore (TYLER multiverse_heroes.md
+ * #10) isn't a combatant, so Q stays deliberately small rather than padded out with an invented
+ * attack. Always succeeds (no target/range gate -- there's nothing to miss). */
+static void cart_cast_q(ArenaHero *cart) {
+    cart->hp += ARENA_CART_Q_HEAL;
+    if (cart->hp > cart->max_hp) cart->hp = cart->max_hp;
+}
+
+/* cart_trigger_delivery (NORTHSTAR §24 Milestone 2): the Cart's real signature mechanic --
+ * "a requested document turns out to already be waiting on the cart, with no requester logged,"
+ * and "nobody, including its own controller, gets to request what." Rolls one of 4 equally-
+ * weighted, real outcomes onto `target` (which may be an ally, the Cart's own controller, or an
+ * enemy -- whoever steps into the zone first, no team check, matching the lore's own
+ * unpredictability). Not always good: two heals/buffs, one debuff, one Flow grant that could
+ * just as easily land on the wrong team. Called once per zone, from tick_hero_kit -- the caller
+ * is responsible for deactivating the zone afterward so it only fires once. */
+static void cart_trigger_delivery(ArenaHero *target) {
+    switch (rand() % 4) {
+    case 0: {
+        int heal = (int)(target->max_hp * ARENA_CART_DELIVERY_HEAL_PCT);
+        target->hp += heal;
+        if (target->hp > target->max_hp) target->hp = target->max_hp;
+        break;
+    }
+    case 1: {
+        int mana = (int)(target->max_mp * ARENA_CART_DELIVERY_MANA_PCT);
+        target->mp += mana;
+        if (target->mp > target->max_mp) target->mp = target->max_mp;
+        break;
+    }
+    case 2:
+        arena_apply_slow(target->owner, ARENA_CART_DELIVERY_SLOW_MS, ARENA_CART_DELIVERY_SLOW_PCT);
+        break;
+    case 3:
+        target->flow += ARENA_CART_DELIVERY_FLOW;
+        target->flow_earned += ARENA_CART_DELIVERY_FLOW;
+        break;
+    }
+}
+
 /* vassago_cast_q: Reveal the Gentle Maybe -- a ranged bolt, damage + silence, same shape as
  * Ghost's Q. Returns 1 if it landed. */
 static int vassago_cast_q(ArenaHero *vassago, ArenaHero *foe) {
@@ -3616,6 +3657,11 @@ void arena_cast_q(int owner) {
             h->mp -= ARENA_MP_COST_Q;
         }
         break;
+    case ARENA_HERO_CART:
+        cart_cast_q(h);
+        h->q_cooldown_ms = cast_cooldown(h, ARENA_CART_Q_COOLDOWN_MS);
+        h->mp -= ARENA_MP_COST_Q;
+        break;
     }
 }
 
@@ -3886,6 +3932,18 @@ void arena_toggle_w(int owner) {
             h->w_cooldown_ms = cast_cooldown(h, ARENA_WARRIOR_W_COOLDOWN_MS);
             h->mp -= ARENA_MP_COST_W;
         }
+        break;
+    case ARENA_HERO_CART:
+        /* The delivery zone: cast at the Cart's own position, no target needed -- same
+           "self-position zone" shape as Gunnr's Consecration. tick_hero_kit's own CART case
+           resolves who (if anyone) triggers it. */
+        if (h->w_cooldown_ms > 0 || h->mp < ARENA_MP_COST_W) return;
+        h->r_zone_x = h->x;
+        h->r_zone_z = h->z;
+        h->r_active_ms = ARENA_CART_W_DURATION_MS;
+        h->zone_radius = ARENA_CART_W_RADIUS;
+        h->w_cooldown_ms = cast_cooldown(h, ARENA_CART_W_COOLDOWN_MS);
+        h->mp -= ARENA_MP_COST_W;
         break;
     default:
         /* No-op for any hero without a real W in this arena, not a crash
@@ -4205,6 +4263,21 @@ void arena_cast_r(int owner) {
             h->r_cooldown_ms = cast_cooldown(h, ARENA_WARRIOR_R_COOLDOWN_MS);
             h->mp -= ARENA_MP_COST_R;
         }
+        break;
+    case ARENA_HERO_CART:
+        /* Same delivery-zone mechanic as W, bigger radius/duration, no target needed. Shares
+           the same r_zone_x/z/r_active_ms fields W already used -- casting R while a W zone is
+           still active replaces it (last-cast-wins, same as any other zone-ability hero would
+           behave if it could cast two zones back to back; no existing hero's kit lets that
+           happen today, so this is a real, honestly-undocumented-until-now interaction unique
+           to the Cart having two zone-shaped abilities). */
+        if (h->r_cooldown_ms > 0 || h->mp < ARENA_MP_COST_R) return;
+        h->r_zone_x = h->x;
+        h->r_zone_z = h->z;
+        h->r_active_ms = ARENA_CART_R_DURATION_MS;
+        h->zone_radius = ARENA_CART_R_RADIUS;
+        h->r_cooldown_ms = cast_cooldown(h, ARENA_CART_R_COOLDOWN_MS);
+        h->mp -= ARENA_MP_COST_R;
         break;
     }
 }
@@ -4873,6 +4946,29 @@ static void tick_hero_kit(ArenaHero *h, ArenaHero *foe, ArenaHero *ally, unsigne
             if (h->r_active_ms < 0) h->r_active_ms = 0;
         }
         break;
+    case ARENA_HERO_CART:
+        /* The delivery zone (W/R, see arena_cast_r's own CART case): checks EVERY hero, ally or
+           foe, including the Cart itself -- "nobody, including its own controller, gets to
+           request what" is the lore's own framing, not a flaw to design around. First hittable
+           hero found within zone_radius triggers cart_trigger_delivery and the zone deactivates
+           immediately (single-use, matching "shows up, leaves something... " -- not a
+           repeat-damage-tick zone like Gunnr's/Ghost's own). */
+        if (h->r_active_ms > 0) {
+            for (int ci = 0; ci < ARENA_MAX_HEROES; ci++) {
+                ArenaHero *cand = &arena_state.heroes[ci];
+                if (!cand->active || !hero_is_hittable(cand)) continue;
+                float dx = cand->x - h->r_zone_x, dz = cand->z - h->r_zone_z;
+                if (dx * dx + dz * dz > h->zone_radius * h->zone_radius) continue;
+                cart_trigger_delivery(cand);
+                h->r_active_ms = 0;
+                break;
+            }
+        }
+        if (h->r_active_ms > 0) {
+            h->r_active_ms -= (int)dt_ms;
+            if (h->r_active_ms < 0) h->r_active_ms = 0;
+        }
+        break;
     default:
         break;
     }
@@ -5206,6 +5302,19 @@ void bot_cast_kit_if_ready(ArenaHero *bot, ArenaHero *foe) {
         } else if (bot->w_cooldown_ms <= 0 && dist <= ARENA_WARRIOR_W_RANGE) {
             arena_toggle_w(bot->owner);
         } else if (bot->q_cooldown_ms <= 0 && dist <= ARENA_WARRIOR_Q_RANGE) {
+            arena_cast_q(bot->owner);
+        }
+        break;
+    case ARENA_HERO_CART:
+        /* No target/range gate on any of the three -- W/R are self-position zone casts, Q is a
+           self-heal. R checked first (bigger delivery zone, longer cooldown, don't let it sit
+           idle while W keeps firing); Q only when actually below max HP, not spammed for its
+           own sake. */
+        if (bot->r_cooldown_ms <= 0) {
+            arena_cast_r(bot->owner);
+        } else if (bot->w_cooldown_ms <= 0) {
+            arena_toggle_w(bot->owner);
+        } else if (bot->q_cooldown_ms <= 0 && bot->hp < bot->max_hp) {
             arena_cast_q(bot->owner);
         }
         break;

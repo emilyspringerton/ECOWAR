@@ -767,6 +767,35 @@ weapon-skilling the same target too, not just self-chains.
 
 ---
 
+### The Cart (TYLER `multiverse_heroes.md` #10, "The Retrieval Cart") — **Indirect-Control** (`NORTHSTAR.md` §24 Milestone 2, 2026-07-31)
+
+Founder pick from §7's own hero queue — the one entry never built. Real lore constraint, not an
+invented one: `multiverse_heroes.md`'s own 2026-07-23 gameplay note already named the design
+problem precisely — "a requested document turns out to already be waiting on the cart, with no
+requester logged," and "nobody, including its own controller, gets to request what." Asked
+directly (this session, via a clarifying question) whether that should be honored or overridden
+for a directly-commanded WC3-style kit: founder chose to honor it. **This is Indirect-Control**,
+same archetype `NORTHSTAR.md` §16.1 already built for Donkey — not a directly-commanded unit, and
+`NORTHSTAR.md` §24's own "give a hero real directly-controlled units" goal stays open after this.
+
+- **Q — Maintenance**: a small self-heal. The Cart isn't a combatant per its own lore, so this
+  stays deliberately minimal rather than padded out with an invented attack.
+- **W — No Requester in the Ledger**: opens a delivery zone at the Cart's own position (no target
+  needed). Whoever steps into it first — ally, enemy, or the Cart's own controller, no team check
+  — triggers ONE of four real, equally-weighted outcomes: heal 25% max HP, restore 25% max MP,
+  a 30% slow for 3s, or +50 Flow. Not always good, matching the lore directly. Single-use: the
+  zone deactivates the instant it delivers.
+- **R — Already Waiting**: the same mechanic, a bigger zone, on a longer cooldown — matching every
+  other hero's own "R is the bigger version of the kit's theme" convention.
+
+Real, honest interaction found while building this, not hidden: W and R share the same
+zone-position/duration fields every other zone-ability hero already uses (Ghost's Recital,
+Gunnr's Consecration, Vassago's silence zone) — the Cart is the first hero with TWO zone-shaped
+abilities on that shared state, so casting one while the other's zone is still active replaces
+it, last-cast-wins. No existing hero's kit could reach that interaction before the Cart.
+
+---
+
 ## Starting Item Roster (VS0)
 
 LoL Season 3 is the explicit stylistic northstar here — not its item *names*, its item *stat-line

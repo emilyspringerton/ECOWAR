@@ -310,8 +310,19 @@ typedef enum {
                                  it until Milestone 3's real job-select entry point lands; the
                                  job-vs-hero pick-screen distinction is that milestone's problem,
                                  not this one's. */
+    ARENA_HERO_CART = 29, /* TYLER multiverse_heroes.md #10, "The Retrieval Cart" (NORTHSTAR §24
+                              Milestone 2, 2026-07-31). Founder pick from §7's own queue -- the
+                              one entry never built. multiverse_heroes.md's own 2026-07-23
+                              gameplay note names the real design constraint: the Cart's whole
+                              identity is delivering something nobody asked for, on its own
+                              schedule, and "nobody, including its own controller, gets to
+                              request what" -- the opposite of direct unit command. Founder
+                              confirmed (AskUserQuestion, this session): Indirect-Control, true to
+                              lore, same shape §16.1 already built for Donkey -- not a WC3-style
+                              directly-commanded unit. §24's own Milestone 2 goal (a real
+                              directly-controlled-unit hero) stays open after this. */
 } ArenaHeroID;
-#define ARENA_HERO_COUNT 29
+#define ARENA_HERO_COUNT 30
 
 /* The Unicorn — first real hero kit wired in (S170-18). */
 #define ARENA_UNICORN_ARMOR         4    /* passive: Chassis Claim, flat dmg reduction */
@@ -919,6 +930,30 @@ typedef enum {
 #define ARENA_WARRIOR_R_RANGE                2.2f
 #define ARENA_WARRIOR_R_DAMAGE               30    /* Frostbite -- Induration+Reverberation (dual resonance); real FFXI GSword finisher WS */
 #define ARENA_WARRIOR_R_COOLDOWN_MS       20000
+
+/* The Cart (TYLER multiverse_heroes.md #10, NORTHSTAR §24 Milestone 2, 2026-07-31): Q is a
+ * minimal, thematically-consistent self-heal ("the cart provides for its own maintenance") --
+ * the character isn't a combatant per its own lore, so Q stays deliberately small, not padded
+ * out with an invented attack. W/R are the real signature mechanic: a delivery zone at the
+ * Cart's own position (same r_zone_x/z/r_active_ms fields every other zone ability already
+ * shares) that grants ONE random outcome -- good or bad, ally or foe, whoever steps in first --
+ * to whoever triggers it, then vanishes. Reuses this file's own existing zone-tick idiom
+ * (Gunnr's Consecration, Vassago's R) rather than a new struct; R is the same mechanic with a
+ * bigger radius/better-weighted outcomes and a longer cooldown, matching every other hero's own
+ * "R is a bigger version of the kit's theme" convention. */
+#define ARENA_CART_Q_HEAL                    8     /* small self-heal, not a combat ability */
+#define ARENA_CART_Q_COOLDOWN_MS          10000
+#define ARENA_CART_W_RADIUS                  3.0f
+#define ARENA_CART_W_DURATION_MS         15000      /* how long the delivery sits, waiting for someone to trigger it */
+#define ARENA_CART_W_COOLDOWN_MS         25000
+#define ARENA_CART_R_RADIUS                  5.0f
+#define ARENA_CART_R_DURATION_MS         15000
+#define ARENA_CART_R_COOLDOWN_MS         45000
+#define ARENA_CART_DELIVERY_HEAL_PCT         0.25f /* one of 4 equally-weighted random outcomes -- see cart_trigger_delivery */
+#define ARENA_CART_DELIVERY_MANA_PCT         0.25f
+#define ARENA_CART_DELIVERY_SLOW_MS       3000
+#define ARENA_CART_DELIVERY_SLOW_PCT         0.30f
+#define ARENA_CART_DELIVERY_FLOW            50
 
 /* Vassago (S170-93): passive small HP regen, always on, same shape as Dagda's Undry -- ambient
  * restorative foresight, sensing and softening harm before it fully lands. Q a ranged bolt,
@@ -1570,6 +1605,14 @@ typedef struct {
     int r_zone_tick_ms; /* Ghost's Recital: counts up to 1000ms, then ticks one DPS-worth of damage --
                           * a fixed-interval tick rather than fractional-per-tick accumulation, so it
                           * behaves correctly at any real frame rate, not just in a single big test step. */
+    /* zone_radius (NORTHSTAR §24 Milestone 2, 2026-07-31): every zone-ability hero before the
+     * Cart has exactly ONE zone-shaped ability, so its radius was always just a fixed constant
+     * read directly in tick_hero_kit -- no need to store it on the hero. The Cart's W and R are
+     * BOTH zone-shaped and share the same r_zone_x/z/r_active_ms fields above (see arena_cast_r's
+     * own CART case doc comment on why they aren't split into two separate zone slots), so which
+     * radius applies is genuinely ambiguous without this -- set by whichever of W/R most recently
+     * activated the zone, read by tick_hero_kit's own CART case. Unused (0) by every other hero. */
+    float zone_radius;
     /* Cast-time ability state (S170-203, founder: "switch gary w to aimed shot just like wow
      * hunter cast time big damage for now movement interrupts cast damage does not interrupt
      * cast silence does"). Generic across any slot/hero, same "shared field names across kits"
