@@ -26,6 +26,7 @@
 #define PACKET_ARENA_STOP 15 /* client -> arena_server: cancel one of the sending client's own commandable units' current move/attack order in place, NORTHSTAR.md §24 Milestone 2 (2026-07-31) -- see ArenaStopCmd's own doc comment */
 #define PACKET_ARENA_ATTACK_MOVE 16 /* client -> arena_server: real LoL/WC3 "A + click", NORTHSTAR.md §17.4 + §24 Milestone 2 (2026-07-31) -- see ArenaAttackMoveCmd's own doc comment */
 #define PACKET_ARENA_HOLD 17 /* client -> arena_server: real WC3 "Hold Position", NORTHSTAR.md §24 Milestone 2 (2026-07-31) -- see ArenaHoldCmd's own doc comment */
+#define PACKET_ARENA_PATROL 18 /* client -> arena_server: real WC3 "Patrol", NORTHSTAR.md §24 Milestone 2 (2026-07-31) -- see ArenaPatrolCmd's own doc comment */
 
 #define ARENA_PHASE_WAITING 0 /* fewer than 2 real players connected yet */
 #define ARENA_PHASE_DRAFT   1 /* both connected, waiting on hero picks */
@@ -176,6 +177,17 @@ typedef struct {
 typedef struct {
     uint8_t unit_owner;
 } ArenaHoldCmd;
+
+// PACKET_ARENA_PATROL payload (NORTHSTAR.md §24 Milestone 2, 2026-07-31): real WC3 "Patrol" --
+// unit_owner walks back and forth between its own position at the moment of issue and
+// (target_x, target_z) forever, opportunistically engaging anything encountered along the way,
+// until a new command arrives. Same shape and arena_owner_controls authorization as
+// ArenaAttackMoveCmd.
+typedef struct {
+    float target_x;
+    float target_z;
+    uint8_t unit_owner;
+} ArenaPatrolCmd;
 
 // PACKET_ARENA_SHOP_BUY payload (S170-175, NORTHSTAR §19's shop system):
 // which item (index into packages/simulation/arena_game.c's ARENA_ITEMS

@@ -555,6 +555,7 @@ void arena_set_move_target(int owner, float x, float z) {
     mh->attack_target = -1;
     mh->attack_move_active = 0; /* a new command always wins, same convention as attack_target's own clear above -- §24 Milestone 2 */
     mh->hold_position = 0; /* same -- §24 Milestone 2 */
+    mh->patrol_active = 0; /* same -- §24 Milestone 2 */
 }
 
 /* arena_set_attack_target (S170-162): see header declaration's doc
@@ -566,6 +567,7 @@ void arena_set_attack_target(int owner, int target) {
     arena_state.heroes[owner].attack_target = target;
     arena_state.heroes[owner].attack_move_active = 0; /* a new command always wins -- §24 Milestone 2 */
     arena_state.heroes[owner].hold_position = 0; /* same -- §24 Milestone 2 */
+    arena_state.heroes[owner].patrol_active = 0; /* same -- §24 Milestone 2 */
 }
 
 /* arena_stop_unit (NORTHSTAR.md §24 Milestone 2, 2026-07-31): the first of the real WC3 group-
@@ -585,6 +587,7 @@ void arena_stop_unit(int owner) {
     h->attack_target = -1;
     h->attack_move_active = 0; /* a new command always wins -- §24 Milestone 2 */
     h->hold_position = 0; /* same -- §24 Milestone 2 */
+    h->patrol_active = 0; /* same -- §24 Milestone 2 */
 }
 
 /* arena_set_attack_move_target (NORTHSTAR.md §17.4 + §24 Milestone 2, 2026-07-31): real LoL/WC3
@@ -615,6 +618,7 @@ void arena_set_attack_move_target(int owner, float x, float z) {
     mh->attack_move_x = x;
     mh->attack_move_z = z;
     mh->hold_position = 0; /* a new command always wins -- §24 Milestone 2 */
+    mh->patrol_active = 0; /* same -- §24 Milestone 2 */
 }
 
 /* arena_hold_position (§24 Milestone 2, 2026-07-31): real WC3 "Hold Position" -- see
@@ -632,12 +636,69 @@ void arena_hold_position(int owner) {
     h->attack_target = -1;
     h->attack_move_active = 0;
     h->hold_position = 1;
+    h->patrol_active = 0; /* same -- §24 Milestone 2 */
+}
+
+/* arena_set_patrol_target (§24 Milestone 2, 2026-07-31): real WC3 "Patrol" -- point A is the
+ * unit's own position at the moment of issue, point B is (x,z). Starts walking toward B first
+ * (real WC3 behavior: the clicked point is always the first leg), same edge clamping and
+ * windup-cancel as arena_set_move_target/arena_set_attack_move_target above. */
+void arena_set_patrol_target(int owner, float x, float z) {
+    if (owner < 0 || owner >= ARENA_HEROES_ARRAY_SIZE) return;
+    if (x < -ARENA_HALF_EXTENT) x = -ARENA_HALF_EXTENT;
+    if (x > ARENA_HALF_EXTENT) x = ARENA_HALF_EXTENT;
+    if (z < -ARENA_HALF_EXTENT) z = -ARENA_HALF_EXTENT;
+    if (z > ARENA_HALF_EXTENT) z = ARENA_HALF_EXTENT;
+    ArenaHero *mh = &arena_state.heroes[owner];
+    if (mh->attack_windup_ms_remaining > 0) {
+        float wdx = x - mh->x, wdz = z - mh->z;
+        float range = (mh->hero_id == ARENA_HERO_GARY) ? ARENA_GARY_ATTACK_RANGE : ARENA_ATTACK_RANGE;
+        if (wdx * wdx + wdz * wdz > range * range) {
+            mh->attack_windup_ms_remaining = 0;
+        }
+    }
+    mh->patrol_a_x = mh->x;
+    mh->patrol_a_z = mh->z;
+    mh->patrol_b_x = x;
+    mh->patrol_b_z = z;
+    mh->patrol_going_to_b = 1;
+    mh->target_x = x;
+    mh->target_z = z;
+    mh->moving = 1;
+    mh->attack_target = -1;
+    mh->attack_move_active = 0;
+    mh->hold_position = 0;
+    mh->patrol_active = 1;
 }
 
 /* hero_is_hittable is defined further down this file -- forward-declared here so
  * arena_tick_attack_move below can call it, same "not every caller comes after the real
  * definition" idiom this file's own apply_weapon_skill_damage forward declaration already uses. */
 static int hero_is_hittable(const ArenaHero *h);
+
+/* arena_find_opportunistic_target (§24 Milestone 2, 2026-07-31): shared scan used by
+ * arena_tick_attack_move (attack-move and hold) and arena_tick_patrol -- finds the nearest
+ * hittable enemy within hero index i's own attack range, or -1 if none. Factored out once a
+ * third caller (patrol) needed the exact same "who's opportunistically in range right now" logic
+ * rather than a third copy of the loop. */
+static int arena_find_opportunistic_target(int i) {
+    ArenaHero *h = &arena_state.heroes[i];
+    float range = (h->hero_id == ARENA_HERO_GARY) ? ARENA_GARY_ATTACK_RANGE : ARENA_ATTACK_RANGE;
+    int nearest = -1;
+    float nearest_dist_sq = range * range;
+    for (int j = 0; j < ARENA_MAX_HEROES; j++) {
+        if (j == i) continue;
+        ArenaHero *cand = &arena_state.heroes[j];
+        if (!cand->active || !hero_is_hittable(cand) || cand->team == h->team) continue;
+        float dx = cand->x - h->x, dz = cand->z - h->z;
+        float dist_sq = dx * dx + dz * dz;
+        if (dist_sq <= nearest_dist_sq) {
+            nearest = j;
+            nearest_dist_sq = dist_sq;
+        }
+    }
+    return nearest;
+}
 
 /* arena_tick_attack_move (NORTHSTAR.md §17.4 + §24 Milestone 2): for every hero with
  * attack_move_active OR hold_position (extended 2026-07-31 to cover holding too -- a held ranged
@@ -664,20 +725,7 @@ void arena_tick_attack_move(unsigned int dt_ms) {
         if (!h->active || !h->alive || (!h->attack_move_active && !h->hold_position)) continue;
         if (h->attack_target >= 0) continue; /* already engaged -- arena_tick_attack_targets owns this tick for it */
 
-        float range = (h->hero_id == ARENA_HERO_GARY) ? ARENA_GARY_ATTACK_RANGE : ARENA_ATTACK_RANGE;
-        int nearest = -1;
-        float nearest_dist_sq = range * range;
-        for (int j = 0; j < ARENA_MAX_HEROES; j++) {
-            if (j == i) continue;
-            ArenaHero *cand = &arena_state.heroes[j];
-            if (!cand->active || !hero_is_hittable(cand) || cand->team == h->team) continue;
-            float dx = cand->x - h->x, dz = cand->z - h->z;
-            float dist_sq = dx * dx + dz * dz;
-            if (dist_sq <= nearest_dist_sq) {
-                nearest = j;
-                nearest_dist_sq = dist_sq;
-            }
-        }
+        int nearest = arena_find_opportunistic_target(i);
         if (nearest >= 0) {
             h->attack_target = nearest;
             continue;
@@ -690,6 +738,47 @@ void arena_tick_attack_move(unsigned int dt_ms) {
             (h->target_x != h->attack_move_x || h->target_z != h->attack_move_z)) {
             h->target_x = h->attack_move_x;
             h->target_z = h->attack_move_z;
+            h->moving = 1;
+        }
+    }
+}
+
+#define ARENA_PATROL_ARRIVAL_RADIUS 0.5f /* how close counts as "reached this leg's point" before flipping direction */
+
+/* arena_tick_patrol (§24 Milestone 2, 2026-07-31): real WC3 "Patrol," last of the group-order
+ * vocabulary. Walks the unit back and forth between patrol_a_x/z and patrol_b_x/z forever,
+ * flipping patrol_going_to_b once the current leg's destination is reached (within
+ * ARENA_PATROL_ARRIVAL_RADIUS), opportunistically engaging whatever comes within range along the
+ * way via the same arena_find_opportunistic_target scan attack-move/hold already use. Separate
+ * from arena_tick_attack_move rather than folded in -- patrol's own two-point ping-pong and
+ * arrival detection have no equivalent in that function's single-destination model. */
+void arena_tick_patrol(unsigned int dt_ms) {
+    (void)dt_ms;
+    for (int i = 0; i < ARENA_MAX_HEROES; i++) {
+        ArenaHero *h = &arena_state.heroes[i];
+        if (!h->active || !h->alive || !h->patrol_active) continue;
+
+        float leg_x = h->patrol_going_to_b ? h->patrol_b_x : h->patrol_a_x;
+        float leg_z = h->patrol_going_to_b ? h->patrol_b_z : h->patrol_a_z;
+        float ldx = leg_x - h->x, ldz = leg_z - h->z;
+        if (ldx * ldx + ldz * ldz <= ARENA_PATROL_ARRIVAL_RADIUS * ARENA_PATROL_ARRIVAL_RADIUS) {
+            h->patrol_going_to_b = !h->patrol_going_to_b;
+            leg_x = h->patrol_going_to_b ? h->patrol_b_x : h->patrol_a_x;
+            leg_z = h->patrol_going_to_b ? h->patrol_b_z : h->patrol_a_z;
+        }
+
+        if (h->attack_target >= 0) continue; /* already engaged -- arena_tick_attack_targets owns this tick for it */
+
+        int nearest = arena_find_opportunistic_target(i);
+        if (nearest >= 0) {
+            h->attack_target = nearest;
+            continue;
+        }
+        /* Nothing to engage -- resume (or continue) walking toward the current leg, same
+           "a prior chase may have overwritten target_x/z" resume logic attack-move uses. */
+        if (h->target_x != leg_x || h->target_z != leg_z) {
+            h->target_x = leg_x;
+            h->target_z = leg_z;
             h->moving = 1;
         }
     }
@@ -5838,6 +5927,9 @@ void arena_update_teams(unsigned int dt_ms) {
        target-acquisition, run before the chase below so a freshly-acquired target gets chased/
        attacked in this same tick instead of wasting a frame. */
     arena_tick_attack_move(dt_ms);
+    /* Patrol's own arrival/direction-flip + opportunistic engagement -- same "before the chase"
+       ordering as attack-move just above, same reasoning. */
+    arena_tick_patrol(dt_ms);
     /* S170-162: attack-target chase + Gary's homing-shot firing -- see this
        function's own doc comment. Runs after the melee loop above so
        Gary's attack_cooldown_ms (decremented in that same loop) reflects

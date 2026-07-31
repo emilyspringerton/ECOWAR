@@ -3091,6 +3091,75 @@ static void test_hold_position_cleared_by_other_commands(void) {
     CHECK(arena_state.heroes[0].hold_position == 0, "and Stop");
 }
 
+/* Patrol (NORTHSTAR.md §24 Milestone 2, 2026-07-31) -- real WC3 "Patrol," fourth and last of the
+ * group-order vocabulary. */
+
+static void test_patrol_starts_walking_toward_b_first(void) {
+    arena_init_teams();
+    ArenaHero *h = &arena_state.heroes[0];
+    float start_x = h->x, start_z = h->z;
+
+    arena_set_patrol_target(0, 20.0f, 5.0f);
+
+    CHECK(h->patrol_active == 1, "sanity: patrol is armed");
+    CHECK(h->patrol_a_x == start_x && h->patrol_a_z == start_z, "point A is the unit's own position at the moment of issue");
+    CHECK(h->patrol_b_x == 20.0f && h->patrol_b_z == 5.0f, "point B is the clicked point");
+    CHECK(h->patrol_going_to_b == 1, "real WC3 behavior: the clicked point is always the first leg");
+    CHECK(h->moving == 1 && h->target_x == 20.0f && h->target_z == 5.0f, "starts walking toward B like a plain move");
+}
+
+static void test_patrol_flips_direction_on_arrival(void) {
+    arena_init_teams();
+    for (int i = 2; i < ARENA_MAX_HEROES; i++) arena_state.heroes[i].active = 0; /* no enemies, isolate the arrival/flip behavior */
+    ArenaHero *h = &arena_state.heroes[0];
+    arena_set_patrol_target(0, 20.0f, 0.0f);
+    h->x = 20.0f; h->z = 0.0f; /* simulate having arrived at B */
+
+    arena_tick_patrol(100);
+
+    CHECK(h->patrol_going_to_b == 0, "arriving at B flips the leg toward A");
+    CHECK(h->target_x == h->patrol_a_x && h->target_z == h->patrol_a_z, "and starts walking back toward A");
+    CHECK(h->moving == 1, "still actually moving, not left idle");
+}
+
+static void test_patrol_opportunistically_engages_enemy_in_range(void) {
+    arena_init_teams();
+    for (int i = 2; i < ARENA_MAX_HEROES; i++) arena_state.heroes[i].active = 0;
+    arena_state.heroes[ARENA_TEAM_SIZE].active = 1;
+    arena_state.heroes[ARENA_TEAM_SIZE].alive = 1;
+    arena_state.heroes[0].x = 0.0f; arena_state.heroes[0].z = 0.0f;
+    arena_state.heroes[ARENA_TEAM_SIZE].x = 1.0f; arena_state.heroes[ARENA_TEAM_SIZE].z = 0.0f; /* within range */
+
+    arena_set_patrol_target(0, 50.0f, 0.0f); /* destination is far past the enemy */
+    arena_tick_patrol(100);
+
+    CHECK(arena_state.heroes[0].attack_target == ARENA_TEAM_SIZE,
+          "patrol opportunistically engages an enemy encountered along the route, same as attack-move");
+}
+
+static void test_patrol_cleared_by_other_commands(void) {
+    arena_init_teams();
+    arena_set_patrol_target(0, 20.0f, 0.0f);
+    arena_set_move_target(0, 5.0f, 5.0f);
+    CHECK(arena_state.heroes[0].patrol_active == 0, "a fresh move command clears patrol");
+
+    arena_set_patrol_target(0, 20.0f, 0.0f);
+    arena_set_attack_target(0, 10);
+    CHECK(arena_state.heroes[0].patrol_active == 0, "a fresh attack-target command clears it too");
+
+    arena_set_patrol_target(0, 20.0f, 0.0f);
+    arena_set_attack_move_target(0, 15.0f, 0.0f);
+    CHECK(arena_state.heroes[0].patrol_active == 0, "and attack-move");
+
+    arena_set_patrol_target(0, 20.0f, 0.0f);
+    arena_hold_position(0);
+    CHECK(arena_state.heroes[0].patrol_active == 0, "and Hold Position");
+
+    arena_set_patrol_target(0, 20.0f, 0.0f);
+    arena_stop_unit(0);
+    CHECK(arena_state.heroes[0].patrol_active == 0, "and Stop");
+}
+
 static void test_attack_target_clears_on_fresh_move_command(void) {
     arena_init_teams();
     arena_set_attack_target(0, 10);
@@ -6406,6 +6475,10 @@ int main(void) {
     test_hold_position_does_not_chase_target_leaving_range();
     test_hold_position_opportunistically_engages_enemy_in_range();
     test_hold_position_cleared_by_other_commands();
+    test_patrol_starts_walking_toward_b_first();
+    test_patrol_flips_direction_on_arrival();
+    test_patrol_opportunistically_engages_enemy_in_range();
+    test_patrol_cleared_by_other_commands();
     test_attack_target_clears_on_fresh_move_command();
     test_attack_target_chases_out_of_range_enemy();
     test_attack_target_re_chases_a_fleeing_target();

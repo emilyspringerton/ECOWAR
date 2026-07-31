@@ -2,6 +2,22 @@
 
 ## 2026-07-31
 
+- feat(arena): Patrol command -- fourth and last slice of §24 Milestone 2's WC3 group-order
+  vocabulary, which is now **fully shipped** (Stop/Attack-move/Hold Position/Patrol, all built
+  today). Real `P` keybind (free, matches real WC3 exactly), held-then-click same as attack-move
+  (checked before attack-move if both happen to be held). New `PACKET_ARENA_PATROL`/
+  `ArenaPatrolCmd` wire packet, `arena_set_patrol_target(owner, x, z)` sets point A to the unit's
+  own position at the moment of issue and point B to the clicked point, always starting toward B
+  first (real WC3 behavior). `arena_tick_patrol` walks the unit back and forth forever, flipping
+  direction on arrival (`ARENA_PATROL_ARRIVAL_RADIUS`), opportunistically engaging anything
+  encountered along the way via a newly-factored-out `arena_find_opportunistic_target` helper
+  (previously duplicated inline in `arena_tick_attack_move` -- patrol needing the exact same scan
+  a third time was the point where extracting it stopped being premature). Cleared by any other
+  move/attack/attack-move/hold/stop command, same "a new command always wins" convention every
+  other group order already follows. 4 new tests (13 total across all four Milestone 2 commands
+  shipped today). `scripts/build.sh` clean, full `scripts/test_arena.sh` suite green,
+  `scripts/test_10_bots.sh` stable.
+
 - feat(arena): Hold Position command -- third slice of §24 Milestone 2's WC3 group-order
   vocabulary (only patrol left). Real `D` keybind (`H`, WC3/StarCraft's own real convention, was
   already taken by this file's ability-help toggle -- "Defend" is the exact synonym several other

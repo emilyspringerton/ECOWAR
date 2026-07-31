@@ -1848,6 +1848,19 @@ typedef struct {
      * (Gary so far) only ever fire through attack_target, which is why the scan extension above
      * is needed for holding to mean anything for them at all. */
     int hold_position;
+    /* patrol_active/patrol_a_x/z/patrol_b_x/z/patrol_going_to_b (§24 Milestone 2, real WC3
+     * "Patrol," 2026-07-31): fourth and last of the group-order vocabulary. Point A is the
+     * unit's own position at the moment patrol was issued, point B is the clicked point --
+     * arena_tick_patrol walks the unit back and forth between them forever (patrol_going_to_b
+     * flips once the current leg's destination is reached), opportunistically engaging whatever
+     * comes within range along the way (same shared scan arena_tick_attack_move/hold already
+     * use), same real WC3 "patrol a route, fight anything you run into" behavior. Cleared by any
+     * other move/attack/attack-move/hold/stop command, same "a new command always wins"
+     * convention every other group order already follows. */
+    int patrol_active;
+    float patrol_a_x, patrol_a_z;
+    float patrol_b_x, patrol_b_z;
+    int patrol_going_to_b;
     /* flow/xp (S170-175, founder: "we need a character display pane that
      * shows current stats" / "tracking xp and flow" / "we call gold
      * flow"): the two per-hero progression resources NORTHSTAR §19 spec'd
@@ -2150,6 +2163,12 @@ void arena_tick_attack_move(unsigned int dt_ms);
 /* arena_hold_position (§24 Milestone 2, 2026-07-31): see the .c definition's own doc comment and
  * ArenaHero's own hold_position field comment. Real WC3 "Hold Position." */
 void arena_hold_position(int owner);
+
+/* arena_set_patrol_target / arena_tick_patrol (§24 Milestone 2, 2026-07-31): see the .c
+ * definitions' own doc comments and ArenaHero's own patrol_active/a/b field comment. Real WC3
+ * "Patrol," last of the group-order vocabulary. */
+void arena_set_patrol_target(int owner, float x, float z);
+void arena_tick_patrol(unsigned int dt_ms);
 
 /* arena_owner_controls (2026-07-30, Tyler "Divided We Stand" rework): see the .c definition's own
  * doc comment for the full design. True if `sender_owner` may issue a move/attack command for
