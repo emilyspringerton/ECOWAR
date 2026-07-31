@@ -463,6 +463,18 @@ static void net_send_attack_move(int unit_owner, float x, float z) {
     sendto(net_sock, buf, sizeof(buf), 0, (struct sockaddr *)&net_server_addr, sizeof(net_server_addr));
 }
 
+/* net_send_hold (NORTHSTAR.md §24 Milestone 2, 2026-07-31): PACKET_ARENA_HOLD's client-side
+ * sender -- same shape as net_send_stop. */
+static void net_send_hold(int unit_owner) {
+    char buf[sizeof(NetHeader) + sizeof(ArenaHoldCmd)];
+    NetHeader *h = (NetHeader *)buf;
+    memset(h, 0, sizeof(NetHeader));
+    h->type = PACKET_ARENA_HOLD;
+    ArenaHoldCmd *cmd = (ArenaHoldCmd *)(buf + sizeof(NetHeader));
+    cmd->unit_owner = (uint8_t)unit_owner;
+    sendto(net_sock, buf, sizeof(buf), 0, (struct sockaddr *)&net_server_addr, sizeof(net_server_addr));
+}
+
 /* PACKET_ARENA_SHOP_BUY/SELL's client-side senders (S170-175). Same shape
  * as net_send_attack -- server infers "which hero" from the sending
  * client's own slot, all real validation (proximity, Flow balance) happens
@@ -2763,6 +2775,21 @@ int main(int argc, char *argv[]) {
                     for (int k = 0; k < commander_count; k++) {
                         if (net_mode) net_send_stop(commanders[k]);
                         else arena_stop_unit(commanders[k]);
+                    }
+                    apm_record_action(now);
+                }
+                /* Hold Position (NORTHSTAR.md §24 Milestone 2, 2026-07-31) -- third of the real
+                   WC3 group-order vocabulary. Real WC3/StarCraft convention is "H", already
+                   bound to the ability-help toggle in this file (SDLK_h above) -- "D" (Defend,
+                   the exact synonym several other RTS UIs use for this same order) is free and
+                   thematically close enough not to need inventing a new mnemonic. Same
+                   selected_or_self() group application as Stop just above. */
+                if (e.key.keysym.sym == SDLK_d) {
+                    int commanders[ARENA_MAX_SELECTED_UNITS];
+                    int commander_count = selected_or_self(commanders);
+                    for (int k = 0; k < commander_count; k++) {
+                        if (net_mode) net_send_hold(commanders[k]);
+                        else arena_hold_position(commanders[k]);
                     }
                     apm_record_action(now);
                 }

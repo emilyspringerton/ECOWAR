@@ -3019,6 +3019,78 @@ static void test_attack_move_cleared_by_attack_target_and_stop(void) {
     CHECK(arena_state.heroes[0].attack_move_active == 0, "and so does Stop");
 }
 
+/* Hold Position (NORTHSTAR.md §24 Milestone 2, 2026-07-31) -- real WC3 "Hold Position," third of
+ * the group-order vocabulary. */
+
+static void test_hold_position_halts_movement_in_place(void) {
+    arena_init_teams();
+    ArenaHero *h = &arena_state.heroes[0];
+    float start_x = h->x, start_z = h->z;
+    arena_set_move_target(0, h->x + 20.0f, h->z);
+    CHECK(h->moving == 1, "sanity: the move command is in effect");
+
+    arena_hold_position(0);
+
+    CHECK(h->moving == 0, "Hold Position halts movement");
+    CHECK(h->target_x == start_x && h->target_z == start_z, "target is set back to the unit's own current position, same convention as Stop");
+    CHECK(h->hold_position == 1, "sanity: the flag itself is set");
+}
+
+static void test_hold_position_does_not_chase_target_leaving_range(void) {
+    arena_init_teams();
+    for (int i = 2; i < ARENA_MAX_HEROES; i++) arena_state.heroes[i].active = 0;
+    arena_state.heroes[ARENA_TEAM_SIZE].active = 1;
+    arena_state.heroes[ARENA_TEAM_SIZE].alive = 1;
+    arena_state.heroes[0].x = 0.0f; arena_state.heroes[0].z = 0.0f;
+    arena_state.heroes[ARENA_TEAM_SIZE].x = 1.0f; arena_state.heroes[ARENA_TEAM_SIZE].z = 0.0f; /* within range */
+
+    arena_hold_position(0);
+    arena_state.heroes[0].attack_target = ARENA_TEAM_SIZE; /* simulate already being engaged */
+    arena_state.heroes[ARENA_TEAM_SIZE].x = 20.0f; /* the foe retreats well out of range */
+
+    arena_tick_attack_targets(100);
+
+    CHECK(arena_state.heroes[0].moving == 0, "a held unit does not chase a target that leaves range");
+    CHECK(arena_state.heroes[0].attack_target == -1, "the lock drops instead of persisting on a foe that's left -- lets a closer new target be re-acquired next tick");
+}
+
+static void test_hold_position_opportunistically_engages_enemy_in_range(void) {
+    /* Real value of Hold Position: a stationary unit still defends itself, unlike a plain
+       stopped/idle one -- this is what actually makes ranged heroes (whose basic attacks only
+       ever fire through attack_target, unlike melee's always-on flat proximity loop) able to
+       fight back at all while holding. */
+    arena_init_teams();
+    for (int i = 2; i < ARENA_MAX_HEROES; i++) arena_state.heroes[i].active = 0;
+    arena_state.heroes[ARENA_TEAM_SIZE].active = 1;
+    arena_state.heroes[ARENA_TEAM_SIZE].alive = 1;
+    arena_state.heroes[0].x = 0.0f; arena_state.heroes[0].z = 0.0f;
+    arena_state.heroes[ARENA_TEAM_SIZE].x = 1.0f; arena_state.heroes[ARENA_TEAM_SIZE].z = 0.0f; /* within range */
+
+    arena_hold_position(0);
+    arena_tick_attack_move(100);
+
+    CHECK(arena_state.heroes[0].attack_target == ARENA_TEAM_SIZE, "a held unit opportunistically engages an enemy that comes within its own range");
+}
+
+static void test_hold_position_cleared_by_other_commands(void) {
+    arena_init_teams();
+    arena_hold_position(0);
+    arena_set_move_target(0, 5.0f, 5.0f);
+    CHECK(arena_state.heroes[0].hold_position == 0, "a fresh move command clears Hold Position");
+
+    arena_hold_position(0);
+    arena_set_attack_target(0, 10);
+    CHECK(arena_state.heroes[0].hold_position == 0, "a fresh attack-target command clears it too");
+
+    arena_hold_position(0);
+    arena_set_attack_move_target(0, 15.0f, 0.0f);
+    CHECK(arena_state.heroes[0].hold_position == 0, "and so does attack-move");
+
+    arena_hold_position(0);
+    arena_stop_unit(0);
+    CHECK(arena_state.heroes[0].hold_position == 0, "and Stop");
+}
+
 static void test_attack_target_clears_on_fresh_move_command(void) {
     arena_init_teams();
     arena_set_attack_target(0, 10);
@@ -6330,6 +6402,10 @@ int main(void) {
     test_attack_move_resumes_destination_once_nothing_left_to_engage();
     test_attack_move_cleared_by_plain_move_command();
     test_attack_move_cleared_by_attack_target_and_stop();
+    test_hold_position_halts_movement_in_place();
+    test_hold_position_does_not_chase_target_leaving_range();
+    test_hold_position_opportunistically_engages_enemy_in_range();
+    test_hold_position_cleared_by_other_commands();
     test_attack_target_clears_on_fresh_move_command();
     test_attack_target_chases_out_of_range_enemy();
     test_attack_target_re_chases_a_fleeing_target();

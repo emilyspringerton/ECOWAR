@@ -554,6 +554,7 @@ void arena_set_move_target(int owner, float x, float z) {
        behavior exactly. */
     mh->attack_target = -1;
     mh->attack_move_active = 0; /* a new command always wins, same convention as attack_target's own clear above -- §24 Milestone 2 */
+    mh->hold_position = 0; /* same -- §24 Milestone 2 */
 }
 
 /* arena_set_attack_target (S170-162): see header declaration's doc
@@ -564,6 +565,7 @@ void arena_set_attack_target(int owner, int target) {
     if (owner < 0 || owner >= ARENA_HEROES_ARRAY_SIZE) return;
     arena_state.heroes[owner].attack_target = target;
     arena_state.heroes[owner].attack_move_active = 0; /* a new command always wins -- §24 Milestone 2 */
+    arena_state.heroes[owner].hold_position = 0; /* same -- §24 Milestone 2 */
 }
 
 /* arena_stop_unit (NORTHSTAR.md §24 Milestone 2, 2026-07-31): the first of the real WC3 group-
@@ -582,6 +584,7 @@ void arena_stop_unit(int owner) {
     h->moving = 0;
     h->attack_target = -1;
     h->attack_move_active = 0; /* a new command always wins -- §24 Milestone 2 */
+    h->hold_position = 0; /* same -- §24 Milestone 2 */
 }
 
 /* arena_set_attack_move_target (NORTHSTAR.md §17.4 + §24 Milestone 2, 2026-07-31): real LoL/WC3
@@ -611,6 +614,24 @@ void arena_set_attack_move_target(int owner, float x, float z) {
     mh->attack_move_active = 1;
     mh->attack_move_x = x;
     mh->attack_move_z = z;
+    mh->hold_position = 0; /* a new command always wins -- §24 Milestone 2 */
+}
+
+/* arena_hold_position (§24 Milestone 2, 2026-07-31): real WC3 "Hold Position" -- see
+ * ArenaHero's own hold_position field comment for the full design (why this doesn't chase, why
+ * arena_tick_attack_move's scan is extended to cover held units too, why melee "just works" but
+ * ranged heroes need that scan). Same shape as arena_stop_unit (halts in place, fresh order
+ * clears the old attack-target lock) except attack_move_active/hold_position end up swapped
+ * from Stop's own all-zero result. */
+void arena_hold_position(int owner) {
+    if (owner < 0 || owner >= ARENA_HEROES_ARRAY_SIZE) return;
+    ArenaHero *h = &arena_state.heroes[owner];
+    h->target_x = h->x;
+    h->target_z = h->z;
+    h->moving = 0;
+    h->attack_target = -1;
+    h->attack_move_active = 0;
+    h->hold_position = 1;
 }
 
 /* hero_is_hittable is defined further down this file -- forward-declared here so
@@ -619,24 +640,28 @@ void arena_set_attack_move_target(int owner, float x, float z) {
 static int hero_is_hittable(const ArenaHero *h);
 
 /* arena_tick_attack_move (NORTHSTAR.md §17.4 + §24 Milestone 2): for every hero with
- * attack_move_active and no current attack_target, scans for the nearest hittable enemy within
- * this hero's own attack range and opportunistically locks onto it (arena_tick_attack_targets,
- * called separately, does the actual chase/combat once attack_target is set -- this function only
+ * attack_move_active OR hold_position (extended 2026-07-31 to cover holding too -- a held ranged
+ * hero otherwise never fires at all, since ranged basic attacks only ever go through
+ * attack_target, unlike melee's own always-on flat proximity loop, see hold_position's own field
+ * comment) and no current attack_target, scans for the nearest hittable enemy within this hero's
+ * own attack range and opportunistically locks onto it (arena_tick_attack_targets, called
+ * separately, does the actual chase/combat once attack_target is set -- this function only
  * decides WHETHER and WHAT to engage, real "the whole point of attack-move is it re-targets
- * automatically" behavior, §17.1). If nothing's in range and the hero has drifted off its own
- * attack_move_x/z (a previous chase's pure-pursuit overwrote target_x/z, per
- * arena_tick_attack_targets' own "the attack command wins while it's active" precedent), resumes
- * walking toward the original attack-move destination instead of standing idle where the chase
- * left off. Deliberately separate from arena_tick_attack_targets rather than folded into it --
- * that function's whole job is "chase and land hits once a target is locked," this one's is
- * "decide whether a target should be locked at all," different responsibilities even though both
+ * automatically" behavior, §17.1). For attack-move specifically, if nothing's in range and the
+ * hero has drifted off its own attack_move_x/z (a previous chase's pure-pursuit overwrote
+ * target_x/z, per arena_tick_attack_targets' own "the attack command wins while it's active"
+ * precedent), resumes walking toward the original destination instead of standing idle where the
+ * chase left off -- held units have no destination to resume, so this half is skipped for them.
+ * Deliberately separate from arena_tick_attack_targets rather than folded into it -- that
+ * function's whole job is "chase and land hits once a target is locked," this one's is "decide
+ * whether a target should be locked at all," different responsibilities even though both
  * read/write attack_target. */
 void arena_tick_attack_move(unsigned int dt_ms) {
     (void)dt_ms; /* no per-tick timer needed -- see doc comment; kept for signature symmetry with
                     every other arena_tick_* function in this file. */
     for (int i = 0; i < ARENA_MAX_HEROES; i++) {
         ArenaHero *h = &arena_state.heroes[i];
-        if (!h->active || !h->alive || !h->attack_move_active) continue;
+        if (!h->active || !h->alive || (!h->attack_move_active && !h->hold_position)) continue;
         if (h->attack_target >= 0) continue; /* already engaged -- arena_tick_attack_targets owns this tick for it */
 
         float range = (h->hero_id == ARENA_HERO_GARY) ? ARENA_GARY_ATTACK_RANGE : ARENA_ATTACK_RANGE;
@@ -658,8 +683,11 @@ void arena_tick_attack_move(unsigned int dt_ms) {
             continue;
         }
         /* Nothing to engage -- if a prior chase overwrote target_x/z, resume the original
-           attack-move destination instead of standing wherever the chase left off. */
-        if (h->target_x != h->attack_move_x || h->target_z != h->attack_move_z) {
+           attack-move destination instead of standing wherever the chase left off. Held units
+           have no destination to resume (they're not going anywhere by design), so this only
+           applies to attack-move. */
+        if (h->attack_move_active &&
+            (h->target_x != h->attack_move_x || h->target_z != h->attack_move_z)) {
             h->target_x = h->attack_move_x;
             h->target_z = h->attack_move_z;
             h->moving = 1;
@@ -1836,6 +1864,14 @@ void arena_tick_attack_targets(unsigned int dt_ms) {
         float dist = sqrtf(dx * dx + dz * dz);
 
         if (dist > range) {
+            /* Held units never chase (real WC3 "Hold Position," §24 Milestone 2, 2026-07-31) --
+               drop the lock instead of pursuing, so arena_tick_attack_move's own scan picks up
+               whoever's actually in range next tick (possibly the same foe wandering back,
+               possibly someone else) rather than staying stuck on a target that's left. */
+            if (h->hold_position) {
+                h->attack_target = -1;
+                continue;
+            }
             /* Pure pursuit -- chase the target's LIVE position every tick,
                not a stored waypoint, so a target that keeps moving is
                chased continuously rather than toward a single stale point.

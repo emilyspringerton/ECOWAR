@@ -2,6 +2,22 @@
 
 ## 2026-07-31
 
+- feat(arena): Hold Position command -- third slice of §24 Milestone 2's WC3 group-order
+  vocabulary (only patrol left). Real `D` keybind (`H`, WC3/StarCraft's own real convention, was
+  already taken by this file's ability-help toggle -- "Defend" is the exact synonym several other
+  RTS UIs already use for the same order). New `PACKET_ARENA_HOLD`/`ArenaHoldCmd` wire packet,
+  server-side `arena_hold_position(owner)` halts in place same as Stop. The real behavioral
+  difference from Stop: a held unit never chases a target that leaves range
+  (`arena_tick_attack_targets` now drops the lock instead of pure-pursuing when `hold_position`
+  is set) but still opportunistically defends itself against whoever wanders into range
+  (`arena_tick_attack_move`'s own opportunistic-engage scan, extended to run for held units too,
+  not just attack-move ones) -- the extension matters specifically for ranged heroes (Gary so
+  far), whose basic attacks only ever fire through `attack_target`, unlike melee's always-on flat
+  proximity loop which "just works" for a stationary unit with zero extra code. Cleared by any
+  other move/attack/attack-move/stop command, same "a new command always wins" convention every
+  other group order already follows. 4 new tests. `scripts/build.sh` clean, full
+  `scripts/test_arena.sh` suite green, `scripts/test_10_bots.sh` stable.
+
 - feat(arena): Attack-move command -- closes two open items at once: NORTHSTAR.md §17.4's own
   long-unchecked "Attack-move command (LoL's 'A' + click)" and the second real slice of §24
   Milestone 2's WC3 group-order vocabulary. Real LoL/WC3 "hold A, then click ground": moves

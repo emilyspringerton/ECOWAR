@@ -1837,6 +1837,17 @@ typedef struct {
      * already enforces on attack_target. */
     int attack_move_active;
     float attack_move_x, attack_move_z;
+    /* hold_position (§24 Milestone 2, real WC3 "Hold Position," 2026-07-31): third of the group-
+     * order vocabulary. A held unit never moves to chase (arena_tick_attack_targets' own chase
+     * branch skips movement and drops the lock instead when a held unit's target leaves range --
+     * "defend this spot," not "give up entirely," since arena_tick_attack_move's own scan (also
+     * extended to run for held units, not just attack-move ones) re-acquires whoever's actually
+     * in range next tick, possibly the same target wandering back or a new one). Melee heroes'
+     * real damage already comes from the always-on flat proximity loop regardless of any lock
+     * (§17.3), so holding "just works" for them the moment they stop moving; ranged heroes
+     * (Gary so far) only ever fire through attack_target, which is why the scan extension above
+     * is needed for holding to mean anything for them at all. */
+    int hold_position;
     /* flow/xp (S170-175, founder: "we need a character display pane that
      * shows current stats" / "tracking xp and flow" / "we call gold
      * flow"): the two per-hero progression resources NORTHSTAR §19 spec'd
@@ -2135,6 +2146,10 @@ void arena_stop_unit(int owner);
  * attack_move_active/x/z field comment. Real LoL/WC3 "A + click." */
 void arena_set_attack_move_target(int owner, float x, float z);
 void arena_tick_attack_move(unsigned int dt_ms);
+
+/* arena_hold_position (§24 Milestone 2, 2026-07-31): see the .c definition's own doc comment and
+ * ArenaHero's own hold_position field comment. Real WC3 "Hold Position." */
+void arena_hold_position(int owner);
 
 /* arena_owner_controls (2026-07-30, Tyler "Divided We Stand" rework): see the .c definition's own
  * doc comment for the full design. True if `sender_owner` may issue a move/attack command for

@@ -818,6 +818,14 @@ static void server_handle_packet(struct sockaddr_in *sender, char *buffer, int s
         if (arena_owner_controls(client_id, cmd->unit_owner)) {
             arena_set_attack_move_target(cmd->unit_owner, cmd->target_x, cmd->target_z);
         }
+    } else if (head->type == PACKET_ARENA_HOLD) {
+        if (size < (int)(sizeof(NetHeader) + sizeof(ArenaHoldCmd))) return;
+        ArenaHoldCmd *cmd = (ArenaHoldCmd *)(buffer + sizeof(NetHeader));
+        /* Same commander/unit_owner authorization as every other group-order packet above --
+           NORTHSTAR.md §24 Milestone 2. */
+        if (arena_owner_controls(client_id, cmd->unit_owner)) {
+            arena_hold_position(cmd->unit_owner);
+        }
     } else if (head->type == PACKET_ARENA_SHOP_BUY) {
         if (size < (int)(sizeof(NetHeader) + sizeof(ArenaShopBuyCmd))) return;
         ArenaShopBuyCmd *cmd = (ArenaShopBuyCmd *)(buffer + sizeof(NetHeader));
