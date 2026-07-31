@@ -2550,10 +2550,33 @@ generalizing Tyler's own already-tested mechanism, not building a second, parall
 | # | Milestone | What it actually requires | Status |
 |---|---|---|---|
 | 0 | This northstar | Written, current shape + real gap named, registered | DONE |
-| 1 | Generalize `is_clone`/`clone_owner`/`selected_units` off Tyler-only | Rename/refactor pass: any hero's kit can mark a spawned entity `is_clone`/`clone_owner`-shaped (a real "commandable sub-unit" concept, not Tyler-specific); `ARENA_MAX_SELECTED_UNITS` stops being sized to Tyler's own clone count specifically. No new gameplay yet — proves the existing drag-select/group-move UX Tyler already uses works for a second hero's units too. | NOT STARTED |
-| 2 | First non-Tyler hero with real controllable units | A real kit that spawns 2-3 units under the Milestone-1 generalized mechanism, TYLER-lore-sourced per this roster's own content pipeline (`HERO_CONTENT_FRAMEWORK.md`) — not a reused DragonsNShit SMN avatar; that crossover already has its own real, separate home (this session's DragonsNShit work, §-adjacent but not this roster). | NOT STARTED |
+| 1 | Generalize `is_clone`/`clone_owner`/`selected_units` off Tyler-only | See §24.3.1 CORRECTION — closer to already-done than this row originally claimed | **DONE (found, not built)** 2026-07-31 |
+| 2 | First non-Tyler hero with real controllable units | A real kit that spawns 2-3 units under the already-generic mechanism, TYLER-lore-sourced per §7's own hero queue / `TYLER/multiverse_heroes.md` directly — not `HERO_CONTENT_FRAMEWORK.md` (that's GoblinFoxDragon's own separate DragonsNShit lore-hero pipeline, wrongly cited in this row's first draft, see §24.3.1) — and not a reused DragonsNShit SMN avatar either; that crossover already has its own real, separate home (this session's DragonsNShit work). | NOT STARTED — needs a real hero pick, a founder call, not made here |
 | 3 | Real group-order vocabulary | Attack-move, hold, patrol, stop for a drag-selected group — the actual WC3 command surface §24.2 names as currently missing, not just group-move. | NOT STARTED |
 | 4 | (Separate, bigger, explicitly not decided here) Unit production/resource loop | Spending Flow to field units over time rather than a fixed cast-bound count — a real pivot toward WC3's own RTS-economy half, named as a distinct, much larger decision surfaced for the founder, not assumed. | OPEN QUESTION |
+
+#### 24.3.1 CORRECTION (2026-07-31, same day, found while starting Milestone 1)
+
+Milestone 1 as originally written assumed the drag-select/ownership mechanism was Tyler-coupled
+at the code level and needed a rename/refactor pass to generalize. Checked directly instead of
+assumed: it isn't. Every real gate in both `arena_game.c` (`arena_owner_controls`,
+`tyler_clone_cascade_kill`, the hittable/targeting checks) and the client
+(`apps/arena/src/main.c`'s drag-select, selection-ownership, and rendering code) already branches
+on `is_clone`/`clone_owner` alone — there is no `if (hero_id == ARENA_HERO_TYLER)` gate anywhere
+in that path. The mechanism was additive and hero-agnostic from the moment it shipped; only the
+*trigger* (`tyler_spawn_clones`, called exclusively from Tyler's own R) and one sizing constant
+(`ARENA_MAX_SELECTED_UNITS`, currently `1 + ARENA_TYLER_R_CLONE_COUNT`) are Tyler-specific, and
+both of those depend on a second hero's *real* kit numbers to generalize correctly — which don't
+exist without picking that hero first. Generalizing them now, ungrounded, would mean inventing
+numbers with no real kit behind them, the exact thing this file's own discipline exists to avoid
+(§23's "spec the model, not the numbers," applied here to a constant instead of an item stat).
+**Net effect: Milestone 1 collapses into Milestone 2** — there is no standalone infrastructure
+work left to do before a real second hero is picked; the moment one is, sizing
+`ARENA_MAX_SELECTED_UNITS` and writing that hero's own `_spawn_units`-shaped function is normal
+kit-building work, not a separate generalization pass. Also corrects this section's own
+mis-citation of `HERO_CONTENT_FRAMEWORK.md` as this roster's content pipeline — that file is
+GoblinFoxDragon's, for DragonsNShit's separate multiverse-lore-hero system; this roster's real
+pipeline is §7's own table, sourced from `TYLER/multiverse_heroes.md` directly.
 
 ### 24.4 What this section deliberately does not decide
 
@@ -2561,7 +2584,8 @@ generalizing Tyler's own already-tested mechanism, not building a second, parall
   a product-direction call bigger than this doc, named not resolved, same treatment §23.1's IP
   question got.
 - **Which hero gets Milestone 2's real kit** — a content decision for the existing hero queue
-  (`HERO_CONTENT_FRAMEWORK.md`), not picked here.
+  (§7, `TYLER/multiverse_heroes.md`), not picked here — same "founder's own S-tier pick" pattern
+  every entry in that queue's table already follows.
 - **Numbers** (unit counts, costs, cooldowns) for any of it — same "spec the model, not the
   numbers" discipline every other spec-only section in this file already applies.
 

@@ -2,6 +2,17 @@
 
 ## 2026-07-31
 
+- docs(northstar): §24.3.1 CORRECTION -- started Milestone 1 (generalize the clone mechanism off
+  Tyler-only) and found, by checking every real gate directly rather than assuming, that it's
+  already generic: `arena_owner_controls`, `tyler_clone_cascade_kill`, the hittable/targeting
+  checks, and every client-side drag-select/rendering path all branch on `is_clone`/`clone_owner`
+  alone, never `hero_id == ARENA_HERO_TYLER`. Only the spawn trigger and one sizing constant are
+  Tyler-specific, and both need a real second hero's real kit numbers to generalize correctly --
+  so Milestone 1 collapses into Milestone 2, no standalone work left. Also fixed a real citation
+  error in the original §24 draft: this roster's hero content pipeline is §7 / `TYLER/
+  multiverse_heroes.md`, not `HERO_CONTENT_FRAMEWORK.md` (that's GoblinFoxDragon's own, for
+  DragonsNShit's separate lore-hero system).
+
 - docs(northstar): §24 "Full unit control affordances — Warcraft 3 northstar" -- founder,
   real-time: "redgarden full unit control affordances northstar warcraft 3." Spec only, no code.
   Names the real current shape (every hero owner-piloted, lane creeps autonomous-AI-only, zero
