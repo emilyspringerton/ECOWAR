@@ -2495,7 +2495,7 @@ categories with honest prerequisites named per category, and put the already-mad
 names" choice on the record rather than let it stay an implicit, unexamined precedent -- is done.
 No code changes accompany this section; implementation is separate, future work.
 
-## 24. Full unit control affordances — Warcraft 3 northstar (2026-07-31) -- spec only, no code yet
+## 24. Full unit control affordances — Warcraft 3 northstar (2026-07-31) -- spec + The Cart (Indirect-Control, real code) shipped; Milestone 2 (real unit control for Tyler) not started
 
 Founder, real-time: "redgarden full unit control affordances northstar warcraft 3." Same
 discipline §20/§22/§23 already applied: name the current shape and its real gap before proposing
@@ -2551,9 +2551,9 @@ generalizing Tyler's own already-tested mechanism, not building a second, parall
 |---|---|---|---|
 | 0 | This northstar | Written, current shape + real gap named, registered | DONE |
 | 1 | Generalize `is_clone`/`clone_owner`/`selected_units` off Tyler-only | See §24.3.1 CORRECTION — closer to already-done than this row originally claimed | **DONE (found, not built)** 2026-07-31 |
-| 2 | First non-Tyler hero with real controllable units | A real kit that spawns 2-3 units under the already-generic mechanism, TYLER-lore-sourced per §7's own hero queue / `TYLER/multiverse_heroes.md` directly — not `HERO_CONTENT_FRAMEWORK.md` (that's GoblinFoxDragon's own separate DragonsNShit lore-hero pipeline, wrongly cited in this row's first draft, see §24.3.1) — and not a reused DragonsNShit SMN avatar either; that crossover already has its own real, separate home (this session's DragonsNShit work). | NOT STARTED — needs a real hero pick, a founder call, not made here |
-| 3 | Real group-order vocabulary | Attack-move, hold, patrol, stop for a drag-selected group — the actual WC3 command surface §24.2 names as currently missing, not just group-move. | NOT STARTED |
-| 4 | (Separate, bigger, explicitly not decided here) Unit production/resource loop | Spending Flow to field units over time rather than a fixed cast-bound count — a real pivot toward WC3's own RTS-economy half, named as a distinct, much larger decision surfaced for the founder, not assumed. | OPEN QUESTION |
+| 2 | Real group-order vocabulary for Tyler's own clones | Attack-move, hold, patrol, stop for Tyler's drag-selected clone group — the actual WC3 command surface §24.2 names as currently missing, not just group-move. Corrected 2026-07-31 (§24.3.2, founder: "the unit controls are supposed to be for tyler") from this row's original framing ("a second hero gets real units") — full unit control deepens Tyler's own mechanic, doesn't spread to a new hero. | NOT STARTED |
+| — | ~~First non-Tyler hero with real controllable units~~ | Superseded by §24.3.2's correction — not this section's real goal. The Cart (built same session) is separate, real, lore-faithful Indirect-Control content, not this milestone. | SUPERSEDED |
+| 3 | (Separate, bigger, explicitly not decided here) Unit production/resource loop | Spending Flow to field units over time rather than a fixed cast-bound count — a real pivot toward WC3's own RTS-economy half, named as a distinct, much larger decision surfaced for the founder, not assumed. | OPEN QUESTION |
 
 #### 24.3.1 CORRECTION (2026-07-31, same day, found while starting Milestone 1)
 
@@ -2578,14 +2578,26 @@ mis-citation of `HERO_CONTENT_FRAMEWORK.md` as this roster's content pipeline �
 GoblinFoxDragon's, for DragonsNShit's separate multiverse-lore-hero system; this roster's real
 pipeline is §7's own table, sourced from `TYLER/multiverse_heroes.md` directly.
 
+#### 24.3.2 CORRECTION (2026-07-31, same day, founder direction while The Cart was mid-build)
+
+Founder, real-time: **"the unit controls are supposed to be for tyler."** This section's original
+Milestone 2 framing ("first NON-Tyler hero with real controllable units") had it backwards — the
+founder's actual intent for §24's own "full unit control affordances" is deepening Tyler's own
+already-shipped clone/drag-select mechanic, not spreading direct unit command to a second hero.
+The Cart, built the same session under this same section, was **never actually Milestone 2's
+"direct control" goal in the first place** — §24.3.1 already flagged Cart's kit as
+Indirect-Control (a delivery zone, not a directly-commanded unit), a real, separate archetype
+that stays true to the character's own lore. So the Cart's completion doesn't close Milestone 2
+as originally scoped; it's real, shipped, lore-faithful content on an adjacent but different
+axis. **Milestone 2, corrected: real WC3-shaped group-order vocabulary — attack-move, hold,
+patrol, stop — for Tyler's own existing clone selection**, not a second hero's kit. Old Milestone
+3 (group-order vocabulary) and corrected Milestone 2 are now the same item; renumbered below.
+
 ### 24.4 What this section deliberately does not decide
 
-- **Milestone 4's own scope** — whether REDGARDEN grows a real unit-production economy at all is
+- **Milestone 3's own scope** — whether REDGARDEN grows a real unit-production economy at all is
   a product-direction call bigger than this doc, named not resolved, same treatment §23.1's IP
   question got.
-- **Which hero gets Milestone 2's real kit** — a content decision for the existing hero queue
-  (§7, `TYLER/multiverse_heroes.md`), not picked here — same "founder's own S-tier pick" pattern
-  every entry in that queue's table already follows.
 - **Numbers** (unit counts, costs, cooldowns) for any of it — same "spec the model, not the
   numbers" discipline every other spec-only section in this file already applies.
 

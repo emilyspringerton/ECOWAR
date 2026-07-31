@@ -2,6 +2,14 @@
 
 ## 2026-07-31
 
+- docs(northstar): §24.3.2 CORRECTION -- founder, real-time: "the unit controls are supposed to
+  be for tyler." §24's Milestone 2 was originally framed as "a second hero gets real
+  directly-controlled units"; corrected to its actual intent: real WC3-shaped group-order
+  vocabulary (attack-move/hold/patrol/stop) for Tyler's own already-shipped clone mechanic, not
+  a new hero. The Cart (built the same session under this section) was never that milestone in
+  the first place -- §24.3.1 already flagged it Indirect-Control, a real but separate archetype;
+  its completion doesn't close the corrected Milestone 2. Old milestone table renumbered.
+
 - feat(arena): The Cart (hero #30, `ARENA_HERO_CART`) -- TYLER `multiverse_heroes.md` #10,
   `NORTHSTAR.md` §24 Milestone 2, founder pick from §7's own queue (the one entry never built).
   Real lore constraint honored, not overridden: the compendium's own 2026-07-23 gameplay note
