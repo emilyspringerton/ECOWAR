@@ -1689,6 +1689,18 @@ static int prev_creep_hp[ARENA_MAX_CREEPS];
 static int prev_creep_hp_valid[ARENA_MAX_CREEPS];
 static int prev_lane_creep_hp[ARENA_MAX_LANE_CREEPS];
 static int prev_lane_creep_hp_valid[ARENA_MAX_LANE_CREEPS];
+/* Ghost Q lightning burst (founder: "ghost's Q should have a cool crackle
+ * lightning shader spell animation showing where the spell hit"): a
+ * projectile slot's active->inactive transition (whether from a real hit or
+ * a whiff/max-range fizzle -- this client has no wire signal that
+ * distinguishes the two, same honest scoping tradeoff AttackFlash's own doc
+ * comment already accepts for HP-delta) is the edge this watches. The
+ * ArenaProjectile struct's own doc comment already earmarks hero_id for
+ * exactly this ("client can pick a distinct visual per spell"). No
+ * prev_x/prev_z needed alongside this: the snapshot-apply path only ever
+ * flips `active` to 0 on despawn, it never clears x/z/hero_id, so the slot's
+ * last-known position is still readable in the same frame the burst fires. */
+static int prev_projectile_active[ARENA_MAX_PROJECTILES];
 
 /* HealFlash (S170-143, "ensure we show cast animation on the target and the
  * self so its legible to all heroes on the battlefield"): AttackFlash's own
@@ -1742,6 +1754,29 @@ static void spawn_fold_flash(float x, float z) {
             fold_flashes[i].x = x;
             fold_flashes[i].z = z;
             fold_flashes[i].age_ms = 0;
+            return;
+        }
+    }
+}
+
+/* LightningBurst: the impact half of Ghost's Q crackle effect, at the exact
+ * spot the shot disappeared. Deliberately not the flat translate+scale
+ * ring_mesh every other flash above uses -- a burst of jittered, radiating
+ * box slivers reads as an electric discharge in a way a plain filled disc
+ * never would, and reuses draw_hero_box_facing exactly as-is (no new
+ * primitive). See spawn_lightning_burst's call site for the detection edge. */
+#define MAX_LIGHTNING_BURSTS ARENA_MAX_PROJECTILES
+#define LIGHTNING_BURST_LIFETIME_MS 300.0f
+typedef struct { float x, z, age_ms; int active; } LightningBurst;
+static LightningBurst lightning_bursts[MAX_LIGHTNING_BURSTS];
+
+static void spawn_lightning_burst(float x, float z) {
+    for (int i = 0; i < MAX_LIGHTNING_BURSTS; i++) {
+        if (!lightning_bursts[i].active) {
+            lightning_bursts[i].active = 1;
+            lightning_bursts[i].x = x;
+            lightning_bursts[i].z = z;
+            lightning_bursts[i].age_ms = 0;
             return;
         }
     }
@@ -2802,10 +2837,22 @@ int main(int argc, char *argv[]) {
             update_facing_from_motion(lc->x, lc->z, &prev_lane_creep_facing_x[i], &prev_lane_creep_facing_z[i],
                                        &prev_lane_creep_facing_valid[i], &lane_creep_facing_rad[i]);
         }
+        for (int i = 0; i < ARENA_MAX_PROJECTILES; i++) {
+            ArenaProjectile *p = &arena_state.projectiles[i];
+            if (prev_projectile_active[i] && !p->active && p->hero_id == ARENA_HERO_GHOST) {
+                spawn_lightning_burst(p->x, p->z);
+            }
+            prev_projectile_active[i] = p->active;
+        }
         for (int i = 0; i < MAX_ATTACK_FLASHES; i++) {
             if (!attack_flashes[i].active) continue;
             attack_flashes[i].age_ms += dt;
             if (attack_flashes[i].age_ms >= ATTACK_FLASH_LIFETIME_MS) attack_flashes[i].active = 0;
+        }
+        for (int i = 0; i < MAX_LIGHTNING_BURSTS; i++) {
+            if (!lightning_bursts[i].active) continue;
+            lightning_bursts[i].age_ms += dt;
+            if (lightning_bursts[i].age_ms >= LIGHTNING_BURST_LIFETIME_MS) lightning_bursts[i].active = 0;
         }
         for (int i = 0; i < MAX_HEAL_FLASHES; i++) {
             if (!heal_flashes[i].active) continue;
@@ -3244,6 +3291,26 @@ int main(int argc, char *argv[]) {
             glUniformMatrix4fv_(loc_mvp, 1, GL_FALSE, pmvp.m);
             glUniformMatrix4fv_(loc_model, 1, GL_FALSE, pmodel.m);
             draw_mesh(&cube_mesh);
+            /* Ghost's Q crackle (founder: "ghost's Q should have a cool crackle
+               lightning shader spell animation"): a handful of thin, randomly-angled
+               box slivers zigzagging around the shot's own position, fully re-rolled
+               every frame so they flicker like a live electric discharge instead of
+               sitting static -- same "boxes for now" convention as every hero
+               silhouette in this renderer (draw_hero_box_facing), no new draw
+               primitive needed. Bright electric cyan-white, distinct from every
+               owner-relationship color above since it's a spell-identity cue, not a
+               threat-relationship one. */
+            if (p->hero_id == ARENA_HERO_GHOST) {
+                glUniform4f_(loc_color, 0.65f, 0.95f, 1.0f, 1.0f);
+                for (int seg = 0; seg < 4; seg++) {
+                    float jitter_angle = ((float)(rand() % 360)) * (float)M_PI / 180.0f;
+                    float jx = ((float)(rand() % 100) / 100.0f - 0.5f) * 0.8f;
+                    float jz = ((float)(rand() % 100) / 100.0f - 0.5f) * 0.8f;
+                    float jy = 0.5f + (float)(rand() % 100) / 100.0f * 0.6f;
+                    draw_hero_box_facing(p->x, p->z, jitter_angle, jx, jy, jz,
+                                          0.04f, 0.04f, 0.3f, 1.0f, &vp, loc_mvp, loc_model, &cube_mesh);
+                }
+            }
         }
 
         /* placement rings */
@@ -3379,6 +3446,31 @@ int main(int argc, char *argv[]) {
             glUniformMatrix4fv_(loc_model, 1, GL_FALSE, model.m);
             glUniform4f_(loc_color, 1.0f, 0.85f, 0.25f, alpha);
             draw_mesh(&ring_mesh);
+        }
+        /* Ghost Q lightning bursts (founder: "...showing where the spell hit"): the
+           impact half of the crackle effect -- where the in-flight crackle above is a
+           tight zigzag riding the shot itself, this is a bigger radial burst of the
+           same jittered box-sliver look, fired once at the exact spot the shot
+           disappeared (see spawn_lightning_burst's own call site) and expanding/fading
+           out over its lifetime. Deliberately not ring_mesh like every flash above --
+           a flat disc reads as a generic pop; radiating electric slivers read as a
+           lightning strike specifically, distinct from the plain orange-white
+           attack_flash every other ability's hit already produces. */
+        for (int i = 0; i < MAX_LIGHTNING_BURSTS; i++) {
+            if (!lightning_bursts[i].active) continue;
+            float t01 = lightning_bursts[i].age_ms / LIGHTNING_BURST_LIFETIME_MS;
+            float alpha = 1.0f - t01;
+            float spread = 0.3f + t01 * 1.1f;
+            glUniform4f_(loc_color, 0.65f, 0.95f, 1.0f, alpha);
+            for (int seg = 0; seg < 8; seg++) {
+                float burst_angle = ((float)seg / 8.0f) * 2.0f * (float)M_PI +
+                                     ((float)(rand() % 100) / 100.0f - 0.5f) * 0.6f;
+                float bx = cosf(burst_angle) * spread;
+                float bz = sinf(burst_angle) * spread;
+                draw_hero_box_facing(lightning_bursts[i].x, lightning_bursts[i].z, burst_angle,
+                                      bx * 0.5f, 0.15f, bz * 0.5f, 0.04f, 0.04f, spread * 0.5f, 1.0f,
+                                      &vp, loc_mvp, loc_model, &cube_mesh);
+            }
         }
         /* spell flashes (S170-124, per-hero color S170-142): SIZE still
            ramps by ability tier (Q small, W bigger, R biggest, same

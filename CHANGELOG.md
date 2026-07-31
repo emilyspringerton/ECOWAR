@@ -2926,3 +2926,21 @@
   on-screen page buttons), and Tyler's drag-select clone control. Also fixed the item count (24
   -> 27, stale since Blink Dagger/Donkey/Haste Trinket were added) and the zone-abilities note
   (Gunnr's Consecration is a zone cast from W, not R, unlike the other 8).
+
+- feat(arena): Ghost's Q gets a real lightning-crackle visual, in-flight and on impact. Founder:
+  "ghost's Q should have a cool crackle lightning shader spell animation showing where the spell
+  hit." Two parts, both client-only, `apps/arena/src/main.c`: (1) in-flight crackle -- while a
+  Ghost-owned projectile (`hero_id == ARENA_HERO_GHOST`) is travelling, 4 thin box slivers at
+  randomized angles/offsets are drawn around it every frame, fully re-rolled each frame for a
+  flickering electric look, layered on its existing cube; (2) impact burst -- a new
+  `LightningBurst` effect (same `{x,z,age_ms,active}` shape as AttackFlash/HealFlash/FoldFlash),
+  fired via a new `prev_projectile_active[]` edge-detect on the projectile slot's active->inactive
+  transition (whether a real hit or a whiff -- no wire signal distinguishes the two, same scoping
+  tradeoff AttackFlash's own doc comment already accepts), rendered as 8 radiating jittered slivers
+  expanding/fading over 300ms at the shot's last-known position. Both reuse
+  `draw_hero_box_facing` (no new draw primitive) and bright electric cyan-white
+  (0.65, 0.95, 1.0), distinct from every owner-relationship projectile color and from the generic
+  orange-white `attack_flash` every other ability's hit already produces. `scripts/build.sh`
+  clean (no new warnings); `scripts/test_arena.sh` passes -- purely visual, no sim-logic touched,
+  so the headless suite doesn't (and can't, by design) exercise this directly; no display
+  available in this environment to visually confirm the rendered result.
