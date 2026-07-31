@@ -2944,3 +2944,15 @@
   clean (no new warnings); `scripts/test_arena.sh` passes -- purely visual, no sim-logic touched,
   so the headless suite doesn't (and can't, by design) exercise this directly; no display
   available in this environment to visually confirm the rendered result.
+
+- feat(arena): Gunnr's R (Valhalla Has Yet To Admit It) now also stuns. Founder: "give gunnrs e a
+  stun" (backlog dump + sprint plan, Sprint 1 -- EMILY/BACKLOG.md). REDGARDEN only has three cast
+  slots (Q/W/R), read "e" as R, the third/final slot. Same target, same `ARENA_GUNNR_R_RANGE`
+  check the ability's existing execute-scaled damage already uses -- no separate targeting pass,
+  just `arena_apply_stun(foe->owner, ARENA_GUNNR_R_STUN_MS)` alongside the damage. Duration
+  (1100ms) copied from Zagan's own W (The Standstill, S170-230, this roster's first-ever
+  `arena_apply_stun` call) as an independently-tunable named constant, not aliased -- this
+  roster's second stun. HUD ability description updated ("DAMAGE + STUN, MORE DAMAGE AT LOW
+  TARGET HP"). 2 new/expanded tests (in-range stun lands; out-of-range whiff stuns nothing
+  either, alongside the existing no-damage assertion). `docs/HEROES_VS0.md` entry updated. Full
+  suite green, `test_10_bots.sh` stable.

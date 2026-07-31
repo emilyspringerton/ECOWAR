@@ -578,6 +578,9 @@ or magical one — the roster's own honesty about who actually gets credited.
   regardless of which slot cast it.
 - **R — Valhalla Has Yet To Admit It**: an execute-scaled burst, same shape as Morrigan's/Cain's Q
   — the vindication finally lands, hardest against a target who's already nearly beaten.
+  (2026-07-31, founder: "give gunnrs e a stun"): also stuns whatever it hits, same range check as
+  the damage, no separate targeting pass. Duration copied from Zagan's own W (The Standstill,
+  S170-230) — this roster's second-ever `arena_apply_stun` call.
 
 ---
 

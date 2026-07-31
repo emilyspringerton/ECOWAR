@@ -823,6 +823,14 @@ typedef enum {
  * flourish. R an execute-scaled burst, same shape as Morrigan's/Cain's Q -- "Valhalla has yet to
  * admit it," the vindication finally landing hardest against a target who's already nearly beaten.
  *
+ * 2026-07-31, founder: "give gunnrs e a stun" -- REDGARDEN only has three cast slots (Q/W/R, no
+ * fourth), read as R, the third/final slot, matching the LoL-style Q/W/E/R mental model minus
+ * this roster's own missing 4th slot. R now also stuns whatever it hits, on top of its existing
+ * execute-scaled damage -- same target, same ARENA_GUNNR_R_RANGE check already there, no new
+ * targeting pass. Duration copied from Zagan's own W (The Standstill, S170-230, this roster's
+ * first-ever `arena_apply_stun` call) rather than invented, as an independently-tunable literal
+ * per this file's own established "copy the number, name it separately" convention.
+ *
  * 2026-07-30, founder: "gunnr w switch it to consecration just like wow" -- W was a free toggle
  * self-regen (ARENA_GUNNR_W_REGEN_PER_SEC, removed); now a real WoW Paladin Consecration: a
  * ground zone at Gunnr's own feet, on a real cooldown, that damages any enemy standing in it every
@@ -848,6 +856,7 @@ typedef enum {
 #define ARENA_GUNNR_R_RANGE                  6.0f
 #define ARENA_GUNNR_R_DAMAGE_BASE           10   /* at 100% target HP */
 #define ARENA_GUNNR_R_DAMAGE_LOW_HP         24   /* at ~0% target HP -- an execute */
+#define ARENA_GUNNR_R_STUN_MS              1100   /* same as ARENA_ZAGAN_W_STUN_MS -- founder: "give gunnrs e a stun" */
 #define ARENA_GUNNR_R_COOLDOWN_MS        20000
 
 /* Vassago (S170-93): passive small HP regen, always on, same shape as Dagda's Undry -- ambient

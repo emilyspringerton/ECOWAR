@@ -3483,6 +3483,20 @@ static void test_gunnr_r_executes_harder_at_low_hp(void) {
     CHECK(gunnr->r_cooldown_ms == ARENA_GUNNR_R_COOLDOWN_MS, "R starts on its own cooldown after cast");
 }
 
+static void test_gunnr_r_stuns_foe_in_range(void) {
+    /* 2026-07-31, founder: "give gunnrs e a stun" -- same target, same range check R's
+       existing damage already uses, no separate targeting pass. */
+    arena_init_with_heroes(ARENA_HERO_UNICORN, ARENA_HERO_GUNNR);
+    ArenaHero *gunnr = &arena_state.heroes[1];
+    ArenaHero *foe = &arena_state.heroes[0];
+    foe->x = gunnr->x + 4.0f; /* within ARENA_GUNNR_R_RANGE (6.0) */
+    foe->z = gunnr->z;
+
+    arena_cast_r(1);
+
+    CHECK(foe->stunned_ms == ARENA_GUNNR_R_STUN_MS, "Valhalla Has Yet To Admit It stuns a foe in range");
+}
+
 static void test_gunnr_r_out_of_range_whiffs_but_still_starts_cooldown(void) {
     /* Gunnr's R dispatch sets the cooldown unconditionally, not gated on a helper's
        return value like Q is -- a deliberate, documented choice for this kit (the R is
@@ -3497,6 +3511,7 @@ static void test_gunnr_r_out_of_range_whiffs_but_still_starts_cooldown(void) {
     arena_cast_r(1);
 
     CHECK(foe->hp == foe_hp_before, "R out of range does not damage the foe");
+    CHECK(foe->stunned_ms == 0, "R out of range does not stun the foe either");
     CHECK(gunnr->r_cooldown_ms == ARENA_GUNNR_R_COOLDOWN_MS, "R still starts its cooldown even on a whiff");
 }
 
@@ -6059,6 +6074,7 @@ int main(void) {
     test_gunnr_w_consecration_starts_zone_at_own_feet_on_cooldown();
     test_gunnr_w_consecration_damages_foe_over_time();
     test_gunnr_r_executes_harder_at_low_hp();
+    test_gunnr_r_stuns_foe_in_range();
     test_gunnr_r_out_of_range_whiffs_but_still_starts_cooldown();
     test_vassago_passive_regenerates_hp();
     test_vassago_q_damages_and_silences_in_range();

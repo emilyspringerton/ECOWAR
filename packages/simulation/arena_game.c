@@ -3947,12 +3947,16 @@ void arena_cast_r(int owner) {
     case ARENA_HERO_GUNNR:
         /* Valhalla Has Yet To Admit It: instant hit-if-in-range, execute-scaled via
            execute_scale_damage, same shape as Morrigan's/Cain's Q -- the vindication
-           finally lands hardest against a target who's already nearly beaten. */
+           finally lands hardest against a target who's already nearly beaten. 2026-07-31,
+           founder: "give gunnrs e a stun" -- now also stuns the same target it hits, same
+           range check, no separate targeting pass. Duration copied from Zagan's own W (The
+           Standstill, S170-230), this roster's second-ever arena_apply_stun() call. */
         if (foe && hero_is_hittable(foe)) {
             float dx = foe->x - h->x, dz = foe->z - h->z;
             if (sqrtf(dx * dx + dz * dz) <= ARENA_GUNNR_R_RANGE) {
                 apply_damage(foe, apply_armor(execute_scale_damage(foe, ARENA_GUNNR_R_DAMAGE_BASE, ARENA_GUNNR_R_DAMAGE_LOW_HP),
                                                arena_hero_armor(foe)));
+                arena_apply_stun(foe->owner, ARENA_GUNNR_R_STUN_MS);
             }
         }
         h->r_cooldown_ms = cast_cooldown(h, ARENA_GUNNR_R_COOLDOWN_MS);
