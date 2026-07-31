@@ -1,5 +1,18 @@
 # Changelog
 
+## 2026-07-31 (2)
+
+- fix(arena): draft-grid pick screen was overflowing narrower window widths -- founder-reported
+  ("i broke the server, tyler makes things wonky") real bug, root-caused via
+  `var/logs/matchmaker-bots.log`: a full 20/20-connected lobby stuck at phase=1 forever, one
+  CLIENT id never appearing in the pick log, dying on the 60s no-progress timeout.
+  `draft_grid_origin`/`draft_screen_hero_at`/`draw_draft_screen` computed the 6-col hero grid
+  centered on `win_w/2` with no clamp against the actual (resizable) window size -- fine at the
+  1280x720 default, but below ~1134px wide the rightmost column (`hero_id % 6 == 5`, which
+  includes Tyler at id 17) rendered mostly or fully past the window edge, unclickable or only
+  clickable in a mislabeled sliver. Grid now shrinks/shifts to fit whatever window size is live.
+  `apps/arena/src/main.c` `5916dc5`.
+
 ## 2026-07-31
 
 - feat(arena): Patrol command -- fourth and last slice of §24 Milestone 2's WC3 group-order
