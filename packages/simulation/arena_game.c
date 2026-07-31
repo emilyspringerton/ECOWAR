@@ -553,6 +553,7 @@ void arena_set_move_target(int owner, float x, float z) {
        attack-target chase, matching real League's own right-click-ground
        behavior exactly. */
     mh->attack_target = -1;
+    mh->attack_move_active = 0; /* a new command always wins, same convention as attack_target's own clear above -- §24 Milestone 2 */
 }
 
 /* arena_set_attack_target (S170-162): see header declaration's doc
@@ -562,6 +563,7 @@ void arena_set_attack_target(int owner, int target) {
        clone slot can be given its own independent attack-target lock too. */
     if (owner < 0 || owner >= ARENA_HEROES_ARRAY_SIZE) return;
     arena_state.heroes[owner].attack_target = target;
+    arena_state.heroes[owner].attack_move_active = 0; /* a new command always wins -- §24 Milestone 2 */
 }
 
 /* arena_stop_unit (NORTHSTAR.md §24 Milestone 2, 2026-07-31): the first of the real WC3 group-
@@ -579,6 +581,90 @@ void arena_stop_unit(int owner) {
     h->target_z = h->z;
     h->moving = 0;
     h->attack_target = -1;
+    h->attack_move_active = 0; /* a new command always wins -- §24 Milestone 2 */
+}
+
+/* arena_set_attack_move_target (NORTHSTAR.md §17.4 + §24 Milestone 2, 2026-07-31): real LoL/WC3
+ * "A + click" -- moves toward (x,z) like a plain move, but arena_tick_attack_move opportunistically
+ * diverts to whatever enemy comes within range along the way. Same widened Tyler-clone-control
+ * scope and edge clamping as arena_set_move_target above; deliberately does NOT reuse that
+ * function's own body, since a plain move must clear attack_move_active (a fresh plain-move
+ * command always wins, §17.1) while THIS command needs to set it. */
+void arena_set_attack_move_target(int owner, float x, float z) {
+    if (owner < 0 || owner >= ARENA_HEROES_ARRAY_SIZE) return;
+    if (x < -ARENA_HALF_EXTENT) x = -ARENA_HALF_EXTENT;
+    if (x > ARENA_HALF_EXTENT) x = ARENA_HALF_EXTENT;
+    if (z < -ARENA_HALF_EXTENT) z = -ARENA_HALF_EXTENT;
+    if (z > ARENA_HALF_EXTENT) z = ARENA_HALF_EXTENT;
+    ArenaHero *mh = &arena_state.heroes[owner];
+    if (mh->attack_windup_ms_remaining > 0) {
+        float wdx = x - mh->x, wdz = z - mh->z;
+        float range = (mh->hero_id == ARENA_HERO_GARY) ? ARENA_GARY_ATTACK_RANGE : ARENA_ATTACK_RANGE;
+        if (wdx * wdx + wdz * wdz > range * range) {
+            mh->attack_windup_ms_remaining = 0;
+        }
+    }
+    mh->target_x = x;
+    mh->target_z = z;
+    mh->moving = 1;
+    mh->attack_target = -1; /* fresh order, same "a new command clears the old lock" convention */
+    mh->attack_move_active = 1;
+    mh->attack_move_x = x;
+    mh->attack_move_z = z;
+}
+
+/* hero_is_hittable is defined further down this file -- forward-declared here so
+ * arena_tick_attack_move below can call it, same "not every caller comes after the real
+ * definition" idiom this file's own apply_weapon_skill_damage forward declaration already uses. */
+static int hero_is_hittable(const ArenaHero *h);
+
+/* arena_tick_attack_move (NORTHSTAR.md §17.4 + §24 Milestone 2): for every hero with
+ * attack_move_active and no current attack_target, scans for the nearest hittable enemy within
+ * this hero's own attack range and opportunistically locks onto it (arena_tick_attack_targets,
+ * called separately, does the actual chase/combat once attack_target is set -- this function only
+ * decides WHETHER and WHAT to engage, real "the whole point of attack-move is it re-targets
+ * automatically" behavior, §17.1). If nothing's in range and the hero has drifted off its own
+ * attack_move_x/z (a previous chase's pure-pursuit overwrote target_x/z, per
+ * arena_tick_attack_targets' own "the attack command wins while it's active" precedent), resumes
+ * walking toward the original attack-move destination instead of standing idle where the chase
+ * left off. Deliberately separate from arena_tick_attack_targets rather than folded into it --
+ * that function's whole job is "chase and land hits once a target is locked," this one's is
+ * "decide whether a target should be locked at all," different responsibilities even though both
+ * read/write attack_target. */
+void arena_tick_attack_move(unsigned int dt_ms) {
+    (void)dt_ms; /* no per-tick timer needed -- see doc comment; kept for signature symmetry with
+                    every other arena_tick_* function in this file. */
+    for (int i = 0; i < ARENA_MAX_HEROES; i++) {
+        ArenaHero *h = &arena_state.heroes[i];
+        if (!h->active || !h->alive || !h->attack_move_active) continue;
+        if (h->attack_target >= 0) continue; /* already engaged -- arena_tick_attack_targets owns this tick for it */
+
+        float range = (h->hero_id == ARENA_HERO_GARY) ? ARENA_GARY_ATTACK_RANGE : ARENA_ATTACK_RANGE;
+        int nearest = -1;
+        float nearest_dist_sq = range * range;
+        for (int j = 0; j < ARENA_MAX_HEROES; j++) {
+            if (j == i) continue;
+            ArenaHero *cand = &arena_state.heroes[j];
+            if (!cand->active || !hero_is_hittable(cand) || cand->team == h->team) continue;
+            float dx = cand->x - h->x, dz = cand->z - h->z;
+            float dist_sq = dx * dx + dz * dz;
+            if (dist_sq <= nearest_dist_sq) {
+                nearest = j;
+                nearest_dist_sq = dist_sq;
+            }
+        }
+        if (nearest >= 0) {
+            h->attack_target = nearest;
+            continue;
+        }
+        /* Nothing to engage -- if a prior chase overwrote target_x/z, resume the original
+           attack-move destination instead of standing wherever the chase left off. */
+        if (h->target_x != h->attack_move_x || h->target_z != h->attack_move_z) {
+            h->target_x = h->attack_move_x;
+            h->target_z = h->attack_move_z;
+            h->moving = 1;
+        }
+    }
 }
 
 /* arena_owner_controls (2026-07-30, Tyler "Divided We Stand" rework -- founder: "clones multi
@@ -5712,6 +5798,10 @@ void arena_update_teams(unsigned int dt_ms) {
         h->attack_windup_ms_remaining = ARENA_ATTACK_WINDUP_MS;
     }
 
+    /* NORTHSTAR.md §17.4 + §24 Milestone 2, 2026-07-31: attack-move's own opportunistic
+       target-acquisition, run before the chase below so a freshly-acquired target gets chased/
+       attacked in this same tick instead of wasting a frame. */
+    arena_tick_attack_move(dt_ms);
     /* S170-162: attack-target chase + Gary's homing-shot firing -- see this
        function's own doc comment. Runs after the melee loop above so
        Gary's attack_cooldown_ms (decremented in that same loop) reflects

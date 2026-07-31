@@ -1823,6 +1823,20 @@ typedef struct {
      * so far) fire their homing auto-attack (ArenaProjectile.homing_target)
      * directly at this lock once in range. */
     int attack_target;
+    /* attack_move_active/attack_move_x/z (NORTHSTAR.md §17.4's own unchecked "attack-move
+     * command" item, and §24 Milestone 2's real WC3 group-order vocabulary -- the same real gap,
+     * closed once, 2026-07-31). Real LoL/WC3 "A + click": moves toward attack_move_x/z like a
+     * plain move, but opportunistically diverts to attack_target the moment a valid enemy comes
+     * within range along the way (arena_tick_attack_move), unlike a direct attack-target lock
+     * (survives the acquired target dying -- re-scans for a new one instead of going idle) and
+     * unlike a plain move (which never initiates combat at all, §17.1). target_x/z get
+     * overwritten during a chase (arena_tick_attack_targets' own "the attack command wins while
+     * it's active" precedent) -- attack_move_x/z remember the ORIGINAL destination so movement
+     * can resume there once nothing's left to opportunistically engage. Cleared by any other
+     * move/attack/stop command, same "a new command always wins" convention every one of those
+     * already enforces on attack_target. */
+    int attack_move_active;
+    float attack_move_x, attack_move_z;
     /* flow/xp (S170-175, founder: "we need a character display pane that
      * shows current stats" / "tracking xp and flow" / "we call gold
      * flow"): the two per-hero progression resources NORTHSTAR §19 spec'd
@@ -2115,6 +2129,12 @@ void arena_set_attack_target(int owner, int target);
 /* arena_stop_unit (NORTHSTAR.md §24 Milestone 2, 2026-07-31): see the .c definition's own doc
  * comment. Cancels owner's current move/attack order in place -- the real WC3 "Stop" command. */
 void arena_stop_unit(int owner);
+
+/* arena_set_attack_move_target / arena_tick_attack_move (NORTHSTAR.md §17.4 + §24 Milestone 2,
+ * 2026-07-31): see the .c definitions' own doc comments and ArenaHero's own
+ * attack_move_active/x/z field comment. Real LoL/WC3 "A + click." */
+void arena_set_attack_move_target(int owner, float x, float z);
+void arena_tick_attack_move(unsigned int dt_ms);
 
 /* arena_owner_controls (2026-07-30, Tyler "Divided We Stand" rework): see the .c definition's own
  * doc comment for the full design. True if `sender_owner` may issue a move/attack command for

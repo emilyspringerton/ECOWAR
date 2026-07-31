@@ -24,6 +24,7 @@
 #define PACKET_ARENA_BLINK 13     /* client -> arena_server: use Blink Dagger, S170-205 -- no payload, direction is derived server-side same as Unicorn's Q dash (toward move target, else nearest foe) */
 #define PACKET_ARENA_SNAPSHOT_HEROES 14 /* arena_server -> client: one ARENA_SNAPSHOT_HERO_CHUNK_SIZE-hero slice, S170-193 -- see ArenaSnapshotHeroesMsg's own doc comment */
 #define PACKET_ARENA_STOP 15 /* client -> arena_server: cancel one of the sending client's own commandable units' current move/attack order in place, NORTHSTAR.md §24 Milestone 2 (2026-07-31) -- see ArenaStopCmd's own doc comment */
+#define PACKET_ARENA_ATTACK_MOVE 16 /* client -> arena_server: real LoL/WC3 "A + click", NORTHSTAR.md §17.4 + §24 Milestone 2 (2026-07-31) -- see ArenaAttackMoveCmd's own doc comment */
 
 #define ARENA_PHASE_WAITING 0 /* fewer than 2 real players connected yet */
 #define ARENA_PHASE_DRAFT   1 /* both connected, waiting on hero picks */
@@ -154,6 +155,18 @@ typedef struct {
 typedef struct {
     uint8_t unit_owner;
 } ArenaStopCmd;
+
+// PACKET_ARENA_ATTACK_MOVE payload (NORTHSTAR.md §17.4 + §24 Milestone 2, 2026-07-31): real
+// LoL/WC3 "A + click" -- moves toward (target_x, target_z) like ArenaMoveCmd, but
+// arena_tick_attack_move opportunistically diverts unit_owner to attack whatever enemy comes
+// within range along the way, unlike a plain move (never initiates combat, §17.1) and unlike a
+// direct ArenaAttackCmd lock (which doesn't re-acquire a new target if the locked one dies).
+// Same shape and arena_owner_controls authorization as ArenaMoveCmd's own unit_owner field.
+typedef struct {
+    float target_x;
+    float target_z;
+    uint8_t unit_owner;
+} ArenaAttackMoveCmd;
 
 // PACKET_ARENA_SHOP_BUY payload (S170-175, NORTHSTAR §19's shop system):
 // which item (index into packages/simulation/arena_game.c's ARENA_ITEMS

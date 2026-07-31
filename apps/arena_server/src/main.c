@@ -810,6 +810,14 @@ static void server_handle_packet(struct sockaddr_in *sender, char *buffer, int s
         if (arena_owner_controls(client_id, cmd->unit_owner)) {
             arena_stop_unit(cmd->unit_owner);
         }
+    } else if (head->type == PACKET_ARENA_ATTACK_MOVE) {
+        if (size < (int)(sizeof(NetHeader) + sizeof(ArenaAttackMoveCmd))) return;
+        ArenaAttackMoveCmd *cmd = (ArenaAttackMoveCmd *)(buffer + sizeof(NetHeader));
+        /* Same commander/unit_owner authorization as PACKET_ARENA_MOVE/PACKET_ARENA_ATTACK/
+           PACKET_ARENA_STOP above -- NORTHSTAR.md §17.4 + §24 Milestone 2. */
+        if (arena_owner_controls(client_id, cmd->unit_owner)) {
+            arena_set_attack_move_target(cmd->unit_owner, cmd->target_x, cmd->target_z);
+        }
     } else if (head->type == PACKET_ARENA_SHOP_BUY) {
         if (size < (int)(sizeof(NetHeader) + sizeof(ArenaShopBuyCmd))) return;
         ArenaShopBuyCmd *cmd = (ArenaShopBuyCmd *)(buffer + sizeof(NetHeader));

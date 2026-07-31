@@ -2,6 +2,25 @@
 
 ## 2026-07-31
 
+- feat(arena): Attack-move command -- closes two open items at once: NORTHSTAR.md §17.4's own
+  long-unchecked "Attack-move command (LoL's 'A' + click)" and the second real slice of §24
+  Milestone 2's WC3 group-order vocabulary. Real LoL/WC3 "hold A, then click ground": moves
+  toward the clicked point like a plain move, but `arena_tick_attack_move` opportunistically
+  diverts to whatever enemy comes within range along the way (`attack_target` gets set,
+  `arena_tick_attack_targets` -- already real, unchanged -- takes over the actual chase/combat),
+  re-acquiring a new target automatically if the current one dies (unlike a direct attack-target
+  lock, which just goes idle) and resuming the ORIGINAL destination once nothing's left to engage
+  (a new `attack_move_x/z` pair remembers it, since `target_x/z` gets overwritten mid-chase by
+  `arena_tick_attack_targets`' own real "the attack command wins while it's active" behavior).
+  Held-key detection (`SDL_SCANCODE_A` read at the moment of a ground click via
+  `SDL_GetKeyboardState`, same "held, not toggled" idiom the Tab scoreboard already uses), not a
+  separate mode-toggle keypress. New `PACKET_ARENA_ATTACK_MOVE`/`ArenaAttackMoveCmd` wire packet,
+  same `arena_owner_controls` authorization every other group command (move/attack/stop) already
+  enforces. Any other move/attack/stop command clears it, same "a new command always wins"
+  convention. Team-mode only, same scoping the underlying attack-target/chase system already has.
+  5 new tests. `scripts/build.sh` clean, full `scripts/test_arena.sh` suite green,
+  `scripts/test_10_bots.sh` stable. Hold and patrol still open -- Milestone 2 stays IN PROGRESS.
+
 - feat(arena): Stop command -- NORTHSTAR.md §24 Milestone 2 (corrected), the first of the real
   WC3 group-order vocabulary (attack-move/hold/patrol/stop) for Tyler's own clone-control system.
   Real `S` keybind (unbound before this), new `PACKET_ARENA_STOP`/`ArenaStopCmd` wire packet,

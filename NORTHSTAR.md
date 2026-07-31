@@ -1283,11 +1283,11 @@ the champion stop" mechanic neither of those touched: a real windup/backswing st
 (`attack_windup_ms_remaining`) applied to both the flat melee loop and Gary's ranged attack --
 movement freezes during windup, a genuine reposition (or a stun) cancels it outright with no damage/no
 cooldown spent, and a completed windup fires the hit/projectile with the target re-validated only at
-that moment, not continuously. Still genuinely unbuilt: a per-hero `is_ranged` flag/homing basic
-attack for anyone besides Gary (every other hero's plain auto-attack is still the flat melee tick,
-regardless of lore), and attack-move ("A" + click) -- both explicitly lower-priority in §17.4's own
-original ordering. §17.3's gap analysis below is kept as originally written, for the historical record
-of what motivated this section, not edited to retroactively look prescient.
+that moment, not continuously. **Status update (2026-07-31):** attack-move ("A" + click) also now
+shipped -- see §17.4's own updated checklist entry. Still genuinely unbuilt: a per-hero `is_ranged`
+flag/homing basic attack for anyone besides Gary (every other hero's plain auto-attack is still the
+flat melee tick, regardless of lore). §17.3's gap analysis below is kept as originally written, for
+the historical record of what motivated this section, not edited to retroactively look prescient.
 
 ### 17.1 League of Legends' actual model (the gold standard)
 
@@ -1417,8 +1417,17 @@ basic attacks would get the auto-attack feel backwards, not just approximately r
   still the flat `ARENA_ATTACK_RANGE` melee tick regardless of lore (gun-wielders, casters, etc.) --
   a per-hero `is_ranged` flag/second homing-projectile-for-basic-attacks system generalizing what
   Gary already has is real, scoped, future work, not done.
-- [ ] **Attack-move command** (LoL's "A" + click). Still not built, still explicitly lower priority
-  than the above in this section's own original ordering.
+- [x] **Attack-move command** (LoL's "A" + click). Shipped 2026-07-31, driven by §24 Milestone 2's
+  own real WC3 group-order vocabulary work rather than this section's own original priority
+  order -- `PACKET_ARENA_ATTACK_MOVE`/`arena_set_attack_move_target`/`arena_tick_attack_move`.
+  Held-key detection (`SDL_SCANCODE_A` at the moment of a ground click, same "held, not toggled"
+  idiom the Tab scoreboard already uses), not a separate mode-toggle keypress. Opportunistically
+  acquires `attack_target` from whatever enemy comes within range en route (re-scans if the
+  acquired target dies, real "attack-move re-acquires automatically" §17.1 behavior a direct
+  attack-target lock doesn't have), and resumes the ORIGINAL destination once nothing's left to
+  engage -- a new `attack_move_x/z` pair remembers that destination since `target_x/z` gets
+  overwritten during a chase. Team-mode only, same scoping `attack_target`/chase itself already
+  has. 5 new tests, full suite + 10-bot stability green.
 
 ### 17.5 Open questions, not resolved here
 
@@ -2551,7 +2560,7 @@ generalizing Tyler's own already-tested mechanism, not building a second, parall
 |---|---|---|---|
 | 0 | This northstar | Written, current shape + real gap named, registered | DONE |
 | 1 | Generalize `is_clone`/`clone_owner`/`selected_units` off Tyler-only | See §24.3.1 CORRECTION — closer to already-done than this row originally claimed | **DONE (found, not built)** 2026-07-31 |
-| 2 | Real group-order vocabulary for Tyler's own clones | Attack-move, hold, patrol, stop for Tyler's drag-selected clone group — the actual WC3 command surface §24.2 names as currently missing, not just group-move. Corrected 2026-07-31 (§24.3.2, founder: "the unit controls are supposed to be for tyler") from this row's original framing ("a second hero gets real units") — full unit control deepens Tyler's own mechanic, doesn't spread to a new hero. | **IN PROGRESS** — Stop shipped 2026-07-31 (real `S` keybind, `PACKET_ARENA_STOP`, cancels the whole selected group's move/attack order in place, same `selected_or_self()`/`arena_owner_controls` scope every other group command already uses). Attack-move, hold, and patrol not started. Commit `10faf25` |
+| 2 | Real group-order vocabulary for Tyler's own clones | Attack-move, hold, patrol, stop for Tyler's drag-selected clone group — the actual WC3 command surface §24.2 names as currently missing, not just group-move. Corrected 2026-07-31 (§24.3.2, founder: "the unit controls are supposed to be for tyler") from this row's original framing ("a second hero gets real units") — full unit control deepens Tyler's own mechanic, doesn't spread to a new hero. | **IN PROGRESS** — Stop shipped 2026-07-31 (`10faf25`: real `S` keybind, `PACKET_ARENA_STOP`, cancels the whole selected group's move/attack order in place). Attack-move also shipped 2026-07-31 (same day: `PACKET_ARENA_ATTACK_MOVE`, held-`A`-then-click, opportunistic target acquisition + destination-resume, also closes §17.4's own long-open checklist item at the same time). Hold and patrol not started. |
 | — | ~~First non-Tyler hero with real controllable units~~ | Superseded by §24.3.2's correction — not this section's real goal. The Cart (built same session) is separate, real, lore-faithful Indirect-Control content, not this milestone. | SUPERSEDED |
 | 3 | (Separate, bigger, explicitly not decided here) Unit production/resource loop | Spending Flow to field units over time rather than a fixed cast-bound count — a real pivot toward WC3's own RTS-economy half, named as a distinct, much larger decision surfaced for the founder, not assumed. | OPEN QUESTION |
 

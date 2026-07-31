@@ -2944,6 +2944,81 @@ static void test_stop_unit_out_of_range_owner_is_a_safe_no_op(void) {
     CHECK(1, "out-of-range owner indices don't crash -- same bounds-check convention arena_set_move_target/arena_set_attack_target already use");
 }
 
+/* Attack-move (NORTHSTAR.md §17.4 + §24 Milestone 2, 2026-07-31) -- real LoL/WC3 "A + click." */
+
+static void test_attack_move_walks_toward_destination_when_nothing_nearby(void) {
+    arena_init_teams();
+    for (int i = 2; i < ARENA_MAX_HEROES; i++) arena_state.heroes[i].active = 0; /* no enemies anywhere in range */
+    arena_state.heroes[0].x = 0.0f; arena_state.heroes[0].z = 0.0f;
+
+    arena_set_attack_move_target(0, 15.0f, 0.0f);
+    CHECK(arena_state.heroes[0].attack_move_active == 1, "sanity: attack-move is armed");
+    CHECK(arena_state.heroes[0].moving == 1 && arena_state.heroes[0].target_x == 15.0f, "sanity: it starts walking toward the destination like a plain move");
+
+    arena_tick_attack_move(100);
+
+    CHECK(arena_state.heroes[0].attack_target == -1, "nothing in range -- no opportunistic engage");
+    CHECK(arena_state.heroes[0].target_x == 15.0f && arena_state.heroes[0].target_z == 0.0f,
+          "still walking toward the original attack-move destination");
+}
+
+static void test_attack_move_opportunistically_engages_enemy_in_range(void) {
+    arena_init_teams();
+    for (int i = 2; i < ARENA_MAX_HEROES; i++) arena_state.heroes[i].active = 0;
+    arena_state.heroes[ARENA_TEAM_SIZE].active = 1;
+    arena_state.heroes[ARENA_TEAM_SIZE].alive = 1;
+    arena_state.heroes[0].x = 0.0f; arena_state.heroes[0].z = 0.0f;
+    arena_state.heroes[ARENA_TEAM_SIZE].x = 1.0f; arena_state.heroes[ARENA_TEAM_SIZE].z = 0.0f; /* well within ARENA_ATTACK_RANGE */
+
+    arena_set_attack_move_target(0, 50.0f, 0.0f); /* destination is far past the enemy */
+    arena_tick_attack_move(100);
+
+    CHECK(arena_state.heroes[0].attack_target == ARENA_TEAM_SIZE,
+          "attack-move opportunistically locks onto an enemy that comes within range along the way, without it ever being the original destination");
+}
+
+static void test_attack_move_resumes_destination_once_nothing_left_to_engage(void) {
+    arena_init_teams();
+    for (int i = 2; i < ARENA_MAX_HEROES; i++) arena_state.heroes[i].active = 0;
+    arena_state.heroes[0].x = 0.0f; arena_state.heroes[0].z = 0.0f;
+
+    arena_set_attack_move_target(0, 15.0f, 0.0f);
+    /* Simulate a chase having overwritten target_x/z toward some now-dead enemy's last position
+       (arena_tick_attack_targets' own real "the attack command wins while it's active"
+       behavior) -- attack_target itself already cleared (that function's own job, not this
+       one's), attack_move_active still set. */
+    arena_state.heroes[0].target_x = 3.0f;
+    arena_state.heroes[0].target_z = 3.0f;
+    arena_state.heroes[0].attack_target = -1;
+
+    arena_tick_attack_move(100);
+
+    CHECK(arena_state.heroes[0].target_x == 15.0f && arena_state.heroes[0].target_z == 0.0f,
+          "with nothing left to engage, attack-move resumes the ORIGINAL destination instead of standing wherever the chase left off");
+    CHECK(arena_state.heroes[0].moving == 1, "and actually resumes walking, not left idle");
+}
+
+static void test_attack_move_cleared_by_plain_move_command(void) {
+    arena_init_teams();
+    arena_set_attack_move_target(0, 15.0f, 0.0f);
+    CHECK(arena_state.heroes[0].attack_move_active == 1, "sanity: attack-move is armed");
+
+    arena_set_move_target(0, 5.0f, 5.0f);
+
+    CHECK(arena_state.heroes[0].attack_move_active == 0, "a fresh plain move command clears attack-move, same 'a new command always wins' convention as attack_target");
+}
+
+static void test_attack_move_cleared_by_attack_target_and_stop(void) {
+    arena_init_teams();
+    arena_set_attack_move_target(0, 15.0f, 0.0f);
+    arena_set_attack_target(0, 10);
+    CHECK(arena_state.heroes[0].attack_move_active == 0, "a fresh attack-target command clears attack-move too");
+
+    arena_set_attack_move_target(0, 15.0f, 0.0f);
+    arena_stop_unit(0);
+    CHECK(arena_state.heroes[0].attack_move_active == 0, "and so does Stop");
+}
+
 static void test_attack_target_clears_on_fresh_move_command(void) {
     arena_init_teams();
     arena_set_attack_target(0, 10);
@@ -6250,6 +6325,11 @@ int main(void) {
     test_stop_unit_cancels_move_target();
     test_stop_unit_cancels_attack_target();
     test_stop_unit_out_of_range_owner_is_a_safe_no_op();
+    test_attack_move_walks_toward_destination_when_nothing_nearby();
+    test_attack_move_opportunistically_engages_enemy_in_range();
+    test_attack_move_resumes_destination_once_nothing_left_to_engage();
+    test_attack_move_cleared_by_plain_move_command();
+    test_attack_move_cleared_by_attack_target_and_stop();
     test_attack_target_clears_on_fresh_move_command();
     test_attack_target_chases_out_of_range_enemy();
     test_attack_target_re_chases_a_fleeing_target();

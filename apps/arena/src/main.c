@@ -448,6 +448,21 @@ static void net_send_stop(int unit_owner) {
     sendto(net_sock, buf, sizeof(buf), 0, (struct sockaddr *)&net_server_addr, sizeof(net_server_addr));
 }
 
+/* net_send_attack_move (NORTHSTAR.md §17.4 + §24 Milestone 2, 2026-07-31): PACKET_ARENA_ATTACK_MOVE's
+ * client-side sender -- same shape as net_send_move, unit_owner is which of the local player's
+ * own commandable units this attack-move is for. */
+static void net_send_attack_move(int unit_owner, float x, float z) {
+    char buf[sizeof(NetHeader) + sizeof(ArenaAttackMoveCmd)];
+    NetHeader *h = (NetHeader *)buf;
+    memset(h, 0, sizeof(NetHeader));
+    h->type = PACKET_ARENA_ATTACK_MOVE;
+    ArenaAttackMoveCmd *cmd = (ArenaAttackMoveCmd *)(buf + sizeof(NetHeader));
+    cmd->target_x = x;
+    cmd->target_z = z;
+    cmd->unit_owner = (uint8_t)unit_owner;
+    sendto(net_sock, buf, sizeof(buf), 0, (struct sockaddr *)&net_server_addr, sizeof(net_server_addr));
+}
+
 /* PACKET_ARENA_SHOP_BUY/SELL's client-side senders (S170-175). Same shape
  * as net_send_attack -- server infers "which hero" from the sending
  * client's own slot, all real validation (proximity, Flow balance) happens
@@ -2606,8 +2621,17 @@ int main(int argc, char *argv[]) {
                         float focus_x = arena_state.heroes[my_owner].x, focus_z = arena_state.heroes[my_owner].z;
                         if (screen_to_ground(e.button.x, e.button.y, win_w, win_h, 60.0f,
                                              focus_x, focus_z, &gx, &gz)) {
+                            /* Attack-move (NORTHSTAR.md §17.4 + §24 Milestone 2, 2026-07-31):
+                               real LoL/WC3 "hold A, then click ground" -- checked via this
+                               frame's held-key state, same "held, not toggled" idiom the Tab
+                               scoreboard already uses, not a separate keydown event/mode toggle. */
+                            const Uint8 *ks = SDL_GetKeyboardState(NULL);
+                            int attack_move = ks[SDL_SCANCODE_A];
                             for (int k = 0; k < commander_count; k++) {
-                                if (net_mode) net_send_move(commanders[k], gx, gz);
+                                if (attack_move) {
+                                    if (net_mode) net_send_attack_move(commanders[k], gx, gz);
+                                    else arena_set_attack_move_target(commanders[k], gx, gz);
+                                } else if (net_mode) net_send_move(commanders[k], gx, gz);
                                 else arena_set_move_target(commanders[k], gx, gz);
                             }
                             spawn_ring(gx, gz);
