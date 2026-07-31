@@ -2890,3 +2890,14 @@
   killed in-progress matches outright -- going forward, live redeploys should default to
   auto-deploy's own scheduled, match-aware cycle rather than an immediate manual restart per
   change, unless a change is specifically being verified live on request.
+
+## 2026-07-31
+
+- ops(arena): bot pool back down to 19. Founder: "bring the bot pool back down to 19." Fourth
+  flip on this value in two days (20 -> 19 -> 20 -> this). `redgarden-bot-pool.service` ->
+  `run_bot_pool.sh 19`, restoring the "one slot open, a human can queue into `:7778`" default.
+  Consolidated the unit file's own doc comment (four separate dated paragraphs had accumulated
+  from each flip) into one summary of the real 19-vs-20 tradeoff, pointing at git log for
+  whichever count is actually live rather than re-narrating each flip going forward.
+  `scripts/run_bot_pool.sh`'s own usage comment trimmed the same way. Deployed live: redeployed
+  the unit and restarted, confirmed 19 bot processes running.
