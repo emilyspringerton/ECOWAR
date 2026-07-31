@@ -2,6 +2,17 @@
 
 ## 2026-07-31
 
+- feat(arena): `apps/arena` client gains a `--ticket <hex>` flag -- GoblinFoxDragon
+  `REDGARDEN_GUI_NORTHSTAR.md` Milestone 3 (Battlegrounds entry point). `net_connect`'s ticket
+  resolution now checks an externally-supplied ticket first, before the existing WOTAN
+  self-registration flow and the self-minted dev fallback -- neither of those carries a real
+  DragonsNShit identity (self-registration would silently mint a throwaway `redgarden_bot`
+  player_id instead). This is the piece that makes `apps2/mud`'s new `battlegrounds` command
+  actionable: it mints a real ticket via IDUNA and prints the exact `red_garden_arena --queue
+  <host> --matchmaker-port 7778 --ticket <hex>` command line to run, since a telnet session can't
+  launch a client process itself. `scripts/build.sh` clean (no new warnings), full
+  `scripts/test_arena.sh` suite green.
+
 - feat(arena): GoblinFoxDragon `REDGARDEN_GUI_NORTHSTAR.md` Milestone 2 -- real skillchain
   resonance detection in `arena_game.c`, same session as Milestone 1 below. `ArenaResonance`
   (14 elements) + `resonance_combo` are a straight C port of

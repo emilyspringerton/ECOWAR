@@ -129,6 +129,15 @@ static int apm_compute(uint32_t now_ms) {
 static int net_sock = -1;
 static struct sockaddr_in net_server_addr;
 
+/* g_supplied_ticket_hex (REDGARDEN_GUI_NORTHSTAR.md Milestone 3, 2026-07-31): a real,
+ * already-minted ticket handed to this client externally -- GoblinFoxDragon/apps2/mud's
+ * `battlegrounds` command mints one for a real DragonsNShit character via IDUNA and prints the
+ * exact command line to run this binary with it, since a telnet session can't launch this
+ * process itself. Takes priority over both existing ticket paths in net_connect (WOTAN
+ * self-registration, self-minted dev fallback) -- neither of those carry a real DragonsNShit
+ * identity, and self-registration would silently mint a throwaway one instead. */
+static const char *g_supplied_ticket_hex = NULL;
+
 static char iduna_host[128] = "127.0.0.1";
 static int iduna_port = 8080;
 static char iduna_agent_name[128] = "";
@@ -273,7 +282,13 @@ static int net_connect(const char *host, int port) {
 
     unsigned char ticket[ARENA_TICKET_TOTAL_LEN];
     int have_ticket = 0;
-    if (iduna_agent_configured) {
+    if (g_supplied_ticket_hex) {
+        have_ticket = hex_decode(g_supplied_ticket_hex, ticket, ARENA_TICKET_TOTAL_LEN);
+        if (!have_ticket) {
+            fprintf(stderr, "--ticket: not valid %d-byte hex\n", ARENA_TICKET_TOTAL_LEN);
+        }
+    }
+    if (!have_ticket && iduna_agent_configured) {
         have_ticket = get_real_wotan_ticket(ticket);
     }
     if (!have_ticket) {
@@ -2241,6 +2256,8 @@ int main(int argc, char *argv[]) {
             queue_host = argv[++i];
         } else if (strcmp(argv[i], "--matchmaker-port") == 0 && i + 1 < argc) {
             queue_port = atoi(argv[++i]);
+        } else if (strcmp(argv[i], "--ticket") == 0 && i + 1 < argc) {
+            g_supplied_ticket_hex = argv[++i];
         }
     }
 #ifdef _WIN32
