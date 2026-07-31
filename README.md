@@ -8,9 +8,13 @@ comments in `apps/arena/src/main.c` and left implicit across every hero entry in
 
 | Input | Does |
 |---|---|
-| **Left click** | Move to that point, or lock onto and auto-attack a live enemy hero if the click landed on one (team matches only — see NORTHSTAR §17). Walking into range of an enemy also auto-attacks it, so there's no separate "attack" input for melee range. |
+| **Left click** | Move to that point, or lock onto and auto-attack a live enemy hero if the click landed on one (team matches only — see NORTHSTAR §17). Walking into range of an enemy also auto-attacks it, so there's no separate "attack" input for melee range. Commands whichever of your own units are currently selected — for every hero except Tyler that's always just yourself, so this is unchanged from the description above unless you've drag-selected (below). |
+| **Left click + drag** (Tyler only) | Box-select your own puppet clones (2026-07-30, "Divided We Stand" rework — true Meepo parity, clones no longer auto-follow). Drag a box over yourself and/or your active clones to select just them, then a plain click commands only the selected units — split your army and send nets in different directions. A quick click (below the drag threshold) is never treated as a drag, so ordinary move/attack clicks are unaffected. An empty box resets selection back to "just yourself." No other hero has anything to select, so this row is a no-op for the rest of the roster. |
 | **Q / W / E** | Your three ability slots, in order. Every hero's kit maps its abilities to exactly these three — `docs/HEROES_VS0.md` lists each hero's real Q/W/R names and effects, but the *keys* are always Q/W/E, never anything hero-specific. W is either an instant effect on cooldown or a hold-on/hold-off toggle depending on the hero (`arena_hero_w_is_toggle()`) — toggles drain mana continuously while held rather than charging a flat cost up front. |
-| **B** | Toggle the shop panel (S170-175). Buy any of the 24 items with a click or, for the first 9 in the list, the matching `1`-`9` key — either way it's a single action, no confirm step. Click an occupied slot in the loadout column to sell it back for half price. Only resolves for real within `ARENA_SHOP_RADIUS` of your own team's shop. |
+| **`** (backquote/tilde) | Use your equipped active item — Blink Dagger (short blink toward the cursor) or Donkey's Paper Glide (dash away from the nearest enemy), whichever one you actually have equipped. No-op with neither equipped. |
+| **B** | Toggle the shop panel (S170-175) manually. The panel also opens/closes on its own once you walk within `ARENA_SHOP_RADIUS` of your own team's shop and leave it again (2026-07-30) — `B` still works on top of that for whenever you want it open away from the shop. |
+| **1–9** (shop open) | Buy the item in that row of the *current* shop page — a single action, no confirm step. The 27-item catalog is paginated 9-per-page (2026-07-30) so every visible row always has a live `1`-`9` keybind, unlike the old single giant list. Click an occupied slot in the loadout column to sell it back for half price. Purchases only resolve for real within `ARENA_SHOP_RADIUS` of your own team's shop. |
+| **Shift+1 / Shift+2 / Shift+3** (shop open) | Jump straight to shop page 1/2/3. Three clickable page-number buttons above the item list do the same thing for mouse users. |
 | **Held TAB** | Scoreboard: every hero's kills/deaths/Flow/XP, plus a team-aggregate row, both teams side by side. |
 | **H** | Toggle an ability-description overlay for your own hero's Q/W/E. |
 | **Right click + drag** | Rotate the camera around your hero. No-op while camera lock (`C`) is on. |
@@ -21,11 +25,13 @@ comments in `apps/arena/src/main.c` and left implicit across every hero entry in
 | **Click "OK"** | After a match ends (win or loss), requeues you for another one. Networked mode only. |
 
 **Zone abilities (S170-200):** 8 heroes' R (Ghost, Flamel, Morrigan, Paimon, NOOR-1, Vassago, He
-Xiangu, Beleth) cast a real ground-radius zone, not a single-target effect. Whenever your own R
-is one of these and ready to cast, a faint ring shows exactly where and how big it'll land before
-you press E — every zone always casts centered on your own current position, so that's always
-where the ring is. Once cast, a filled, pulsing circle marks the real zone for its actual
-duration, visible identically to everyone in the match (allies and enemies), not just the caster.
+Xiangu, Beleth) cast a real ground-radius zone, not a single-target effect — plus Gunnr's W
+(Consecration, 2026-07-30, "just like WoW"), the one zone ability on this slot instead of R.
+Whenever one of these is ready to cast, a faint ring shows exactly where and how big it'll land
+before you press the key — every zone always casts centered on your own current position, so
+that's always where the ring is. Once cast, a filled, pulsing circle marks the real zone for its
+actual duration, visible identically to everyone in the match (allies and enemies), not just the
+caster.
 
 Draft is automatic right now — no pick UI yet, you're assigned a hero based on your slot in the
 lobby (`docs/HEROES_VS0.md` documents every hero's kit if you want to know what you're about to
@@ -52,7 +58,7 @@ the catalog's generic-tier items.
 
 ### Item stats
 
-The full 24-item catalog (`ARENA_ITEMS`, `packages/simulation/arena_game.c`) — every stat bonus
+The full 27-item catalog (`ARENA_ITEMS`, `packages/simulation/arena_game.c`) — every stat bonus
 applies the instant you buy, no equip delay. Weapon carries 12 named items from
 `docs/HEROES_VS0.md`'s own "Season 3 LoL" starting roster plus 2 "weird" items with unusual stat
 shapes pulled from real FFXI end-game weapon reputations (Kraken Club: huge AD, zero defense;

@@ -2917,3 +2917,12 @@
   against the currently-running match (pgrep found it immediately; both checks composable and
   correct). Also bumped the bot pool back to 20 (was stuck at 19/20 with no human to complete the
   lobby, so no new match could self-start after the kill) to get a match running again right away.
+
+- docs: refreshed README's keybind table -- had gone stale across this whole session's worth of
+  client changes. Founder: "add the full current kit keybinds to the top of the readme not the
+  top top above the items." The table already lived in the right spot (`## How to Play`, above
+  the item catalog) -- it just needed real content: new rows for `` ` `` (active item use, Blink
+  Dagger/Donkey), shop pagination (`1`-`9` now page-relative, `Shift+1/2/3` to jump pages, the
+  on-screen page buttons), and Tyler's drag-select clone control. Also fixed the item count (24
+  -> 27, stale since Blink Dagger/Donkey/Haste Trinket were added) and the zone-abilities note
+  (Gunnr's Consecration is a zone cast from W, not R, unlike the other 8).
