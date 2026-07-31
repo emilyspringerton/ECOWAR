@@ -3515,6 +3515,66 @@ static void test_gunnr_r_out_of_range_whiffs_but_still_starts_cooldown(void) {
     CHECK(gunnr->r_cooldown_ms == ARENA_GUNNR_R_COOLDOWN_MS, "R still starts its cooldown even on a whiff");
 }
 
+/* Warrior (REDGARDEN_GUI_NORTHSTAR.md Milestone 1, 2026-07-31): the first job ported from
+ * DragonsNShit's real weapon-skill system, not a TYLER hero -- see arena_game.h's own doc
+ * comment on ARENA_WARRIOR_* for the real Hard Slash/Power Slash/Frostbite sourcing. All three
+ * are plain melee-range instant hits, same test shape as Gunnr's Q / Zagan's W above. */
+static void test_warrior_q_hard_slash_damages_in_melee_range(void) {
+    arena_init_with_heroes(ARENA_HERO_UNICORN, ARENA_HERO_WARRIOR);
+    ArenaHero *warrior = &arena_state.heroes[1];
+    ArenaHero *foe = &arena_state.heroes[0];
+    foe->x = warrior->x + 1.5f; /* within ARENA_WARRIOR_Q_RANGE */
+    foe->z = warrior->z;
+    int foe_hp_before = foe->hp;
+
+    arena_cast_q(1);
+
+    CHECK(foe->hp < foe_hp_before, "Hard Slash deals damage when in melee range");
+    CHECK(warrior->q_cooldown_ms == ARENA_WARRIOR_Q_COOLDOWN_MS, "Q starts on cooldown after a landed hit");
+}
+
+static void test_warrior_q_out_of_range_whiffs(void) {
+    arena_init_with_heroes(ARENA_HERO_UNICORN, ARENA_HERO_WARRIOR);
+    ArenaHero *warrior = &arena_state.heroes[1];
+    ArenaHero *foe = &arena_state.heroes[0]; /* default spawn is well outside melee range */
+    int foe_hp_before = foe->hp;
+
+    arena_cast_q(1);
+
+    CHECK(foe->hp == foe_hp_before, "Hard Slash out of melee range does not damage the foe");
+    CHECK(warrior->q_cooldown_ms == 0, "Q out of range does not start its cooldown");
+}
+
+static void test_warrior_w_power_slash_hits_harder_than_q(void) {
+    arena_init_with_heroes(ARENA_HERO_UNICORN, ARENA_HERO_WARRIOR);
+    ArenaHero *warrior = &arena_state.heroes[1];
+    ArenaHero *foe = &arena_state.heroes[0];
+    foe->x = warrior->x + 1.5f; /* within ARENA_WARRIOR_W_RANGE */
+    foe->z = warrior->z;
+    int foe_hp_before = foe->hp;
+
+    arena_toggle_w(1);
+
+    CHECK(foe->hp < foe_hp_before, "Power Slash deals damage when in melee range");
+    CHECK(ARENA_WARRIOR_W_DAMAGE > ARENA_WARRIOR_Q_DAMAGE, "Power Slash's real weapon-skill damage exceeds Hard Slash's, real FFXI mid-tier > starter WS progression");
+    CHECK(warrior->w_cooldown_ms == ARENA_WARRIOR_W_COOLDOWN_MS, "W starts on cooldown after a landed hit");
+}
+
+static void test_warrior_r_frostbite_hits_hardest(void) {
+    arena_init_with_heroes(ARENA_HERO_UNICORN, ARENA_HERO_WARRIOR);
+    ArenaHero *warrior = &arena_state.heroes[1];
+    ArenaHero *foe = &arena_state.heroes[0];
+    foe->x = warrior->x + 1.5f; /* within ARENA_WARRIOR_R_RANGE */
+    foe->z = warrior->z;
+    int foe_hp_before = foe->hp;
+
+    arena_cast_r(1);
+
+    CHECK(foe->hp < foe_hp_before, "Frostbite deals damage when in melee range");
+    CHECK(ARENA_WARRIOR_R_DAMAGE > ARENA_WARRIOR_W_DAMAGE, "Frostbite's real weapon-skill damage exceeds Power Slash's, real FFXI finisher > mid-tier WS progression");
+    CHECK(warrior->r_cooldown_ms == ARENA_WARRIOR_R_COOLDOWN_MS, "R starts on cooldown after a landed hit");
+}
+
 static void test_vassago_passive_regenerates_hp(void) {
     arena_init_with_heroes(ARENA_HERO_UNICORN, ARENA_HERO_VASSAGO);
     ArenaHero *vassago = &arena_state.heroes[1];
@@ -6076,6 +6136,10 @@ int main(void) {
     test_gunnr_r_executes_harder_at_low_hp();
     test_gunnr_r_stuns_foe_in_range();
     test_gunnr_r_out_of_range_whiffs_but_still_starts_cooldown();
+    test_warrior_q_hard_slash_damages_in_melee_range();
+    test_warrior_q_out_of_range_whiffs();
+    test_warrior_w_power_slash_hits_harder_than_q();
+    test_warrior_r_frostbite_hits_hardest();
     test_vassago_passive_regenerates_hp();
     test_vassago_q_damages_and_silences_in_range();
     test_vassago_q_out_of_range_whiffs();

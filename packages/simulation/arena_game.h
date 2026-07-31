@@ -304,8 +304,14 @@ typedef enum {
     ARENA_HERO_MNM = 25, /* TYLER multiverse_heroes.md #114, "MnM, the Shapeshifting Crab" (S170-134) */
     ARENA_HERO_WEATHERMAN = 26, /* TYLER multiverse_heroes.md #45, "Ao Guang's Weather-Debt Collector" (S170-206, NORTHSTAR §16.2) */
     ARENA_HERO_ZAGAN = 27, /* TYLER multiverse_heroes.md #19, "Zagan, the Standstill's Confessor" (S170-230) */
+    ARENA_HERO_WARRIOR = 28, /* GoblinFoxDragon REDGARDEN_GUI_NORTHSTAR.md Milestone 1: not a TYLER
+                                 hero -- DragonsNShit's Warrior job, ported as Battlegrounds
+                                 content. Appended to this enum as the cheapest correct home for
+                                 it until Milestone 3's real job-select entry point lands; the
+                                 job-vs-hero pick-screen distinction is that milestone's problem,
+                                 not this one's. */
 } ArenaHeroID;
-#define ARENA_HERO_COUNT 28
+#define ARENA_HERO_COUNT 29
 
 /* The Unicorn — first real hero kit wired in (S170-18). */
 #define ARENA_UNICORN_ARMOR         4    /* passive: Chassis Claim, flat dmg reduction */
@@ -858,6 +864,30 @@ typedef enum {
 #define ARENA_GUNNR_R_DAMAGE_LOW_HP         24   /* at ~0% target HP -- an execute */
 #define ARENA_GUNNR_R_STUN_MS              1100   /* same as ARENA_ZAGAN_W_STUN_MS -- founder: "give gunnrs e a stun" */
 #define ARENA_GUNNR_R_COOLDOWN_MS        20000
+
+/* Warrior (REDGARDEN_GUI_NORTHSTAR.md Milestone 1, 2026-07-31): the first job ported from
+ * DragonsNShit's real `apps2/mud`/`server/skillchain`/`server/job` systems into Battlegrounds
+ * ability content, not invented. Three real Great Sword weapon skills from
+ * `server/skillchain.CanonicalWeaponSkills` (WAR's real FFXI-archetype weapon per
+ * `server/job.jobStats[WAR]`'s STR-8/VIT-8 profile -- the roster's most physically front-loaded
+ * job stat block) sit on Q/W/R in real FFXI progression order (starter -> mid -> finisher WS).
+ * Resonance attributes are carried in these doc comments for Milestone 2 (skillchain detection
+ * in this file) to consume later -- not acted on yet, this milestone doesn't touch chaining.
+ * `apps2/mud`'s weapon skills all share one real, uniform cost: `server/combat.TPWSThreshold`
+ * (100 TP) via `TPState.UseWeaponSkill()`. REDGARDEN has no TP resource, so MP (this file's own
+ * existing affordance, `ARENA_MP_COST_*`) substitutes rather than a new TP bar being invented --
+ * an honest amendment, not a literal port, matching founder direction ("we want our old systems
+ * like skillchains etc [to] work with redgarden affordances"). Melee range/cooldown magnitudes
+ * matched to the existing roster (Gunnr's Q/R above) rather than a new damage-scaling formula. */
+#define ARENA_WARRIOR_Q_RANGE                2.2f  /* melee range, same as Gunnr's Q */
+#define ARENA_WARRIOR_Q_DAMAGE               12    /* Hard Slash -- Scission; real FFXI starter GSword WS */
+#define ARENA_WARRIOR_Q_COOLDOWN_MS        3000
+#define ARENA_WARRIOR_W_RANGE                2.2f
+#define ARENA_WARRIOR_W_DAMAGE               18    /* Power Slash -- Transfixion; real FFXI mid-tier GSword WS */
+#define ARENA_WARRIOR_W_COOLDOWN_MS        8000
+#define ARENA_WARRIOR_R_RANGE                2.2f
+#define ARENA_WARRIOR_R_DAMAGE               30    /* Frostbite -- Induration+Reverberation (dual resonance); real FFXI GSword finisher WS */
+#define ARENA_WARRIOR_R_COOLDOWN_MS       20000
 
 /* Vassago (S170-93): passive small HP regen, always on, same shape as Dagda's Undry -- ambient
  * restorative foresight, sensing and softening harm before it fully lands. Q a ranged bolt,

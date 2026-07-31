@@ -1,5 +1,26 @@
 # Changelog
 
+## 2026-07-31
+
+- feat(arena): GoblinFoxDragon `REDGARDEN_GUI_NORTHSTAR.md` Milestone 1 -- Warrior, the first
+  DragonsNShit job ported into Battlegrounds as real ability content, not a TYLER hero.
+  `ARENA_HERO_WARRIOR` appended to `ArenaHeroID` (`ARENA_HERO_COUNT` 28->29). Three real Great
+  Sword weapon skills from `GoblinFoxDragon/server/skillchain.CanonicalWeaponSkills`, matching
+  WAR's real job stat block (`server/job.jobStats[WAR]`, STR-8/VIT-8), in real FFXI progression
+  order: Q Hard Slash (Scission), W Power Slash (Transfixion), R Frostbite (Induration+
+  Reverberation, dual resonance) -- each harder than the last, on a longer cooldown than the
+  last. `apps2/mud`'s weapon skills share one real, uniform cost (`server/combat.TPWSThreshold`,
+  100 TP); REDGARDEN has no TP resource, so MP substitutes (this file's own existing
+  `ARENA_MP_COST_*`) rather than a new TP bar being invented -- an honest amendment, not a
+  literal port. All three are plain melee-range instant hits (`warrior_cast_q/w/r`, same shape
+  as Gunnr's Q), wired into the real Q/W/R cast dispatch + bot AI heuristic (biggest/longest-
+  cooldown checked first). Resonance attributes documented for Milestone 2 (real skillchain
+  detection in this file) to consume later -- not acted on yet. `docs/HEROES_VS0.md` entry
+  added. New tests: `test_warrior_q_hard_slash_damages_in_melee_range`,
+  `test_warrior_q_out_of_range_whiffs`, `test_warrior_w_power_slash_hits_harder_than_q`,
+  `test_warrior_r_frostbite_hits_hardest`. `scripts/build.sh` clean (no new warnings),
+  `scripts/test_arena.sh` full suite green, `scripts/test_10_bots.sh` stable.
+
 ## 2026-07-29
 
 - feat(arena): S170-218, split the single lane's wave into melee + caster roles. Biggest,

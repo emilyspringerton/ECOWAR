@@ -3131,6 +3131,38 @@ static int gunnr_cast_q(ArenaHero *gunnr, ArenaHero *foe) {
     return 1;
 }
 
+/* warrior_cast_q: Hard Slash -- real DragonsNShit Great Sword weapon skill (Scission), plain
+ * melee-range damage, same shape as Gunnr's Q. Returns 1 if it landed. */
+static int warrior_cast_q(ArenaHero *warrior, ArenaHero *foe) {
+    if (!hero_is_hittable(foe)) return 0;
+    float dx = foe->x - warrior->x, dz = foe->z - warrior->z;
+    if (sqrtf(dx * dx + dz * dz) > ARENA_WARRIOR_Q_RANGE) return 0;
+    apply_damage(foe, apply_armor(ARENA_WARRIOR_Q_DAMAGE, arena_hero_armor(foe)));
+    return 1;
+}
+
+/* warrior_cast_w: Power Slash -- real DragonsNShit Great Sword weapon skill (Transfixion), a
+ * harder melee-range hit than Hard Slash on a longer cooldown, same real FFXI mid-tier WS
+ * progression. Returns 1 if it landed. */
+static int warrior_cast_w(ArenaHero *warrior, ArenaHero *foe) {
+    if (!hero_is_hittable(foe)) return 0;
+    float dx = foe->x - warrior->x, dz = foe->z - warrior->z;
+    if (sqrtf(dx * dx + dz * dz) > ARENA_WARRIOR_W_RANGE) return 0;
+    apply_damage(foe, apply_armor(ARENA_WARRIOR_W_DAMAGE, arena_hero_armor(foe)));
+    return 1;
+}
+
+/* warrior_cast_r: Frostbite -- real DragonsNShit Great Sword weapon skill, dual resonance
+ * (Induration+Reverberation), the hardest of Warrior's three real weapon skills on the longest
+ * cooldown -- the real FFXI GSword finisher WS. Returns 1 if it landed. */
+static int warrior_cast_r(ArenaHero *warrior, ArenaHero *foe) {
+    if (!hero_is_hittable(foe)) return 0;
+    float dx = foe->x - warrior->x, dz = foe->z - warrior->z;
+    if (sqrtf(dx * dx + dz * dz) > ARENA_WARRIOR_R_RANGE) return 0;
+    apply_damage(foe, apply_armor(ARENA_WARRIOR_R_DAMAGE, arena_hero_armor(foe)));
+    return 1;
+}
+
 /* vassago_cast_q: Reveal the Gentle Maybe -- a ranged bolt, damage + silence, same shape as
  * Ghost's Q. Returns 1 if it landed. */
 static int vassago_cast_q(ArenaHero *vassago, ArenaHero *foe) {
@@ -3471,6 +3503,12 @@ void arena_cast_q(int owner) {
             h->mp -= ARENA_MP_COST_Q;
         }
         break;
+    case ARENA_HERO_WARRIOR:
+        if (warrior_cast_q(h, foe)) {
+            h->q_cooldown_ms = cast_cooldown(h, ARENA_WARRIOR_Q_COOLDOWN_MS);
+            h->mp -= ARENA_MP_COST_Q;
+        }
+        break;
     }
 }
 
@@ -3730,6 +3768,15 @@ void arena_toggle_w(int owner) {
         if (h->w_cooldown_ms > 0 || h->mp < ARENA_MP_COST_W) return;
         if (zagan_cast_w(h, arena_nearest_enemy(owner))) {
             h->w_cooldown_ms = cast_cooldown(h, ARENA_ZAGAN_W_COOLDOWN_MS);
+            h->mp -= ARENA_MP_COST_W;
+        }
+        break;
+    case ARENA_HERO_WARRIOR:
+        /* Power Slash: instant targeted cast, same shape as Zagan's W -- see warrior_cast_w's
+           own doc comment. */
+        if (h->w_cooldown_ms > 0 || h->mp < ARENA_MP_COST_W) return;
+        if (warrior_cast_w(h, arena_nearest_enemy(owner))) {
+            h->w_cooldown_ms = cast_cooldown(h, ARENA_WARRIOR_W_COOLDOWN_MS);
             h->mp -= ARENA_MP_COST_W;
         }
         break;
@@ -4041,6 +4088,15 @@ void arena_cast_r(int owner) {
                 h->r_cooldown_ms = cast_cooldown(h, ARENA_ZAGAN_R_COOLDOWN_MS);
                 h->mp -= ARENA_MP_COST_R;
             }
+        }
+        break;
+    case ARENA_HERO_WARRIOR:
+        /* Frostbite: instant targeted cast, same shape as Gunnr's Q/warrior_cast_q -- see
+           warrior_cast_r's own doc comment. */
+        if (h->r_cooldown_ms > 0 || h->mp < ARENA_MP_COST_R) return;
+        if (warrior_cast_r(h, foe)) {
+            h->r_cooldown_ms = cast_cooldown(h, ARENA_WARRIOR_R_COOLDOWN_MS);
+            h->mp -= ARENA_MP_COST_R;
         }
         break;
     }
@@ -5024,6 +5080,18 @@ void bot_cast_kit_if_ready(ArenaHero *bot, ArenaHero *foe) {
         } else if (bot->r_cooldown_ms <= 0 && dist <= ARENA_ZAGAN_R_RANGE) {
             arena_cast_r(bot->owner);
         } else if (bot->q_cooldown_ms <= 0 && dist <= ARENA_ZAGAN_Q_RANGE) {
+            arena_cast_q(bot->owner);
+        }
+        break;
+    case ARENA_HERO_WARRIOR:
+        /* All three are plain melee-range hits with no special condition (unlike Gunnr's
+           execute-scaling or Zagan's CC-priority) -- biggest/longest-cooldown checked first so
+           the bot doesn't waste Frostbite's window sitting on Hard Slash. */
+        if (bot->r_cooldown_ms <= 0 && dist <= ARENA_WARRIOR_R_RANGE) {
+            arena_cast_r(bot->owner);
+        } else if (bot->w_cooldown_ms <= 0 && dist <= ARENA_WARRIOR_W_RANGE) {
+            arena_toggle_w(bot->owner);
+        } else if (bot->q_cooldown_ms <= 0 && dist <= ARENA_WARRIOR_Q_RANGE) {
             arena_cast_q(bot->owner);
         }
         break;

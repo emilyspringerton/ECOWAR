@@ -729,6 +729,37 @@ changes meta."
 
 ---
 
+### Warrior — **DragonsNShit job, not a TYLER hero** (GoblinFoxDragon `docs2/REDGARDEN_GUI_NORTHSTAR.md` Milestone 1, 2026-07-31)
+
+Not part of the TYLER `multiverse_heroes.md` roster every other hero on this page draws from.
+DragonsNShit (`GoblinFoxDragon/apps2/mud`)'s real 22-job system is being ported into Battlegrounds
+as playable content — Warrior is the first, "the simplest real kit" per the northstar's own
+Milestone 1 language. Appended to `ArenaHeroID` as the cheapest correct home for it until
+Milestone 3's real job-select entry point exists; picking Warrior over a TYLER hero is a
+presentation-layer problem that milestone still has to solve, not this one.
+
+Three real Great Sword weapon skills from `server/skillchain.CanonicalWeaponSkills`, matching
+WAR's real FFXI-archetype weapon per `server/job.jobStats[WAR]`'s STR-8/VIT-8 stat block (this
+roster's most physically front-loaded job), in real FFXI progression order:
+
+- **Q — Hard Slash** (Scission): the real starter Great Sword weapon skill, a plain melee-range
+  hit, same shape as Gunnr's Q.
+- **W — Power Slash** (Transfixion): the real mid-tier Great Sword weapon skill, hits harder than
+  Hard Slash on a longer cooldown.
+- **R — Frostbite** (Induration + Reverberation, dual resonance): the real Great Sword finisher
+  weapon skill, the hardest of the three, longest cooldown.
+
+`apps2/mud`'s weapon skills all share one real, uniform cost — `server/combat.TPWSThreshold`
+(100 TP) via `TPState.UseWeaponSkill()`. REDGARDEN has no TP resource, so MP substitutes (this
+file's own existing `ARENA_MP_COST_*` affordance) rather than a new TP bar being invented — an
+honest amendment, not a literal port, per founder direction ("we want our old systems like
+skillchains etc [to] work with redgarden affordances"). Resonance attributes are named here for
+Milestone 2 (real skillchain detection between two players' casts, in `arena_game.c`) to consume
+later — this milestone doesn't touch chaining. No passive, no status effect on any of the three —
+real FFXI Great Sword weapon skills are plain damage, and this kit doesn't invent one to pad it out.
+
+---
+
 ## Starting Item Roster (VS0)
 
 LoL Season 3 is the explicit stylistic northstar here — not its item *names*, its item *stat-line

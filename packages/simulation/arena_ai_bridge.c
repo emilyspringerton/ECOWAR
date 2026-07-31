@@ -34,6 +34,7 @@ const char *arena_hero_name(ArenaHeroID hero_id) {
     case ARENA_HERO_MNM:     return "mnm";
     case ARENA_HERO_WEATHERMAN: return "weatherman"; /* S170-230: found missing while adding Zagan below -- real pre-existing gap, fixed alongside */
     case ARENA_HERO_ZAGAN:   return "zagan";
+    case ARENA_HERO_WARRIOR: return "warrior";
     default:                 return "unknown";
     }
 }
@@ -103,6 +104,7 @@ const char *arena_ability_name(ArenaHeroID hero_id, int slot) {
         [ARENA_HERO_MNM]        = {"CLAMP DOWN", "BURROW", "ABSORBING HITS MEANT FOR SOMEBODY ELSE"},
         [ARENA_HERO_WEATHERMAN] = {"BAROMETRIC SHOVE", "COLLECTS ON WHAT'S OWED", "THE DEBT COMPOUNDS"},
         [ARENA_HERO_ZAGAN]      = {"CALCINATION", "THE STANDSTILL", "CONJUNCTION"},
+        [ARENA_HERO_WARRIOR]    = {"HARD SLASH", "POWER SLASH", "FROSTBITE"}, /* real DragonsNShit Great Sword weapon skills, not invented lore names -- REDGARDEN_GUI_NORTHSTAR.md Milestone 1 */
     };
     if (hero_id < 0 || hero_id >= ARENA_HERO_COUNT || slot < 0 || slot > 2) return "?";
     const char *name = NAMES[hero_id][slot];
@@ -144,6 +146,7 @@ const char *arena_ability_description(ArenaHeroID hero_id, int slot) {
         [ARENA_HERO_MNM]        = {"MELEE ROOT + DAMAGE", "UNTARGETABLE, SMALL AOE ON RETURN", "SELF-ROOT + TEMPORARY DAMAGE FLOOR"},
         [ARENA_HERO_WEATHERMAN] = {"RANGED KNOCKBACK, NO DAMAGE", "GROUNDS/EXTENDS DONKEY'S GLIDE", "ZONE: DAMAGE OVER TIME"},
         [ARENA_HERO_ZAGAN]      = {"DAMAGE + LINGERING ARMOR SHRED", "STUN A NEARBY FOE", "MIRROR A FOE'S ARMOR FOR A WINDOW"},
+        [ARENA_HERO_WARRIOR]    = {"MELEE-RANGE DIRECT STRIKE", "HARDER MELEE-RANGE STRIKE", "HARDEST MELEE-RANGE STRIKE"},
     };
     if (hero_id < 0 || hero_id >= ARENA_HERO_COUNT || slot < 0 || slot > 2) return "?";
     const char *desc = DESC[hero_id][slot];
@@ -201,6 +204,7 @@ static const ArenaHeroTags ARENA_HERO_TAGS[ARENA_HERO_COUNT] = {
     [ARENA_HERO_MNM]        = { 0, 0, 0, 0, 0, 1 }, /* Q explicitly "melee root+damage" per docs; W Burrow grants untargetability (S170-208) */
     [ARENA_HERO_WEATHERMAN] = { 1, 0, 1, 1, 0, 0 }, /* Q ranged + a real knockback (the roster's first push-outward Q); passive is a heal-shaped regen */
     [ARENA_HERO_ZAGAN]      = { 1, 0, 0, 0, 0, 0 }, /* Q is a real ranged poke (5.0 range, same "instant-hit-if-in-range" shape as Tree/Ghost/Pizza); no heal/knockback/dash/stealth anywhere in the kit */
+    [ARENA_HERO_WARRIOR]    = { 0, 0, 0, 0, 0, 0 }, /* all three real weapon skills are melee-range hits, no ranged/knockback/heal/dash/stealth tool anywhere in the kit */
 };
 
 /* arena_hero_tags_string writes a space-separated list of hero_id's TRUE tags into out (empty
