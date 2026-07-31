@@ -2494,3 +2494,79 @@ mechanics), translate real FFXI mechanic archetypes into concrete new `ArenaItem
 categories with honest prerequisites named per category, and put the already-made "verbatim real
 names" choice on the record rather than let it stay an implicit, unexamined precedent -- is done.
 No code changes accompany this section; implementation is separate, future work.
+
+## 24. Full unit control affordances — Warcraft 3 northstar (2026-07-31) -- spec only, no code yet
+
+Founder, real-time: "redgarden full unit control affordances northstar warcraft 3." Same
+discipline §20/§22/§23 already applied: name the current shape and its real gap before proposing
+anything, not invent a new system on top of an assumed-clean slate.
+
+### 24.1 Current shape (grounded in the actual code)
+
+REDGARDEN today is DOTA-shaped, not WC3-shaped: every hero is **owner-piloted** — one input
+stream (or one bot brain) maps to exactly one fully-controlled `ArenaHero` slot
+(`arena_game.h`'s own `ArenaHero.owner` field). Lane creeps (`ArenaLaneCreep`, §20) are
+autonomous team-aggro AI, never player-commanded — real MOBA convention, and the literal opposite
+of WC3's own "you lead an army" feel. §16.1 already named the real, general blocker precisely
+while scoping Donkey: *no non-piloted/companion-unit system exists* — and that section's own
+"status update" is honest that the blocker was **sidestepped, not solved** (Donkey shipped as an
+equippable item instead, specifically to avoid building a companion-slot concept with no second
+consumer yet).
+
+The one real, already-shipped exception is Tyler's own clone system (`is_clone`/`clone_owner` on
+`ArenaHero`, `apps/arena/src/main.c`'s drag-select: `selected_units[]`/`selected_unit_count`,
+`ARENA_MAX_SELECTED_UNITS`, `left_drag_active`, real box-select-and-command-group UX) — founder's
+own words when it shipped: *"clones multi control drag click all of it."* This is the actual,
+closest real precedent for what "full unit control" means: multiple simultaneously-selectable,
+directly-commandable units under one player's ownership, box-select and group-move/attack already
+real and tested. It is currently **Tyler-only, hardcoded**: `ARENA_MAX_SELECTED_UNITS` is sized
+to `1 + ARENA_TYLER_R_CLONE_COUNT` specifically, `is_clone`/`clone_owner` are set only by Tyler's
+own R cast, and every other hero's `selected_unit_count` stays permanently 0 (which
+`selected_or_self()` resolves to "just me," so nothing broke for the other 28 heroes when this
+landed — it was additive, not a general system yet).
+
+### 24.2 What "Warcraft 3" actually names, concretely
+
+Not asking "what does WC3 do" in the abstract — grounding the comparison in what real WC3 heroes
+have that REDGARDEN's don't:
+- **A hero leads units it didn't have to be born with** (WC3 heroes summon/train/command
+  creatures and structures over a match, not a fixed clone count from one R cast).
+- **Units survive independent of a single cast's own lifetime** — Tyler's clones are bound to
+  R's own duration/cooldown cycle; WC3 summons/creeps persist and are re-ordered turn to turn.
+- **Group orders, not just group selection** — real WC3 vocabulary is attack-move, hold position,
+  patrol, stop, not just "move this whole group to X" (which is as far as Tyler's own drag-select
+  UX goes today, per §24.1).
+- **Some real resource/production loop** gates how many units you can field (WC3: gold/lumber,
+  food cap) — REDGARDEN has Flow (§19) but nothing in the item/ability system currently spends it
+  on *producing units* rather than buying stats.
+
+### 24.3 A real, buildable path — generalize what already shipped, don't invent from zero
+
+Same "port real, don't invent" discipline this whole session has held everywhere else (REDGARDEN
+↔ DragonsNShit crossovers included, e.g. this session's own DragonsNShit SMN-Avatars work pulling
+Zagan/Beleth/Vassago from this exact roster the other direction). The tractable path is
+generalizing Tyler's own already-tested mechanism, not building a second, parallel one:
+
+| # | Milestone | What it actually requires | Status |
+|---|---|---|---|
+| 0 | This northstar | Written, current shape + real gap named, registered | DONE |
+| 1 | Generalize `is_clone`/`clone_owner`/`selected_units` off Tyler-only | Rename/refactor pass: any hero's kit can mark a spawned entity `is_clone`/`clone_owner`-shaped (a real "commandable sub-unit" concept, not Tyler-specific); `ARENA_MAX_SELECTED_UNITS` stops being sized to Tyler's own clone count specifically. No new gameplay yet — proves the existing drag-select/group-move UX Tyler already uses works for a second hero's units too. | NOT STARTED |
+| 2 | First non-Tyler hero with real controllable units | A real kit that spawns 2-3 units under the Milestone-1 generalized mechanism, TYLER-lore-sourced per this roster's own content pipeline (`HERO_CONTENT_FRAMEWORK.md`) — not a reused DragonsNShit SMN avatar; that crossover already has its own real, separate home (this session's DragonsNShit work, §-adjacent but not this roster). | NOT STARTED |
+| 3 | Real group-order vocabulary | Attack-move, hold, patrol, stop for a drag-selected group — the actual WC3 command surface §24.2 names as currently missing, not just group-move. | NOT STARTED |
+| 4 | (Separate, bigger, explicitly not decided here) Unit production/resource loop | Spending Flow to field units over time rather than a fixed cast-bound count — a real pivot toward WC3's own RTS-economy half, named as a distinct, much larger decision surfaced for the founder, not assumed. | OPEN QUESTION |
+
+### 24.4 What this section deliberately does not decide
+
+- **Milestone 4's own scope** — whether REDGARDEN grows a real unit-production economy at all is
+  a product-direction call bigger than this doc, named not resolved, same treatment §23.1's IP
+  question got.
+- **Which hero gets Milestone 2's real kit** — a content decision for the existing hero queue
+  (`HERO_CONTENT_FRAMEWORK.md`), not picked here.
+- **Numbers** (unit counts, costs, cooldowns) for any of it — same "spec the model, not the
+  numbers" discipline every other spec-only section in this file already applies.
+
+This section's job — name the real current shape (owner-piloted heroes, autonomous lane creeps,
+one real but Tyler-only multi-unit precedent), name §16.1's own already-honest "sidestepped, not
+solved" companion-unit gap as still-open and directly relevant, and lay out a path that
+generalizes what's real rather than inventing a second parallel system — is done. No code changes
+accompany this section; implementation is separate, future work.

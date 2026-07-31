@@ -2,6 +2,18 @@
 
 ## 2026-07-31
 
+- docs(northstar): §24 "Full unit control affordances — Warcraft 3 northstar" -- founder,
+  real-time: "redgarden full unit control affordances northstar warcraft 3." Spec only, no code.
+  Names the real current shape (every hero owner-piloted, lane creeps autonomous-AI-only, zero
+  player unit production) and the one real precedent that already exists: Tyler's own clone
+  system (drag-select, `selected_units[]`, `is_clone`/`clone_owner`) -- currently hardcoded to
+  Tyler only. Directly references §16.1's own honest "sidestepped, not solved" companion-unit
+  gap (Donkey shipped as an item specifically to avoid building that system) as still-open and
+  relevant. Real path proposed: generalize Tyler's already-shipped mechanism (Milestone 1) before
+  giving a second hero real controllable units (Milestone 2) and a real WC3-shaped group-order
+  vocabulary (Milestone 3) -- a real unit-production economy is named as a separate, much bigger,
+  explicitly-undecided pivot (Milestone 4), not assumed.
+
 - feat(arena_server): reward-credit hook -- GoblinFoxDragon `REDGARDEN_GUI_NORTHSTAR.md`
   Milestone 4. `report_match_result` now also credits real Flow to a match participant's
   persistent DragonsNShit character, if they have one (gated on IDUNA's new
