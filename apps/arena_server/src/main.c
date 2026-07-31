@@ -210,6 +210,47 @@ static void report_match_result(int winner) {
             fprintf(stderr, "WOTAN: hero-result report failed for client %d hero_id=%d (status=%d)\n",
                     owner, (int)arena_state.heroes[owner].hero_id, status);
         }
+
+        /* Reward-credit hook (REDGARDEN_GUI_NORTHSTAR.md Milestone 4, 2026-07-31): credit real
+           Flow to this player's persistent DragonsNShit character, if they have one. Gated on
+           character lookup succeeding, not on hero_id/job -- a REDGARDEN-only player (the
+           common case, no DragonsNShit crossover) gets a real 404 here and is silently skipped,
+           same "not every player is a DragonsNShit character" reality game-result/hero-result
+           above don't need to care about but this genuinely does. Reuses the same agent token
+           already fetched above -- the generic middleware.RequireAuth(keys) IDUNA's characters
+           routes use has no extra permission to wire. Amounts (100 win / 25 loss) are this
+           milestone's own call -- "exact reward shape not designed here" was the doc's honest
+           framing, so these are a first real number, not a design review's output; tune later
+           against real playtesting, not guessed twice. */
+        char lookup_resp[512];
+        int lookup_status = 0;
+        char lookup_path[96]; /* "/api/v1/characters/by-player/" (30) + a 36-char UUID + NUL -- 64 was too tight, caught by -Wformat-truncation */
+        snprintf(lookup_path, sizeof(lookup_path), "/api/v1/characters/by-player/%s", pid);
+        if (http_get_json(iduna_host, iduna_port, lookup_path, token,
+                           lookup_resp, sizeof(lookup_resp), &lookup_status) == 0 &&
+            lookup_status == 200) {
+            char char_id[64];
+            if (http_extract_json_string_field(lookup_resp, "character_id", char_id, sizeof(char_id))) {
+                int flow_reward = (((my_team + 1) == winner)) ? 100 : 25;
+                char credit_path[128];
+                snprintf(credit_path, sizeof(credit_path), "/api/v1/characters/%s/gold/credit", char_id);
+                char credit_body[64];
+                snprintf(credit_body, sizeof(credit_body), "{\"credit\":%d}", flow_reward);
+                int credit_status = 0;
+                if (http_patch_json(iduna_host, iduna_port, credit_path, token,
+                                     credit_body, resp, sizeof(resp), &credit_status) != 0 ||
+                    (credit_status != 200 && credit_status != 204)) {
+                    fprintf(stderr, "WOTAN: Battlegrounds Flow credit failed for character %s (status=%d)\n",
+                            char_id, credit_status);
+                } else {
+                    printf("WOTAN: credited %d Flow to DragonsNShit character %s (%s)\n",
+                           flow_reward, char_id, result);
+                }
+            }
+        }
+        /* lookup_status != 200 (almost always 404) is the expected, common case -- not logged as
+           an error, same "this is normal, not a failure" reasoning report_match_result's own
+           game-result/hero-result calls above don't need because every player has those. */
     }
 }
 

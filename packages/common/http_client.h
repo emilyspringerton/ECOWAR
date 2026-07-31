@@ -24,20 +24,21 @@
 #include <netdb.h>
 #include <unistd.h>
 
-// http_post_json sends a blocking HTTP/1.1 POST of json_body to
-// http://host:port/path with Content-Type: application/json and, if
-// bearer_token is non-NULL and non-empty, an Authorization: Bearer header.
-// On success (request sent and a response read) writes the numeric HTTP
-// status code to *out_status and copies up to resp_buf_len-1 bytes of the
-// response body into resp_buf (NUL-terminated), returning 0. Returns -1 on
-// any socket-level failure (resolve/connect/send/recv/oversized request)
-// without touching *out_status or resp_buf — callers must treat -1 as "no
-// idea what happened," not "failed cleanly."
-static int http_post_json(const char *host, int port, const char *path,
-                           const char *bearer_token,
-                           const char *json_body,
-                           char *resp_buf, size_t resp_buf_len,
-                           int *out_status) {
+// http_json_request sends a blocking HTTP/1.1 request of the given method (json_body may be
+// NULL/empty for GET) to http://host:port/path with Content-Type: application/json and, if
+// bearer_token is non-NULL and non-empty, an Authorization: Bearer header. On success (request
+// sent and a response read) writes the numeric HTTP status code to *out_status and copies up to
+// resp_buf_len-1 bytes of the response body into resp_buf (NUL-terminated), returning 0. Returns
+// -1 on any socket-level failure (resolve/connect/send/recv/oversized request) without touching
+// *out_status or resp_buf — callers must treat -1 as "no idea what happened," not "failed
+// cleanly." General verb parameter added 2026-07-31 (REDGARDEN_GUI_NORTHSTAR.md Milestone 4,
+// report_match_result needs a real GET lookup + PATCH credit, not just POST) — http_post_json
+// below is now a thin wrapper, kept so every existing POST call site is untouched.
+static int http_json_request(const char *method, const char *host, int port, const char *path,
+                              const char *bearer_token,
+                              const char *json_body,
+                              char *resp_buf, size_t resp_buf_len,
+                              int *out_status) {
     char port_str[16];
     snprintf(port_str, sizeof(port_str), "%d", port);
 
@@ -62,11 +63,12 @@ static int http_post_json(const char *host, int port, const char *path,
     freeaddrinfo(res);
 
     char req[4096];
-    int body_len = (int)strlen(json_body);
+    const char *body = json_body ? json_body : "";
+    int body_len = (int)strlen(body);
     int req_len;
     if (bearer_token && bearer_token[0]) {
         req_len = snprintf(req, sizeof(req),
-            "POST %s HTTP/1.1\r\n"
+            "%s %s HTTP/1.1\r\n"
             "Host: %s\r\n"
             "Content-Type: application/json\r\n"
             "Authorization: Bearer %s\r\n"
@@ -74,17 +76,17 @@ static int http_post_json(const char *host, int port, const char *path,
             "Connection: close\r\n"
             "\r\n"
             "%s",
-            path, host, bearer_token, body_len, json_body);
+            method, path, host, bearer_token, body_len, body);
     } else {
         req_len = snprintf(req, sizeof(req),
-            "POST %s HTTP/1.1\r\n"
+            "%s %s HTTP/1.1\r\n"
             "Host: %s\r\n"
             "Content-Type: application/json\r\n"
             "Content-Length: %d\r\n"
             "Connection: close\r\n"
             "\r\n"
             "%s",
-            path, host, body_len, json_body);
+            method, path, host, body_len, body);
     }
     if (req_len < 0 || req_len >= (int)sizeof(req)) { close(fd); return -1; }
 
@@ -105,15 +107,43 @@ static int http_post_json(const char *host, int port, const char *path,
     if (sscanf(raw, "HTTP/%*d.%*d %d", &status) != 1) return -1;
     *out_status = status;
 
-    const char *body = strstr(raw, "\r\n\r\n");
-    if (body && resp_buf_len > 0) {
-        body += 4;
-        strncpy(resp_buf, body, resp_buf_len - 1);
+    const char *resp_body = strstr(raw, "\r\n\r\n");
+    if (resp_body && resp_buf_len > 0) {
+        resp_body += 4;
+        strncpy(resp_buf, resp_body, resp_buf_len - 1);
         resp_buf[resp_buf_len - 1] = '\0';
     } else if (resp_buf_len > 0) {
         resp_buf[0] = '\0';
     }
     return 0;
+}
+
+static int http_post_json(const char *host, int port, const char *path,
+                           const char *bearer_token,
+                           const char *json_body,
+                           char *resp_buf, size_t resp_buf_len,
+                           int *out_status) {
+    return http_json_request("POST", host, port, path, bearer_token, json_body,
+                              resp_buf, resp_buf_len, out_status);
+}
+
+// http_get_json is http_json_request with method="GET" and no request body.
+static int http_get_json(const char *host, int port, const char *path,
+                          const char *bearer_token,
+                          char *resp_buf, size_t resp_buf_len,
+                          int *out_status) {
+    return http_json_request("GET", host, port, path, bearer_token, NULL,
+                              resp_buf, resp_buf_len, out_status);
+}
+
+// http_patch_json is http_json_request with method="PATCH".
+static int http_patch_json(const char *host, int port, const char *path,
+                            const char *bearer_token,
+                            const char *json_body,
+                            char *resp_buf, size_t resp_buf_len,
+                            int *out_status) {
+    return http_json_request("PATCH", host, port, path, bearer_token, json_body,
+                              resp_buf, resp_buf_len, out_status);
 }
 #else
 static int http_post_json(const char *host, int port, const char *path,
@@ -121,6 +151,23 @@ static int http_post_json(const char *host, int port, const char *path,
                            const char *json_body,
                            char *resp_buf, size_t resp_buf_len,
                            int *out_status) {
+    (void)host; (void)port; (void)path; (void)bearer_token; (void)json_body;
+    (void)resp_buf; (void)resp_buf_len; (void)out_status;
+    return -1;
+}
+static int http_get_json(const char *host, int port, const char *path,
+                          const char *bearer_token,
+                          char *resp_buf, size_t resp_buf_len,
+                          int *out_status) {
+    (void)host; (void)port; (void)path; (void)bearer_token;
+    (void)resp_buf; (void)resp_buf_len; (void)out_status;
+    return -1;
+}
+static int http_patch_json(const char *host, int port, const char *path,
+                            const char *bearer_token,
+                            const char *json_body,
+                            char *resp_buf, size_t resp_buf_len,
+                            int *out_status) {
     (void)host; (void)port; (void)path; (void)bearer_token; (void)json_body;
     (void)resp_buf; (void)resp_buf_len; (void)out_status;
     return -1;

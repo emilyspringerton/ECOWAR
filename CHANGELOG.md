@@ -2,6 +2,20 @@
 
 ## 2026-07-31
 
+- feat(arena_server): reward-credit hook -- GoblinFoxDragon `REDGARDEN_GUI_NORTHSTAR.md`
+  Milestone 4. `report_match_result` now also credits real Flow to a match participant's
+  persistent DragonsNShit character, if they have one (gated on IDUNA's new
+  `GET /api/v1/characters/by-player/:player_id` lookup succeeding -- a real 404 for the common
+  case of a REDGARDEN-only player is expected, not logged as an error). 100 Flow on a win, 25 on
+  a loss via the existing `PATCH .../gold/credit` -- first real numbers, not a design review's
+  output, tuned later against real playtesting. `packages/common/http_client.h` gained a general
+  `http_json_request(method, ...)` (GET/PATCH needed, only POST existed); `http_post_json` is now
+  a thin wrapper so every existing POST call site is untouched, plus new `http_get_json`/
+  `http_patch_json` wrappers. Caught a real bug via `-Wformat-truncation` before it shipped: the
+  by-player lookup path buffer was 64 bytes, too tight for `/api/v1/characters/by-player/` (30)
+  + a 36-char UUID + NUL (67) -- fixed to 96. `scripts/build.sh` clean, full
+  `scripts/test_arena.sh` suite green, `scripts/test_10_bots.sh` stable.
+
 - feat(arena): `apps/arena` client gains a `--ticket <hex>` flag -- GoblinFoxDragon
   `REDGARDEN_GUI_NORTHSTAR.md` Milestone 3 (Battlegrounds entry point). `net_connect`'s ticket
   resolution now checks an externally-supplied ticket first, before the existing WOTAN
