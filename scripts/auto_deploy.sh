@@ -111,8 +111,34 @@ export XDG_RUNTIME_DIR="/run/user/$(id -u)"
 # bot-pool/matchmaker restart itself, and marking this SHA as deployed, are deferred. Not writing
 # STATE_FILE here means the next timer tick (5 min later) retries this whole check from scratch
 # until it lands in a genuinely idle window, rather than silently giving up after one skip.
-if pgrep -f "build/red_garden_arena_server --port" > /dev/null 2>&1; then
+#
+# 2026-07-31, real incident again (founder: "the whole game just stops... like the server process
+# died" -- it had): a match with active combat (real HP deltas across its last several snapshot
+# log lines, no match_end ever written) was killed by this exact restart despite the guard above.
+# A single point-in-time `pgrep` is a real TOCTOU race -- correct at the instant it runs, but
+# nothing stops a match from being genuinely live a moment before or after that instant, and nothing
+# re-confirms right up against the actual restart call. Hardened with two independent, cheap
+# signals instead of trusting one snapshot: (1) pgrep, re-checked after a short settle delay so a
+# single unlucky instant can't slip through, and (2) any match log file written to very recently --
+# a live match snapshots to var/matches/*.jsonl every 500ms (match_log_snapshot), so a very fresh
+# write is strong independent evidence of real activity that doesn't depend on process-table timing
+# at all. Either signal alone is enough to defer.
+recent_match_log_activity() {
+    # Any var/matches/*.jsonl written within the last MATCH_LOG_FRESH_SEC seconds -- a live match's
+    # own 500ms snapshot cadence means anything idle for this long genuinely isn't active anymore.
+    local fresh_sec=15
+    find "${LIVE_DIR}/var/matches" -maxdepth 1 -name '*.jsonl' -newermt "-${fresh_sec} seconds" 2>/dev/null | head -1 | grep -q .
+}
+match_server_running() {
+    pgrep -f "build/red_garden_arena_server --port" > /dev/null 2>&1 || recent_match_log_activity
+}
+if match_server_running; then
     log "deferring restart for ${LATEST_GREEN_SHA} -- a match server is currently running (binaries published, will retry next cycle)"
+    exit 0
+fi
+sleep 3
+if match_server_running; then
+    log "deferring restart for ${LATEST_GREEN_SHA} -- a match server started during the settle window (binaries published, will retry next cycle)"
     exit 0
 fi
 

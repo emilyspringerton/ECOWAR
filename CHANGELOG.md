@@ -2901,3 +2901,19 @@
   whichever count is actually live rather than re-narrating each flip going forward.
   `scripts/run_bot_pool.sh`'s own usage comment trimmed the same way. Deployed live: redeployed
   the unit and restarted, confirmed 19 bot processes running.
+
+- fix(ops): auto-deploy's match-aware restart guard had a real TOCTOU race -- killed an
+  in-progress match again. Founder: "there is a bug where the whole game just stops... like the
+  server process died" -- it had. Real incident: a match with active combat (real HP deltas
+  across its last several snapshot lines, no `match_end` ever written) was killed by
+  `auto_deploy.sh`'s own scheduled restart despite the match-aware guard added after Apple #11297.
+  A single point-in-time `pgrep` check is exactly that -- correct at the instant it runs, with
+  nothing re-confirming right up against the actual restart call. Hardened with two independent
+  signals instead of trusting one snapshot: `pgrep`, re-checked after a 3s settle delay so a
+  single unlucky instant can't slip through twice in a row, and a new
+  `recent_match_log_activity()` check (any `var/matches/*.jsonl` written in the last 15s) -- a
+  live match snapshots every 500ms, so a fresh write is strong independent evidence that doesn't
+  depend on process-table timing at all. Either signal alone defers the restart. Validated live
+  against the currently-running match (pgrep found it immediately; both checks composable and
+  correct). Also bumped the bot pool back to 20 (was stuck at 19/20 with no human to complete the
+  lobby, so no new match could self-start after the kill) to get a match running again right away.
