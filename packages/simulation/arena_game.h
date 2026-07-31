@@ -865,14 +865,45 @@ typedef enum {
 #define ARENA_GUNNR_R_STUN_MS              1100   /* same as ARENA_ZAGAN_W_STUN_MS -- founder: "give gunnrs e a stun" */
 #define ARENA_GUNNR_R_COOLDOWN_MS        20000
 
+/* ArenaResonance (REDGARDEN_GUI_NORTHSTAR.md Milestone 2, 2026-07-31): a straight C port of
+ * `GoblinFoxDragon/server/skillchain.Resonance` -- same 14 real FFXI-archetype elements, same
+ * 3-tier structure (tier 1 same-element closure, tier 2 cross-element, tier 3 compound), same
+ * real damage multipliers (see ARENA_SKILLCHAIN_TIER*_MULT below). Two separate Go and C
+ * codebases can't share one Go type, so this enum plus `resonance_combo` (arena_game.c) are a
+ * deliberate re-implementation of the same real table `server/skillchain.combinationTable`
+ * already holds -- ported, not reinvented, per the northstar's own Milestone 2 language. */
+typedef enum {
+    ARENA_RESONANCE_NONE = 0,
+    ARENA_RESONANCE_LIQUEFACTION,
+    ARENA_RESONANCE_IMPACTION,
+    ARENA_RESONANCE_DETONATION,
+    ARENA_RESONANCE_SCISSION,
+    ARENA_RESONANCE_REVERBERATION,
+    ARENA_RESONANCE_INDURATION,
+    ARENA_RESONANCE_COMPRESSION,
+    ARENA_RESONANCE_TRANSFIXION,
+    ARENA_RESONANCE_FUSION,
+    ARENA_RESONANCE_FRAGMENTATION,
+    ARENA_RESONANCE_GRAVITATION,
+    ARENA_RESONANCE_DISTORTION,
+    ARENA_RESONANCE_LIGHT,
+    ARENA_RESONANCE_DARKNESS,
+} ArenaResonance;
+
+#define ARENA_SC_MAX_ATTRS       2       /* no weapon skill in this system carries more than 2 real resonance attrs (see Frostbite) */
+#define ARENA_SKILLCHAIN_WINDOW_MS 8000  /* same as server/skillchain.DefaultChainWindow (8s) */
+#define ARENA_SKILLCHAIN_TIER1_MULT 0.20f /* same as server/skillchain's real Tier1 multiplier */
+#define ARENA_SKILLCHAIN_TIER2_MULT 0.35f /* same as server/skillchain's real Tier2 multiplier */
+#define ARENA_SKILLCHAIN_TIER3_MULT 0.50f /* same as server/skillchain's real Tier3 multiplier */
+
 /* Warrior (REDGARDEN_GUI_NORTHSTAR.md Milestone 1, 2026-07-31): the first job ported from
  * DragonsNShit's real `apps2/mud`/`server/skillchain`/`server/job` systems into Battlegrounds
  * ability content, not invented. Three real Great Sword weapon skills from
  * `server/skillchain.CanonicalWeaponSkills` (WAR's real FFXI-archetype weapon per
  * `server/job.jobStats[WAR]`'s STR-8/VIT-8 profile -- the roster's most physically front-loaded
  * job stat block) sit on Q/W/R in real FFXI progression order (starter -> mid -> finisher WS).
- * Resonance attributes are carried in these doc comments for Milestone 2 (skillchain detection
- * in this file) to consume later -- not acted on yet, this milestone doesn't touch chaining.
+ * Resonance attributes are carried in these doc comments and now (Milestone 2, same day) real,
+ * live skillchain detection via apply_weapon_skill_damage/arena_skillchain_try below.
  * `apps2/mud`'s weapon skills all share one real, uniform cost: `server/combat.TPWSThreshold`
  * (100 TP) via `TPState.UseWeaponSkill()`. REDGARDEN has no TP resource, so MP (this file's own
  * existing affordance, `ARENA_MP_COST_*`) substitutes rather than a new TP bar being invented --
@@ -1708,6 +1739,25 @@ typedef struct {
      * the 1v1 local demo, which renders straight off arena_state with no
      * wire hop needed. */
     int cast_flash_slot;
+    /* Skillchain state (REDGARDEN_GUI_NORTHSTAR.md Milestone 2, 2026-07-31): tracked on the
+     * TARGET, not the caster -- real FFXI closes a chain when a SECOND weapon skill lands on
+     * the SAME target within the window of the FIRST, from any source (self-chain or a
+     * teammate's own weapon skill both count). sc_pending_attr_count==0 means no open window.
+     * Set/read by apply_weapon_skill_damage (arena_game.c), the one choke point every real
+     * weapon-skill cast (warrior_cast_q/w/r today, future jobs' own kits later) routes through
+     * -- ordinary abilities and basic attacks never touch this, matching real FFXI (only WS
+     * close/continue chains, not spells or melee swings). */
+    ArenaResonance sc_pending_attrs[ARENA_SC_MAX_ATTRS];
+    int sc_pending_attr_count;
+    unsigned int sc_pending_age_ms;
+    /* skillchain_flash_tier (Milestone 2): 0 = no chain this tick, 1/2/3 = the tier that just
+     * closed on this hero -- a new, distinct wire-visible event, deliberately NOT folded into
+     * cast_flash_slot or the generic hit-feedback path, per the northstar's own explicit
+     * requirement ("rendered as a real, distinct visual event"). Same one-tick set-then-clear
+     * lifetime as cast_flash_slot; client rendering of it is a real follow-up gap (this
+     * milestone is server-authoritative simulation only, same scoping as Milestone 1's own
+     * client-rendering gap). */
+    int skillchain_flash_tier;
     /* is_clone/clone_owner (S170-141, Tyler's "true Meepo parity" puppet
      * clones): is_clone=1 marks this slot as an AI-driven puppet, never
      * client-owned -- clone_owner is the real owner index (Tyler's own

@@ -2,6 +2,28 @@
 
 ## 2026-07-31
 
+- feat(arena): GoblinFoxDragon `REDGARDEN_GUI_NORTHSTAR.md` Milestone 2 -- real skillchain
+  resonance detection in `arena_game.c`, same session as Milestone 1 below. `ArenaResonance`
+  (14 elements) + `resonance_combo` are a straight C port of
+  `GoblinFoxDragon/server/skillchain.go`'s own `combinationTable` -- same real (ws1, ws2) pairs,
+  same real tier-1/2/3 multipliers (20%/35%/50%). Tracked per-TARGET, not per-caster
+  (`sc_pending_attrs`/`sc_pending_attr_count`/`sc_pending_age_ms` on `ArenaHero`, real FFXI "a
+  chain forms on whoever gets hit twice, from any source" rule), aged every tick in
+  `tick_hero_kit` alongside `combat_timer_ms`'s own "generic across every hero" countdown. New
+  `apply_weapon_skill_damage` is the one choke point every real weapon-skill cast now routes
+  through instead of a bare `apply_damage`/`apply_armor` pair (ordinary abilities/basic attacks
+  never touch it, matching real FFXI); `skillchain_flash_tier` is a new, distinct one-tick
+  wire-visible event (same lifetime idiom as `cast_flash_slot`, deliberately not folded into it
+  or the generic hit-feedback path, per the northstar's own explicit requirement). Verified real,
+  not just plausible: Warrior's own Q (Scission) into R (Induration+Reverberation) closes an
+  actual Tier 2 Distortion chain per the real table -- the one pairing achievable with Milestone
+  1's own in-kit content alone. 2 new tests
+  (`test_warrior_q_then_r_closes_a_real_skillchain`, `test_warrior_skillchain_window_expires`).
+  `scripts/build.sh` clean (no new warnings), `scripts/test_arena.sh` full suite green,
+  `scripts/test_10_bots.sh` stable. Client-side rendering of the new chain event is a real,
+  visible follow-up gap, same scoping decision as Milestone 1's own client gap -- this pass is
+  server-authoritative simulation only.
+
 - feat(arena): GoblinFoxDragon `REDGARDEN_GUI_NORTHSTAR.md` Milestone 1 -- Warrior, the first
   DragonsNShit job ported into Battlegrounds as real ability content, not a TYLER hero.
   `ARENA_HERO_WARRIOR` appended to `ArenaHeroID` (`ARENA_HERO_COUNT` 28->29). Three real Great

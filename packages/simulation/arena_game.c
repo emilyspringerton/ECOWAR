@@ -853,6 +853,108 @@ static int apply_armor(int raw_damage, float armor) {
     return dmg < 1 ? 1 : dmg;
 }
 
+/* apply_damage is defined further down this file -- forward-declared here so
+ * apply_weapon_skill_damage below can call it, same "not every caller comes after the real
+ * definition" idiom hero_is_hittable's own forward declaration already uses in this file. */
+static void apply_damage(ArenaHero *target, int amount);
+
+/* resonance_combo (REDGARDEN_GUI_NORTHSTAR.md Milestone 2): a straight port of
+ * GoblinFoxDragon/server/skillchain.go's own `combinationTable` -- same real (ws1, ws2) pairs,
+ * same real tier, same real damage multiplier. Bidirectional pairs are listed explicitly, same
+ * as the Go source (not derived/mirrored automatically), so this table can be diffed against
+ * that one directly if either ever needs updating. Returns 0 (no chain) if the pair doesn't
+ * combine; otherwise returns the tier (1/2/3) and writes the real multiplier to *out_mult. */
+static int resonance_combo(ArenaResonance a1, ArenaResonance a2, float *out_mult) {
+    typedef struct { ArenaResonance a1, a2; int tier; float mult; } ComboEntry;
+    static const ComboEntry TABLE[] = {
+        /* Tier 1: same-element closure */
+        { ARENA_RESONANCE_LIQUEFACTION,  ARENA_RESONANCE_LIQUEFACTION,  1, ARENA_SKILLCHAIN_TIER1_MULT },
+        { ARENA_RESONANCE_IMPACTION,     ARENA_RESONANCE_IMPACTION,     1, ARENA_SKILLCHAIN_TIER1_MULT },
+        { ARENA_RESONANCE_DETONATION,    ARENA_RESONANCE_DETONATION,    1, ARENA_SKILLCHAIN_TIER1_MULT },
+        { ARENA_RESONANCE_SCISSION,      ARENA_RESONANCE_SCISSION,      1, ARENA_SKILLCHAIN_TIER1_MULT },
+        { ARENA_RESONANCE_REVERBERATION, ARENA_RESONANCE_REVERBERATION, 1, ARENA_SKILLCHAIN_TIER1_MULT },
+        { ARENA_RESONANCE_INDURATION,    ARENA_RESONANCE_INDURATION,    1, ARENA_SKILLCHAIN_TIER1_MULT },
+        { ARENA_RESONANCE_COMPRESSION,   ARENA_RESONANCE_COMPRESSION,   1, ARENA_SKILLCHAIN_TIER1_MULT },
+        { ARENA_RESONANCE_TRANSFIXION,   ARENA_RESONANCE_TRANSFIXION,   1, ARENA_SKILLCHAIN_TIER1_MULT },
+        /* Tier 2: cross-element closure (bidirectional) */
+        { ARENA_RESONANCE_TRANSFIXION,   ARENA_RESONANCE_LIQUEFACTION,  2, ARENA_SKILLCHAIN_TIER2_MULT },
+        { ARENA_RESONANCE_LIQUEFACTION,  ARENA_RESONANCE_TRANSFIXION,   2, ARENA_SKILLCHAIN_TIER2_MULT },
+        { ARENA_RESONANCE_LIQUEFACTION,  ARENA_RESONANCE_IMPACTION,     2, ARENA_SKILLCHAIN_TIER2_MULT },
+        { ARENA_RESONANCE_IMPACTION,     ARENA_RESONANCE_DETONATION,    2, ARENA_SKILLCHAIN_TIER2_MULT },
+        { ARENA_RESONANCE_DETONATION,    ARENA_RESONANCE_IMPACTION,     2, ARENA_SKILLCHAIN_TIER2_MULT },
+        { ARENA_RESONANCE_DETONATION,    ARENA_RESONANCE_REVERBERATION, 2, ARENA_SKILLCHAIN_TIER2_MULT },
+        { ARENA_RESONANCE_REVERBERATION, ARENA_RESONANCE_DETONATION,    2, ARENA_SKILLCHAIN_TIER2_MULT },
+        { ARENA_RESONANCE_SCISSION,      ARENA_RESONANCE_COMPRESSION,   2, ARENA_SKILLCHAIN_TIER2_MULT },
+        { ARENA_RESONANCE_COMPRESSION,   ARENA_RESONANCE_SCISSION,      2, ARENA_SKILLCHAIN_TIER2_MULT },
+        { ARENA_RESONANCE_SCISSION,      ARENA_RESONANCE_REVERBERATION, 2, ARENA_SKILLCHAIN_TIER2_MULT },
+        { ARENA_RESONANCE_REVERBERATION, ARENA_RESONANCE_INDURATION,    2, ARENA_SKILLCHAIN_TIER2_MULT },
+        { ARENA_RESONANCE_INDURATION,    ARENA_RESONANCE_REVERBERATION, 2, ARENA_SKILLCHAIN_TIER2_MULT },
+        { ARENA_RESONANCE_INDURATION,    ARENA_RESONANCE_SCISSION,      2, ARENA_SKILLCHAIN_TIER2_MULT },
+        /* Tier 3: compound closure (bidirectional) */
+        { ARENA_RESONANCE_FUSION,        ARENA_RESONANCE_FRAGMENTATION, 3, ARENA_SKILLCHAIN_TIER3_MULT },
+        { ARENA_RESONANCE_FRAGMENTATION, ARENA_RESONANCE_FUSION,        3, ARENA_SKILLCHAIN_TIER3_MULT },
+        { ARENA_RESONANCE_GRAVITATION,   ARENA_RESONANCE_DISTORTION,    3, ARENA_SKILLCHAIN_TIER3_MULT },
+        { ARENA_RESONANCE_DISTORTION,    ARENA_RESONANCE_GRAVITATION,   3, ARENA_SKILLCHAIN_TIER3_MULT },
+    };
+    for (size_t i = 0; i < sizeof(TABLE) / sizeof(TABLE[0]); i++) {
+        if (TABLE[i].a1 == a1 && TABLE[i].a2 == a2) {
+            *out_mult = TABLE[i].mult;
+            return TABLE[i].tier;
+        }
+    }
+    return 0;
+}
+
+/* arena_skillchain_try (Milestone 2): checks whether `new_attrs` closes a chain against
+ * `target`'s own pending resonance (set by whatever real weapon skill last landed on it, from
+ * any source). Same "highest tier wins, first match within a tier" rule as
+ * server/skillchain.Chain -- ported, not reinvented. Returns the tier (0 if no chain) and
+ * writes the multiplier to *out_mult. Does NOT mutate target's pending state -- the caller
+ * (apply_weapon_skill_damage) does that after deciding the damage, so a whiffed/out-of-range
+ * cast (which never reaches this function) never disturbs an in-flight window. */
+static int arena_skillchain_try(const ArenaHero *target, const ArenaResonance *new_attrs, int new_attr_count, float *out_mult) {
+    if (target->sc_pending_attr_count == 0) return 0;
+    if (target->sc_pending_age_ms > ARENA_SKILLCHAIN_WINDOW_MS) return 0;
+    int best_tier = 0;
+    float best_mult = 0.0f;
+    for (int i = 0; i < target->sc_pending_attr_count; i++) {
+        for (int j = 0; j < new_attr_count; j++) {
+            float mult;
+            int tier = resonance_combo(target->sc_pending_attrs[i], new_attrs[j], &mult);
+            if (tier > best_tier) {
+                best_tier = tier;
+                best_mult = mult;
+            }
+        }
+    }
+    if (best_tier > 0) *out_mult = best_mult;
+    return best_tier;
+}
+
+/* apply_weapon_skill_damage (Milestone 2): the one choke point every real weapon-skill cast
+ * (warrior_cast_q/w/r today, future ported jobs' own kits later) routes through instead of a
+ * bare apply_damage/apply_armor pair -- ordinary abilities, basic attacks, and DoTs never call
+ * this, matching real FFXI where only weapon skills open/close/continue a chain. Applies the
+ * base (armor-reduced) damage, checks/applies a real skillchain bonus against the target's
+ * pending resonance, fires the distinct skillchain_flash_tier visual event on a real closure,
+ * then always opens a fresh window with this cast's own attrs (closing a chain doesn't end it --
+ * real FFXI lets the next weapon skill continue chaining off the one that just landed). */
+static void apply_weapon_skill_damage(ArenaHero *caster, ArenaHero *target, int base_damage, const ArenaResonance *attrs, int attr_count) {
+    (void)caster; /* not read yet -- kept in the signature since a real caster-side effect (e.g. TP/MP refund on a landed chain) is a plausible near-future use, not invented here */
+    int dmg = apply_armor(base_damage, arena_hero_armor(target));
+    float mult;
+    int tier = arena_skillchain_try(target, attrs, attr_count, &mult);
+    if (tier > 0) {
+        dmg += (int)((float)dmg * mult);
+        target->skillchain_flash_tier = tier;
+    }
+    apply_damage(target, dmg);
+    int n = attr_count < ARENA_SC_MAX_ATTRS ? attr_count : ARENA_SC_MAX_ATTRS;
+    for (int i = 0; i < n; i++) target->sc_pending_attrs[i] = attrs[i];
+    target->sc_pending_attr_count = n;
+    target->sc_pending_age_ms = 0;
+}
+
 /* tyler_clone_cascade_kill (S170-141): the literal OG "one dies, all die"
  * rule -- force-kills every hero entry sharing `link_owner`'s clone link
  * (link_owner itself, plus every is_clone entry whose clone_owner points at
@@ -3132,12 +3234,15 @@ static int gunnr_cast_q(ArenaHero *gunnr, ArenaHero *foe) {
 }
 
 /* warrior_cast_q: Hard Slash -- real DragonsNShit Great Sword weapon skill (Scission), plain
- * melee-range damage, same shape as Gunnr's Q. Returns 1 if it landed. */
+ * melee-range damage, same shape as Gunnr's Q. Routes through apply_weapon_skill_damage (not a
+ * bare apply_damage/apply_armor pair) so it can open/close a real skillchain window on its
+ * target (Milestone 2). Returns 1 if it landed. */
 static int warrior_cast_q(ArenaHero *warrior, ArenaHero *foe) {
     if (!hero_is_hittable(foe)) return 0;
     float dx = foe->x - warrior->x, dz = foe->z - warrior->z;
     if (sqrtf(dx * dx + dz * dz) > ARENA_WARRIOR_Q_RANGE) return 0;
-    apply_damage(foe, apply_armor(ARENA_WARRIOR_Q_DAMAGE, arena_hero_armor(foe)));
+    static const ArenaResonance attrs[] = { ARENA_RESONANCE_SCISSION };
+    apply_weapon_skill_damage(warrior, foe, ARENA_WARRIOR_Q_DAMAGE, attrs, 1);
     return 1;
 }
 
@@ -3148,7 +3253,8 @@ static int warrior_cast_w(ArenaHero *warrior, ArenaHero *foe) {
     if (!hero_is_hittable(foe)) return 0;
     float dx = foe->x - warrior->x, dz = foe->z - warrior->z;
     if (sqrtf(dx * dx + dz * dz) > ARENA_WARRIOR_W_RANGE) return 0;
-    apply_damage(foe, apply_armor(ARENA_WARRIOR_W_DAMAGE, arena_hero_armor(foe)));
+    static const ArenaResonance attrs[] = { ARENA_RESONANCE_TRANSFIXION };
+    apply_weapon_skill_damage(warrior, foe, ARENA_WARRIOR_W_DAMAGE, attrs, 1);
     return 1;
 }
 
@@ -3159,7 +3265,8 @@ static int warrior_cast_r(ArenaHero *warrior, ArenaHero *foe) {
     if (!hero_is_hittable(foe)) return 0;
     float dx = foe->x - warrior->x, dz = foe->z - warrior->z;
     if (sqrtf(dx * dx + dz * dz) > ARENA_WARRIOR_R_RANGE) return 0;
-    apply_damage(foe, apply_armor(ARENA_WARRIOR_R_DAMAGE, arena_hero_armor(foe)));
+    static const ArenaResonance attrs[] = { ARENA_RESONANCE_INDURATION, ARENA_RESONANCE_REVERBERATION };
+    apply_weapon_skill_damage(warrior, foe, ARENA_WARRIOR_R_DAMAGE, attrs, 2);
     return 1;
 }
 
@@ -4161,6 +4268,13 @@ static void tick_hero_kit(ArenaHero *h, ArenaHero *foe, ArenaHero *ally, unsigne
     if (h->combat_timer_ms > 0) {
         h->combat_timer_ms -= (int)dt_ms;
         if (h->combat_timer_ms < 0) h->combat_timer_ms = 0;
+    }
+    /* sc_pending_age_ms (Milestone 2): counts UP (not down) from the moment a weapon skill
+       landed on this hero, same "generic across every hero" reasoning as combat_timer_ms just
+       above -- arena_skillchain_try treats anything past ARENA_SKILLCHAIN_WINDOW_MS as expired,
+       so this doesn't need to clamp or clear sc_pending_attr_count itself, just keep counting. */
+    if (h->sc_pending_attr_count > 0 && h->sc_pending_age_ms <= ARENA_SKILLCHAIN_WINDOW_MS) {
+        h->sc_pending_age_ms += dt_ms;
     }
     /* multikill_timer_ms (2026-07-29): same "ticks down every tick, generic across every hero"
        shape as combat_timer_ms just above -- re-armed to ARENA_MULTIKILL_WINDOW_MS by

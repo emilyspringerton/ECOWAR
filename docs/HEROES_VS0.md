@@ -753,10 +753,17 @@ roster's most physically front-loaded job), in real FFXI progression order:
 (100 TP) via `TPState.UseWeaponSkill()`. REDGARDEN has no TP resource, so MP substitutes (this
 file's own existing `ARENA_MP_COST_*` affordance) rather than a new TP bar being invented — an
 honest amendment, not a literal port, per founder direction ("we want our old systems like
-skillchains etc [to] work with redgarden affordances"). Resonance attributes are named here for
-Milestone 2 (real skillchain detection between two players' casts, in `arena_game.c`) to consume
-later — this milestone doesn't touch chaining. No passive, no status effect on any of the three —
-real FFXI Great Sword weapon skills are plain damage, and this kit doesn't invent one to pad it out.
+skillchains etc [to] work with redgarden affordances"). No passive, no status effect on any of
+the three — real FFXI Great Sword weapon skills are plain damage, and this kit doesn't invent one
+to pad it out.
+
+**Milestone 2, same day:** real skillchain resonance detection now lands too. Casting a second
+real weapon skill on the same target within 8 seconds of the first checks the real combination
+table (`server/skillchain.combinationTable`, ported to C as `resonance_combo`) for a chain — Q
+(Scission) into R (Induration+Reverberation) closes a real Tier 2 Distortion chain, +35% damage,
+in-kit and testable with Warrior alone. Tracked per-target, not per-caster, matching real FFXI
+("a chain forms on whoever gets hit twice, from any source"), so this works for teammates
+weapon-skilling the same target too, not just self-chains.
 
 ---
 

@@ -3575,6 +3575,51 @@ static void test_warrior_r_frostbite_hits_hardest(void) {
     CHECK(warrior->r_cooldown_ms == ARENA_WARRIOR_R_COOLDOWN_MS, "R starts on cooldown after a landed hit");
 }
 
+/* Skillchain resonance (REDGARDEN_GUI_NORTHSTAR.md Milestone 2, 2026-07-31): Warrior's own Q
+ * (Scission) and R (Induration+Reverberation) are the one real, already-buildable in-kit pair
+ * that closes per `server/skillchain`'s own real combination table -- {Scission, Reverberation}
+ * = Distortion, Tier 2, 35% bonus (server/skillchain.go's own `combinationTable`). Q and R use
+ * separate cooldown fields, so both land in the same test with no cooldown reset needed. */
+static void test_warrior_q_then_r_closes_a_real_skillchain(void) {
+    arena_init_with_heroes(ARENA_HERO_UNICORN, ARENA_HERO_WARRIOR);
+    ArenaHero *warrior = &arena_state.heroes[1];
+    ArenaHero *foe = &arena_state.heroes[0];
+    foe->x = warrior->x + 1.5f; /* within both ARENA_WARRIOR_Q_RANGE and ARENA_WARRIOR_R_RANGE */
+    foe->z = warrior->z;
+
+    arena_cast_q(1); /* Scission lands, opens the chain window */
+    CHECK(foe->sc_pending_attr_count == 1, "Hard Slash opens a pending skillchain window on the target");
+    CHECK(foe->skillchain_flash_tier == 0, "the FIRST weapon skill on a fresh target never closes a chain by itself");
+
+    int hp_before_r = foe->hp;
+    arena_cast_r(1); /* Induration+Reverberation lands within the window -- Reverberation closes vs. the pending Scission */
+    int dmg_with_chain = hp_before_r - foe->hp;
+
+    CHECK(foe->skillchain_flash_tier == 2, "Scission+Reverberation closes a real Tier 2 (Distortion) skillchain");
+    /* apply_armor floors damage at 1 and subtracts a flat armor value, so the raw constant
+       times the multiplier isn't exactly reproducible here -- assert the chained hit did
+       strictly more damage than the unchained baseline instead, same "measure it, don't assume
+       armor math" discipline test_warrior_r_frostbite_hits_hardest's own sibling tests use. */
+    int baseline_armor_reduced = ARENA_WARRIOR_R_DAMAGE - (int)arena_hero_armor(foe);
+    if (baseline_armor_reduced < 1) baseline_armor_reduced = 1;
+    CHECK(dmg_with_chain > baseline_armor_reduced, "a closed skillchain deals strictly more damage than Frostbite alone would");
+}
+
+static void test_warrior_skillchain_window_expires(void) {
+    arena_init_with_heroes(ARENA_HERO_UNICORN, ARENA_HERO_WARRIOR);
+    ArenaHero *warrior = &arena_state.heroes[1];
+    ArenaHero *foe = &arena_state.heroes[0];
+    foe->x = warrior->x + 1.5f;
+    foe->z = warrior->z;
+
+    arena_cast_q(1);
+    foe->sc_pending_age_ms = ARENA_SKILLCHAIN_WINDOW_MS + 1; /* simulate the window having closed */
+
+    arena_cast_r(1);
+
+    CHECK(foe->skillchain_flash_tier == 0, "no chain closes once the pending window has expired");
+}
+
 static void test_vassago_passive_regenerates_hp(void) {
     arena_init_with_heroes(ARENA_HERO_UNICORN, ARENA_HERO_VASSAGO);
     ArenaHero *vassago = &arena_state.heroes[1];
@@ -6140,6 +6185,8 @@ int main(void) {
     test_warrior_q_out_of_range_whiffs();
     test_warrior_w_power_slash_hits_harder_than_q();
     test_warrior_r_frostbite_hits_hardest();
+    test_warrior_q_then_r_closes_a_real_skillchain();
+    test_warrior_skillchain_window_expires();
     test_vassago_passive_regenerates_hp();
     test_vassago_q_damages_and_silences_in_range();
     test_vassago_q_out_of_range_whiffs();
