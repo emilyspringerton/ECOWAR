@@ -564,6 +564,23 @@ void arena_set_attack_target(int owner, int target) {
     arena_state.heroes[owner].attack_target = target;
 }
 
+/* arena_stop_unit (NORTHSTAR.md §24 Milestone 2, 2026-07-31): the first of the real WC3 group-
+ * order vocabulary that section names as missing -- cancels owner's current move target and
+ * attack-target lock in place, same widened Tyler-clone-control scope as
+ * arena_set_move_target/arena_set_attack_target above (any owned slot, not just self). Sets
+ * target_x/z to the unit's OWN current position rather than leaving it stale -- moving=0 alone
+ * would halt it, but a stale target_x/z sitting there unused is exactly the kind of "looks
+ * inert but isn't really" state this file's own conventions elsewhere (e.g. damaged_this_tick's
+ * doc comment) go out of their way to avoid. */
+void arena_stop_unit(int owner) {
+    if (owner < 0 || owner >= ARENA_HEROES_ARRAY_SIZE) return;
+    ArenaHero *h = &arena_state.heroes[owner];
+    h->target_x = h->x;
+    h->target_z = h->z;
+    h->moving = 0;
+    h->attack_target = -1;
+}
+
 /* arena_owner_controls (2026-07-30, Tyler "Divided We Stand" rework -- founder: "clones multi
  * control drag click all of it"): does `sender_owner` have authority to issue a command for
  * `target_owner`? True for the trivial case (a hero commanding itself, the only case that existed

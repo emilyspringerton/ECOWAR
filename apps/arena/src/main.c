@@ -435,6 +435,19 @@ static void net_send_attack(int commander_unit, int target_owner) {
     sendto(net_sock, buf, sizeof(buf), 0, (struct sockaddr *)&net_server_addr, sizeof(net_server_addr));
 }
 
+/* net_send_stop (NORTHSTAR.md §24 Milestone 2, 2026-07-31): PACKET_ARENA_STOP's client-side
+ * sender -- same shape as net_send_move/net_send_attack, unit_owner is which of the local
+ * player's own commandable units (self, or one of Tyler's own active clones) this stop is for. */
+static void net_send_stop(int unit_owner) {
+    char buf[sizeof(NetHeader) + sizeof(ArenaStopCmd)];
+    NetHeader *h = (NetHeader *)buf;
+    memset(h, 0, sizeof(NetHeader));
+    h->type = PACKET_ARENA_STOP;
+    ArenaStopCmd *cmd = (ArenaStopCmd *)(buf + sizeof(NetHeader));
+    cmd->unit_owner = (uint8_t)unit_owner;
+    sendto(net_sock, buf, sizeof(buf), 0, (struct sockaddr *)&net_server_addr, sizeof(net_server_addr));
+}
+
 /* PACKET_ARENA_SHOP_BUY/SELL's client-side senders (S170-175). Same shape
  * as net_send_attack -- server infers "which hero" from the sending
  * client's own slot, all real validation (proximity, Flow balance) happens
@@ -2712,6 +2725,22 @@ int main(int argc, char *argv[]) {
                 if (e.key.keysym.sym == SDLK_BACKQUOTE) {
                     if (net_mode) net_send_active_item();
                     else arena_use_active_item(my_owner);
+                }
+                /* Stop (NORTHSTAR.md §24 Milestone 2, 2026-07-31, founder: "the unit controls
+                   are supposed to be for tyler") -- the first of the real WC3 group-order
+                   vocabulary that section names, real RTS convention (S = Stop). Applies to
+                   the whole currently-selected group, same selected_or_self() resolution
+                   move/attack clicks already use in the mouse handler above -- a Tyler player
+                   who's drag-selected several clones stops all of them at once, matching real
+                   WC3's own group-order behavior, not just the clicked-on unit. */
+                if (e.key.keysym.sym == SDLK_s) {
+                    int commanders[ARENA_MAX_SELECTED_UNITS];
+                    int commander_count = selected_or_self(commanders);
+                    for (int k = 0; k < commander_count; k++) {
+                        if (net_mode) net_send_stop(commanders[k]);
+                        else arena_stop_unit(commanders[k]);
+                    }
+                    apm_record_action(now);
                 }
             }
         }

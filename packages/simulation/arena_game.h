@@ -2112,6 +2112,10 @@ void arena_set_hover_target(int owner, int target);
  * second code path here. */
 void arena_set_attack_target(int owner, int target);
 
+/* arena_stop_unit (NORTHSTAR.md §24 Milestone 2, 2026-07-31): see the .c definition's own doc
+ * comment. Cancels owner's current move/attack order in place -- the real WC3 "Stop" command. */
+void arena_stop_unit(int owner);
+
 /* arena_owner_controls (2026-07-30, Tyler "Divided We Stand" rework): see the .c definition's own
  * doc comment for the full design. True if `sender_owner` may issue a move/attack command for
  * `target_owner` -- itself, or one of its own active puppet clones. */

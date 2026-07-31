@@ -2911,6 +2911,39 @@ static void test_sudden_death_full_tie_resolves_to_team_zero(void) {
 /* S170-162/163: NORTHSTAR §17's click-to-attack system -- attack-target
  * lock, chase, and Gary's homing ranged auto-attack. Team mode only. */
 
+/* arena_stop_unit (NORTHSTAR.md §24 Milestone 2, 2026-07-31) -- the real WC3 "Stop" command,
+ * first of the group-order vocabulary that section names for Tyler's own clone control. */
+
+static void test_stop_unit_cancels_move_target(void) {
+    arena_init_teams();
+    ArenaHero *h = &arena_state.heroes[0];
+    float start_x = h->x, start_z = h->z;
+    arena_set_move_target(0, h->x + 20.0f, h->z);
+    CHECK(h->moving == 1, "sanity: the move command is in effect");
+
+    arena_stop_unit(0);
+
+    CHECK(h->moving == 0, "Stop cancels the move order");
+    CHECK(h->target_x == start_x && h->target_z == start_z, "Stop sets the target back to the unit's own current position, not left stale");
+}
+
+static void test_stop_unit_cancels_attack_target(void) {
+    arena_init_teams();
+    arena_set_attack_target(0, 10);
+    CHECK(arena_state.heroes[0].attack_target == 10, "sanity: the lock is set");
+
+    arena_stop_unit(0);
+
+    CHECK(arena_state.heroes[0].attack_target == -1, "Stop clears the attack-target lock too");
+}
+
+static void test_stop_unit_out_of_range_owner_is_a_safe_no_op(void) {
+    arena_init_teams();
+    arena_stop_unit(-1);
+    arena_stop_unit(ARENA_HEROES_ARRAY_SIZE);
+    CHECK(1, "out-of-range owner indices don't crash -- same bounds-check convention arena_set_move_target/arena_set_attack_target already use");
+}
+
 static void test_attack_target_clears_on_fresh_move_command(void) {
     arena_init_teams();
     arena_set_attack_target(0, 10);
@@ -6214,6 +6247,9 @@ int main(void) {
     test_two_visible_teams_still_interrupt_normally_even_near_a_stealthed_ally();
     test_starting_a_channel_breaks_the_capturer_stealth();
     test_damage_to_channeling_team_interrupts_the_capture();
+    test_stop_unit_cancels_move_target();
+    test_stop_unit_cancels_attack_target();
+    test_stop_unit_out_of_range_owner_is_a_safe_no_op();
     test_attack_target_clears_on_fresh_move_command();
     test_attack_target_chases_out_of_range_enemy();
     test_attack_target_re_chases_a_fleeing_target();

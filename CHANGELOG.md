@@ -2,6 +2,17 @@
 
 ## 2026-07-31
 
+- feat(arena): Stop command -- NORTHSTAR.md §24 Milestone 2 (corrected), the first of the real
+  WC3 group-order vocabulary (attack-move/hold/patrol/stop) for Tyler's own clone-control system.
+  Real `S` keybind (unbound before this), new `PACKET_ARENA_STOP`/`ArenaStopCmd` wire packet,
+  server-side `arena_stop_unit(owner)` (cancels move target + attack-target lock, resets
+  `target_x/z` to the unit's own current position rather than leaving it stale). Applies to the
+  whole currently-selected group via the same `selected_or_self()` resolution move/attack clicks
+  already use, and the same `arena_owner_controls` authorization (self, or one of Tyler's own
+  active clones) every other group command already enforces. 3 new tests. `scripts/build.sh`
+  clean, full `scripts/test_arena.sh` suite green, `scripts/test_10_bots.sh` stable.
+  Attack-move/hold/patrol not started -- this milestone stays open.
+
 - docs(northstar): §24.3.2 CORRECTION -- founder, real-time: "the unit controls are supposed to
   be for tyler." §24's Milestone 2 was originally framed as "a second hero gets real
   directly-controlled units"; corrected to its actual intent: real WC3-shaped group-order

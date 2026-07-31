@@ -23,6 +23,7 @@
 #define PACKET_ARENA_SHOP_SELL 12 /* client -> arena_server: sell an equipped item by slot, S170-175 */
 #define PACKET_ARENA_BLINK 13     /* client -> arena_server: use Blink Dagger, S170-205 -- no payload, direction is derived server-side same as Unicorn's Q dash (toward move target, else nearest foe) */
 #define PACKET_ARENA_SNAPSHOT_HEROES 14 /* arena_server -> client: one ARENA_SNAPSHOT_HERO_CHUNK_SIZE-hero slice, S170-193 -- see ArenaSnapshotHeroesMsg's own doc comment */
+#define PACKET_ARENA_STOP 15 /* client -> arena_server: cancel one of the sending client's own commandable units' current move/attack order in place, NORTHSTAR.md §24 Milestone 2 (2026-07-31) -- see ArenaStopCmd's own doc comment */
 
 #define ARENA_PHASE_WAITING 0 /* fewer than 2 real players connected yet */
 #define ARENA_PHASE_DRAFT   1 /* both connected, waiting on hero picks */
@@ -143,6 +144,16 @@ typedef struct {
     // arena_owner_controls authorization as the move command.
     uint8_t commander_unit;
 } ArenaAttackCmd;
+
+// PACKET_ARENA_STOP payload (NORTHSTAR.md §24 Milestone 2, 2026-07-31, founder: "the unit
+// controls are supposed to be for tyler" -- real WC3-shaped group-order vocabulary for Tyler's
+// own drag-selected clone group, the first of attack-move/hold/patrol/stop to land). Cancels
+// unit_owner's current move target and attack-target lock in place -- same
+// arena_owner_controls authorization as ArenaMoveCmd/ArenaAttackCmd's own unit_owner/
+// commander_unit fields, so a client can only stop its own hero or its own active clones.
+typedef struct {
+    uint8_t unit_owner;
+} ArenaStopCmd;
 
 // PACKET_ARENA_SHOP_BUY payload (S170-175, NORTHSTAR §19's shop system):
 // which item (index into packages/simulation/arena_game.c's ARENA_ITEMS
