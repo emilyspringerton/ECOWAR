@@ -39,6 +39,8 @@
     #include <sys/time.h>
     #include <unistd.h>
     #include <fcntl.h>
+    #include <signal.h>
+    #include <execinfo.h>
 #endif
 
 #include "../../../packages/common/protocol.h"
@@ -854,7 +856,59 @@ static void server_handle_packet(struct sockaddr_in *sender, char *buffer, int s
     }
 }
 
+#ifndef _WIN32
+/* crash_signal_handler (2026-08-02, real live incident: matches spawned for a real human player
+ * were disappearing entirely -- process gone, zero snapshots, zero trace of why, not even a
+ * "match_end" -- while every controlled bot-only reproduction attempt (20 bots, every hero
+ * including Warrior/Cart) ran clean. Without a signal handler there was nothing to look at after
+ * the fact: this dumps the real match state (phase, who'd picked, which hero_id each owner had)
+ * plus a real backtrace to stderr (captured into var/logs/bot-pool.log by the live systemd unit)
+ * and into the match's own JSONL log if it's open, then re-raises so the OS still produces its
+ * own core/exit-code behavior unchanged. Deliberately uses fprintf/backtrace_symbols_fd rather
+ * than hand-rolling strictly async-signal-safe output -- the process is already crashing and
+ * about to exit either way; real diagnostics now are worth more than a theoretically-cleaner
+ * handler that tells us nothing next time this happens. POSIX-only (execinfo.h has no Windows
+ * equivalent) -- arena_server is never cross-compiled for Windows (only apps/arena, the client,
+ * is; see .github/workflows/ci.yml), so this doesn't need a Windows fallback. */
+static void crash_signal_handler(int sig) {
+    const char *sig_name = "?";
+    switch (sig) {
+        case SIGSEGV: sig_name = "SIGSEGV"; break;
+        case SIGABRT: sig_name = "SIGABRT"; break;
+        case SIGFPE:  sig_name = "SIGFPE";  break;
+        case SIGBUS:  sig_name = "SIGBUS";  break;
+        case SIGILL:  sig_name = "SIGILL";  break;
+    }
+    fprintf(stderr, "\n=== ARENA_SERVER CRASH: signal %d (%s) ===\n", sig, sig_name);
+    fprintf(stderr, "match_phase=%d lobby_size=%d picked_count=%d\n", (int)match_phase, lobby_size, picked_count);
+    for (int i = 0; i < lobby_size && i < ARENA_MAX_HEROES; i++) {
+        fprintf(stderr, "  owner=%d picked=%d hero_id=%d team=%d alive=%d hp=%d\n",
+                i, hero_picked[i], (int)arena_state.heroes[i].hero_id,
+                arena_state.heroes[i].team, arena_state.heroes[i].alive, arena_state.heroes[i].hp);
+    }
+    void *bt[32];
+    int n = backtrace(bt, 32);
+    fprintf(stderr, "--- backtrace (%d frames) ---\n", n);
+    fflush(stderr);
+    backtrace_symbols_fd(bt, n, 2); /* fd 2 = stderr; safer under a signal than the malloc'ing backtrace_symbols() */
+    if (match_log_fp) {
+        fprintf(match_log_fp, "{\"event\":\"crash\",\"signal\":%d,\"signal_name\":\"%s\",\"match_phase\":%d,\"picked_count\":%d}\n",
+                sig, sig_name, (int)match_phase, picked_count);
+        fflush(match_log_fp);
+    }
+    signal(sig, SIG_DFL);
+    raise(sig);
+}
+#endif
+
 int main(int argc, char *argv[]) {
+#ifndef _WIN32
+    signal(SIGSEGV, crash_signal_handler);
+    signal(SIGABRT, crash_signal_handler);
+    signal(SIGFPE, crash_signal_handler);
+    signal(SIGBUS, crash_signal_handler);
+    signal(SIGILL, crash_signal_handler);
+#endif
     int port = 7200;
     for (int i = 1; i < argc; i++) {
         if (strcmp(argv[i], "--port") == 0 && i + 1 < argc) {
