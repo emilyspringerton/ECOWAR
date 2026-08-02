@@ -1,5 +1,27 @@
 # Changelog
 
+## 2026-08-02
+
+- fix: reapplied `arena_bot`'s `ARENA_HERO_COUNT` (30, was stuck at the stale 28) and
+  `test_10_bots.sh`'s PID-scoped cleanup -- both fixed earlier the same day, then reverted along
+  with an unrelated set of commits (a founder-driven history rewrite of this repo); reapplied
+  since they're confirmed, independent, low-risk fixes regardless of that revert. No bot has ever
+  been able to draft Warrior (28) or Cart (29) -- only a real human client can, since the draft
+  screen reads `arena_game.h`'s real `ARENA_HERO_COUNT=30` directly, not `arena_bot`'s own
+  separate hand-synced copy. Found while investigating a live "match_start then frozen,
+  arena_server disappears with zero snapshots" bug that only ever reproduced with a real human in
+  the lobby -- **directly disproven** as the crash's cause by a controlled reproduction (20 bots,
+  both heroes drafted, match went live and produced snapshots cleanly). `test_10_bots.sh`'s fix
+  is the same live-match-killing `pkill -f` bug as Apple #11565, reintroduced by the same revert.
+- feat(arena_server): real crash diagnostics. The live crash above left literally nothing to
+  investigate after the fact -- process just gone, no `match_end`, no error. `SIGSEGV`/`SIGABRT`/
+  `SIGFPE`/`SIGBUS`/`SIGILL` now dump `match_phase`/`lobby_size`/`picked_count` and every owner's
+  `hero_id`/`team`/`alive`/`hp`, plus a real backtrace, to stderr (captured by the live systemd
+  unit's log) and into the match's own JSONL log if open, then re-raise so the OS's own exit
+  behavior is unchanged. Verified live: `kill -SEGV` against a running instance produces real,
+  readable diagnostics. Root cause of the actual crash still open -- this is what gets it next
+  time, not a fix for it yet.
+
 ## 2026-07-31 (2)
 
 - fix(arena): draft-grid pick screen was overflowing narrower window widths -- founder-reported
