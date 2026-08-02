@@ -50,8 +50,18 @@
    client and deliberately doesn't include the sim header (no direct ArenaState access, wire
    protocol only), so the roster size has to be kept in sync by hand here. Bump this alongside
    ARENA_HERO_COUNT whenever a new hero is added. */
-#define ARENA_HERO_COUNT 28 /* S170-230: was stale at 26 (already 2 heroes behind -- Weatherman,
-                               now Zagan) -- bumped alongside arena_game.h's own real definition */
+#define ARENA_HERO_COUNT 30 /* Drifted stale a third time (S170-230 already fixed this once,
+                               26->28) -- Warrior (28) and Cart (29) landed after that bump and
+                               nobody bumped this file alongside them, so (my_owner + draft_offset)
+                               % ARENA_HERO_COUNT below could never land on either hero_id: no bot
+                               has ever been able to play Warrior or Cart -- only a real human
+                               client can (the draft screen reads arena_game.h's own real
+                               ARENA_HERO_COUNT=30 directly, not this file's separate hand-synced
+                               copy). Found 2026-08-02 investigating a real, live "match_start then
+                               frozen, arena_server crashes with zero snapshots" bug that only ever
+                               reproduced with a real human in the lobby, never with 20 bots alone
+                               -- correlated, not yet proven as the crash's exact mechanism, but a
+                               real, definite bug on its own regardless. */
 
 /* ARENA_BOT_ITEM_COSTS (S170-175 Sprint 5, "bot AI shop interaction" -- explicitly deferred at
  * the time, "bots simply won't buy anything yet, flagged not faked"): same "pure network
