@@ -57,7 +57,7 @@ static int my_owner = 0; /* which arena_state.heroes[] slot is "me" -- 0 in loca
 static int show_apm = 0;
 static int show_ability_help = 0; /* S170-151, founder: "H should show an overlay with character ability descriptions" */
 static int shop_open = 0; /* S170-175, founder: "do a first pass shop interface" -- B toggles, same "works in any mode" precedent as F11/H */
-static int show_gband_mesh_test = 0; /* S144-07: F9 toggles the synthetic skinned-mesh proof rig */
+static int force_box_rig = 0; /* S144-07: F9 A/B-toggles Tyler's real skinned mesh vs. the box-rig */
 static int shop_page = 0; /* S170-231, founder: "too many items per page more pages navigate pages with shift 1 2 3" -- 0-indexed, Shift+1/2/3 jump straight to page 1/2/3 */
 static int shop_was_in_range = 0; /* S170-231, founder: "pop the shop window up when you get close to the shop enough to buy" -- edge-triggered latch for the proximity auto-open/close below, so it only fires on the in-range/out-of-range transition and never fights a manual B press made while standing still */
 
@@ -1180,7 +1180,13 @@ static void gband_cb_draw_mesh(const void *m) { draw_mesh((const Mesh *)m); }
  * changes every frame. */
 static Mesh g_gband_mesh_dynamic;
 static int g_gband_mesh_dynamic_ready = 0;
-#define GBAND_MESH_DYNAMIC_MAX_VERTS 512
+/* S144-07 real bug found live: the original 512 cap was sized for the
+ * synthetic proof mesh (56 tris = 168 flattened verts) and silently
+ * dropped every draw call for the real founder-modeled Tyler (974 tris =
+ * 2922 flattened verts) -- gband_mesh_cb_draw_skinned's own bounds check
+ * just returned early, no error, no crash, just an invisible hero. 8192
+ * gives real headroom above the current real model. */
+#define GBAND_MESH_DYNAMIC_MAX_VERTS 8192
 
 static void gband_mesh_dynamic_init(void) {
     glGenVertexArrays_(1, &g_gband_mesh_dynamic.vao);
@@ -2476,12 +2482,15 @@ int main(int argc, char *argv[]) {
      * the plain box, never a crash or a missing hero. */
     gband_rig_init("assets/goldenband");
 
-    /* S144-07: synthetic skinned-mesh proof rig (F9 to toggle) -- see
-     * gband_mesh_rig.h. Deliberately NOT wired to any real hero (unlike
-     * S144-06's box-rig, which drives real Tyler): this is test/proof
-     * content only, so it can't regress anything real if its assets are
-     * ever missing or wrong. */
-    gband_mesh_rig_init("assets/goldenband");
+    /* S144-07: real vertex-weighted skinned Tyler, founder-modeled in
+     * Blender (GOLDENBAND/incoming/TYLER-rigged3.blend -> tyler_body.gskel/
+     * .gmesh via export_gband_rig.py) -- see gband_mesh_rig.h. Falls back
+     * to gband_rig.c's box-rig (and that falls back to the plain box) if
+     * these assets are ever missing, same layered-safety pattern as S144-06.
+     * synthetic_body.gskel/.gmesh (the original proof-of-concept mesh) stay
+     * in assets/goldenband/ for regression-checking the skinning pipeline
+     * itself, but are no longer what actually renders for Tyler. */
+    gband_mesh_rig_init("assets/goldenband", "tyler_body");
     gband_mesh_dynamic_init();
 
     glEnable(GL_DEPTH_TEST);
@@ -2565,10 +2574,10 @@ int main(int argc, char *argv[]) {
                 show_apm = !show_apm; /* S170-71: works in any mode, not gated on net_mode/observing */
             }
             if (e.type == SDL_KEYDOWN && e.key.keysym.sym == SDLK_F9) {
-                show_gband_mesh_test = !show_gband_mesh_test; /* S144-07: dev-only toggle for the
-                    synthetic skinned-mesh proof rig (see gband_mesh_rig.h) -- not real hero art,
-                    a debug tool to verify real vertex-weighted skinning works before any Blender
-                    asset exists. Same "works in any mode" precedent as F11/H/B above. */
+                force_box_rig = !force_box_rig; /* S144-07: dev-only A/B toggle -- forces Tyler
+                    back to the box-rig even though the real skinned mesh is available, for
+                    comparing the two live. Repurposed from the pre-real-asset synthetic proof
+                    rig toggle, same key. Same "works in any mode" precedent as F11/H/B above. */
             }
             if (e.type == SDL_KEYDOWN && e.key.keysym.sym == SDLK_h) {
                 show_ability_help = !show_ability_help; /* same "works in any mode" precedent as F11 above */
@@ -3296,14 +3305,18 @@ int main(int argc, char *argv[]) {
             }
             /* S170-118: per-hero_id silhouette (multi-box), not one generic cube --
                relationship color above still wins for self/team/enemy legibility. */
-            if (h->hero_id == ARENA_HERO_TYLER && gband_rig_ready()) {
-                /* S144-06: real GOLDENBAND-driven skeleton instead of Tyler's
-                   old single static box -- see gband_rig.h. Falls back to the
-                   plain box above (via gband_rig_ready()) if the test assets
-                   didn't load, so a missing/corrupt asset never means a
-                   missing hero. */
-                g_gband_loc_mvp = loc_mvp;
-                g_gband_loc_model = loc_model;
+            g_gband_loc_mvp = loc_mvp;
+            g_gband_loc_model = loc_model;
+            if (h->hero_id == ARENA_HERO_TYLER && !force_box_rig && gband_mesh_rig_ready()) {
+                /* S144-07: real, founder-modeled skinned mesh -- see
+                   gband_mesh_rig.h. This is what actually renders for Tyler
+                   now; F9 force-falls-back to the box-rig for A/B comparison. */
+                gband_mesh_rig_draw(i, h->x, h->z, hero_facing_rad[i], (float)dt, &vp, gband_mesh_cb_draw_skinned);
+            } else if (h->hero_id == ARENA_HERO_TYLER && gband_rig_ready()) {
+                /* S144-06: real GOLDENBAND-driven skeleton box-rig -- see
+                   gband_rig.h. Falls back to the plain box below (via
+                   gband_rig_ready()) if even this is missing, so a missing/
+                   corrupt asset never means a missing hero. */
                 gband_rig_draw(i, h->x, h->z, hero_facing_rad[i], (float)dt, &vp,
                                 gband_cb_set_mvp_model, gband_cb_draw_mesh, &cube_mesh);
             } else {
@@ -3343,18 +3356,6 @@ int main(int argc, char *argv[]) {
                 glUniform4f_(loc_color, 0.95f, 0.25f, 0.15f, 1.0f); /* enemy's clone: red */
             }
             draw_hero_model(h->hero_id, h->x, h->z, clone_facing, 1.0f, &vp, loc_mvp, loc_model, &cube_mesh);
-        }
-
-        /* S144-07: synthetic skinned-mesh proof rig, F9 to toggle -- drawn a fixed offset from
-           my own hero so it's easy to find without hunting the whole map. Slot 63 is outside
-           ARENA_MAX_HEROES/ARENA_HEROES_ARRAY_SIZE's own range, so it can't collide with any real
-           hero or clone's per-slot animation-clock state in gband_mesh_rig.c. */
-        if (show_gband_mesh_test && gband_mesh_rig_ready()) {
-            g_gband_loc_mvp = loc_mvp;
-            g_gband_loc_model = loc_model;
-            float test_x = arena_state.heroes[my_owner].x + 3.0f;
-            float test_z = arena_state.heroes[my_owner].z;
-            gband_mesh_rig_draw(63, test_x, test_z, 0.0f, (float)dt, &vp, gband_mesh_cb_draw_skinned);
         }
 
         /* Selection rings (2026-07-30, "clones multi control drag click all of it"): a ring

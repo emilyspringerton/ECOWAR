@@ -2,9 +2,12 @@
 // samples the same tyler_idle.gband/tyler_walk.gband clips gband_rig.c
 // already uses, runs the same forward-kinematics shape against a skeleton
 // loaded from a real .gskel file (not hardcoded, unlike gband_rig.c --
-// this module proves the general loader path), then blends
-// synthetic_body.gmesh's real per-vertex weights into a flat, ready-to-draw
-// triangle list.
+// this module proves the general loader path), then blends the loaded
+// .gmesh's real per-vertex weights into a flat, ready-to-draw triangle
+// list. Originally proven against a synthetic test mesh
+// (synthetic_body.gskel/.gmesh, still in assets/goldenband/ for
+// regression-checking); now also drives the real founder-modeled
+// tyler_body.gskel/.gmesh, same code path, mesh_name just picks which.
 #include "gband_mesh_rig.h"
 #include "gband.h"
 #include "gskel.h"
@@ -38,7 +41,7 @@ static const int JOINT_ROT_CHAN[5][3] = {
     {15, 16, 17}, /* R_Arm */
 };
 #define NUM_CHANNELS 18
-#define MAX_JOINTS 5 /* matches synthetic_body.gskel; asserted at load time */
+#define MAX_JOINTS 5 /* matches GOLDENBAND's own 5-bone armature template; asserted at load time */
 
 static Mat4 gband_mesh_rotate_x(float rad) {
     Mat4 r = mat4_identity();
@@ -78,15 +81,15 @@ static int g_ready = 0;
 static float *g_out_buf; /* owned, 6 floats per output vertex (pos+normal), 3 verts per triangle */
 static int g_out_capacity_tris;
 
-int gband_mesh_rig_init(const char *asset_dir) {
+int gband_mesh_rig_init(const char *asset_dir, const char *mesh_name) {
     char path[512];
     snprintf(path, sizeof(path), "%s/tyler_idle.gband", asset_dir);
     if (!gb_init(path, &g_idle_clip)) return 0;
     snprintf(path, sizeof(path), "%s/tyler_walk.gband", asset_dir);
     if (!gb_init(path, &g_walk_clip)) { gb_free(&g_idle_clip); return 0; }
-    snprintf(path, sizeof(path), "%s/synthetic_body.gskel", asset_dir);
+    snprintf(path, sizeof(path), "%s/%s.gskel", asset_dir, mesh_name);
     if (!gskel_init(path, &g_skel)) { gb_free(&g_idle_clip); gb_free(&g_walk_clip); return 0; }
-    snprintf(path, sizeof(path), "%s/synthetic_body.gmesh", asset_dir);
+    snprintf(path, sizeof(path), "%s/%s.gmesh", asset_dir, mesh_name);
     if (!gmesh_init(path, &g_mesh)) { gb_free(&g_idle_clip); gb_free(&g_walk_clip); return 0; }
 
     if (g_skel.joint_count != MAX_JOINTS) {

@@ -20,12 +20,14 @@
 
 #include "../common/mat4.h"
 
-// gband_mesh_rig_init loads synthetic_body.gskel/.gmesh and
-// tyler_idle.gband/tyler_walk.gband from asset_dir. Returns 1 on success, 0
-// on failure -- callers should skip drawing entirely on failure (this is a
-// test/proof asset, there's no plain-box fallback to reuse here the way
-// gband_rig.c has one).
-int gband_mesh_rig_init(const char *asset_dir);
+// gband_mesh_rig_init loads <asset_dir>/<mesh_name>.gskel + .gmesh, plus
+// tyler_idle.gband/tyler_walk.gband from asset_dir (same clips S144-06's
+// box-rig uses -- they bind by joint order, Hips/Spine/Head/L_Arm/R_Arm,
+// which any 5-joint humanoid rig built on GOLDENBAND's own armature
+// template shares, real character or synthetic test alike). Returns 1 on
+// success, 0 on failure -- callers should fall back to gband_rig.c's
+// box-rig (or the plain box beneath that) on failure, never draw nothing.
+int gband_mesh_rig_init(const char *asset_dir, const char *mesh_name);
 
 void gband_mesh_rig_shutdown(void);
 
