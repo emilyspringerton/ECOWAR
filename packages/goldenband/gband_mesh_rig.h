@@ -21,12 +21,16 @@
 #include "../common/mat4.h"
 
 // gband_mesh_rig_init loads <asset_dir>/<mesh_name>.gskel + .gmesh, plus
-// tyler_idle.gband/tyler_walk.gband from asset_dir (same clips S144-06's
-// box-rig uses -- they bind by joint order, Hips/Spine/Head/L_Arm/R_Arm,
-// which any 5-joint humanoid rig built on GOLDENBAND's own armature
-// template shares, real character or synthetic test alike). Returns 1 on
-// success, 0 on failure -- callers should fall back to gband_rig.c's
-// box-rig (or the plain box beneath that) on failure, never draw nothing.
+// <mesh_name>_idle.gband/<mesh_name>_walk.gband from asset_dir -- each
+// mesh's animation is scoped to its own name, NOT shared with gband_rig.c's
+// box-rig clips (tyler_idle.gband/tyler_walk.gband), because a real
+// Blender-exported skeleton's bones carry their own real rest rotation
+// (confirmed live: ~178 degrees on the founder's actual arm bones) that a
+// clip authored against a flat/identity-rotation skeleton doesn't account
+// for -- reusing the box-rig's clips here produced real, wrong-axis
+// "swimming" motion, not a subtle bug. Returns 1 on success, 0 on failure
+// -- callers should fall back to gband_rig.c's box-rig (or the plain box
+// beneath that) on failure, never draw nothing.
 int gband_mesh_rig_init(const char *asset_dir, const char *mesh_name);
 
 void gband_mesh_rig_shutdown(void);

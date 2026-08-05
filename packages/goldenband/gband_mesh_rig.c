@@ -82,10 +82,24 @@ static float *g_out_buf; /* owned, 6 floats per output vertex (pos+normal), 3 ve
 static int g_out_capacity_tris;
 
 int gband_mesh_rig_init(const char *asset_dir, const char *mesh_name) {
+    /* Real bug found live (2026-08-05, founder: "it looks like hes
+       swimming is it a z or y up bthing?"): this used to always load the
+       shared tyler_idle.gband/tyler_walk.gband -- fine for a skeleton with
+       identity rest rotations (the synthetic proof mesh, built that way on
+       purpose), completely wrong for a real Blender-exported skeleton,
+       whose bones carry their own real rest orientation (confirmed with
+       real numbers: the founder's actual L_Arm/R_Arm bones have a ~178
+       degree rest rotation baked in). Channels here are FULL baked local
+       rotation per tick (see export_animation's own doc comment), so
+       applying clips authored for a flat/identity-rotation skeleton against
+       a real one isn't a small offset, it's flailing. Clips are now scoped
+       per mesh_name (<mesh_name>_idle.gband/_walk.gband) instead of
+       shared, so each mesh's animation is authored (or exported) against
+       its own real rest pose. */
     char path[512];
-    snprintf(path, sizeof(path), "%s/tyler_idle.gband", asset_dir);
+    snprintf(path, sizeof(path), "%s/%s_idle.gband", asset_dir, mesh_name);
     if (!gb_init(path, &g_idle_clip)) return 0;
-    snprintf(path, sizeof(path), "%s/tyler_walk.gband", asset_dir);
+    snprintf(path, sizeof(path), "%s/%s_walk.gband", asset_dir, mesh_name);
     if (!gb_init(path, &g_walk_clip)) { gb_free(&g_idle_clip); return 0; }
     snprintf(path, sizeof(path), "%s/%s.gskel", asset_dir, mesh_name);
     if (!gskel_init(path, &g_skel)) { gb_free(&g_idle_clip); gb_free(&g_walk_clip); return 0; }
