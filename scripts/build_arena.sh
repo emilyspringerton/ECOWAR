@@ -24,4 +24,6 @@ gcc -std=c99 -D_DEFAULT_SOURCE -O2 -Wall -Wextra -I"${ROOT_DIR}/packages" \
   "${ROOT_DIR}/packages/simulation/arena_replay.c" \
   "${ROOT_DIR}/packages/simulation/arena_ai_bridge.c" \
   "${ROOT_DIR}/packages/common/mlp_infer.c" \
+  "${ROOT_DIR}/packages/goldenband/gband.c" \
+  "${ROOT_DIR}/packages/goldenband/gband_rig.c" \
   -lSDL2 -lGL -lm

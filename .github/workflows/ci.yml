@@ -77,6 +77,8 @@ jobs:
             packages/simulation/arena_replay.c \
             packages/simulation/arena_ai_bridge.c \
             packages/common/mlp_infer.c \
+            packages/goldenband/gband.c \
+            packages/goldenband/gband_rig.c \
             -I./sdl2_mingw/include \
             -Ipackages \
             -L./sdl2_mingw/lib \
