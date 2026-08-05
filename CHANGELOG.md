@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026-08-05
+
+- feat(arena): S144-06 GOLDENBAND box-rig drives Tyler's animation - real .gband motion data through real forward kinematics, one cube per joint, replacing Tyler's old static box; falls back safely if assets missing (sess-20260723-2347-df115bd5)
+
+
 ## 2026-08-02
 
 - fix: reapplied `arena_bot`'s `ARENA_HERO_COUNT` (30, was stuck at the stale 28) and
