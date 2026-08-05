@@ -96,6 +96,15 @@ jobs:
           mkdir -p RedGarden_Client
           cp RedGarden.exe RedGarden_Client/
           cp sdl2_mingw/bin/SDL2.dll RedGarden_Client/
+          # S144-06/07 (real bug found live, 2026-08-05, founder: "it seemed
+          # like the tyler model was not updated"): gband_rig_init/
+          # gband_mesh_rig_init("assets/goldenband") load relative to CWD,
+          # same as GFD's client -- this packaging step never bundled that
+          # directory at all, so every downloaded build silently fell back
+          # to Tyler's original plain box. No error, no crash, just an
+          # unremarkable box where a real skeleton/mesh should be.
+          mkdir -p RedGarden_Client/assets/goldenband
+          cp assets/goldenband/*.gband assets/goldenband/*.gband.json assets/goldenband/*.gskel assets/goldenband/*.gmesh RedGarden_Client/assets/goldenband/
           # 127.0.0.1 (loopback) was the original default here, which only
           # ever makes sense if the matchmaker is running on this same
           # Windows machine -- wrong for the actual distributed client,
