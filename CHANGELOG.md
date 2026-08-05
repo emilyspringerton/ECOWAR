@@ -1,6 +1,7 @@
 # Changelog
 
 ## 2026-08-05
+- fix(ci): bundle assets/goldenband into RedGarden_Client zip - real bug, downloaded builds silently fell back to Tyler's plain box, no crash/error, found live by founder (sess-20260723-2347-df115bd5)
 - feat(arena): real founder-modeled Tyler mesh replaces box-rig and proof mesh - real skinned character now live, fallback chain mesh->box->plain-box, real bug found+fixed (dynamic VBO cap too small for real model vert count) (sess-20260723-2347-df115bd5)
 - feat(arena): S144-07 real vertex-weighted skinned mesh (F9 debug proof rig) - CPU skinning, real multi-bone blended weights, live-verified under Xvfb as a continuous tapered mesh (sess-20260723-2347-df115bd5)
 
