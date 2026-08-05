@@ -1,6 +1,7 @@
 # Changelog
 
 ## 2026-08-05
+- feat(arena): S144-07 real vertex-weighted skinned mesh (F9 debug proof rig) - CPU skinning, real multi-bone blended weights, live-verified under Xvfb as a continuous tapered mesh (sess-20260723-2347-df115bd5)
 
 - feat(arena): S144-06 GOLDENBAND box-rig drives Tyler's animation - real .gband motion data through real forward kinematics, one cube per joint, replacing Tyler's old static box; falls back safely if assets missing (sess-20260723-2347-df115bd5)
 
