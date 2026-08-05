@@ -39,6 +39,7 @@
 #include "../../../packages/simulation/arena_ai_bridge.h"
 #include "../../../packages/simulation/arena_replay.h"
 #include "../../../packages/goldenband/gband_rig.h"
+#include "../../../packages/goldenband/gband_mesh_rig.h"
 
 /* ---------------- networked PvP (2026-07-24 pivot, NORTHSTAR §13) ----------------
  * Local-only mode (no --connect flag) is unchanged: my_owner stays 0,
@@ -56,6 +57,7 @@ static int my_owner = 0; /* which arena_state.heroes[] slot is "me" -- 0 in loca
 static int show_apm = 0;
 static int show_ability_help = 0; /* S170-151, founder: "H should show an overlay with character ability descriptions" */
 static int shop_open = 0; /* S170-175, founder: "do a first pass shop interface" -- B toggles, same "works in any mode" precedent as F11/H */
+static int show_gband_mesh_test = 0; /* S144-07: F9 toggles the synthetic skinned-mesh proof rig */
 static int shop_page = 0; /* S170-231, founder: "too many items per page more pages navigate pages with shift 1 2 3" -- 0-indexed, Shift+1/2/3 jump straight to page 1/2/3 */
 static int shop_was_in_range = 0; /* S170-231, founder: "pop the shop window up when you get close to the shop enough to buy" -- edge-triggered latch for the proximity auto-open/close below, so it only fires on the in-range/out-of-range transition and never fights a manual B press made while standing still */
 
@@ -952,6 +954,7 @@ static PFNGLBINDVERTEXARRAYPROC glBindVertexArray_;
 static PFNGLGENBUFFERSPROC glGenBuffers_;
 static PFNGLBINDBUFFERPROC glBindBuffer_;
 static PFNGLBUFFERDATAPROC glBufferData_;
+static PFNGLBUFFERSUBDATAPROC glBufferSubData_; /* S144-07: dynamic skinned-mesh vertex updates */
 static PFNGLVERTEXATTRIBPOINTERPROC glVertexAttribPointer_;
 static PFNGLENABLEVERTEXATTRIBARRAYPROC glEnableVertexAttribArray_;
 static PFNGLGETUNIFORMLOCATIONPROC glGetUniformLocation_;
@@ -980,6 +983,7 @@ static int load_gl_functions(void) {
     LOAD(glGenBuffers, PFNGLGENBUFFERSPROC);
     LOAD(glBindBuffer, PFNGLBINDBUFFERPROC);
     LOAD(glBufferData, PFNGLBUFFERDATAPROC);
+    LOAD(glBufferSubData, PFNGLBUFFERSUBDATAPROC); /* S144-07: dynamic skinned-mesh vertex updates */
     LOAD(glVertexAttribPointer, PFNGLVERTEXATTRIBPOINTERPROC);
     LOAD(glEnableVertexAttribArray, PFNGLENABLEVERTEXATTRIBARRAYPROC);
     LOAD(glGetUniformLocation, PFNGLGETUNIFORMLOCATIONPROC);
@@ -1168,6 +1172,40 @@ static void gband_cb_set_mvp_model(const Mat4 *mvp, const Mat4 *model) {
     glUniformMatrix4fv_(g_gband_loc_model, 1, GL_FALSE, model->m);
 }
 static void gband_cb_draw_mesh(const void *m) { draw_mesh((const Mesh *)m); }
+
+/* gband_mesh_rig callback plumbing (S144-07): a persistent dynamic VAO/VBO,
+ * re-uploaded (glBufferData with fresh contents each call -- simplest
+ * correct approach for a single test character, not perf-critical) rather
+ * than the static cube_mesh's one-time upload, since skinned vertex data
+ * changes every frame. */
+static Mesh g_gband_mesh_dynamic;
+static int g_gband_mesh_dynamic_ready = 0;
+#define GBAND_MESH_DYNAMIC_MAX_VERTS 512
+
+static void gband_mesh_dynamic_init(void) {
+    glGenVertexArrays_(1, &g_gband_mesh_dynamic.vao);
+    glBindVertexArray_(g_gband_mesh_dynamic.vao);
+    glGenBuffers_(1, &g_gband_mesh_dynamic.vbo);
+    glBindBuffer_(GL_ARRAY_BUFFER, g_gband_mesh_dynamic.vbo);
+    glBufferData_(GL_ARRAY_BUFFER, sizeof(float) * 6 * GBAND_MESH_DYNAMIC_MAX_VERTS, NULL, GL_DYNAMIC_DRAW);
+    glVertexAttribPointer_(0, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void *)0);
+    glEnableVertexAttribArray_(0);
+    glVertexAttribPointer_(1, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void *)(3 * sizeof(float)));
+    glEnableVertexAttribArray_(1);
+    glBindVertexArray_(0);
+    g_gband_mesh_dynamic.count = 0;
+    g_gband_mesh_dynamic_ready = 1;
+}
+
+static void gband_mesh_cb_draw_skinned(const float *verts6, int vert_count, const Mat4 *mvp, const Mat4 *model) {
+    if (!g_gband_mesh_dynamic_ready || vert_count > GBAND_MESH_DYNAMIC_MAX_VERTS) return;
+    glBindBuffer_(GL_ARRAY_BUFFER, g_gband_mesh_dynamic.vbo);
+    glBufferSubData_(GL_ARRAY_BUFFER, 0, sizeof(float) * 6 * vert_count, verts6);
+    g_gband_mesh_dynamic.count = vert_count;
+    glUniformMatrix4fv_(g_gband_loc_mvp, 1, GL_FALSE, mvp->m);
+    glUniformMatrix4fv_(g_gband_loc_model, 1, GL_FALSE, model->m);
+    draw_mesh(&g_gband_mesh_dynamic);
+}
 
 /* one box of a hero model, in hero-local space (dx/dy/dz offset from the hero's
    footprint, sx/sy/sz box scale) -- dy is measured from the ground, not from the
@@ -2438,6 +2476,14 @@ int main(int argc, char *argv[]) {
      * the plain box, never a crash or a missing hero. */
     gband_rig_init("assets/goldenband");
 
+    /* S144-07: synthetic skinned-mesh proof rig (F9 to toggle) -- see
+     * gband_mesh_rig.h. Deliberately NOT wired to any real hero (unlike
+     * S144-06's box-rig, which drives real Tyler): this is test/proof
+     * content only, so it can't regress anything real if its assets are
+     * ever missing or wrong. */
+    gband_mesh_rig_init("assets/goldenband");
+    gband_mesh_dynamic_init();
+
     glEnable(GL_DEPTH_TEST);
 
     arena_init();
@@ -2517,6 +2563,12 @@ int main(int argc, char *argv[]) {
             }
             if (e.type == SDL_KEYDOWN && e.key.keysym.sym == SDLK_F11) {
                 show_apm = !show_apm; /* S170-71: works in any mode, not gated on net_mode/observing */
+            }
+            if (e.type == SDL_KEYDOWN && e.key.keysym.sym == SDLK_F9) {
+                show_gband_mesh_test = !show_gband_mesh_test; /* S144-07: dev-only toggle for the
+                    synthetic skinned-mesh proof rig (see gband_mesh_rig.h) -- not real hero art,
+                    a debug tool to verify real vertex-weighted skinning works before any Blender
+                    asset exists. Same "works in any mode" precedent as F11/H/B above. */
             }
             if (e.type == SDL_KEYDOWN && e.key.keysym.sym == SDLK_h) {
                 show_ability_help = !show_ability_help; /* same "works in any mode" precedent as F11 above */
@@ -3291,6 +3343,18 @@ int main(int argc, char *argv[]) {
                 glUniform4f_(loc_color, 0.95f, 0.25f, 0.15f, 1.0f); /* enemy's clone: red */
             }
             draw_hero_model(h->hero_id, h->x, h->z, clone_facing, 1.0f, &vp, loc_mvp, loc_model, &cube_mesh);
+        }
+
+        /* S144-07: synthetic skinned-mesh proof rig, F9 to toggle -- drawn a fixed offset from
+           my own hero so it's easy to find without hunting the whole map. Slot 63 is outside
+           ARENA_MAX_HEROES/ARENA_HEROES_ARRAY_SIZE's own range, so it can't collide with any real
+           hero or clone's per-slot animation-clock state in gband_mesh_rig.c. */
+        if (show_gband_mesh_test && gband_mesh_rig_ready()) {
+            g_gband_loc_mvp = loc_mvp;
+            g_gband_loc_model = loc_model;
+            float test_x = arena_state.heroes[my_owner].x + 3.0f;
+            float test_z = arena_state.heroes[my_owner].z;
+            gband_mesh_rig_draw(63, test_x, test_z, 0.0f, (float)dt, &vp, gband_mesh_cb_draw_skinned);
         }
 
         /* Selection rings (2026-07-30, "clones multi control drag click all of it"): a ring

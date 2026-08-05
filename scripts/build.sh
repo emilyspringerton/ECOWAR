@@ -73,4 +73,7 @@ gcc -std=c99 -D_DEFAULT_SOURCE -O2 -Wall -Wextra -I"${ROOT_DIR}/packages" \
   "${ROOT_DIR}/packages/common/mlp_infer.c" \
   "${ROOT_DIR}/packages/goldenband/gband.c" \
   "${ROOT_DIR}/packages/goldenband/gband_rig.c" \
+  "${ROOT_DIR}/packages/goldenband/gskel.c" \
+  "${ROOT_DIR}/packages/goldenband/gmesh.c" \
+  "${ROOT_DIR}/packages/goldenband/gband_mesh_rig.c" \
   -lSDL2 -lGL -lm

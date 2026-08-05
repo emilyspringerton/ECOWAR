@@ -79,6 +79,9 @@ jobs:
             packages/common/mlp_infer.c \
             packages/goldenband/gband.c \
             packages/goldenband/gband_rig.c \
+            packages/goldenband/gskel.c \
+            packages/goldenband/gmesh.c \
+            packages/goldenband/gband_mesh_rig.c \
             -I./sdl2_mingw/include \
             -Ipackages \
             -L./sdl2_mingw/lib \
