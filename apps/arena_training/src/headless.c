@@ -271,26 +271,27 @@ void sim_init_team(int team_size, const int *hero_ids_a, const int *hero_ids_b) 
  * real team-fight target selection is a much larger, separate problem this training opponent
  * deliberately doesn't need to solve well, only to be a stable, non-trivial thing to train
  * against), then ticks the whole sim forward once. */
-void sim_step_team(const float *actions, int team_size, unsigned int dt_ms) {
-    if (team_size < 1) team_size = 1;
-    if (team_size > ARENA_TRAINING_MAX_TEAM_SIZE) team_size = ARENA_TRAINING_MAX_TEAM_SIZE;
+/* apply_team_action (§25.4 autocurriculum, factored out of sim_step_team unchanged): applies one
+ * agent's own 5-float [move_x, move_z, cast_q, cast_w, cast_r] action, same shape either side
+ * uses. `hero_idx` is the absolute arena_state.heroes[] index. */
+static void apply_team_action(int hero_idx, const float *a) {
+    if (!arena_state.heroes[hero_idx].alive) return;
+    arena_set_move_target(hero_idx, a[0], a[1]);
+    if (a[2] != 0.0f) arena_cast_q(hero_idx);
+    if (a[3] != 0.0f) arena_toggle_w(hero_idx);
+    if (a[4] != 0.0f) arena_cast_r(hero_idx);
+}
 
-    for (int i = 0; i < team_size; i++) {
-        if (!arena_state.heroes[i].alive) continue;
-        const float *a = &actions[i * 5];
-        arena_set_move_target(i, a[0], a[1]);
-        if (a[2] != 0.0f) arena_cast_q(i);
-        if (a[3] != 0.0f) arena_toggle_w(i);
-        if (a[4] != 0.0f) arena_cast_r(i);
-    }
-
+/* apply_team_b_heuristic (§25.4, factored out of sim_step_team unchanged -- see its own original
+ * doc comment, preserved here, for why this isn't arena_bot_tick_heuristic()): the existing
+ * simple nearest-team-A-hero move-and-cast opponent, used whenever team B isn't being driven by
+ * externally-provided actions. */
+static void apply_team_b_heuristic(int team_size) {
     for (int i = 0; i < team_size; i++) {
         int b_idx = ARENA_TEAM_SIZE + i;
         ArenaHero *bot = &arena_state.heroes[b_idx];
         if (!bot->alive) continue;
 
-        /* Nearest-alive-team-A-hero targeting -- deliberately simple; this opponent's job is to
-           be stable and non-trivial, not to play optimal team-fight target selection. */
         ArenaHero *target = NULL;
         float best_dist2 = 0.0f;
         for (int j = 0; j < team_size; j++) {
@@ -305,21 +306,66 @@ void sim_step_team(const float *actions, int team_size, unsigned int dt_ms) {
         }
         if (!target) continue;
 
-        /* NOT arena_bot_tick_heuristic() -- that function is hardcoded to heroes[1] vs.
-           heroes[0] (checked directly in arena_game.c: `ArenaHero *bot = &heroes[1]; ArenaHero
-           *foe = &heroes[0];`, no index parameter at all), a genuinely 1v1-only function, not a
-           per-agent-callable one -- calling it in this loop would silently only ever move
-           heroes[1] toward heroes[0], team_size times redundantly, and never move any other
-           team-B agent. Move-toward-target here instead: simpler than routing every team-B bot
-           through bot_brain_forward's own per-agent-normalized inputs (which arena_bot_tick_
-           heuristic wraps for exactly one fixed pair), and sufficient for "stable, non-trivial
-           training opponent" per this file's own module doc comment -- optimal team-fight
-           positioning is explicitly not this opponent's job. */
         arena_set_move_target(b_idx, target->x, target->z);
         bot_cast_kit_if_ready(bot, target);
     }
+}
 
-    arena_update(dt_ms);
+void sim_step_team(const float *actions, int team_size, unsigned int dt_ms) {
+    if (team_size < 1) team_size = 1;
+    if (team_size > ARENA_TRAINING_MAX_TEAM_SIZE) team_size = ARENA_TRAINING_MAX_TEAM_SIZE;
+
+    for (int i = 0; i < team_size; i++) apply_team_action(i, &actions[i * 5]);
+    /* NOT arena_bot_tick_heuristic() -- that function is hardcoded to heroes[1] vs. heroes[0]
+       (checked directly in arena_game.c: `ArenaHero *bot = &heroes[1]; ArenaHero *foe =
+       &heroes[0];`, no index parameter at all), a genuinely 1v1-only function, not a
+       per-agent-callable one -- calling it in a loop would silently only ever move heroes[1]
+       toward heroes[0], team_size times redundantly, and never move any other team-B agent.
+       apply_team_b_heuristic's simpler move-toward-target is sufficient for "stable,
+       non-trivial training opponent" per this file's own module doc comment -- optimal
+       team-fight positioning is explicitly not this opponent's job. */
+    apply_team_b_heuristic(team_size);
+
+    /* Real bug found and fixed 2026-08-10 while adding sim_step_team_vs_actions below: this
+       called arena_update(dt_ms) -- the 1v1-ONLY simulation function, which hardcodes
+       heroes[0]/heroes[1] as the only two heroes it ever calls update_hero_motion/
+       resolve_combat/tick_hero_kit on (see arena_update's own definition in arena_game.c).
+       Every OTHER hero in a team match (indices 2..2*ARENA_TEAM_SIZE-1) never moved, fought, or
+       got ticked at all -- confirmed directly: gave team-A slot 2 a real, distinctive move
+       command and its position didn't change. team-A slot 1 APPEARED to move in an earlier,
+       confounded check only because heroes[1] happens to coincide with arena_update's own
+       hardcoded second hero, not because team-mode movement was actually working. This affected
+       every team-mode training run since sim_step_team was first written earlier today,
+       including a real, multi-hour, in-progress background PPO run -- founder, real-time:
+       "ok if there is an issue fix it, if you must cancel current training and restart after
+       thats ok." Correct call is arena_update_teams(dt_ms) -- the real team-mode tick that
+       actually advances every hero, lane creeps, camps, Kings, nodes, towers, and the resource
+       race. */
+    arena_update_teams(dt_ms);
+}
+
+/* sim_step_team_vs_actions (§25.4 autocurriculum -- NORTHSTAR §25.4: "maintain a small
+ * population of past checkpoints of the policy being trained (self-play)... sample the next
+ * episode's opponent biased toward whichever one the current policy has been losing to most").
+ * The real, previously-missing prerequisite this needs: a way to drive team B from EXTERNALLY
+ * computed actions (a loaded checkpoint's own predictions) instead of the fixed heuristic
+ * sim_step_team always uses. `actions_b` NULL falls back to that exact same heuristic (byte-
+ * identical behavior to sim_step_team for existing callers that don't pass one) -- self-play
+ * opponent sampling is additive, not a replacement for the stable heuristic baseline, which
+ * NORTHSTAR §25.4 itself keeps in the opponent pool alongside past checkpoints. */
+void sim_step_team_vs_actions(const float *actions_a, const float *actions_b, int team_size, unsigned int dt_ms) {
+    if (team_size < 1) team_size = 1;
+    if (team_size > ARENA_TRAINING_MAX_TEAM_SIZE) team_size = ARENA_TRAINING_MAX_TEAM_SIZE;
+
+    for (int i = 0; i < team_size; i++) apply_team_action(i, &actions_a[i * 5]);
+
+    if (actions_b) {
+        for (int i = 0; i < team_size; i++) apply_team_action(ARENA_TEAM_SIZE + i, &actions_b[i * 5]);
+    } else {
+        apply_team_b_heuristic(team_size);
+    }
+
+    arena_update_teams(dt_ms); /* NOT arena_update() -- see sim_step_team's own doc comment on the real bug this fixes */
 }
 
 /* sim_get_obs_team: writes ONE agent's own observation (team_a_owner's index within team A, 0..
@@ -346,16 +392,32 @@ void sim_step_team(const float *actions, int team_size, unsigned int dt_ms) {
  * something that varies mid-run the way which heroes get picked does -- no "false ordinal
  * relationship" risk to guard against here. Returns the actual number of floats written so
  * Python can assert its buffer size without hardcoding the formula twice. */
-int sim_get_obs_team(int team_a_owner, int team_size, float *out_obs) {
+/* sim_get_obs_team_any (§25.4 autocurriculum prerequisite, 2026-08-10): generalization of
+ * sim_get_obs_team for EITHER side -- `owner` is the hero's absolute arena_state.heroes[] index,
+ * `my_team` is 0 (team A, indices 0..team_size-1) or 1 (team B, indices ARENA_TEAM_SIZE..
+ * ARENA_TEAM_SIZE+team_size-1). Same exact layout/semantics sim_get_obs_team already documents,
+ * just not hardcoded to "owner is always on team A" -- needed so an externally-driven team B
+ * (a loaded checkpoint policy, for self-play opponent sampling, see sim_step_team_vs_actions'
+ * own doc comment) can get ITS OWN correct self/foe/teammate perspective, not team A's. The
+ * agent-identity one-hot at the end uses the SLOT index within owner's own team (0..team_size-1
+ * either way), not the absolute heroes[] index, so it stays meaningful/comparable regardless of
+ * which side is asking -- team B's own slot 0 encodes the same way team A's slot 0 does.
+ * sim_get_obs_team itself is now a thin my_team=0 wrapper, kept for exact backward compatibility
+ * with every existing caller. */
+int sim_get_obs_team_any(int owner, int my_team, int team_size, float *out_obs) {
     if (team_size < 1) team_size = 1;
     if (team_size > ARENA_TRAINING_MAX_TEAM_SIZE) team_size = ARENA_TRAINING_MAX_TEAM_SIZE;
 
-    ArenaHero *self = &arena_state.heroes[team_a_owner];
+    int self_base = my_team == 0 ? 0 : ARENA_TEAM_SIZE;
+    int foe_base = my_team == 0 ? ARENA_TEAM_SIZE : 0;
+    int self_slot = owner - self_base; /* owner's own slot within its team, 0..team_size-1 */
+
+    ArenaHero *self = &arena_state.heroes[owner];
 
     ArenaHero *foe = NULL;
     float best_dist2 = 0.0f;
     for (int i = 0; i < team_size; i++) {
-        ArenaHero *cand = &arena_state.heroes[ARENA_TEAM_SIZE + i];
+        ArenaHero *cand = &arena_state.heroes[foe_base + i];
         if (!cand->alive) continue;
         float dx = cand->x - self->x, dz = cand->z - self->z;
         float dist2 = dx * dx + dz * dz;
@@ -406,8 +468,8 @@ int sim_get_obs_team(int team_a_owner, int team_size, float *out_obs) {
     int base = 18 + 2 * ARENA_HERO_COUNT;
     int slot = 0;
     for (int i = 0; i < team_size; i++) {
-        if (i == team_a_owner) continue;
-        ArenaHero *mate = &arena_state.heroes[i];
+        if (i == self_slot) continue;
+        ArenaHero *mate = &arena_state.heroes[self_base + i];
         float *o = &out_obs[base + slot * 4];
         o[0] = mate->max_hp > 0 ? (float)mate->hp / (float)mate->max_hp : 0.0f;
         o[1] = mate->x - self->x;
@@ -417,13 +479,20 @@ int sim_get_obs_team(int team_a_owner, int team_size, float *out_obs) {
     }
 
     /* Agent-identity one-hot (§25.2.2 role discovery prerequisite) -- see this function's own
-       doc comment above for the full reasoning. */
+       doc comment above for the full reasoning. Uses self_slot (relative to owner's own team),
+       not the absolute heroes[] index, so it means the same thing for either side. */
     int identity_base = base + (team_size - 1) * 4;
     for (int i = 0; i < team_size; i++) {
-        out_obs[identity_base + i] = (i == team_a_owner) ? 1.0f : 0.0f;
+        out_obs[identity_base + i] = (i == self_slot) ? 1.0f : 0.0f;
     }
 
     return identity_base + team_size;
+}
+
+/* sim_get_obs_team: see sim_get_obs_team_any's own doc comment -- exact backward-compatible
+ * team-A-only entry point, unchanged behavior/signature for every existing caller. */
+int sim_get_obs_team(int team_a_owner, int team_size, float *out_obs) {
+    return sim_get_obs_team_any(team_a_owner, 0, team_size, out_obs);
 }
 
 /* sim_get_done_team: episode ends when either whole team has no alive heroes left -- a fast
