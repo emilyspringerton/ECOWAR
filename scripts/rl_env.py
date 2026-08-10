@@ -60,8 +60,13 @@ import random
 # ARENA_HERO_COUNT (2026-07-29, founder: "not just 2 heroes"): hand-synced copy of
 # packages/simulation/arena_game.h's own real constant, same "no C header access" reasoning
 # ARENA_HALF_EXTENT below already documents for itself. Bump alongside that constant whenever a
-# new hero is added.
-ARENA_HERO_COUNT = 28
+# new hero is added. Found stale at 28 (2026-08-10, while building scripts/rl_env_team.py) --
+# arena_game.h's real value is 30; the drift undersized every ctypes obs buffer in this file by
+# 4 floats per one-hot block (8 total), corrupting memory past the buffer's end on every
+# sim_get_obs()/sim_get_obs_team() call and eventually segfaulting. Real, pre-existing bug in
+# THIS file (the C side was always correct) -- not something the team-mode env introduced, just
+# the first thing to actually crash on it.
+ARENA_HERO_COUNT = 30
 
 # 18 scalar fields + one-hot self hero_id (ARENA_HERO_COUNT-wide) + one-hot foe hero_id -- must
 # match apps/arena_training/src/headless.c's own ARENA_TRAINING_OBS_SIZE exactly (that file's own

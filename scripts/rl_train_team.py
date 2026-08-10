@@ -1,0 +1,174 @@
+#!/usr/bin/env python3
+"""
+scripts/rl_train_team.py (NORTHSTAR §25.2) -- trains REDGARDEN's arena bot AI via PPO against
+scripts/rl_env_team.py's ArenaTeamVecEnv: shared-parameter multi-agent training for a full
+team_size-a-side match, in place of scripts/rl_train.py's own 1v1-only training.
+
+Same delivery pattern every other training script in this repo already established (config from
+CLI args with env-var defaults, runs locally or on Colab, requires build/libarena_training.so to
+already exist via scripts/build_training.sh).
+
+Unlike scripts/rl_train.py, this script does NOT wrap the env in SubprocVecEnv/DummyVecEnv --
+ArenaTeamVecEnv already IS a VecEnv (team_size parallel agent "slots" sharing one team match, see
+that module's own doc comment for why), so it's passed to SB3's PPO directly. Training N separate
+PARALLEL team matches at once (N * team_size total rollout streams instead of just team_size) is
+real, valuable future depth this script doesn't attempt -- NORTHSTAR §25.6 doesn't resolve team
+size for the first real run either, and stacking "how many matches in parallel" on top of that
+same still-open question would be scope creep past what's actually been verified here.
+
+NOTE ON VERIFICATION: written and syntax-checked; the ctypes team-mode layer underneath it (via
+scripts/rl_env_team.py --smoke-test) was run for real. This script's own SB3 PPO training loop
+has NOT been run end-to-end (no multi-thousand-timestep run performed) -- same "flagged, not
+faked" posture every other training script in this repo already uses for the same reason (real
+training runs take real wall-clock time and, for team mode specifically, have not yet been asked
+for). Whoever runs a real pass should expect --total-timesteps in the hundreds of thousands to
+millions range, same order of magnitude scripts/rl_train.py's own 1v1 runs already use.
+"""
+
+import argparse
+import os
+import sys
+
+
+def parse_args():
+    p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    p.add_argument("--lib-path", default=os.environ.get("ARENA_TRAINING_LIB", None))
+    p.add_argument("--team-size", type=int, default=int(os.environ.get("RL_TEAM_SIZE", 3)),
+                   help="agents per side (2..10) -- NORTHSTAR §25.6 leaves the real first-run "
+                        "size undecided; 3v3 is a reasonable, small default")
+    p.add_argument("--total-timesteps", type=int,
+                   default=int(os.environ.get("RL_TOTAL_TIMESTEPS", 500_000)))
+    p.add_argument("--learning-rate", type=float, default=float(os.environ.get("RL_LEARNING_RATE", 3e-4)))
+    p.add_argument("--n-steps", type=int, default=int(os.environ.get("RL_N_STEPS", 2048)),
+                   help="PPO rollout length per agent slot before each policy update")
+    p.add_argument("--batch-size", type=int, default=int(os.environ.get("RL_BATCH_SIZE", 64)))
+    p.add_argument("--net-arch", type=int, nargs="+",
+                   default=[int(x) for x in os.environ.get("RL_NET_ARCH", "64,64").split(",")])
+    p.add_argument("--output-dir", default=os.environ.get("RL_TEAM_OUTPUT_DIR", "rl_team_checkpoints"))
+    p.add_argument("--save-freq", type=int, default=int(os.environ.get("RL_SAVE_FREQ", 20_000)))
+    p.add_argument("--eval-episodes", type=int, default=int(os.environ.get("RL_EVAL_EPISODES", 20)))
+    p.add_argument("--skip-export", action="store_true",
+                   help="skip converting the trained policy to the embedded-C header format -- "
+                        "note this header is NOT yet wired into any live consumer for team-mode "
+                        "observations (see this file's own module doc comment); export is for "
+                        "inspection/later-wiring, not a claim that it's live-consumable today")
+    p.add_argument("--export-output", default=os.environ.get(
+        "RL_TEAM_EXPORT_OUTPUT", "packages/common/rl_policy_weights_team.h"),
+        help="deliberately a DIFFERENT filename from rl_train.py's own "
+             "packages/common/rl_policy_weights.h -- a team-trained policy has a different input "
+             "dimension (team_size-dependent) and must never silently overwrite the live 1v1 "
+             "weights apps/arena_bot's real match bots already consult")
+    return p.parse_args()
+
+
+def make_env(lib_path, team_size):
+    def _init():
+        sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+        from rl_env_team import ArenaTeamVecEnv
+        return ArenaTeamVecEnv(lib_path=lib_path, team_size=team_size)
+    return _init
+
+
+def main():
+    args = parse_args()
+
+    from stable_baselines3 import PPO
+
+    vec_env = make_env(args.lib_path, args.team_size)()  # ArenaTeamVecEnv IS the VecEnv --
+                                                           # no SubprocVecEnv/DummyVecEnv wrapper,
+                                                           # see this file's own module doc comment
+
+    os.makedirs(args.output_dir, exist_ok=True)
+
+    policy_kwargs = dict(net_arch=args.net_arch)
+    model = PPO(
+        "MlpPolicy",
+        vec_env,
+        learning_rate=args.learning_rate,
+        n_steps=args.n_steps,
+        batch_size=args.batch_size,
+        policy_kwargs=policy_kwargs,
+        verbose=1,
+    )
+
+    print(f"Training team PPO: team_size={args.team_size} total_timesteps={args.total_timesteps} "
+          f"net_arch={args.net_arch}")
+    print("Reward function: scripts/rl_env.py's own compute_reward(), applied per-agent -- "
+          "NORTHSTAR §25.2's own note on why the 1v1 reward function is directly reusable here.")
+    print("Opponent: team_size heuristic-driven bots (stable, non-circular -- NORTHSTAR §25.2.1).")
+    print("NOT yet trained here: role discovery / noisy-gestalt diversity phases / synergy decay "
+          "/ autocurriculum opponent sampling (NORTHSTAR §25.2.2-§25.4) -- this is a shared-"
+          "parameter baseline, the real foundation those build on, not those systems themselves.")
+
+    checkpoint_path_template = os.path.join(args.output_dir, "ppo_arena_team_step_{}")
+    timesteps_done = 0
+    while timesteps_done < args.total_timesteps:
+        chunk = min(args.save_freq, args.total_timesteps - timesteps_done)
+        model.learn(total_timesteps=chunk, reset_num_timesteps=False)
+        # Same real bug rl_train.py's own doc comment already documents fixing (crediting only
+        # the requested chunk silently undercounts, since .learn() can only stop at a rollout
+        # boundary) -- reading the model's own authoritative counter here for the same reason.
+        timesteps_done = model.num_timesteps
+        ckpt_path = checkpoint_path_template.format(timesteps_done)
+        model.save(ckpt_path)
+        print(f"Checkpoint saved: {ckpt_path}.zip ({timesteps_done}/{args.total_timesteps} timesteps)")
+
+    final_path = os.path.join(args.output_dir, "ppo_arena_team_final")
+    model.save(final_path)
+    print(f"Final model saved: {final_path}.zip")
+
+    # Evaluation: real team-match episodes against the same heuristic opponent, win rate = the
+    # fraction of episodes where team A (winner==1) won.
+    print(f"\nEvaluating over {args.eval_episodes} team episodes...")
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    from rl_env_team import ArenaTeamVecEnv
+    eval_env = ArenaTeamVecEnv(lib_path=args.lib_path, team_size=args.team_size)
+    wins = losses = draws = 0
+    for ep in range(args.eval_episodes):
+        obs = eval_env.reset()
+        winner = 0
+        done_this_ep = False
+        while not done_this_ep:
+            actions, _ = model.predict(obs, deterministic=True)
+            obs, rewards, dones, infos = eval_env.step(actions)
+            if dones[0]:
+                winner = infos[0]["winner"]
+                done_this_ep = True
+        if winner == 1:
+            wins += 1
+        elif winner == 2:
+            losses += 1
+        else:
+            draws += 1
+    print(f"Eval results: {wins}W {losses}L {draws}D over {args.eval_episodes} episodes "
+          f"({100.0 * wins / args.eval_episodes:.1f}% team win rate vs. the heuristic bot team)")
+
+    header_path = None
+    if not args.skip_export:
+        from export_rl_policy_to_c import extract_layers_from_sb3_policy, write_c_header_from_layers
+        layers = extract_layers_from_sb3_policy(model)
+        header_path = os.path.join(args.output_dir, "rl_policy_weights_team.h")
+        # Distinct guard_name/model_name from rl_train.py's own defaults (RL_POLICY_WEIGHTS_H /
+        # RL_POLICY_MODEL) -- this header must never collide with the live 1v1 one if both ever
+        # get included in the same translation unit.
+        write_c_header_from_layers(layers, header_path,
+                                    guard_name="RL_POLICY_WEIGHTS_TEAM_H",
+                                    model_name="RL_POLICY_TEAM_MODEL")
+        print(f"\nExported (inspection only, NOT wired into a live consumer yet): {header_path}")
+        print(f"Deliberately not git-synced to {args.export_output} automatically -- unlike "
+              f"rl_train.py's own --skip-git-sync default-on behavior, promoting a team-trained "
+              f"policy into anything live is a real design decision (what consumes a "
+              f"team-shaped input vector? NORTHSTAR §25.5 doesn't resolve this) that shouldn't "
+              f"happen as a side effect of a training run.")
+
+    print("=" * 60)
+    print(f"DONE. Final policy: {final_path}.zip")
+    print("This is VS0's shared-parameter baseline (NORTHSTAR §25.2.1/§25.5) -- role discovery,")
+    print("noisy-gestalt diversity training, synergy decay, and autocurriculum opponent sampling")
+    print("are specified in NORTHSTAR §25.2.2-§25.4 but not implemented by this script.")
+    print("File a completion Apple and mark the relevant EMILY/BACKLOG.md item done.")
+    print("=" * 60)
+
+
+if __name__ == "__main__":
+    main()
