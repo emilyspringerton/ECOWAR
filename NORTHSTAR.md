@@ -2708,14 +2708,27 @@ existing 1v1 pipeline changes):
   "multi-agent" in the observation sense: every agent can see its own team's state, not just
   itself and one foe.
 
-**25.2.2 Role discovery (spec only).** Rather than hand-assigning roles (support/carry/tank —
-REDGARDEN's own hero kits already imply this informally), let roles emerge from training the way
-QMIX-family role-discovery methods do (ROMA/RODE are the two most directly applicable named
-techniques): each agent's policy is conditioned on a learned per-agent embedding vector, trained
-jointly with the policy itself rather than fixed per hero. Agents with similar embeddings behave
-similarly; the training process — not a hand-written rule — decides how many distinct roles
-emerge and which agents end up in which. This directly answers the founder's own "dynamic persona
-vectors... determined by game features, not human-defined words."
+**25.2.2 Role discovery (2026-08-10 -- identity-conditioning PREREQUISITE implemented, the full
+learned-embedding technique still spec only).** Rather than hand-assigning roles (support/carry/
+tank — REDGARDEN's own hero kits already imply this informally), let roles emerge from training
+the way QMIX-family role-discovery methods do (ROMA/RODE are the two most directly applicable
+named techniques): each agent's policy is conditioned on a learned per-agent embedding vector,
+trained jointly with the policy itself rather than fixed per hero. Agents with similar embeddings
+behave similarly; the training process — not a hand-written rule — decides how many distinct
+roles emerge and which agents end up in which. This directly answers the founder's own "dynamic
+persona vectors... determined by game features, not human-defined words."
+
+Real minimal mechanism these methods all depend on: the policy needs SOME signal for "which of
+the team_size shared-parameter copies am I" before it can possibly differentiate behavior by
+slot — without it, differentiating is mathematically impossible regardless of whether it would
+score higher, the exact "hive mind" collapse this section's own problem statement names.
+`sim_get_obs_team` (`apps/arena_training/src/headless.c`) now appends a `team_size`-long agent-
+identity one-hot to each agent's own observation. This is the prerequisite a dedicated ROMA/RODE-
+style learned-embedding module would consume, landed honestly short of the full technique — the
+embedding module itself (and the training-time machinery to actually cluster agents by learned
+similarity) remains unbuilt. Verified: `rl_env_team.py --smoke-test` confirms the new obs_size
+(86→89 at team_size=3) and correct one-hot values, plus a real SB3 VecEnv rollout completes
+without error. REDGARDEN commit `6d6e853`.
 
 **25.2.3 Noisy gestalt: diversity-preserving training schedule (2026-08-10 -- alternating variant
 IMPLEMENTED, `--noisy-gestalt` in `scripts/rl_train_team.py`/`rl_env_team.py`).** Founder:
