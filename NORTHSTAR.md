@@ -2849,6 +2849,21 @@ shape). At REDGARDEN's real team size (10 per side, `ARENA_TEAM_SIZE`), a two-le
 — not committed here, since §25.6 already left team size for the first real training run
 undecided, and this compounds that same open question rather than resolving it.
 
+**First real step (2026-08-10, `apps/arena_bot/src/main.c`).** The full hierarchical-RL version
+above stays unbuilt — it needs a restructured, learned training loop, and this section's own
+hierarchy-depth/branching question is still open. Built instead: a real, rule-based (not learned)
+team-wide "Commander" signal that genuinely changes individual squad decisions, not just a spec.
+`commander_posture_multiplier()` reads the live resource race (S170-153) and returns a posture
+scalar — team meaningfully ahead → PATIENT (protects the lead), team meaningfully behind →
+AGGRESSIVE (can't afford to wait passively while falling further behind) — real MOBA precedent,
+not invented. Applied to the tower-siege-patience heuristic (`ARENA_BOT_DAMAGED_TOWER_PATIENCE_
+BONUS`, itself from a founder ask to fold that behavior into this exact thread rather than leave
+it standalone): a team's actual patience level now depends on team-wide state, not just local
+per-bot information. Smaller in scope than the full commander/soldier hierarchy (one flat
+posture scalar, not a real multi-level action hierarchy), but a genuine structural step in the
+same direction. Verified: full regression suite + live 10-bot matchmaker/server stability, both
+green. REDGARDEN commit `eb44a2e`.
+
 ### 26.4 What this section deliberately does not resolve
 
 - Whether representation transfer actually generalizes across games at all — untestable until a
