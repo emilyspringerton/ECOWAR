@@ -545,15 +545,44 @@ static void squad_centroid(const BotSnapshotView *cur, int hero_team, int squad_
  * that broader thread. */
 #define ARENA_BOT_DAMAGED_TOWER_PATIENCE_BONUS 15.0f
 
+/* commander_posture_multiplier (NORTHSTAR §26.3, "fractal commander/soldier hierarchy" -- first
+ * real step, 2026-08-10 founder: "but the wholistic bot training fractal ai commander squad
+ * stuff... all the r and d should help" -> fold tower-siege patience into this thread rather
+ * than leave it a standalone heuristic). §26.3 specs a full hierarchical-RL commander whose
+ * action space is directives to sub-agents -- genuinely bigger scope than this pass attempts
+ * (needs a restructured, learned training loop; §26.4 already flags hierarchy depth/branching as
+ * unresolved, no founder decision yet). This is a real, honest, SMALLER first step in the same
+ * structural direction: a team-wide "Commander" signal (not per-bot local information) that
+ * actually changes individual squad decisions -- rule-based, not learned, but a genuine command
+ * hierarchy exists and does something, not just a spec. Reads the real resource race (S170-153)
+ * already on the wire: a team meaningfully AHEAD plays patient (protects the lead, scales
+ * ARENA_BOT_DAMAGED_TOWER_PATIENCE_BONUS up), a team meaningfully BEHIND can't afford to wait
+ * passively while falling further behind and needs to force fights instead (scales it down) --
+ * real MOBA precedent (protect-the-lead vs. must-force-plays team strategy), not invented. The
+ * threshold/multipliers below are a real, documented first pass, not tuned against actual match
+ * data -- same "spec the model, commit to real numbers, don't leave them symbolic" discipline
+ * arena_game.h's own timers already use throughout. */
+#define ARENA_COMMANDER_RESOURCE_LEAD_THRESHOLD 300  /* ~15% of ARENA_RESOURCE_CAP (2000, packages/simulation/arena_game.h) -- a real, not noise-level, lead */
+#define ARENA_COMMANDER_PATIENT_MULT 1.5f   /* team meaningfully ahead: extra patient, protect the lead */
+#define ARENA_COMMANDER_AGGRESSIVE_MULT 0.3f /* team meaningfully behind: mostly abandon patience, force fights instead of waiting */
+
+static float commander_posture_multiplier(const BotSnapshotView *cur, int hero_team) {
+    int delta = (int)cur->world.resources[hero_team] - (int)cur->world.resources[1 - hero_team];
+    if (delta >= ARENA_COMMANDER_RESOURCE_LEAD_THRESHOLD) return ARENA_COMMANDER_PATIENT_MULT;
+    if (delta <= -ARENA_COMMANDER_RESOURCE_LEAD_THRESHOLD) return ARENA_COMMANDER_AGGRESSIVE_MULT;
+    return 1.0f;
+}
+
 /* hero_squad_target_node: which uncapped node THIS bot's own squad has claimed, via a
  * deterministic greedy pass every bot computes identically (no communication needed -- same
  * inputs, same algorithm, same answer everywhere). Squads claim in ascending squad-id order,
  * each claiming whichever still-unclaimed uncapped node is nearest to that squad's own
  * centroid -- adjusted by ARENA_BOT_DAMAGED_TOWER_PATIENCE_BONUS's own "prefer a node someone's
- * already been fighting for" preference, see that constant's own doc comment. squad_count is
- * sized (hero_squad_count above) so squad_count <= the number of uncapped nodes always holds,
- * which guarantees every squad finds a distinct, never-before-claimed node -- normally a clean
- * 1-squad-per-node split. */
+ * already been fighting for" preference (scaled by the Commander's own posture read on the
+ * real resource race, see commander_posture_multiplier's own doc comment), see that constant's
+ * own doc comment. squad_count is sized (hero_squad_count above) so squad_count <= the number of
+ * uncapped nodes always holds, which guarantees every squad finds a distinct, never-before-
+ * claimed node -- normally a clean 1-squad-per-node split. */
 static int hero_squad_target_node(const BotSnapshotView *cur, int hero_team, int squad_count, int my_squad) {
     int want_owner = hero_team + 1;
     int uncapped[ARENA_SNAPSHOT_NODE_COUNT];
@@ -563,6 +592,7 @@ static int hero_squad_target_node(const BotSnapshotView *cur, int hero_team, int
     }
     if (uncapped_count == 0) return -1;
 
+    float posture = commander_posture_multiplier(cur, hero_team);
     int claimed[ARENA_SNAPSHOT_NODE_COUNT] = {0};
     int my_pick = -1;
     for (int s = 0; s < squad_count; s++) {
@@ -576,7 +606,7 @@ static int hero_squad_target_node(const BotSnapshotView *cur, int hero_team, int
             float dx = cur->world.nodes[n].x - sx, dz = cur->world.nodes[n].z - sz;
             float d = sqrtf(dx * dx + dz * dz);
             const ArenaTowerSnapshot *tower = &cur->world.towers[n];
-            if (tower->alive && tower->hp < tower->max_hp) d -= ARENA_BOT_DAMAGED_TOWER_PATIENCE_BONUS;
+            if (tower->alive && tower->hp < tower->max_hp) d -= ARENA_BOT_DAMAGED_TOWER_PATIENCE_BONUS * posture;
             if (pick == -1 || d < pick_d) { pick = n; pick_d = d; }
         }
         if (pick != -1) claimed[pick] = 1;
