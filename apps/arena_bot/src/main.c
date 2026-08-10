@@ -522,13 +522,38 @@ static void squad_centroid(const BotSnapshotView *cur, int hero_team, int squad_
     *cz = n > 0 ? sz / (float)n : 0.0f;
 }
 
+/* ARENA_BOT_DAMAGED_TOWER_PATIENCE_BONUS (2026-08-10, founder real-time: "currently they go
+ * right in on the towers... its better to wait for your opponent to clear a tower and then take
+ * his base... your team has an advantage because he has to fight your team AND the tower so
+ * your team gets the flow advantage"): a real distance bonus (in map units) applied to a node
+ * whose tower has already taken damage (hp < max_hp, still alive), making it look this much
+ * "closer" in the greedy pick below relative to a full-health, untouched one. This is a
+ * PREFERENCE, not a hard block -- if every uncapped node's tower is still full-health, the
+ * greedy pick still resolves to the plain nearest one, same as before this change, so there's
+ * no deadlock risk (a squad never refuses to cap anything and just stands still forever). Tower
+ * damage is a real, wire-visible signal (ArenaTowerSnapshot.hp, protocol.h) that SOMEONE has
+ * already spent time fighting that tower -- doesn't distinguish which team caused it (the wire
+ * protocol carries no "last attacker" field for towers), but that's fine for this heuristic's
+ * own purpose: whoever damaged it already paid a real tempo cost either way, so moving in now
+ * to finish the job and contest the node is a real value proposition regardless of who started
+ * it. Chosen as roughly a third of this 5-node map's own typical node-to-node spacing (~35-55
+ * units between adjacent nodes at the current golden-ratio-scaled layout) -- large enough to
+ * genuinely flip a close call toward the damaged node, small enough that a squad still won't
+ * cross the entire map chasing one when a much closer full-health node is sitting right there.
+ * A heuristic first pass, not the full "wholistic bot-training / commander-squad" answer the
+ * founder also asked to fold this into (NORTHSTAR §26) -- see EMILY/BACKLOG.md's own entry for
+ * that broader thread. */
+#define ARENA_BOT_DAMAGED_TOWER_PATIENCE_BONUS 15.0f
+
 /* hero_squad_target_node: which uncapped node THIS bot's own squad has claimed, via a
  * deterministic greedy pass every bot computes identically (no communication needed -- same
  * inputs, same algorithm, same answer everywhere). Squads claim in ascending squad-id order,
  * each claiming whichever still-unclaimed uncapped node is nearest to that squad's own
- * centroid. squad_count is sized (hero_squad_count above) so squad_count <= the number of
- * uncapped nodes always holds, which guarantees every squad finds a distinct, never-before-
- * claimed node -- normally a clean 1-squad-per-node split. */
+ * centroid -- adjusted by ARENA_BOT_DAMAGED_TOWER_PATIENCE_BONUS's own "prefer a node someone's
+ * already been fighting for" preference, see that constant's own doc comment. squad_count is
+ * sized (hero_squad_count above) so squad_count <= the number of uncapped nodes always holds,
+ * which guarantees every squad finds a distinct, never-before-claimed node -- normally a clean
+ * 1-squad-per-node split. */
 static int hero_squad_target_node(const BotSnapshotView *cur, int hero_team, int squad_count, int my_squad) {
     int want_owner = hero_team + 1;
     int uncapped[ARENA_SNAPSHOT_NODE_COUNT];
@@ -549,7 +574,9 @@ static int hero_squad_target_node(const BotSnapshotView *cur, int hero_team, int
             int n = uncapped[u];
             if (claimed[n]) continue;
             float dx = cur->world.nodes[n].x - sx, dz = cur->world.nodes[n].z - sz;
-            float d = dx * dx + dz * dz;
+            float d = sqrtf(dx * dx + dz * dz);
+            const ArenaTowerSnapshot *tower = &cur->world.towers[n];
+            if (tower->alive && tower->hp < tower->max_hp) d -= ARENA_BOT_DAMAGED_TOWER_PATIENCE_BONUS;
             if (pick == -1 || d < pick_d) { pick = n; pick_d = d; }
         }
         if (pick != -1) claimed[pick] = 1;
