@@ -30,6 +30,8 @@
  * this reason; sim_step() calls the stable heuristic functions directly, in hero 1's own place,
  * before arena_update() runs. */
 
+#include <stddef.h>
+
 #include "../../../packages/simulation/arena_game.h"
 
 /* ARENA_TRAINING_OBS_SIZE: the exact, documented layout sim_get_obs() writes into out_obs.
@@ -213,4 +215,225 @@ int sim_get_done(void) {
  * same convention ArenaState.winner already uses. */
 int sim_get_winner(void) {
     return arena_state.winner;
+}
+
+/* ---------------------------------------------------------------------------------------------
+ * Team-mode API (NORTHSTAR §25.2.1, VS0): additive to everything above -- the 1v1 functions are
+ * untouched and still work exactly as before. Team A (heroes[0..team_size-1]) is the side being
+ * trained (multi-agent policy, one action per agent per sim_step_team call); team B
+ * (heroes[ARENA_TEAM_SIZE..ARENA_TEAM_SIZE+team_size-1]) is the stable, non-circular heuristic
+ * opponent, same `arena_bot_tick_heuristic`/`bot_cast_kit_if_ready` functions the 1v1 API
+ * already uses for exactly the same "training against a moving target of itself is circular"
+ * reason sim_step's own module doc comment already gives -- just applied once per opponent agent
+ * instead of once total.
+ *
+ * team_size scales from 2 up to ARENA_TEAM_SIZE (10, the real match size) without a second code
+ * path -- NORTHSTAR §25.6 deliberately leaves which size to actually train first undecided. */
+
+#define ARENA_TRAINING_MAX_TEAM_SIZE ARENA_TEAM_SIZE
+
+/* sim_init_team: arena_init_teams() populates all ARENA_MAX_HEROES (20) slots at fixed
+ * graveyard-corner positions; slots beyond team_size on either side are deactivated
+ * (active=0, alive=0) rather than left alive as an unused team_size..9 rump -- see
+ * arena_team_owns_any_node/respawn-adjacent logic elsewhere in arena_game.c, which already
+ * expects to iterate "active" heroes, not assume exactly ARENA_TEAM_SIZE per side. hero_ids_a/
+ * hero_ids_b are each team_size-long arrays overriding arena_init_teams()'s own
+ * ARENA_HERO_UNICORN-for-everyone placeholder, same reasoning §21.2's own hero-identity one-hot
+ * observation slots exist for: a policy that only ever sees Unicorn can't condition on hero kit
+ * at all. */
+void sim_init_team(int team_size, const int *hero_ids_a, const int *hero_ids_b) {
+    if (team_size < 1) team_size = 1;
+    if (team_size > ARENA_TRAINING_MAX_TEAM_SIZE) team_size = ARENA_TRAINING_MAX_TEAM_SIZE;
+
+    arena_init_teams();
+    arena_bot_enabled = 0; /* same reasoning as sim_init -- team B is driven directly below, not
+                               through arena_update's own automatic bot-tick */
+
+    for (int i = 0; i < ARENA_TEAM_SIZE; i++) {
+        int team_a_idx = i;
+        int team_b_idx = ARENA_TEAM_SIZE + i;
+        if (i < team_size) {
+            if (hero_ids_a) arena_state.heroes[team_a_idx].hero_id = (ArenaHeroID)hero_ids_a[i];
+            if (hero_ids_b) arena_state.heroes[team_b_idx].hero_id = (ArenaHeroID)hero_ids_b[i];
+        } else {
+            arena_state.heroes[team_a_idx].active = 0;
+            arena_state.heroes[team_a_idx].alive = 0;
+            arena_state.heroes[team_b_idx].active = 0;
+            arena_state.heroes[team_b_idx].alive = 0;
+        }
+    }
+}
+
+/* sim_step_team: applies one action per team-A agent (actions is a flat team_size*5 array --
+ * [move_x, move_z, cast_q, cast_w, cast_r] per agent, same per-agent action shape sim_step
+ * already uses for the 1v1 case, just repeated), drives every active team-B agent with the
+ * stable heuristic against its own nearest team-A foe (a simple nearest-enemy targeting rule --
+ * real team-fight target selection is a much larger, separate problem this training opponent
+ * deliberately doesn't need to solve well, only to be a stable, non-trivial thing to train
+ * against), then ticks the whole sim forward once. */
+void sim_step_team(const float *actions, int team_size, unsigned int dt_ms) {
+    if (team_size < 1) team_size = 1;
+    if (team_size > ARENA_TRAINING_MAX_TEAM_SIZE) team_size = ARENA_TRAINING_MAX_TEAM_SIZE;
+
+    for (int i = 0; i < team_size; i++) {
+        if (!arena_state.heroes[i].alive) continue;
+        const float *a = &actions[i * 5];
+        arena_set_move_target(i, a[0], a[1]);
+        if (a[2] != 0.0f) arena_cast_q(i);
+        if (a[3] != 0.0f) arena_toggle_w(i);
+        if (a[4] != 0.0f) arena_cast_r(i);
+    }
+
+    for (int i = 0; i < team_size; i++) {
+        int b_idx = ARENA_TEAM_SIZE + i;
+        ArenaHero *bot = &arena_state.heroes[b_idx];
+        if (!bot->alive) continue;
+
+        /* Nearest-alive-team-A-hero targeting -- deliberately simple; this opponent's job is to
+           be stable and non-trivial, not to play optimal team-fight target selection. */
+        ArenaHero *target = NULL;
+        float best_dist2 = 0.0f;
+        for (int j = 0; j < team_size; j++) {
+            ArenaHero *cand = &arena_state.heroes[j];
+            if (!cand->alive) continue;
+            float dx = cand->x - bot->x, dz = cand->z - bot->z;
+            float dist2 = dx * dx + dz * dz;
+            if (!target || dist2 < best_dist2) {
+                target = cand;
+                best_dist2 = dist2;
+            }
+        }
+        if (!target) continue;
+
+        /* NOT arena_bot_tick_heuristic() -- that function is hardcoded to heroes[1] vs.
+           heroes[0] (checked directly in arena_game.c: `ArenaHero *bot = &heroes[1]; ArenaHero
+           *foe = &heroes[0];`, no index parameter at all), a genuinely 1v1-only function, not a
+           per-agent-callable one -- calling it in this loop would silently only ever move
+           heroes[1] toward heroes[0], team_size times redundantly, and never move any other
+           team-B agent. Move-toward-target here instead: simpler than routing every team-B bot
+           through bot_brain_forward's own per-agent-normalized inputs (which arena_bot_tick_
+           heuristic wraps for exactly one fixed pair), and sufficient for "stable, non-trivial
+           training opponent" per this file's own module doc comment -- optimal team-fight
+           positioning is explicitly not this opponent's job. */
+        arena_set_move_target(b_idx, target->x, target->z);
+        bot_cast_kit_if_ready(bot, target);
+    }
+
+    arena_update(dt_ms);
+}
+
+/* sim_get_obs_team: writes ONE agent's own observation (team_a_owner's index within team A, 0..
+ * team_size-1) into out_obs -- same 18+2*ARENA_HERO_COUNT self/nearest-foe/hero-id-one-hot
+ * layout sim_get_obs already writes (nearest foe = nearest alive team-B hero, not literally
+ * heroes[1]), PLUS a new teammate block: (team_size-1) slots of (hp_frac, dx, dz, alive) for
+ * every OTHER team-A agent, ordered by team-A index (not by distance -- a fixed, stable
+ * ordering, same "no false ordinal relationship" reasoning ARENA_TRAINING_OBS_SIZE's own doc
+ * comment already gives for one-hot hero IDs applies here too: sorting by distance would make
+ * "teammate slot 0" mean a different physical teammate every tick). Returns the actual number
+ * of floats written so Python can assert its buffer size without hardcoding the formula twice. */
+int sim_get_obs_team(int team_a_owner, int team_size, float *out_obs) {
+    if (team_size < 1) team_size = 1;
+    if (team_size > ARENA_TRAINING_MAX_TEAM_SIZE) team_size = ARENA_TRAINING_MAX_TEAM_SIZE;
+
+    ArenaHero *self = &arena_state.heroes[team_a_owner];
+
+    ArenaHero *foe = NULL;
+    float best_dist2 = 0.0f;
+    for (int i = 0; i < team_size; i++) {
+        ArenaHero *cand = &arena_state.heroes[ARENA_TEAM_SIZE + i];
+        if (!cand->alive) continue;
+        float dx = cand->x - self->x, dz = cand->z - self->z;
+        float dist2 = dx * dx + dz * dz;
+        if (!foe || dist2 < best_dist2) {
+            foe = cand;
+            best_dist2 = dist2;
+        }
+    }
+
+    out_obs[0]  = (float)self->hp;
+    out_obs[1]  = (float)self->max_hp;
+    out_obs[2]  = (float)self->mp;
+    out_obs[3]  = self->x;
+    out_obs[4]  = self->z;
+    out_obs[5]  = (float)(self->q_cooldown_ms > 0 ? self->q_cooldown_ms : 0);
+    out_obs[6]  = (float)(self->w_cooldown_ms > 0 ? self->w_cooldown_ms : 0);
+    out_obs[7]  = (float)(self->r_cooldown_ms > 0 ? self->r_cooldown_ms : 0);
+    out_obs[8]  = (float)(self->flow > 0 ? self->flow : 0);
+    out_obs[9]  = (float)self->xp;
+    out_obs[10] = self->alive ? 1.0f : 0.0f;
+
+    if (foe) {
+        out_obs[11] = (float)(foe->hp > 0 ? foe->hp : 0);
+        out_obs[12] = (float)foe->max_hp;
+        out_obs[13] = foe->x;
+        out_obs[14] = foe->z;
+        out_obs[15] = 1.0f;
+        out_obs[16] = foe->x - self->x;
+        out_obs[17] = foe->z - self->z;
+    } else {
+        /* Whole enemy team dead -- episode should already be `done` by the time this happens
+           (see sim_get_done_team), but zero rather than garbage if Python reads one more obs
+           anyway before checking done. */
+        for (int i = 11; i <= 17; i++) out_obs[i] = 0.0f;
+    }
+
+    for (int i = 0; i < ARENA_HERO_COUNT; i++) {
+        out_obs[18 + i] = 0.0f;
+        out_obs[18 + ARENA_HERO_COUNT + i] = 0.0f;
+    }
+    if (self->hero_id >= 0 && self->hero_id < ARENA_HERO_COUNT) {
+        out_obs[18 + self->hero_id] = 1.0f;
+    }
+    if (foe && foe->hero_id >= 0 && foe->hero_id < ARENA_HERO_COUNT) {
+        out_obs[18 + ARENA_HERO_COUNT + foe->hero_id] = 1.0f;
+    }
+
+    int base = 18 + 2 * ARENA_HERO_COUNT;
+    int slot = 0;
+    for (int i = 0; i < team_size; i++) {
+        if (i == team_a_owner) continue;
+        ArenaHero *mate = &arena_state.heroes[i];
+        float *o = &out_obs[base + slot * 4];
+        o[0] = mate->max_hp > 0 ? (float)mate->hp / (float)mate->max_hp : 0.0f;
+        o[1] = mate->x - self->x;
+        o[2] = mate->z - self->z;
+        o[3] = mate->alive ? 1.0f : 0.0f;
+        slot++;
+    }
+
+    return base + (team_size - 1) * 4;
+}
+
+/* sim_get_done_team: episode ends when either whole team has no alive heroes left -- a fast
+ * proxy for a real match's actual win condition (node/resource control, far too slow to reach
+ * within a training episode's budget -- see NORTHSTAR §25.1's own note on this), same
+ * "simple death-based termination for training, real rules for the live game" split the
+ * existing 1v1 API already makes (arena_game.c's line-5623-ish 1v1 win check vs. its own
+ * separate real-match resource/node win conditions). */
+int sim_get_done_team(int team_size) {
+    if (team_size < 1) team_size = 1;
+    if (team_size > ARENA_TRAINING_MAX_TEAM_SIZE) team_size = ARENA_TRAINING_MAX_TEAM_SIZE;
+
+    int a_alive = 0, b_alive = 0;
+    for (int i = 0; i < team_size; i++) {
+        if (arena_state.heroes[i].alive) a_alive = 1;
+        if (arena_state.heroes[ARENA_TEAM_SIZE + i].alive) b_alive = 1;
+    }
+    return (!a_alive || !b_alive) ? 1 : 0;
+}
+
+/* sim_get_winner_team: 0 = no winner yet, 1 = team A (being trained) won, 2 = team B (heuristic
+ * opponent) won. Only meaningful once sim_get_done_team() is true. */
+int sim_get_winner_team(int team_size) {
+    if (team_size < 1) team_size = 1;
+    if (team_size > ARENA_TRAINING_MAX_TEAM_SIZE) team_size = ARENA_TRAINING_MAX_TEAM_SIZE;
+
+    int a_alive = 0, b_alive = 0;
+    for (int i = 0; i < team_size; i++) {
+        if (arena_state.heroes[i].alive) a_alive = 1;
+        if (arena_state.heroes[ARENA_TEAM_SIZE + i].alive) b_alive = 1;
+    }
+    if (a_alive && !b_alive) return 1;
+    if (b_alive && !a_alive) return 2;
+    return 0;
 }

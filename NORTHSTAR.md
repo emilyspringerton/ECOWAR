@@ -2615,3 +2615,275 @@ one real but Tyler-only multi-unit precedent), name §16.1's own already-honest 
 solved" companion-unit gap as still-open and directly relevant, and lay out a path that
 generalizes what's real rather than inventing a second parallel system — is done. No code changes
 accompany this section; implementation is separate, future work.
+
+## 25. Multi-agent RL: team environment, role discovery, noisy gestalt, synergy decay (2026-08-10) -- VS0 (team env) built, rest spec only
+
+Founder, real-time, sourced from a long personal research conversation (Gemini transcript,
+ingested into `CarePyre/source/gemini-transcript-2026-08-09.md` for an unrelated reason — that
+repo's own real business plan starts around that file's line 5024; everything before it is a
+sprawling ML/RL brainstorm that drifted into ungrounded territory by the end — DOD-grant framing,
+invented acronyms, "reality hack" jargon applied to writing letters to senators). Most of that
+material is explicitly NOT being adopted here — see this section's own §25.0 for exactly what was
+kept and what was dropped, and why. What *is* real and worth building: a cluster of genuine,
+named multi-agent RL research directions (role discovery, diversity-preserving team training,
+autocurriculum), applied to a gap §21.3 already flagged explicitly as real and unsolved:
+**"Team-mode (10v10) training... multi-agent RL (coordinating a full team, objective-aware) is a
+substantially harder problem than single-agent PPO against a fixed opponent, still out of
+scope."** This section is that scope, picked back up.
+
+### 25.0 What came from the source conversation, and what didn't
+
+The founder's own framing used invented vocabulary ("noisy gestalt," "frame break," acronym
+chains like ROSANNE/POINT/MIDASX) mixed with real, correctly-used ML concepts. This section
+translates the real concepts into their actual names and drops everything else:
+
+| Founder's term | What it actually maps to | Kept? |
+|---|---|---|
+| "noisy gestalt hive mind... unique strategies instead of general ones" | Diversity-preserving MARL — prevent policy homogenization across agents (population-based training with a diversity/novelty bonus, or a shared-vs-individual policy split with an information bottleneck) | **Kept** — §25.2 |
+| "dynamic persona vectors... determined by game features, not human-defined words" | Learned (not hand-labeled) per-agent embeddings that condition behavior — standard in role-based MARL (QMIX-style role clustering, RODE, ROMA) | **Kept** — §25.2, folded into role discovery |
+| "flip back and forth between unique and optimal... MTG archetypes" | Phased/alternating training curriculum: alternate diversity-bonus and pure-win-rate optimization phases | **Kept** — §25.2.3, as a training schedule, not a new theory |
+| "peanut butter and jelly 2 bots, recursive combination" | Policy distillation / crossover between checkpoints | **Not kept** — real technique (policy distillation exists), but no concrete REDGARDEN use case yet; noted, not spec'd |
+| "dynamically adjust cross-attention... comeback mechanic when a team is winning too good" | A real, buildable game-design mechanic: team coordination bonus decays under a win-streak condition | **Kept** — §25.3 (renamed "synergy decay," not attention-mechanism-literal) |
+| "auto-curriculum engine... UED to evolve the game as you play it" | Unsupervised Environment Design (UED/PAIRED/POET-family): the opponent/environment curriculum adapts to the current policy's weaknesses instead of being fixed | **Kept**, scoped to opponent-curriculum only (not "the game evolves itself," which is a content-design claim this section doesn't make) — §25.4 |
+| "contrastive state encoders" | Real technique (contrastive representation learning for RL state encoders) — real but no concrete gap it fills here yet | **Not kept** — noted for later if a real use case shows up |
+| Physics-informed neural networks, "reality hacking" physics, ROSANNE/POINT/MIDASX/AGI synthesis, DOD grants, resilient autonomous swarms as a funding pitch | Not ML — either unrelated to a game bot AI system, physically ungrounded, or a funding/military framing with no product behind it | **Dropped entirely** |
+
+Everything below is scoped to REDGARDEN's own arena bot AI, building directly on §21's real,
+already-running pipeline — not a new system, not AGI, not a swarm-weapons pitch.
+
+### 25.1 What exists today (verified by reading the actual code, not assumed)
+
+- `packages/simulation/arena_game.h` already has real team-mode primitives the RL pipeline has
+  never used: `ARENA_TEAM_SIZE` (10), `ARENA_MAX_HEROES` (`ARENA_TEAM_SIZE * 2` = 20),
+  `arena_init_teams(void)`. The real networked arena (`apps/arena_bot`'s 19 real bots) already
+  plays full team matches through this — team-mode is NOT a gap in the game simulation, only in
+  the RL training environment, exactly as §21.3 said.
+- `apps/arena_training/src/headless.c` (S170-224) is 1v1 only: `sim_init(hero0_id, hero1_id)` →
+  `arena_init_with_heroes`, a fixed `ARENA_TRAINING_OBS_SIZE` (18 + 2×`ARENA_HERO_COUNT`) flat
+  float observation for exactly one agent vs. one fixed heuristic-driven opponent
+  (`arena_bot_tick_heuristic`/`bot_cast_kit_if_ready`, deliberately never the policy currently
+  being trained — see that file's own doc comment on why a moving-target opponent would be
+  circular).
+- `scripts/rl_env.py`'s `ArenaTrainingEnv` wraps that 1v1 C API as a single-agent
+  `gymnasium.Env`; `scripts/rl_train.py` trains it with Stable-Baselines3 PPO;
+  `scripts/export_rl_policy_to_c.py` extracts the trained MLP into
+  `packages/common/rl_policy_weights.h`, consumed by `rl_policy_forward()` (real, wired into
+  `apps/arena_bot`'s live match bots as an additive movement nudge since S170-228/Apple #11301).
+- None of gymnasium/stable-baselines3/PyTorch have ever been run end-to-end from a Claude Code
+  session in this environment except once (§21's own status update, a 4000-timestep smoke run,
+  founder explicitly requested it that one time) — no venv module, no sudo, externally-managed
+  system Python. This section's own VS0 work (below) was written and locally unit-tested at the
+  C/ctypes boundary the same way §21.2 verified its own environment logic — real, but not a real
+  multi-day training run, which needs a normal Python environment (Colab, same pattern §21 and
+  the GPT-2 pipeline both already established) to actually produce a trained policy.
+
+### 25.2 Role discovery + noisy gestalt: diversity-preserving team training
+
+**The problem this solves**: naive multi-agent PPO with fully shared parameters converges every
+agent on the team toward the same policy (the literal "hive mind" the founder's own source
+material was reacting against) — real, documented MARL failure mode, not a hypothetical. The fix
+is not a new invention; it's picking one of the field's standard answers and applying it here.
+
+**25.2.1 Team environment (VS0 — built this session, see §25.5 for what "built" means here).**
+`headless.c` gains a second API surface, additive to the existing 1v1 one (nothing about §21's
+existing 1v1 pipeline changes):
+- `void sim_init_team(int team_size, const int *hero_ids_a, const int *hero_ids_b)` →
+  `arena_init_teams()`, then places `team_size` heroes per side (capped at `ARENA_TEAM_SIZE`, so
+  this scales from 2v2 up to the real 10v10 without a second code path — start small for the
+  first real training runs, same "spec the model, not the number" discipline every other section
+  in this file already applies to hyperparameters).
+- `void sim_step_team(const float *actions, int n_agents)` → applies one action per
+  team-A agent (the agents actually being trained) via the same
+  `arena_set_move_target`/`arena_cast_*` calls §21.2 already established, then a single
+  `arena_update(dt_ms)` tick advances everyone (both teams) at once. Team B is driven by the same
+  stable `arena_bot_tick_heuristic` §21's 1v1 opponent already uses — a full team of the existing
+  heuristic AI is the fixed, non-circular opponent for team-A's new multi-agent policy, exact
+  same non-circularity reasoning §21.2 already used for the 1v1 case, just applied per-opponent
+  instead of once.
+- `void sim_get_obs_team(float *out_obs, int n_agents)` → per-agent observation, each agent's own
+  slice matching §21's existing single-agent 18+2×`ARENA_HERO_COUNT` layout (self state, nearest
+  foe, hero-id one-hots) **plus** a new teammate block: nearest-N-teammates' `(hp_frac, dx, dz,
+  alive)`, N fixed at team_size-1 for now (small teams only in the first pass — a 10v10
+  observation with 9 teammates is a valid but much later target). This is what makes it
+  "multi-agent" in the observation sense: every agent can see its own team's state, not just
+  itself and one foe.
+
+**25.2.2 Role discovery (spec only).** Rather than hand-assigning roles (support/carry/tank —
+REDGARDEN's own hero kits already imply this informally), let roles emerge from training the way
+QMIX-family role-discovery methods do (ROMA/RODE are the two most directly applicable named
+techniques): each agent's policy is conditioned on a learned per-agent embedding vector, trained
+jointly with the policy itself rather than fixed per hero. Agents with similar embeddings behave
+similarly; the training process — not a hand-written rule — decides how many distinct roles
+emerge and which agents end up in which. This directly answers the founder's own "dynamic persona
+vectors... determined by game features, not human-defined words."
+
+**25.2.3 Noisy gestalt: diversity-preserving training schedule (spec only).** To stop full
+parameter sharing from collapsing every agent into the same policy, alternate two training
+phases, matching the founder's own "flip back and forth between unique and optimal" framing —
+this is a real, named pattern (population-based training with a diversity bonus, alternated
+against pure reward optimization), not a new theory:
+- **Diversity phase**: add a per-agent novelty/diversity bonus to the reward (e.g., an
+  intrinsic reward for behaving differently from teammates' current policies, standard
+  diversity-is-all-you-need-style regularization), so agents differentiate.
+- **Optimization phase**: drop the diversity bonus, train purely on §21.2's existing win/loss +
+  shaping reward, so differentiated agents still get pulled toward being individually strong, not
+  just different for its own sake.
+Alternating (not blending) the two objectives is the actual content of "flip back and forth" —
+blending them into one weighted-sum reward is the more common approach in the literature and is
+the fallback if alternating proves unstable in practice; both are legitimate, this section
+doesn't pre-commit to one.
+
+### 25.3 Synergy decay: a comeback mechanic, not a training technique
+
+Separate from the training system above — this is a **live-match game-design mechanic**, real
+and shippable independent of whether role discovery/noisy gestalt training ever gets built. A
+team's effective coordination bonus (whatever numeric bonus a future team-aware reward or
+in-match buff represents "playing well together") decays when that team is significantly ahead
+(gold/kills threshold, numbers TBD — same "spec the model, not the numbers" discipline), with a
+random per-tick chance of the decay applying rather than a deterministic trigger (founder,
+explicit: "there needs to be a random chance of synergy decay at different levels... not always
+happen"). This is a rubber-band comeback mechanic in the same design family as Mario Kart items or
+League's own catch-up XP/gold — named honestly as that, not as a training-time RL concept, even
+though the founder's own source material described it in RL-attention-mechanism language.
+
+### 25.4 Autocurriculum: opponent curriculum instead of a fixed heuristic-only opponent
+
+Named directly per the founder's ask ("autocurriculum engine"). Real, established field:
+Unsupervised Environment Design (UED) and its named instances PAIRED, POET, and (closer to what's
+useful here) prioritized-replay-style autocurricula that pick training opponents/scenarios biased
+toward ones the current policy is currently weak against, instead of a fixed opponent for the
+whole run. Scoped narrowly and honestly:
+- **What this means concretely here**: instead of training-team-B always being
+  `arena_bot_tick_heuristic` at fixed strength, maintain a small population of past checkpoints
+  of the policy being trained (self-play, which §21.3 already named as valuable-later-depth) plus
+  the heuristic AI, and sample the next episode's opponent biased toward whichever one the
+  current policy has been losing to most — a real, standard autocurriculum, not "the game
+  evolves new mechanics as you play," which is a much larger, separate, unscoped claim this
+  section does not make.
+- **Explicitly not claimed**: procedural generation of new game content/mechanics driven by
+  training (the source conversation's "Mario Party mini-games as weight adjustments" idea) — that
+  conflates curriculum-over-opponents with curriculum-over-game-design; the former is this
+  section's real scope, the latter is not spec'd here at all.
+
+### 25.5 What "built this session" actually means, honestly
+
+Only `sim_init_team`/`sim_step_team`/`sim_get_obs_team` (§25.2.1) are real code as of this
+section landing — the true prerequisite every other piece in §25.2-§25.4 needs before any of it
+can be trained. Role discovery, noisy gestalt's alternating schedule, synergy decay's numeric
+tuning, and the autocurriculum opponent sampler are all specified above, not implemented — same
+honesty convention §21's own "Status update" and §24.4 already use in this file. Verified the same
+way §21.2's own environment logic was verified before a real Python environment existed to run it:
+direct C-level reasoning and (where feasible) headless test coverage, not a live training run —
+closing that gap needs the same Colab/normal-Python-environment path §21's own status update
+already used once.
+
+### 25.6 What this section deliberately does not resolve
+
+- **Team size for the first real training run** — anywhere from 2v2 up to the real 10v10 is
+  representable by §25.2.1's own `team_size` parameter; which one to actually train first is a
+  compute/time tradeoff call for whoever runs it, not decided here.
+- **Whether diversity-phase/optimization-phase alternation or reward-blending is the better
+  noisy-gestalt implementation** — §25.2.3 names both, doesn't pick.
+- **Numeric thresholds for synergy decay** (gold/kill lead trigger, decay magnitude, per-tick
+  probability) — named as a real mechanic, not tuned.
+- **Policy distillation / checkpoint crossover** ("peanut butter and jelly 2 bots") — real
+  technique, no concrete REDGARDEN use case identified yet, intentionally left out of scope
+  rather than spec'd speculatively.
+
+## 26. Cross-game strategic transfer layer — fractal command hierarchy, contrastive state encoders (2026-08-10) -- spec only, no code yet
+
+Second research thread from the same source conversation §25 draws its multi-agent RL material
+from (full research notes: `docs2/MULTI_AGENT_RD_RESEARCH_NOTES.md` §2). Distinct question from
+§25's own team-coordination scope: once a squad of bots has learned real team-play "intangibles"
+in REDGARDEN specifically, is any of that transferable to a different game, or even outside games
+entirely — the way a strong competitive player in one game often ramps faster in a new one than
+someone with no competitive background at all?
+
+### 26.1 The actual claim, scoped honestly
+
+This is NOT a claim that a REDGARDEN-trained policy can literally play a different game. It's a
+narrower, real research question: can the *representation* a policy learns be factored into two
+layers — a game-specific mechanical layer (this exact game's controls/kit/numbers) and a more
+general strategic layer (positioning discipline, commit-vs-retreat timing, tempo/resource
+management) — such that the general layer transfers to a new game *faster than training from
+scratch*, even though the mechanical layer still needs real fine-tuning per game. This is a real,
+studied idea in the RL literature (representation transfer, meta-RL) — REDGARDEN would be the
+first, and so far only, concrete environment to actually test it against here; no second game
+environment exists yet to transfer *into*, so this section specs the representation-learning side
+only, not a completed transfer experiment.
+
+### 26.2 Contrastive state encoders
+
+The concrete technique named for extracting that transferable layer: train a state encoder with a
+contrastive objective (pull together representations of states that lead to similar strategic
+outcomes, push apart states that don't) on top of §25's own team observation vectors
+(`sim_get_obs_team`), instead of feeding raw floats directly into the policy network. If the
+resulting embedding space captures "what matters strategically" rather than "what the raw numbers
+happen to be," it's the natural thing to test for cross-game transfer later — and it's also useful
+purely within REDGARDEN on its own, independent of any transfer claim: a better state
+representation is a real, standalone lever for a stronger single-game policy too (representation
+quality is a known bottleneck in small-observation-vector RL).
+
+### 26.3 Fractal commander/soldier hierarchy
+
+A structural idea for scaling team coordination past what one flat multi-agent policy can
+represent well: nest the same policy shape recursively — a "commander" agent whose action space
+is high-level directives to a handful of "commander-soldier" sub-agents, each of which in turn
+directs its own "soldiers" (§25's own individual bot policies). This is a real, named pattern in
+hierarchical MARL (feudal/hierarchical reinforcement learning is the established term for this
+shape). At REDGARDEN's real team size (10 per side, `ARENA_TEAM_SIZE`), a two-level hierarchy
+(one commander, ~3 commander-soldiers of ~3 soldiers each) is a plausible first structure to try
+— not committed here, since §25.6 already left team size for the first real training run
+undecided, and this compounds that same open question rather than resolving it.
+
+### 26.4 What this section deliberately does not resolve
+
+- Whether representation transfer actually generalizes across games at all — untestable until a
+  second game environment with the same contrastive-encoder training exists; not claimed as
+  proven or even attempted yet, only specified as a real, worthwhile experiment once §25's own
+  team environment has a trained policy to extract representations from in the first place.
+- Hierarchy depth/branching factor for §26.3 — named as a real pattern, not tuned.
+- Any application of this outside games (the source conversation's own "distill game theory,
+  apply it to markets" extension) — real, interesting, and explicitly out of scope: this section
+  specs a representation-learning technique for REDGARDEN's own bots, not a market-strategy
+  product.
+
+## 27. Physics-informed simulation research (2026-08-10) -- research note, not scoped to a REDGARDEN feature yet
+
+Third research thread from the same source conversation (full notes: `docs2/
+MULTI_AGENT_RD_RESEARCH_NOTES.md` §4). Physics-informed neural networks (PINNs) are a real,
+established technique — neural networks trained with a loss term that penalizes violating a known
+governing differential equation, used to approximate solutions to PDEs faster than classical
+numerical solvers in some regimes. The source conversation asked whether a
+fractal/hierarchical-multi-layer version of PINNs could apply to REDGARDEN or a related sim.
+
+**Named honestly, not adopted as a spec here**: unlike §25/§26, this section does not scope a
+concrete REDGARDEN feature, because none of this org's current physics needs (REDGARDEN's own
+collision/movement code is a plain circle-vs-circle push-out, deliberately not a physics engine —
+see `resolve_hero_obstacle_collision`'s own doc comment in `packages/simulation/arena_game.c`) are
+PDE-shaped problems PINNs would apply to. The nearest real fit anywhere in this org is
+`GOLDENBAND`'s `.gband` animation/BVH pipeline (HQ-SPEC-SIM-100), which is the closer candidate if
+this thread gets picked up again — worth a founder decision on whether it's worth scoping there,
+not decided in this document.
+
+**Explicitly not carried forward from the source conversation**: claims from that same thread
+about using resonance to demolish physical structures cheaply, and speculative "4-state
+transistor" hardware for implementing physics computation directly — these aren't PINN research,
+they're a different, ungrounded claim from later in the same conversation, and this section does
+not adopt or specify them as anything to build.
+
+## 28. Frame-break prompt pattern (2026-08-10) -- technique reference, not a REDGARDEN feature
+
+Fourth item from the same source conversation (full notes: `docs2/MULTI_AGENT_RD_RESEARCH_NOTES.md`
+§5) — distinct from §25-27 in kind: not a game-AI research thread at all, a reusable
+prompt-engineering pattern that emerged during the conversation and was applied repeatedly there.
+**The pattern**: given a surface-level request, respond by naming the underlying
+structural/systemic pattern the request is one instance of — one level of abstraction up — rather
+than answering the literal surface request directly.
+
+This is real and reusable as a prompting technique on its own terms. It has no REDGARDEN product
+surface (nothing here plays a bot, trains a policy, or ships a feature), so it doesn't get a
+milestone/VS0 shape the way §25-26 do. Recorded here because it came from the same research
+session and the founder asked for the research to be captured, not because it's REDGARDEN scope —
+if/where it's worth applying in this org's own tooling (emily-agent's own prompting, HEIMDAL
+sprint translation, etc.) is a separate, undecided question this section doesn't resolve.
