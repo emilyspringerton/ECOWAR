@@ -891,6 +891,13 @@ static void resolve_hero_obstacle_collision(ArenaHero *h) {
     }
 }
 
+/* §25.3 synergy-decay helpers -- defined much further down this file (near arena_tick_synergy,
+ * their natural home), forward-declared here same as hero_is_hittable/apply_damage's own
+ * pattern elsewhere in this file, since both update_hero_motion and apply_cdr below need them
+ * before their real definitions appear. */
+static int arena_synergy_cdr_pct(const ArenaHero *h);
+static float arena_synergy_move_speed_pct(const ArenaHero *h);
+
 static void update_hero_motion(ArenaHero *h, float dt_sec) {
     /* rooted_ms (S170-46)/stunned_ms (S170-184): a queued move command is preserved (not
        cancelled) but doesn't advance while either is active -- matches how silence blocks
@@ -925,6 +932,9 @@ static void update_hero_motion(ArenaHero *h, float dt_sec) {
     /* East/Music's Catchy Song (Jungle Camps Milestone 2): move-speed half of the buff,
        multiplicative same as the slow above so it scales correctly against item speed too. */
     if (h->king_music_carrier) speed_mult *= (1.0f + ARENA_KING_MUSIC_MOVE_SPEED_PCT / 100.0f);
+    /* §25.3 synergy decay: ambient team-cohesion move-speed bonus, same multiplicative shape as
+       Music's own buff -- decays toward 0 as this hero's team's synergy_tier rises. */
+    speed_mult *= (1.0f + arena_synergy_move_speed_pct(h) / 100.0f);
     float step = (ARENA_HERO_SPEED + h->item_bonus_move_speed) * speed_mult * dt_sec; /* S170-175: items (e.g. Rootrunner Treads, Creek F. Boots) */
     if (step >= dist) {
         h->x = h->target_x;
@@ -1938,8 +1948,10 @@ void arena_tick_powerups(unsigned int dt_ms) {
 static int apply_cdr(const ArenaHero *h, int normal_ms) {
     /* East/Music's Catchy Song (Jungle Camps Milestone 2): attack-speed half of the buff, same
        CDR path Haste Trinket items already flow through -- see king_music_carrier's own doc
-       comment for the persistence mechanic. */
-    int pct = h->item_bonus_cdr_pct + (h->king_music_carrier ? ARENA_KING_MUSIC_ATTACK_SPEED_PCT : 0);
+       comment for the persistence mechanic. §25.3: ambient team-cohesion attack-speed bonus,
+       same shape, decays toward 0 as this hero's team's synergy_tier rises. */
+    int pct = h->item_bonus_cdr_pct + (h->king_music_carrier ? ARENA_KING_MUSIC_ATTACK_SPEED_PCT : 0)
+            + arena_synergy_cdr_pct(h);
     int reduced = normal_ms - (normal_ms * pct) / 100;
     return reduced < 0 ? 0 : reduced;
 }
@@ -3082,6 +3094,79 @@ void arena_hero_attack_kings(unsigned int dt_ms) {
             break;
         }
     }
+}
+
+/* synergy_roll_tier (§25.3): weighted-random tier pick for one team, given that team's current
+ * resource-race lead over the other (positive = ahead). base_probs are the source design's own
+ * [0.60, 0.25, 0.10, 0.05] (docs2/MULTI_AGENT_RD_RESEARCH_NOTES.md), shifted per-tier-index by
+ * `lead` -- see ARENA_SYNERGY_TIER_COUNT's own header doc comment for why this scales BY tier
+ * index rather than reproducing the source's own constant-shift formula (a real bug: adding the
+ * same value to every logit is a no-op under softmax). */
+static int synergy_roll_tier(int lead) {
+    static const float base_logit[ARENA_SYNERGY_TIER_COUNT] = {
+        -0.5108256f, /* ln(0.60) */
+        -1.3862944f, /* ln(0.25) */
+        -2.3025851f, /* ln(0.10) */
+        -2.9957323f, /* ln(0.05) */
+    };
+    float logit[ARENA_SYNERGY_TIER_COUNT];
+    float max_logit = -1e30f;
+    for (int t = 0; t < ARENA_SYNERGY_TIER_COUNT; t++) {
+        logit[t] = base_logit[t] + (float)lead * ARENA_SYNERGY_LEAD_SHIFT_SCALE * (float)t;
+        if (logit[t] > max_logit) max_logit = logit[t];
+    }
+    float prob[ARENA_SYNERGY_TIER_COUNT];
+    float sum = 0.0f;
+    for (int t = 0; t < ARENA_SYNERGY_TIER_COUNT; t++) {
+        prob[t] = expf(logit[t] - max_logit);
+        sum += prob[t];
+    }
+    /* Weighted pick: draw a uniform [0,1) and walk the cumulative distribution -- same idiom
+       real weighted-random selection always uses, no library dependency needed for 4 buckets. */
+    float roll = (float)rand() / ((float)RAND_MAX + 1.0f);
+    float cumulative = 0.0f;
+    for (int t = 0; t < ARENA_SYNERGY_TIER_COUNT; t++) {
+        cumulative += prob[t] / sum;
+        if (roll < cumulative) return t;
+    }
+    return ARENA_SYNERGY_TIER_COUNT - 1; /* float rounding fallback -- cumulative should reach ~1.0 */
+}
+
+/* arena_tick_synergy: see the header declaration's own doc comment. */
+void arena_tick_synergy(unsigned int dt_ms) {
+    arena_state.synergy_roll_timer_ms += (int)dt_ms;
+    if (arena_state.synergy_roll_timer_ms < ARENA_SYNERGY_ROLL_INTERVAL_MS) return;
+    arena_state.synergy_roll_timer_ms = 0;
+
+    for (int t = 0; t < 2; t++) {
+        int lead = arena_state.resources[t] - arena_state.resources[1 - t];
+        arena_state.synergy_tier[t] = synergy_roll_tier(lead);
+    }
+}
+
+/* arena_synergy_cdr_pct/arena_synergy_move_speed_pct (§25.3): the cohesion bonus for hero `h`'s
+ * own team, linearly scaled from the full ARENA_SYNERGY_TIER0_* bonus at tier 0 down to 0 at the
+ * fully-decayed tier -- same "read live off team state, not a per-hero copy" idiom North/
+ * Wealth's own aura already uses. */
+static int arena_synergy_cdr_pct(const ArenaHero *h) {
+    /* Team-mode-only guard: synergy_tier's memset default is 0 ("full cohesion," the BEST
+       tier), unlike every other King/buff field in this file which defaults to "off." A 1v1
+       match never calls arena_tick_synergy (only arena_update_teams does), so without this
+       guard synergy_tier would silently stay 0 forever and grant every 1v1 hero the full
+       ambient bonus permanently -- a real bug caught while writing this, not a hypothetical.
+       heroes[ARENA_TEAM_SIZE] (team B's fixed starting slot, populated only by arena_init_teams)
+       is a real, size-independent "is this actually a team match" signal -- 1v1's own
+       arena_init_with_heroes never touches that slot. */
+    if (!arena_state.heroes[ARENA_TEAM_SIZE].active) return 0;
+    int tier = arena_state.synergy_tier[h->team];
+    return (ARENA_SYNERGY_TIER0_CDR_PCT * (ARENA_SYNERGY_TIER_COUNT - 1 - tier)) / (ARENA_SYNERGY_TIER_COUNT - 1);
+}
+
+static float arena_synergy_move_speed_pct(const ArenaHero *h) {
+    /* Same team-mode-only guard as arena_synergy_cdr_pct -- see that function's own doc comment. */
+    if (!arena_state.heroes[ARENA_TEAM_SIZE].active) return 0.0f;
+    int tier = arena_state.synergy_tier[h->team];
+    return (ARENA_SYNERGY_TIER0_MOVE_SPEED_PCT * (float)(ARENA_SYNERGY_TIER_COUNT - 1 - tier)) / (float)(ARENA_SYNERGY_TIER_COUNT - 1);
 }
 
 /* arena_zone_damage_creeps (S170-144, "ensure aoe damage spells hit
@@ -6063,6 +6148,18 @@ void arena_init_teams(void) {
        overridden here explicitly. */
     arena_state.lane_wave_timer_ms[0] = ARENA_LANE_WAVE_INITIAL_DELAY_MS;
     arena_state.lane_wave_timer_ms[1] = ARENA_LANE_WAVE_INITIAL_DELAY_MS;
+    /* §25.3: memset already zeroed synergy_tier to 0 -- but 0 is TIER 0, the BEST tier (full
+       cohesion, maximum ambient bonus), unlike every other buff field in this file where 0
+       means "off." Left at memset-zero, every team-mode match (and every one of this file's own
+       ~300 unit tests that call arena_init_teams) would silently start with the full synergy
+       bonus already active -- a real bug caught while adding this feature, not a hypothetical
+       (it broke real, pre-existing exact-cooldown-value tests elsewhere in this file the first
+       time this landed). Explicitly starts at the fully-decayed (weakest, zero-bonus) tier
+       instead -- arena_tick_synergy's own real roll cadence (every ARENA_SYNERGY_ROLL_INTERVAL_MS)
+       establishes the real tier once actual gameplay begins, same "starts neutral, ticks change
+       it" idiom every other timer/state field in this function already follows. */
+    arena_state.synergy_tier[0] = ARENA_SYNERGY_TIER_COUNT - 1;
+    arena_state.synergy_tier[1] = ARENA_SYNERGY_TIER_COUNT - 1;
     arena_state.winner = 0;
 }
 
@@ -6351,6 +6448,7 @@ void arena_update_teams(unsigned int dt_ms) {
        interrupted. */
     arena_tick_nodes(dt_ms);
     arena_tick_resources(dt_ms);
+    arena_tick_synergy(dt_ms); /* §25.3 -- after resources so this tick's lead is current */
 
     /* S170-153: the win condition is now the Arathi Basin resource race,
        not team-wipe -- with S170-153's own graveyard fallback, a team can

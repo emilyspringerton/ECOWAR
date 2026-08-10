@@ -6553,6 +6553,99 @@ static void test_king_respawns_on_its_own_timer_after_death(void) {
     CHECK(arena_state.kings[0].x == kx && arena_state.kings[0].z == kz, "...back at its own camp's fixed position");
 }
 
+/* §25.3 Synergy decay smoke tests (2026-08-10) -- a live-match comeback mechanic, distinct from
+   noisy-gestalt's own training-time concept despite the shared "synergy" word. */
+
+static void test_synergy_starts_fully_decayed_no_ambient_bonus(void) {
+    arena_init_teams();
+    CHECK(arena_state.synergy_tier[0] == ARENA_SYNERGY_TIER_COUNT - 1,
+          "a fresh team match starts at the fully-decayed (weakest, zero-bonus) synergy tier");
+    CHECK(arena_state.synergy_tier[1] == ARENA_SYNERGY_TIER_COUNT - 1, "...for both teams");
+}
+
+/* Shared setup for the two scenarios below -- a fresh arena_init_teams() + fresh Unicorn each
+   time avoids any residual state (mana, moving/target, cooldown) leaking between the "no bonus"
+   and "full bonus" measurements, same isolation every other test in this file already gets by
+   construction (each test function starts with its own arena_init_teams() call). */
+static int synergy_cdr_scenario_cast(int tier) {
+    arena_init_teams();
+    for (int i = 1; i < ARENA_MAX_HEROES; i++) arena_state.heroes[i].active = 0;
+    /* Real bug caught writing this test: deactivating every OTHER hero for isolation
+       (the common pattern this whole file uses) also deactivates heroes[ARENA_TEAM_SIZE] --
+       exactly the slot arena_synergy_cdr_pct's own team-mode guard checks -- which silently
+       makes the guard read "not team mode" and suppress the bonus regardless of tier. Restore
+       it: this guard's real-gameplay invariant (that slot's `active` stays 1 for the whole
+       match once team mode starts, only `alive` toggles on death) doesn't hold under this
+       test's own artificial deactivation, so it has to be corrected back explicitly. */
+    arena_state.heroes[ARENA_TEAM_SIZE].active = 1;
+    arena_state.heroes[0].hero_id = ARENA_HERO_UNICORN;
+    /* Unicorn's Q dashes toward the move target if moving, else toward a foe -- with every
+       other hero deactivated (no foe) it needs a real move target or it silently no-ops
+       (unicorn_cast_q's own "nothing to dash toward" early-return). */
+    arena_state.heroes[0].moving = 1;
+    arena_state.heroes[0].target_x = arena_state.heroes[0].x + 5.0f;
+    arena_state.heroes[0].target_z = arena_state.heroes[0].z;
+    arena_state.synergy_tier[0] = tier;
+    arena_cast_q(0);
+    return arena_state.heroes[0].q_cooldown_ms;
+}
+
+static void test_synergy_tier_scales_the_ambient_cdr_bonus(void) {
+    int cd_no_bonus = synergy_cdr_scenario_cast(ARENA_SYNERGY_TIER_COUNT - 1);
+    int cd_full_bonus = synergy_cdr_scenario_cast(0);
+
+    int expected_full_bonus = ARENA_UNICORN_Q_COOLDOWN_MS - (ARENA_UNICORN_Q_COOLDOWN_MS * ARENA_SYNERGY_TIER0_CDR_PCT) / 100;
+    CHECK(cd_no_bonus == ARENA_UNICORN_Q_COOLDOWN_MS, "fully-decayed tier applies no ambient CDR bonus");
+    CHECK(cd_full_bonus == expected_full_bonus, "tier 0 applies the full ARENA_SYNERGY_TIER0_CDR_PCT ambient bonus");
+    CHECK(cd_full_bonus < cd_no_bonus, "...genuinely lower than the no-bonus cooldown");
+}
+
+static void test_synergy_bonus_does_not_apply_in_1v1_mode(void) {
+    arena_init_with_heroes(ARENA_HERO_UNICORN, ARENA_HERO_UNICORN);
+    /* Simulate the exact stale-state scenario that motivated the team-mode guard: force tier 0
+       (max bonus) directly, same as if a prior team-mode test's residual state leaked through --
+       the guard must hold regardless of synergy_tier's own value, purely off heroes[ARENA_TEAM_SIZE]. */
+    arena_state.synergy_tier[0] = 0;
+    arena_cast_q(0);
+    CHECK(arena_state.heroes[0].q_cooldown_ms == ARENA_UNICORN_Q_COOLDOWN_MS,
+          "the ambient synergy bonus never applies in 1v1 mode, regardless of synergy_tier's own value");
+}
+
+static void test_synergy_tier_rerolls_on_its_own_interval(void) {
+    arena_init_teams();
+    arena_tick_synergy(ARENA_SYNERGY_ROLL_INTERVAL_MS - 1000);
+    CHECK(arena_state.synergy_tier[0] == ARENA_SYNERGY_TIER_COUNT - 1,
+          "no re-roll yet before the interval elapses -- stays at its initial fully-decayed tier");
+
+    /* After the interval elapses, a real roll happens -- can't assert an exact tier (stochastic
+       by design), but tier must land in the valid range. */
+    arena_tick_synergy(1000);
+    CHECK(arena_state.synergy_tier[0] >= 0 && arena_state.synergy_tier[0] < ARENA_SYNERGY_TIER_COUNT,
+          "a real roll after the interval lands on a valid tier");
+}
+
+static void test_synergy_lead_shifts_probability_toward_higher_tiers(void) {
+    /* Statistical test, not exact-value (the roll is genuinely stochastic by design, founder:
+       "there needs to be a random chance... not always happen") -- a team with a real resource
+       lead should average a meaningfully HIGHER (more decayed) tier than a team that's even,
+       across enough independent rolls to smooth out noise. */
+    arena_init_teams();
+    arena_state.resources[0] = 1800; /* team 0 way ahead */
+    arena_state.resources[1] = 200;
+
+    long sum_ahead = 0, sum_even = 0;
+    const int trials = 300;
+    for (int i = 0; i < trials; i++) {
+        arena_tick_synergy(ARENA_SYNERGY_ROLL_INTERVAL_MS); /* team 0: way ahead */
+        sum_ahead += arena_state.synergy_tier[0];
+        sum_even += arena_state.synergy_tier[1]; /* team 1: way behind, symmetric case covered by the assert below via the SAME resource gap */
+    }
+    float avg_ahead = (float)sum_ahead / trials;
+    float avg_behind = (float)sum_even / trials;
+    CHECK(avg_ahead > avg_behind,
+          "the team with a real resource lead averages a meaningfully higher (more decayed) synergy tier than the team that's behind, across many rolls");
+}
+
 static void test_hero_kills_north_king_and_gains_wealth_aura(void) {
     arena_init_teams();
     for (int i = 1; i < ARENA_MAX_HEROES; i++) arena_state.heroes[i].active = 0;
@@ -6901,6 +6994,11 @@ int main(void) {
     test_camp_escalation_rearms_once_fully_cleared();
     test_king_does_not_spawn_before_one_minute();
     test_king_respawns_on_its_own_timer_after_death();
+    test_synergy_starts_fully_decayed_no_ambient_bonus();
+    test_synergy_tier_scales_the_ambient_cdr_bonus();
+    test_synergy_bonus_does_not_apply_in_1v1_mode();
+    test_synergy_tier_rerolls_on_its_own_interval();
+    test_synergy_lead_shifts_probability_toward_higher_tiers();
     test_hero_kills_north_king_and_gains_wealth_aura();
     test_hero_kills_south_king_and_stacks_growth_on_takedown();
     test_hero_kills_east_king_and_music_spreads_on_respawn();

@@ -1604,6 +1604,36 @@ typedef struct {
 #define ARENA_KING_WEALTH_AURA_RADIUS    6.0f /* wider than a normal ability radius on purpose -- "shelter a group" */
 #define ARENA_KING_WEALTH_GOLD_PER_SEC      4 /* small trickle to nearby allies -- deliberately smaller than All-Seeing's own bonus, "a smaller bonus-gold trickle" per the holder's real domain */
 
+/* §25.3 Synergy decay -- a REAL LIVE-MATCH COMEBACK MECHANIC, not a training technique
+ * (NORTHSTAR §25.3 explicitly separates this from §25.2's diversity-preserving TRAINING
+ * schedule -- distinct concept, same "synergy" word, don't conflate with noisy-gestalt or with
+ * this doc's OWN unrelated §3.4 anti-stall camp-minion escalation, another same-word naming
+ * collision). A team's cohesion "tier" (0 = full cohesion .. ARENA_SYNERGY_TIER_COUNT-1 = fully
+ * decayed) re-rolls every ARENA_SYNERGY_ROLL_INTERVAL_MS, stochastically -- founder, explicit:
+ * "there needs to be a random chance of synergy decay at different levels... not always
+ * happen." Higher tiers get more likely the further AHEAD (in the real resource race, S170-153)
+ * that team is -- the team pulling ahead risks losing a small team-wide "playing well together"
+ * bonus, giving the losing side real openings, same rubber-band spirit as Mario Kart items or
+ * League's own catch-up gold (NORTHSTAR §25.3's own framing). Source design: the CarePyre
+ * transcript's own StochasticSynergyController (docs2/MULTI_AGENT_RD_RESEARCH_NOTES.md),
+ * base_probs [0.60, 0.25, 0.10, 0.05] for tiers 0-3 -- ported faithfully EXCEPT one real bug
+ * found while porting: the source's own score-lead shift (`logits = log(base_probs) +
+ * score_diff * 0.15`) adds the SAME constant to every tier's logit, which softmax normalization
+ * makes a mathematical no-op (adding a constant to every logit before softmax never changes the
+ * resulting probabilities) -- not silently reproduced. This implementation instead scales the
+ * shift BY tier index (higher tiers pushed up more as the lead grows), which actually does what
+ * the source design describes. Numbers TBD per NORTHSTAR §25.3's own framing -- a real,
+ * documented first pass, not tuned against actual match data. */
+#define ARENA_SYNERGY_TIER_COUNT            4
+#define ARENA_SYNERGY_ROLL_INTERVAL_MS    8000 /* "shouldn't flicker frame-by-frame" per the source design's own "realistic temporal boundaries" note -- real MOBA-scale cadence, not a per-tick coin flip */
+#define ARENA_SYNERGY_LEAD_SHIFT_SCALE  0.003f /* per resource-race point (cap 2000, ARENA_RESOURCE_CAP) of lead, per tier index -- tuned so a real, not-noise-level lead (ARENA_COMMANDER_RESOURCE_LEAD_THRESHOLD-equivalent, ~300 points, see apps/arena_bot's own analogous constant) meaningfully shifts probability mass toward tier 3 without making it a certainty */
+/* Cohesion bonus per tier -- deliberately reuses the exact same attack-speed/move-speed SHAPE
+ * East/Music's Catchy Song already established (apply_cdr/update_hero_motion), not a new bonus
+ * category. Tier 0 = full cohesion gets the full bonus; each tier down linearly scales it
+ * toward 0 at the fully-decayed tier. */
+#define ARENA_SYNERGY_TIER0_CDR_PCT           8 /* smaller than Music's own 20% -- an ambient team-cohesion bonus, not a dedicated jungle-objective reward */
+#define ARENA_SYNERGY_TIER0_MOVE_SPEED_PCT    8
+
 #define ARENA_HERO_KILL_FLOW         1000
 #define ARENA_HERO_KILL_XP             60
 /* Assists (S170-187, founder: "assists should gen flow"). Real MOBA convention: anyone else
@@ -2215,6 +2245,8 @@ typedef struct {
     int king_spawn_timer_ms[ARENA_CAMP_COUNT]; /* per-camp countdown, dual-purpose (Milestone 4): counts toward ARENA_KING_SPAWN_DELAY_MS before a King's first-ever spawn (gated on max_hp == 0, see arena_tick_kings), or toward ARENA_KING_RESPAWN_MS after a kill (reset to 0 the instant a King dies, gated on !active with max_hp > 0) -- one field serves both, since a King is never simultaneously "never spawned" and "dead," so which threshold applies is never ambiguous. Lives in arena_state (not a function-static) same as every other per-match timer in this file, so arena_init_teams()'s memset correctly resets it between matches */
     int king_allseeing_team_ms[2]; /* West/All-Seeing's Farsight -- genuinely team-wide (see ArenaHero's own king_wealth_ms doc comment for why this one's different from the other three) */
     int wealth_gold_tick_ms; /* North/Wealth's gold-trickle accumulator -- see arena_tick_kings' own doc comment; arena_state, not a function-static, same reasoning as king_spawn_timer_ms above */
+    int synergy_tier[2]; /* §25.3 -- current cohesion tier per team, 0 (memset default) = full cohesion */
+    int synergy_roll_timer_ms; /* single shared timer -- both teams re-roll on the same cadence, see arena_tick_synergy's own doc comment */
     int fountain_tick_ms; /* S170-147: fixed-interval (1000ms) accumulator for the fountain heal tick, same idiom as every other DPS/heal zone's own r_zone_tick_ms -- global, not per-hero, since a fountain heals whoever's nearby, not a single caster's target */
     /* resources[2]/resource_tick_ms (S170-153, "true arathi basin node
      * control resource management as a win con instead of team wipe"):
@@ -2676,6 +2708,17 @@ void arena_tick_kings(unsigned int dt_ms);
  * arena_hero_attack_camp_minions so a hero already mid-swing this tick doesn't also get a free
  * King hit. */
 void arena_hero_attack_kings(unsigned int dt_ms);
+
+/* arena_tick_synergy (§25.3, live-match comeback mechanic, not a training technique -- see
+ * ARENA_SYNERGY_TIER_COUNT's own doc comment for the full design): every ARENA_SYNERGY_ROLL_
+ * INTERVAL_MS, re-rolls each team's synergy_tier stochastically, weighted toward higher (more
+ * decayed) tiers the further that team is currently ahead in the real resource race. The
+ * resulting tier scales a small team-wide attack-speed/move-speed bonus (ARENA_SYNERGY_TIER0_
+ * CDR_PCT/MOVE_SPEED_PCT at tier 0, linearly toward 0 at the fully-decayed tier), read by
+ * apply_cdr/update_hero_motion exactly like East/Music's own Catchy Song buff. Called from
+ * arena_update_teams() only, team-mode-only scope (the resource race itself is team-mode-only,
+ * S170-153). */
+void arena_tick_synergy(unsigned int dt_ms);
 
 /* Kit casts dispatch on the hero's hero_id, not a hardcoded owner check
  * (S170-31 generalized this from S170-18's Unicorn-only version). No-ops
