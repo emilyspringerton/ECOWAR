@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026-08-10
+
+- NORTHSTAR §25-28: 多智能體 RL 團隊訓練(角色發現、noisy gestalt、synergy decay、autocurriculum)+ 跨遊戲策略遷移 + 物理資訊模擬研究 + frame-break prompting,來源是創辦人自己的 AGI R&D 對話記錄。§25 VS0(team env)真的寫完編譯過,ctypes 驗證過 (sess-20260809-1420-e9d3d7f8)
+
+
 ## 2026-08-05
 - fix(arena): perf (VBO orphaning, benchmarked skinning first to rule it out) + real skeleton-matched animation clips (fixes 'swimming' - founder's real rig has ~178deg rest rotation on arm bones, flat clips were wrong-axis) (sess-20260723-2347-df115bd5)
 - fix(ci): bundle assets/goldenband into RedGarden_Client zip - real bug, downloaded builds silently fell back to Tyler's plain box, no crash/error, found live by founder (sess-20260723-2347-df115bd5)
