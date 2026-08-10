@@ -9,6 +9,33 @@ TrapX's territory-custody mechanic (`SHANKPIT/docs2/TRAPX_NORTHSTAR.md`) — bui
 port proven mechanics later. See `NORTHSTAR.md` for the full, current direction; this file is
 commands/layout only.
 
+**2026-08-10: REDGARDEN is now dedicated to R&D** (founder: "REDGARDEN is now dedicated to R and
+D"). The arena bot AI research program (`NORTHSTAR.md` §25-28 — multi-agent RL, role discovery,
+noisy gestalt, synergy decay, autocurriculum, cross-game transfer) lives and iterates here, fast,
+including things that break the live `:7778` R&D matchmaker/bot-pool deployment. The actual live
+product built on REDGARDEN's tech — GoblinFoxDragon's Battlegrounds — no longer depends on this
+deployment at all; see "Deployments" below.
+
+## Deployments (R&D vs. stable — hard separation, 2026-08-10)
+
+Two full, independent deployments of the same source, never sharing a process or a port:
+
+| | R&D (this repo's fast-iteration target) | Stable (serves GFD's Battlegrounds) |
+|---|---|---|
+| Checkout | `/home/fatbaby/REDGARDEN` (active dev) | `/home/fatbaby/redgarden-stable` (separate clone, manually promoted) |
+| Matchmaker (bot pool, 10v10) | `:7778` — `redgarden-matchmaker-bots.service` | `:8778` — `redgarden-stable-matchmaker-bots.service` |
+| Matchmaker (player-only, 1v1) | `:7779` — `redgarden-matchmaker-players.service` | none yet |
+| Bot pool | `redgarden-bot-pool.service` | `redgarden-stable-bot-pool.service` |
+| Auto-deploy | `redgarden-auto-deploy.timer` (polls CI, restarts R&D units only) | none — promoted manually: `cd /home/fatbaby/redgarden-stable && git pull && bash scripts/build.sh && systemctl --user restart redgarden-stable-matchmaker-bots.service redgarden-stable-bot-pool.service` |
+| Consumed by | REDGARDEN's own dev/test loop | `GoblinFoxDragon/apps2/mud/main.go`'s `redgardenMatchmakerPort` (Battlegrounds) |
+
+`apps/arena_bot`'s matchmaker port is a runtime flag now (`--matchmaker-port`, default 7778) —
+this is what makes the same unmodified source safely serve both deployments; never hardcode a
+port assumption back into that binary. `scripts/run_bot_pool.sh` takes the matchmaker port as its
+second argument for the same reason, and scopes its own orphan-guard `pkill` to its checkout's
+absolute path specifically — a bare relative-path pkill pattern would kill both deployments' bots
+at once (a real bug, found and fixed the same session this split was built).
+
 ## Current status
 
 See `README.md`'s "Current Status" section and `NORTHSTAR.md` for what's actually built vs.

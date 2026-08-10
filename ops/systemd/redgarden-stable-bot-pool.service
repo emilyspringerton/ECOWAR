@@ -1,0 +1,23 @@
+# REDGARDEN arena persistent bot pool — STABLE deployment for GoblinFoxDragon's Battlegrounds.
+# User-level systemd unit (no sudo required). See redgarden-stable-matchmaker-bots.service's own
+# doc comment for the full "why a genuinely separate deployment" rationale.
+
+[Unit]
+Description=REDGARDEN arena persistent bot pool — STABLE (19 bots -> :8778)
+After=network-online.target redgarden-stable-matchmaker-bots.service
+Wants=redgarden-stable-matchmaker-bots.service
+
+[Service]
+Type=simple
+WorkingDirectory=/home/fatbaby/redgarden-stable
+Environment=REDGARDEN_TICKET_SECRET=test-secret-for-vs0-vs1-validation
+ExecStartPre=/bin/sleep 2
+ExecStart=/home/fatbaby/redgarden-stable/scripts/run_bot_pool.sh 19 8778
+Restart=on-failure
+RestartSec=5s
+StandardOutput=append:/home/fatbaby/redgarden-stable/var/logs/bot-pool.log
+StandardError=append:/home/fatbaby/redgarden-stable/var/logs/bot-pool.log
+MemoryMax=256M
+
+[Install]
+WantedBy=default.target
