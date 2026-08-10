@@ -2792,6 +2792,35 @@ test pattern (fixed in the tests, not the guard — the guard's real-gameplay in
 
 ### 25.4 Autocurriculum: opponent curriculum instead of a fixed heuristic-only opponent
 
+**Critical pre-existing bug found and fixed while scoping this (2026-08-10).** `sim_step_team`
+(`apps/arena_training/src/headless.c`, written earlier the same day this section first landed)
+was calling `arena_update(dt_ms)` — the **1v1-only** simulation tick, which hardcodes
+`heroes[0]`/`heroes[1]` as the only two heroes it ever calls `update_hero_motion`/
+`resolve_combat`/`tick_hero_kit` on. Every other hero in a team match (`team_size`-1 more per
+side) never moved, fought, or got ticked at all for the entire time this training pipeline has
+existed — confirmed directly (gave team-A slot 2 a real move command, position didn't change).
+This affected every team-mode training run since `sim_step_team` was written, including a real,
+multi-hour, in-progress background PPO run — founder, real-time: "ok if there is an issue fix
+it, if you must cancel current training and restart after thats ok." Fixed: both `sim_step_team`
+and the new `sim_step_team_vs_actions` (below) now call `arena_update_teams(dt_ms)`, the real
+team-mode tick. Verified via `--smoke-test`: a real episode now actually ends (winner decided at
+a real tick count, meaningfully varied per-agent rewards) instead of the frozen-statue degenerate
+result the bug produced. All prior checkpoints (`rl_team_checkpoints/`, gitignored) were deleted
+as invalid — trained entirely on the broken environment — and the background training run was
+killed and restarted fresh with the fix in place. REDGARDEN commit `e6effc1`.
+
+**Autocurriculum prerequisite implemented the same pass.** `sim_step_team_vs_actions` and
+`sim_get_obs_team_any` (generalizes `sim_get_obs_team` to either team, needed so an externally-
+driven team B gets its own real perspective, not team A's) together close the real gap this
+section's own concrete design needs: previously team B was driven ENTIRELY inside the C sim via
+a fixed heuristic, with no mechanism at all for Python to inject externally-computed team-B
+actions (a loaded self-play checkpoint's own predictions). `actions_b=NULL` falls back to the
+exact same heuristic byte-for-byte, so every existing caller is unaffected. Verified with 4
+targeted ctypes checks (backward compatibility, correct team-B perspective, NULL fallback
+matches exactly, real external actions genuinely drive team B). The Python-side opponent-pool
+sampling logic itself (maintain past checkpoints + the heuristic, bias sampling toward whichever
+the current policy loses to most) is NOT built yet — this lands the C-level capability it needs.
+
 Named directly per the founder's ask ("autocurriculum engine"). Real, established field:
 Unsupervised Environment Design (UED) and its named instances PAIRED, POET, and (closer to what's
 useful here) prioritized-replay-style autocurricula that pick training opponents/scenarios biased
