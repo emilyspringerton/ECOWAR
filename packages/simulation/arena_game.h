@@ -1502,12 +1502,32 @@ extern const ArenaItemDef ARENA_ITEMS[];
 #define ARENA_CAMP_MINION_KILL_FLOW     60
 #define ARENA_CAMP_MINION_KILL_XP        5
 
+/* §3.4 Anti-stall escalation (2026-08-10): "so it becomes difficult to stale out the game by
+ * never attacking towers." A camp that's had at least one active minion continuously for
+ * ARENA_CAMP_ESCALATION_THRESHOLD_MS stops being purely passive -- its minions march toward the
+ * nearest ArenaNode instead of standing still, reusing the same step-toward-target idiom lane
+ * creeps already use for their own waypoint march. Deliberately targets nodes, not a new
+ * base-siege/tower-attack system: §1's own open question ("does 'assault the towers' mean the
+ * existing node-guard towers, or motivate a new objective-tower system") is resolved here by
+ * NOT building new tower-attack code -- lane creeps themselves don't attack towers either (they
+ * despawn at the enemy spawn line with "no structure to hit," see arena_tick_lane_creeps' own
+ * comment), so escalated camp minions matching that same limitation is consistency, not a cut
+ * corner. An escalated camp's pressure is real board presence at a contested node (forces a
+ * response), not simulated siege damage that doesn't exist anywhere else in this file yet.
+ * Re-arms (camp_uncleared_ms resets to 0, camp_escalated clears) the instant a camp has zero
+ * active minions -- "uncleared" specifically means "never fully cleared," not "reached some
+ * total elapsed time since the match started." */
+#define ARENA_CAMP_ESCALATION_THRESHOLD_MS 90000 /* 1:30 -- longer than a King's own 1:00 spawn gate (early jungle contests shouldn't already be under pressure), real MOBA precedent for "camps left rotting create real map pressure inside ~2 minutes" */
+#define ARENA_CAMP_MINION_MARCH_SPEED 2.0f /* slower than a lane creep's own 2.5 -- a camp minion escalating is a secondary, slower threat, not a second full wave */
+#define ARENA_CAMP_MINION_WAYPOINT_EPSILON 0.15f /* matches ARENA_LANE_CREEP_WAYPOINT_EPSILON's own arrival tolerance */
+
 typedef struct {
     int active;
     int alive;
     float x, z;
     int hp, max_hp;
     int attack_cooldown_ms;
+    int camp_index; /* which of the ARENA_CAMP_COUNT camps spawned this minion -- needed for §3.4's per-camp escalation state and to pick a stable march target */
 } ArenaCampMinion;
 
 /* Jungle Camps Milestone 2 -- The Four Heavenly Kings (2026-08-10). docs2/
@@ -2177,6 +2197,8 @@ typedef struct {
     int lane_wave_timer_ms[2]; /* S170-139: per-team countdown to next wave; starts at 0 (memset), so both teams' first wave spawns on the first tick, matching a real MOBA's 0:00 wave */
     ArenaCampMinion camp_minions[ARENA_MAX_CAMP_MINIONS]; /* Jungle camps Milestone 1 */
     int camp_wave_timer_ms[ARENA_CAMP_COUNT]; /* per-camp countdown to next wave; starts at 0 (memset) -- camps wave from the opening bell, docs2/JUNGLE_CAMPS_NORTHSTAR.md §3.2 */
+    int camp_uncleared_ms[ARENA_CAMP_COUNT]; /* §3.4 anti-stall escalation -- ticks up while a camp has any active minion, resets to 0 the instant it's fully cleared */
+    int camp_escalated[ARENA_CAMP_COUNT]; /* 1 once camp_uncleared_ms crosses ARENA_CAMP_ESCALATION_THRESHOLD_MS -- that camp's minions march instead of standing still */
     ArenaKing kings[ARENA_CAMP_COUNT]; /* Jungle camps Milestone 2 -- index-matched to camps (0=N/Wealth, 1=S/Growth, 2=E/Music, 3=W/All-Seeing) */
     int king_spawn_timer_ms[ARENA_CAMP_COUNT]; /* per-camp countdown to ARENA_KING_SPAWN_DELAY_MS -- lives in arena_state (not a function-static) same as every other per-match timer in this file, so arena_init_teams()'s memset correctly resets it between matches */
     int king_allseeing_team_ms[2]; /* West/All-Seeing's Farsight -- genuinely team-wide (see ArenaHero's own king_wealth_ms doc comment for why this one's different from the other three) */

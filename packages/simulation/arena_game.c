@@ -2772,6 +2772,7 @@ static void camp_minion_spawn_wave(int camp_index) {
         m->x = cx + (spawned - (ARENA_CAMP_MINIONS_PER_WAVE - 1) / 2.0f) * 1.0f;
         m->z = cz;
         m->attack_cooldown_ms = 0;
+        m->camp_index = camp_index; /* §3.4 -- which camp's escalation state governs this minion */
         spawned++;
     }
 }
@@ -2780,12 +2781,51 @@ static void camp_minion_spawn_wave(int camp_index) {
  * comment. Neutral aggro (nearest hittable hero of EITHER team, same ARENA_CREEP_NEUTRAL shape
  * node-guardian creeps already use for their own neutral flavor) -- stationary otherwise, no
  * waypoint march (that's §3.4's separate, not-yet-built anti-stall escalation). */
+/* camp_minion_nearest_node (§3.4): fills (nx, nz) with whichever ArenaNode is closest to
+ * (x, z), regardless of owner -- the march target is "the nearest live objective," not
+ * specifically an enemy or unowned one (a camp escalating near a team's OWN node still creates
+ * real pressure, forcing that team to respond or lose it). Always finds one: ARENA_NODE_COUNT
+ * is never 0. */
+static void camp_minion_nearest_node(float x, float z, float *nx, float *nz) {
+    int best = 0;
+    float best_dist = -1.0f;
+    for (int n = 0; n < ARENA_NODE_COUNT; n++) {
+        float dx = arena_state.nodes[n].x - x, dz = arena_state.nodes[n].z - z;
+        float dist = dx * dx + dz * dz;
+        if (best_dist < 0.0f || dist < best_dist) { best = n; best_dist = dist; }
+    }
+    *nx = arena_state.nodes[best].x;
+    *nz = arena_state.nodes[best].z;
+}
+
 void arena_tick_camp_minions(unsigned int dt_ms) {
+    float dt_sec = (float)dt_ms / 1000.0f;
+
     for (int c = 0; c < ARENA_CAMP_COUNT; c++) {
         arena_state.camp_wave_timer_ms[c] -= (int)dt_ms;
         if (arena_state.camp_wave_timer_ms[c] > 0) continue;
         arena_state.camp_wave_timer_ms[c] = ARENA_CAMP_WAVE_INTERVAL_MS;
         camp_minion_spawn_wave(c);
+    }
+
+    /* §3.4 Anti-stall escalation: per-camp "has this camp had a living minion continuously
+       long enough to count as uncleared" tracking -- see ARENA_CAMP_ESCALATION_THRESHOLD_MS's
+       own doc comment for why this resets on any full clear rather than accumulating total
+       elapsed match time. */
+    for (int c = 0; c < ARENA_CAMP_COUNT; c++) {
+        int any_active = 0;
+        for (int i = 0; i < ARENA_MAX_CAMP_MINIONS; i++) {
+            if (arena_state.camp_minions[i].active && arena_state.camp_minions[i].camp_index == c) { any_active = 1; break; }
+        }
+        if (!any_active) {
+            arena_state.camp_uncleared_ms[c] = 0;
+            arena_state.camp_escalated[c] = 0;
+            continue;
+        }
+        arena_state.camp_uncleared_ms[c] += (int)dt_ms;
+        if (arena_state.camp_uncleared_ms[c] >= ARENA_CAMP_ESCALATION_THRESHOLD_MS) {
+            arena_state.camp_escalated[c] = 1;
+        }
     }
 
     for (int i = 0; i < ARENA_MAX_CAMP_MINIONS; i++) {
@@ -2803,11 +2843,28 @@ void arena_tick_camp_minions(unsigned int dt_ms) {
             if (dist > ARENA_CAMP_MINION_AGGRO_RADIUS) continue;
             if (!target || dist < best_dist) { target = cand; best_dist = dist; }
         }
-        if (target && m->attack_cooldown_ms <= 0) {
-            apply_damage(target, apply_armor(ARENA_CAMP_MINION_DAMAGE, arena_hero_armor(target)));
-            m->attack_cooldown_ms = ARENA_CAMP_MINION_ATTACK_COOLDOWN_MS;
+        if (target) {
+            /* Same "stops to fight instead of marching past" idiom lane creeps already use --
+               a hittable hero in range holds an escalated minion in place too, it doesn't just
+               plow through. */
+            if (m->attack_cooldown_ms <= 0) {
+                apply_damage(target, apply_armor(ARENA_CAMP_MINION_DAMAGE, arena_hero_armor(target)));
+                m->attack_cooldown_ms = ARENA_CAMP_MINION_ATTACK_COOLDOWN_MS;
+            }
+            continue;
         }
-        /* No movement -- stationary camp guardian, see this function's own doc comment. */
+
+        /* §3.4: march toward the nearest node once this minion's own camp has escalated --
+           otherwise stationary, the original Milestone 1 guardian behavior. */
+        if (!arena_state.camp_escalated[m->camp_index]) continue;
+        float nx, nz;
+        camp_minion_nearest_node(m->x, m->z, &nx, &nz);
+        float dx = nx - m->x, dz = nz - m->z;
+        float dist = sqrtf(dx * dx + dz * dz);
+        if (dist < ARENA_CAMP_MINION_WAYPOINT_EPSILON) continue; /* arrived -- stands and holds the node, real board presence */
+        float step = ARENA_CAMP_MINION_MARCH_SPEED * dt_sec;
+        if (step >= dist) { m->x = nx; m->z = nz; }
+        else { m->x += dx / dist * step; m->z += dz / dist * step; }
     }
 }
 

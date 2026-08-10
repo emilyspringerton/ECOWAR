@@ -6429,6 +6429,84 @@ static void test_hero_kills_camp_minion_and_earns_reward(void) {
     CHECK(arena_state.heroes[0].xp == ARENA_CAMP_MINION_KILL_XP, "killing a camp minion grants ARENA_CAMP_MINION_KILL_XP");
 }
 
+/* §3.4 Anti-stall escalation smoke tests (2026-08-10). */
+
+static void test_camp_does_not_escalate_before_the_threshold(void) {
+    arena_init_teams();
+    for (int i = 0; i < ARENA_MAX_HEROES; i++) arena_state.heroes[i].active = 0;
+
+    arena_tick_camp_minions(16); /* spawn */
+    arena_tick_camp_minions(ARENA_CAMP_ESCALATION_THRESHOLD_MS - 1000);
+    CHECK(!arena_state.camp_escalated[0], "a camp with a living minion doesn't escalate before the threshold elapses");
+
+    float x_before = -999.0f;
+    for (int i = 0; i < ARENA_MAX_CAMP_MINIONS; i++) {
+        if (arena_state.camp_minions[i].active && arena_state.camp_minions[i].camp_index == 0) { x_before = arena_state.camp_minions[i].x; break; }
+    }
+    arena_tick_camp_minions(16);
+    float x_after = -999.0f;
+    for (int i = 0; i < ARENA_MAX_CAMP_MINIONS; i++) {
+        if (arena_state.camp_minions[i].active && arena_state.camp_minions[i].camp_index == 0) { x_after = arena_state.camp_minions[i].x; break; }
+    }
+    CHECK(x_before == x_after, "an unescalated camp's minions stay stationary, no drift");
+}
+
+static void test_camp_escalates_and_minions_march_toward_nearest_node(void) {
+    arena_init_teams();
+    for (int i = 0; i < ARENA_MAX_HEROES; i++) arena_state.heroes[i].active = 0;
+
+    arena_tick_camp_minions(16); /* spawn camp 0's (N) wave */
+    /* Cross the threshold with a small final tick (32ms) rather than one giant jump -- a giant
+       dt_ms both crosses the threshold AND covers the march's full march-speed*dt_sec distance
+       in the SAME call (escalation state is computed before the movement loop within one tick),
+       leaving nothing left to observe moving afterward. A small final tick crosses the boundary
+       with only a tiny (2.0 * 0.032 = 0.064 unit) march step, so there's real "before" state
+       left for the dedicated march tick below to move further from. */
+    arena_tick_camp_minions(ARENA_CAMP_ESCALATION_THRESHOLD_MS - 32);
+    CHECK(!arena_state.camp_escalated[0], "setup: not escalated yet, one tick before the threshold");
+    arena_tick_camp_minions(32);
+    CHECK(arena_state.camp_escalated[0], "a camp with a continuously-living minion escalates once the threshold elapses");
+
+    int found = -1;
+    for (int i = 0; i < ARENA_MAX_CAMP_MINIONS; i++) {
+        if (arena_state.camp_minions[i].active && arena_state.camp_minions[i].camp_index == 0) { found = i; break; }
+    }
+    CHECK(found >= 0, "setup: camp 0 still has a living minion to march");
+    float x0 = arena_state.camp_minions[found].x, z0 = arena_state.camp_minions[found].z;
+    float nx, nz;
+    /* Nearest node to the North camp's own fixed position -- same helper the sim itself uses. */
+    float best_dist = -1.0f;
+    for (int n = 0; n < ARENA_NODE_COUNT; n++) {
+        float dx = arena_state.nodes[n].x - x0, dz = arena_state.nodes[n].z - z0;
+        float d = dx * dx + dz * dz;
+        if (best_dist < 0.0f || d < best_dist) { best_dist = d; nx = arena_state.nodes[n].x; nz = arena_state.nodes[n].z; }
+    }
+    float dist_to_node_before = sqrtf((nx - x0) * (nx - x0) + (nz - z0) * (nz - z0));
+
+    arena_tick_camp_minions(1000); /* march for a real second */
+    float x1 = arena_state.camp_minions[found].x, z1 = arena_state.camp_minions[found].z;
+    float dist_to_node_after = sqrtf((nx - x1) * (nx - x1) + (nz - z1) * (nz - z1));
+
+    CHECK(x0 != x1 || z0 != z1, "an escalated minion actually moves, unlike an unescalated one");
+    CHECK(dist_to_node_after < dist_to_node_before, "an escalated minion marches TOWARD the nearest node, not a random direction");
+}
+
+static void test_camp_escalation_rearms_once_fully_cleared(void) {
+    arena_init_teams();
+    for (int i = 0; i < ARENA_MAX_HEROES; i++) arena_state.heroes[i].active = 0;
+
+    arena_tick_camp_minions(16);
+    arena_tick_camp_minions(ARENA_CAMP_ESCALATION_THRESHOLD_MS);
+    CHECK(arena_state.camp_escalated[0], "setup: camp 0 is escalated");
+
+    for (int i = 0; i < ARENA_MAX_CAMP_MINIONS; i++) {
+        if (arena_state.camp_minions[i].camp_index == 0) arena_state.camp_minions[i].active = 0;
+    }
+    arena_tick_camp_minions(16);
+    CHECK(!arena_state.camp_escalated[0], "fully clearing a camp re-arms its escalation state");
+    CHECK(arena_state.camp_uncleared_ms[0] == 0, "...and resets the uncleared timer back to 0, not just the escalated flag");
+}
+
 /* Jungle Camps -- The Four Heavenly Kings, Milestone 2 smoke tests (2026-08-10).
    docs2/JUNGLE_CAMPS_NORTHSTAR.md §3.3. One test per King's distinct buff mechanic, plus the
    spawn-timer gate and a real kill-to-death loop. */
@@ -6791,6 +6869,9 @@ int main(void) {
     test_camp_minions_wave_spawn_from_the_opening_bell();
     test_camp_minion_attacks_nearby_hero();
     test_hero_kills_camp_minion_and_earns_reward();
+    test_camp_does_not_escalate_before_the_threshold();
+    test_camp_escalates_and_minions_march_toward_nearest_node();
+    test_camp_escalation_rearms_once_fully_cleared();
     test_king_does_not_spawn_before_one_minute();
     test_hero_kills_north_king_and_gains_wealth_aura();
     test_hero_kills_south_king_and_stacks_growth_on_takedown();
