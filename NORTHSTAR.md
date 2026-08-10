@@ -2616,7 +2616,7 @@ solved" companion-unit gap as still-open and directly relevant, and lay out a pa
 generalizes what's real rather than inventing a second parallel system — is done. No code changes
 accompany this section; implementation is separate, future work.
 
-## 25. Multi-agent RL: team environment, role discovery, noisy gestalt, synergy decay (2026-08-10) -- VS0 (team env) + noisy-gestalt alternating schedule built, role discovery/synergy decay/autocurriculum spec only
+## 25. Multi-agent RL: team environment, role discovery, noisy gestalt, synergy decay (2026-08-10) -- VS0 (team env), noisy-gestalt alternating schedule, and synergy decay all built; role discovery/autocurriculum spec only
 
 Founder, real-time, sourced from a long personal research conversation (Gemini transcript,
 ingested into `CarePyre/source/gemini-transcript-2026-08-09.md` for an unrelated reason — that
@@ -2758,6 +2758,24 @@ explicit: "there needs to be a random chance of synergy decay at different level
 happen"). This is a rubber-band comeback mechanic in the same design family as Mario Kart items or
 League's own catch-up XP/gold — named honestly as that, not as a training-time RL concept, even
 though the founder's own source material described it in RL-attention-mechanism language.
+
+**IMPLEMENTED (2026-08-10, `packages/simulation/arena_game.c`/`.h`).** `arena_state.synergy_tier
+[2]` (0=full cohesion .. `ARENA_SYNERGY_TIER_COUNT`-1=fully decayed) re-rolls every
+`ARENA_SYNERGY_ROLL_INTERVAL_MS` (8s), weighted toward higher tiers the further ahead that team
+is in the real resource race — the coordination bonus itself reuses East/Music's own attack-
+speed/move-speed shape (`ARENA_SYNERGY_TIER0_CDR_PCT`/`MOVE_SPEED_PCT`), decaying linearly to 0
+at the weakest tier. Source design: the CarePyre transcript's own `StochasticSynergyController`,
+base_probs `[0.60, 0.25, 0.10, 0.05]` ported faithfully — but one real bug in the source's own
+formula was found and NOT reproduced: adding the same constant to every tier's logit before
+softmax is a mathematical no-op (softmax is shift-invariant), so this implementation scales the
+lead-driven shift BY tier index instead, which actually produces the intended effect. Two more
+real bugs caught during implementation (both fixed): the field's memset default (0) meant
+"strongest tier" unlike every other buff field's own "0 = off" convention, which would have
+silently granted every team-mode match the full bonus from the opening whistle and broke several
+pre-existing exact-cooldown-value tests elsewhere in this file; and a team-mode detection guard
+that was itself broken by this suite's own common "deactivate every other hero for isolation"
+test pattern (fixed in the tests, not the guard — the guard's real-gameplay invariant holds).
+5 new smoke tests, full `test_arena.sh` + `test_10_bots.sh` green. REDGARDEN commit `cc7f560`.
 
 ### 25.4 Autocurriculum: opponent curriculum instead of a fixed heuristic-only opponent
 
