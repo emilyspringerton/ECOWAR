@@ -830,6 +830,12 @@ static void play_one_match(int game_port) {
        needs to remember "I'm already mid-heal" from one tick to the next, not just react to
        this tick's HP fraction in isolation. */
     int retreating_to_fountain = 0;
+    /* camping_fountain (2026-08-10, founder: "bots need to learn and evolve from fountain
+       camping meta" -- heuristic path, see this block's own doc comment below at the actual
+       trigger for the real reasoning). Persists across ticks the same way retreating_to_fountain
+       does -- camping is a multi-tick commitment, not a per-tick reaction. */
+    int camping_fountain = 0;
+    uint32_t camping_start_ms = 0;
     /* draft_offset (S170-105, real bug found live, twice): ARENA_HERO_COUNT (21) now exceeds
        ARENA_MAX_HEROES (20) for the first time -- a full 20-player lobby only ever has owner
        slots 0..19, so a bare `owner % hero_count` always maps to hero_ids 0..19 and can NEVER
@@ -966,16 +972,59 @@ static void play_one_match(int game_port) {
                        LOW threshold, but once retreating, a bot stays retreating until it's
                        actually topped back up (ARENA_BOT_TOPPED_UP_FRACTION, 90%), not just
                        barely above where it started. */
-                    if (last.heroes[my_owner].max_hp > 0) {
-                        float hp_frac = (float)last.heroes[my_owner].hp / (float)last.heroes[my_owner].max_hp;
-                        if (!retreating_to_fountain && hp_frac < ARENA_BOT_LOW_HP_FRACTION) {
-                            retreating_to_fountain = 1;
-                        } else if (retreating_to_fountain && hp_frac >= ARENA_BOT_TOPPED_UP_FRACTION) {
-                            retreating_to_fountain = 0;
+                    static const float fountains[2][2] = { { -43.78f, -43.78f }, { 43.78f, 43.78f } }; /* S170-191: ARENA_HALF_EXTENT-8 against the golden-ratio-scaled 51.78 (was -24/24 against the old 32) -- kept in sync by hand, same idiom this file's own doc comment already flags for every other duplicated map constant */
+                    float hp_frac = last.heroes[my_owner].max_hp > 0
+                        ? (float)last.heroes[my_owner].hp / (float)last.heroes[my_owner].max_hp : 0.0f;
+                    if (!retreating_to_fountain && hp_frac < ARENA_BOT_LOW_HP_FRACTION) {
+                        retreating_to_fountain = 1;
+                        camping_fountain = 0; /* self-preservation overrides camping outright */
+                    } else if (retreating_to_fountain && hp_frac >= ARENA_BOT_TOPPED_UP_FRACTION) {
+                        retreating_to_fountain = 0;
+                    }
+
+                    /* Fountain camping (2026-08-10, founder: "bots need to learn and evolve from
+                       fountain camping meta" -- heuristic path chosen over a learned one for this
+                       first pass: real MOBA fountain-camping is a well-defined, hand-describable
+                       tactic (loiter near the enemy's own heal point, punish whoever shows up
+                       there), unlike the still-open RL/imitation-learning path (NORTHSTAR
+                       §25.2-§25.4), which needs real training compute this box doesn't have
+                       headroom for alongside the team-mode training run already in progress.
+                       Trigger: a real kill or assist just landed (Flow jumped by at least
+                       ARENA_BOT_CAMP_TRIGGER_FLOW between the previous and current snapshot --
+                       ARENA_HERO_ASSIST_FLOW is 350, ARENA_HERO_KILL_FLOW is 1000 in
+                       packages/simulation/arena_game.h, so this threshold catches both, not just
+                       kills) while healthy (hp_frac >= ARENA_BOT_TOPPED_UP_FRACTION, the same 90%
+                       bar the retreat state machine already uses for "fully recovered" -- don't
+                       send a half-healed bot deep into enemy territory) and not already
+                       retreating/camping. Bounded duration (ARENA_BOT_CAMP_DURATION_MS) so a bot
+                       doesn't permanently abandon node-capping/shopping if no enemy ever shows up
+                       at their own fountain -- exits early on low HP too (a camping bot that gets
+                       jumped falls through to the normal retreat/engage logic next tick, same as
+                       any other bot). Once camping, this doesn't touch the existing
+                       nearest-enemy-engage logic at all (best/best_dist below still finds and
+                       fights whoever's nearest, including an enemy who wanders back to their own
+                       fountain) -- camping only changes where a bot with NO enemy currently in
+                       engage range goes instead of node-capping/shopping, see the best_node
+                       fallback below. */
+                    const uint32_t ARENA_BOT_CAMP_TRIGGER_FLOW = 350;
+                    const uint32_t ARENA_BOT_CAMP_DURATION_MS = 20000;
+                    uint32_t now_camp = (uint32_t)time(NULL) * 1000;
+                    if (camping_fountain) {
+                        if (hp_frac < ARENA_BOT_LOW_HP_FRACTION
+                            || now_camp - camping_start_ms > ARENA_BOT_CAMP_DURATION_MS) {
+                            camping_fountain = 0;
+                        }
+                    } else if (!retreating_to_fountain && have_prev
+                               && my_owner < last.world.count && my_owner < prev.world.count
+                               && hp_frac >= ARENA_BOT_TOPPED_UP_FRACTION) {
+                        float flow_delta = (float)last.heroes[my_owner].flow - (float)prev.heroes[my_owner].flow;
+                        if (flow_delta >= (float)ARENA_BOT_CAMP_TRIGGER_FLOW) {
+                            camping_fountain = 1;
+                            camping_start_ms = now_camp;
                         }
                     }
+
                     if (retreating_to_fountain) {
-                        static const float fountains[2][2] = { { -43.78f, -43.78f }, { 43.78f, 43.78f } }; /* S170-191: ARENA_HALF_EXTENT-8 against the golden-ratio-scaled 51.78 (was -24/24 against the old 32) -- kept in sync by hand, same idiom this file's own doc comment already flags for every other duplicated map constant */
                         int nearest = 0;
                         float nearest_dist = 0.0f;
                         for (int f = 0; f < 2; f++) {
@@ -1013,7 +1062,7 @@ static void play_one_match(int game_port) {
                            this file deliberately doesn't link packages/simulation/arena_game.c. */
                         static const float shops[2][2] = { { -52.78f, 52.78f }, { 52.78f, -52.78f } };
                         float shop_safe_dist_sq = 20.0f * 20.0f;
-                        int shopping = shop_next_item_id < ARENA_BOT_ITEM_COUNT
+                        int shopping = !camping_fountain && shop_next_item_id < ARENA_BOT_ITEM_COUNT
                             && (best == -1 || best_dist > shop_safe_dist_sq)
                             && (float)last.heroes[my_owner].flow >= (float)ARENA_BOT_ITEM_COSTS[shop_next_item_id];
                         if (shopping) {
@@ -1057,7 +1106,52 @@ static void play_one_match(int game_port) {
                         int my_squad = my_owner % squad_count;
                         int best_node = -1;
                         if (best == -1 || best_dist > engage_range_sq) {
-                            best_node = hero_squad_target_node(&last, my_team, squad_count, my_squad);
+                            if (camping_fountain) {
+                                /* No enemy in engage range while camping -- head for the enemy
+                                   fountain instead of capping a node (see this block's own doc
+                                   comment above at the trigger for the full reasoning). best_node
+                                   stays -1 (skips the node-anchor branch below) and best is
+                                   already -1/out-of-range (skips the engage branch too), so this
+                                   send_move is the only movement command this tick -- exactly the
+                                   desired "go camp, do nothing else" behavior. The moment an enemy
+                                   DOES wander into engage range, best != -1 takes over next tick
+                                   via the unchanged engage branch below, same as any other engage. */
+                                int enemy_fountain = 1 - my_team;
+                                send_move(fountains[enemy_fountain][0], fountains[enemy_fountain][1]);
+                            } else {
+                                /* Powerup awareness (2026-08-10, founder: "heuristically make
+                                   bots aware of berserk and regen powerups" -- "currently they
+                                   only pick them up if they happen to run over em"). Both
+                                   powerups are already synced over the wire
+                                   (last.world.powerups[], S170-190) but nothing ever pathed
+                                   toward one -- a bot only ever grabbed one by coincidence, if
+                                   node-capping/engaging happened to walk it through the exact
+                                   pickup point. Detour to the nearest ACTIVE powerup within
+                                   ARENA_BOT_POWERUP_SEEK_RADIUS instead of node-capping this
+                                   tick, same "worth a detour, not worth abandoning the whole
+                                   game plan for" priority the shopping detour above already
+                                   uses -- only considered here (no enemy in engage range this
+                                   tick), so grabbing a powerup never pulls a bot out of a fight
+                                   it's already in. */
+                                const float ARENA_BOT_POWERUP_SEEK_RADIUS = 25.0f;
+                                int nearest_powerup = -1;
+                                float nearest_powerup_dist = 0.0f;
+                                for (int p = 0; p < (int)(sizeof(last.world.powerups) / sizeof(last.world.powerups[0])); p++) {
+                                    if (!last.world.powerups[p].active) continue;
+                                    float pdx = last.world.powerups[p].x - mx, pdz = last.world.powerups[p].z - mz;
+                                    float pdist = pdx * pdx + pdz * pdz;
+                                    if (pdist > ARENA_BOT_POWERUP_SEEK_RADIUS * ARENA_BOT_POWERUP_SEEK_RADIUS) continue;
+                                    if (nearest_powerup == -1 || pdist < nearest_powerup_dist) {
+                                        nearest_powerup = p;
+                                        nearest_powerup_dist = pdist;
+                                    }
+                                }
+                                if (nearest_powerup != -1) {
+                                    send_move(last.world.powerups[nearest_powerup].x, last.world.powerups[nearest_powerup].z);
+                                } else {
+                                    best_node = hero_squad_target_node(&last, my_team, squad_count, my_squad);
+                                }
+                            }
                         }
                         /* S170-160/S170-202: squad flocking (alignment/cohesion/separation among
                            living SQUADMATES, see flock_offset's own doc comment) is a small
