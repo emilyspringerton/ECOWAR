@@ -2821,6 +2821,21 @@ matches exactly, real external actions genuinely drive team B). The Python-side 
 sampling logic itself (maintain past checkpoints + the heuristic, bias sampling toward whichever
 the current policy loses to most) is NOT built yet — this lands the C-level capability it needs.
 
+**Python-side opponent-pool sampler now implemented (2026-08-10, same day).** `ArenaTeamVecEnv`
+(`scripts/rl_env_team.py`, `autocurriculum=True`) maintains `opponent_pool` (permanent
+"heuristic" slot + up to `MAX_CHECKPOINT_OPPONENTS=5` past self-play checkpoints, oldest evicted
+first), samples one opponent per episode via Prioritized Fictitious Self-Play (AlphaStar's own
+`(1 - win_rate)^2` weighting, Beta(1,1)-smoothed so untested checkpoints still get sampled, a
+`PFSP_MIN_WEIGHT` floor so a fully-solved opponent never drops out of rotation), and — when a
+checkpoint opponent is sampled — drives team B via `sim_get_obs_team_any`(own perspective) +
+that checkpoint's loaded SB3 policy + `sim_step_team_vs_actions`, instead of the fixed heuristic.
+`rl_train_team.py --autocurriculum` feeds each new checkpoint into the running pool as it saves.
+Verified via a standalone ctypes+SB3 script against 2 real checkpoints from this session's own
+in-progress training run (opponent sampling/switching across episodes, real model.predict()-driven
+team-B actions, pool eviction at the cap) — NOT yet exercised inside a full end-to-end
+`model.learn()` training run to see whether it actually measurably improves the resulting policy
+over the fixed-heuristic baseline; that's the real remaining open question, not the plumbing.
+
 Named directly per the founder's ask ("autocurriculum engine"). Real, established field:
 Unsupervised Environment Design (UED) and its named instances PAIRED, POET, and (closer to what's
 useful here) prioritized-replay-style autocurricula that pick training opponents/scenarios biased
@@ -2840,15 +2855,17 @@ whole run. Scoped narrowly and honestly:
 
 ### 25.5 What "built this session" actually means, honestly
 
-Only `sim_init_team`/`sim_step_team`/`sim_get_obs_team` (§25.2.1) are real code as of this
-section landing — the true prerequisite every other piece in §25.2-§25.4 needs before any of it
-can be trained. Role discovery, noisy gestalt's alternating schedule, synergy decay's numeric
-tuning, and the autocurriculum opponent sampler are all specified above, not implemented — same
-honesty convention §21's own "Status update" and §24.4 already use in this file. Verified the same
-way §21.2's own environment logic was verified before a real Python environment existed to run it:
-direct C-level reasoning and (where feasible) headless test coverage, not a live training run —
-closing that gap needs the same Colab/normal-Python-environment path §21's own status update
-already used once.
+Updated 2026-08-10 (same day, later pass): `sim_init_team`/`sim_step_team`/`sim_get_obs_team`
+(§25.2.1), noisy gestalt's alternating Johnny/Spike schedule (§25.2.2), and the autocurriculum
+opponent sampler (§25.4) are now real, running code — gymnasium/stable-baselines3 turned out to
+already be installed in this environment, closing the "needs Colab" gap this note originally
+flagged. Role discovery's full learned-embedding module (ROMA/RODE-style, beyond the identity
+one-hot §25.2's `sim_get_obs_team` already writes) and synergy decay's RL-training-loop tuning
+(beyond the live C-level gameplay mechanic §25.3 already ships and tests) remain specified, not
+implemented — same honesty convention §21's own "Status update" and §24.4 already use in this
+file. Neither noisy-gestalt nor autocurriculum has completed a full end-to-end training run yet
+(both are mid-training or ctypes-verified only as of this note) — the plumbing is real, whether
+either one measurably improves the resulting policy is still an open, unanswered question.
 
 ### 25.6 What this section deliberately does not resolve
 

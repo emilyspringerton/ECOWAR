@@ -25,8 +25,16 @@ written -- flagged, not faked, same posture every other training script in this 
 
 --noisy-gestalt (2026-08-10, NORTHSTAR §25.2.2): the alternating Johnny/Spike phased training
 schedule from the CarePyre transcript, now actually implemented (see scripts/rl_env_team.py's
-own module doc comment for the full design) -- role discovery, synergy decay, and autocurriculum
-opponent sampling (§25.2.3-§25.4) remain spec-only, this closes one of the four.
+own module doc comment for the full design).
+
+--autocurriculum (2026-08-10, NORTHSTAR §25.4): PFSP-biased opponent-pool sampling (heuristic +
+past self-play checkpoints, biased toward whichever the current policy is losing to most), also
+now implemented -- see ArenaTeamVecEnv's own _sample_opponent()/add_opponent_checkpoint() doc
+comments. Verified via a standalone ctypes+SB3 script exercising real checkpoints from this
+session's own in-progress training run (opponent sampling/switching, real model.predict()-driven
+team-B actions, pool eviction) -- NOT yet exercised inside a real end-to-end model.learn() run.
+Role discovery and synergy decay (§25.2.3) remain spec-only; this closes two of the three
+remaining pieces, not all of them.
 """
 
 import argparse
@@ -59,6 +67,12 @@ def parse_args():
     p.add_argument("--gestalt-phase-ticks", type=int,
                    default=int(os.environ.get("RL_GESTALT_PHASE_TICKS", 50_000)),
                    help="env ticks per Johnny/Spike phase when --noisy-gestalt is set")
+    p.add_argument("--autocurriculum", action="store_true",
+                   default=os.environ.get("RL_AUTOCURRICULUM", "0") == "1",
+                   help="NORTHSTAR §25.4: sample team-B opponent per episode from a pool of "
+                        "the heuristic plus past self-play checkpoints, biased (PFSP) toward "
+                        "whichever the current policy is losing to most, instead of always "
+                        "the fixed heuristic. Pool grows as this run's own checkpoints save.")
     p.add_argument("--skip-export", action="store_true",
                    help="skip converting the trained policy to the embedded-C header format -- "
                         "note this header is NOT yet wired into any live consumer for team-mode "
@@ -73,13 +87,15 @@ def parse_args():
     return p.parse_args()
 
 
-def make_env(lib_path, team_size, noisy_gestalt=False, gestalt_phase_ticks=50_000):
+def make_env(lib_path, team_size, noisy_gestalt=False, gestalt_phase_ticks=50_000,
+             autocurriculum=False):
     def _init():
         sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
         from rl_env_team import ArenaTeamVecEnv
         return ArenaTeamVecEnv(lib_path=lib_path, team_size=team_size,
                                 noisy_gestalt=noisy_gestalt,
-                                gestalt_phase_ticks=gestalt_phase_ticks)
+                                gestalt_phase_ticks=gestalt_phase_ticks,
+                                autocurriculum=autocurriculum)
     return _init
 
 
@@ -89,9 +105,10 @@ def main():
     from stable_baselines3 import PPO
 
     vec_env = make_env(args.lib_path, args.team_size, args.noisy_gestalt,
-                        args.gestalt_phase_ticks)()  # ArenaTeamVecEnv IS the VecEnv --
-                                                           # no SubprocVecEnv/DummyVecEnv wrapper,
-                                                           # see this file's own module doc comment
+                        args.gestalt_phase_ticks, args.autocurriculum)()  # ArenaTeamVecEnv IS the
+                                                           # VecEnv -- no SubprocVecEnv/DummyVecEnv
+                                                           # wrapper, see this file's own module
+                                                           # doc comment
 
     os.makedirs(args.output_dir, exist_ok=True)
 
@@ -116,9 +133,15 @@ def main():
               f"{args.gestalt_phase_ticks} env ticks (NORTHSTAR §25.2.2).")
     else:
         print("Noisy-gestalt disabled (pass --noisy-gestalt to enable, NORTHSTAR §25.2.2).")
-    print("NOT yet trained here: role discovery / synergy decay / autocurriculum opponent "
-          "sampling (NORTHSTAR §25.2.3-§25.4) -- this is a shared-parameter baseline plus "
-          "noisy-gestalt when enabled, not the full research thread those other 3 build toward.")
+    if args.autocurriculum:
+        print("Autocurriculum ENABLED: team-B opponent sampled per episode (PFSP-biased) from "
+              "the heuristic plus this run's own growing checkpoint pool (NORTHSTAR §25.4).")
+    else:
+        print("Autocurriculum disabled -- team B is always the fixed heuristic (pass "
+              "--autocurriculum to enable, NORTHSTAR §25.4).")
+    print("NOT yet trained here: role discovery / synergy decay (NORTHSTAR §25.2.3) -- this is "
+          "a shared-parameter baseline plus noisy-gestalt and/or autocurriculum when enabled, "
+          "not the full research thread those pieces build toward.")
 
     checkpoint_path_template = os.path.join(args.output_dir, "ppo_arena_team_step_{}")
     timesteps_done = 0
@@ -132,6 +155,13 @@ def main():
         ckpt_path = checkpoint_path_template.format(timesteps_done)
         model.save(ckpt_path)
         print(f"Checkpoint saved: {ckpt_path}.zip ({timesteps_done}/{args.total_timesteps} timesteps)")
+        if args.autocurriculum:
+            # Feeds this run's own growing checkpoint into the opponent pool -- NORTHSTAR §25.4's
+            # "sample the next episode's opponent... plus the heuristic AI" self-play requirement.
+            # env_method calls add_opponent_checkpoint() once on the shared env (see
+            # ArenaTeamVecEnv.env_method's own doc comment for why "once, not team_size times" is
+            # correct here).
+            vec_env.env_method("add_opponent_checkpoint", ckpt_path + ".zip")
 
     final_path = os.path.join(args.output_dir, "ppo_arena_team_final")
     model.save(final_path)
@@ -189,10 +219,14 @@ def main():
 
     print("=" * 60)
     print(f"DONE. Final policy: {final_path}.zip")
-    print("This is VS0's shared-parameter baseline (NORTHSTAR §25.2.1/§25.5)"
-          + (" with noisy-gestalt phased training (§25.2.2)." if args.noisy_gestalt else "."))
-    print("Role discovery, synergy decay, and autocurriculum opponent sampling (§25.2.3-§25.4)")
-    print("are specified but not implemented by this script.")
+    extras = []
+    if args.noisy_gestalt:
+        extras.append("noisy-gestalt phased training (§25.2.2)")
+    if args.autocurriculum:
+        extras.append("PFSP autocurriculum opponent sampling (§25.4)")
+    suffix = " with " + " + ".join(extras) + "." if extras else "."
+    print(f"This is VS0's shared-parameter baseline (NORTHSTAR §25.2.1/§25.5){suffix}")
+    print("Role discovery and synergy decay (§25.2.3) are specified but not implemented by this script.")
     print("File a completion Apple and mark the relevant EMILY/BACKLOG.md item done.")
     print("=" * 60)
 

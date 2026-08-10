@@ -31,14 +31,21 @@ sim_get_winner_team()'s 1=team-A/2=team-B convention already matches compute_rew
 agent_owner=0 assumption exactly (every team-A agent "wins" when winner==1), so no reward-function
 duplication is needed here.
 
-NOTE ON VERIFICATION: same posture as rl_env.py's own module doc comment -- gymnasium/
-stable-baselines3 are not installable in the environment this file was written in. The ctypes
-team-mode API itself was verified directly (see NORTHSTAR §25.2.1's own commit message for the
-real ctypes smoke-test run). This file's VecEnv subclassing is written to SB3's documented
-VecEnv API but has NOT been run against a real install -- flagged, not claimed. Run
-`python3 scripts/rl_env_team.py --smoke-test` (works without gymnasium/SB3 installed) to verify
-the ctypes layer; `python3 scripts/rl_train_team.py` needs a real Python env (Colab, same pattern
-NORTHSTAR §21's own status update already used once) to close the SB3 gap.
+NOTE ON VERIFICATION: gymnasium/stable-baselines3 (2.9.0) are installed in this environment as of
+2026-08-10 and ArenaTeamVecEnv has been run for real via rl_train_team.py, including catching and
+fixing the critical sim_step_team-calls-1v1-tick bug (see NORTHSTAR §25.2.1's own history) --
+this is no longer spec-only. `python3 scripts/rl_env_team.py --smoke-test` still works without
+gymnasium/SB3 for a ctypes-only sanity check when iterating on the C side in isolation.
+
+Autocurriculum (§25.4, `autocurriculum=True`): team B's opponent is sampled once per episode from
+`self.opponent_pool` (the permanent "heuristic" baseline plus a small, capped population of past
+self-play checkpoints added live via `add_opponent_checkpoint()` as `rl_train_team.py`'s own
+checkpoint-save loop produces them), biased via Prioritized Fictitious Self-Play (see
+`_sample_opponent()`'s own doc comment) toward whichever opponent the CURRENT policy has been
+losing to most. When the sampled opponent isn't the heuristic, team B's actions come from that
+checkpoint's own loaded SB3 model, run against team B's OWN real perspective
+(`sim_get_obs_team_any(..., my_team=1, ...)`) and applied via `sim_step_team_vs_actions` -- the
+exact two C-level primitives this section's own bug-fix pass built as its prerequisite.
 """
 
 import argparse
@@ -123,7 +130,32 @@ def load_team_lib(lib_path=None):
     lib.sim_get_done_team.restype = ctypes.c_int
     lib.sim_get_winner_team.argtypes = [ctypes.c_int]
     lib.sim_get_winner_team.restype = ctypes.c_int
+    # §25.4 autocurriculum prerequisite (headless.c, 2026-08-10) -- see ArenaTeamVecEnv's own
+    # opponent-pool doc comment below for what these two drive.
+    lib.sim_get_obs_team_any.argtypes = [
+        ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.POINTER(ctypes.c_float),
+    ]
+    lib.sim_get_obs_team_any.restype = ctypes.c_int
+    lib.sim_step_team_vs_actions.argtypes = [
+        ctypes.POINTER(ctypes.c_float), ctypes.POINTER(ctypes.c_float),
+        ctypes.c_int, ctypes.c_uint,
+    ]
+    lib.sim_step_team_vs_actions.restype = None
     return lib
+
+
+# §25.4 autocurriculum: opponent-pool tuning constants.
+MAX_CHECKPOINT_OPPONENTS = 5  # "a small population of past checkpoints" -- NORTHSTAR §25.4's own
+                                # wording. Oldest checkpoint opponent is evicted (along with its
+                                # win/loss stats) once a new one pushes the pool past this size;
+                                # the permanent "heuristic" slot is never evicted.
+PFSP_SHARPNESS = 2  # AlphaStar's own Prioritized Fictitious Self-Play weighting, f_hard(x) =
+                      # (1-x)^p for win rate x against a given opponent -- the real, named
+                      # technique NORTHSTAR §25.4's "bias toward whichever it's losing to most"
+                      # description is describing. p=2 is AlphaStar's own paper default.
+PFSP_MIN_WEIGHT = 0.01  # floor so an opponent the policy has fully solved (win rate -> 1, weight
+                          # -> 0) doesn't drop out of rotation entirely -- NORTHSTAR §25.4 keeps
+                          # the heuristic "plus" the checkpoint pool, not replaced by it.
 
 
 try:
@@ -138,7 +170,8 @@ try:
 
         def __init__(self, team_size=DEFAULT_TEAM_SIZE, lib_path=None, dt_ms=16,
                      max_episode_ticks=4000, hero_ids_a=None, hero_ids_b=None,
-                     noisy_gestalt=False, gestalt_phase_ticks=DEFAULT_GESTALT_PHASE_TICKS):
+                     noisy_gestalt=False, gestalt_phase_ticks=DEFAULT_GESTALT_PHASE_TICKS,
+                     autocurriculum=False):
             if team_size < 2 or team_size > ARENA_TEAM_SIZE:
                 raise ValueError(f"team_size must be in [2, {ARENA_TEAM_SIZE}], got {team_size}")
             self.team_size = team_size
@@ -166,6 +199,16 @@ try:
             self.hero_ids_b = hero_ids_b or [0] * team_size
             self._c_hero_ids_a = (ctypes.c_int * team_size)(*self.hero_ids_a)
             self._c_hero_ids_b = (ctypes.c_int * team_size)(*self.hero_ids_b)
+
+            # §25.4 autocurriculum -- see _sample_opponent()'s own doc comment for the full
+            # design. Pool slot 0 is always the permanent heuristic baseline (sentinel string
+            # "heuristic", never a real checkpoint path); slots 1+ are past-checkpoint paths.
+            self.autocurriculum = autocurriculum
+            self.opponent_pool = ["heuristic"]
+            self.opponent_wins = [0]    # team-A (current policy) wins while this opponent was B
+            self.opponent_losses = [0]  # team-A losses while this opponent was B
+            self._opponent_model_cache = {}  # checkpoint path -> loaded PPO model
+            self._current_opponent_idx = 0
 
             self._obs_size = team_obs_size(team_size)
             self._tick = 0
@@ -205,6 +248,68 @@ try:
                     bonus += REWARD_SYNERGY_PER_LIVING_TEAMMATE_NEARBY
             return bonus
 
+        def add_opponent_checkpoint(self, path):
+            """§25.4 autocurriculum -- called from rl_train_team.py's own checkpoint-save loop
+            each time a new checkpoint lands, so self-play opponents grow richer as training
+            progresses instead of staying fixed at whatever existed when the env was constructed.
+            No-op if autocurriculum is off, so callers don't need to guard every call site."""
+            if not self.autocurriculum:
+                return
+            self.opponent_pool.append(path)
+            self.opponent_wins.append(0)
+            self.opponent_losses.append(0)
+            # Evict the OLDEST checkpoint opponent (index 1 -- index 0 is the permanent heuristic
+            # slot and is never evicted) once the pool exceeds MAX_CHECKPOINT_OPPONENTS real
+            # checkpoints -- "a SMALL population," per NORTHSTAR §25.4's own wording.
+            if len(self.opponent_pool) - 1 > MAX_CHECKPOINT_OPPONENTS:
+                evicted_path = self.opponent_pool.pop(1)
+                self.opponent_wins.pop(1)
+                self.opponent_losses.pop(1)
+                self._opponent_model_cache.pop(evicted_path, None)
+                # _current_opponent_idx can't point past index 1 here (a fresh episode always
+                # re-samples in _do_reset before any mid-episode add_opponent_checkpoint call
+                # matters), so no index-shift bookkeeping is needed for it.
+            print(f"[autocurriculum] opponent pool now: {self.opponent_pool} "
+                  f"(added {path})")
+
+        def _sample_opponent(self):
+            """§25.4 autocurriculum: Prioritized Fictitious Self-Play (AlphaStar's own PFSP) --
+            weight_i = (1 - win_rate_i)^PFSP_SHARPNESS, so opponents the current policy is
+            currently LOSING to most get sampled most often, with a Beta(1,1)-smoothed win rate
+            (untested opponents default to 0.5, not 0/1) so a freshly-added checkpoint gets a real
+            shot before its stats exist, and a PFSP_MIN_WEIGHT floor so a fully-solved opponent
+            (win_rate -> 1) never drops out of rotation entirely -- NORTHSTAR §25.4 keeps the
+            heuristic baseline "plus" the checkpoint pool, not superseded by it. Returns the
+            sampled index into self.opponent_pool."""
+            weights = []
+            for wins, losses in zip(self.opponent_wins, self.opponent_losses):
+                win_rate = (wins + 1) / (wins + losses + 2)
+                weights.append(max((1 - win_rate) ** PFSP_SHARPNESS, PFSP_MIN_WEIGHT))
+            weights = np.array(weights, dtype=np.float64)
+            probs = weights / weights.sum()
+            return int(np.random.choice(len(self.opponent_pool), p=probs))
+
+        def _load_opponent_model(self, path):
+            if path not in self._opponent_model_cache:
+                from stable_baselines3 import PPO
+                self._opponent_model_cache[path] = PPO.load(path)
+            return self._opponent_model_cache[path]
+
+        def _actions_to_flat(self, actions):
+            """Shared [move_x, move_z, cast_q>0, cast_w>0, cast_r>0] flattening used for both
+            team-A (from the policy being trained) and team-B (from a sampled opponent, when the
+            opponent isn't the plain heuristic) -- same convention step_wait already applied to
+            team A before §25.4 existed."""
+            flat = (ctypes.c_float * (self.team_size * 5))()
+            for i in range(self.team_size):
+                a = actions[i]
+                flat[i * 5 + 0] = float(a[0])
+                flat[i * 5 + 1] = float(a[1])
+                flat[i * 5 + 2] = 1.0 if a[2] > 0 else 0.0
+                flat[i * 5 + 3] = 1.0 if a[3] > 0 else 0.0
+                flat[i * 5 + 4] = 1.0 if a[4] > 0 else 0.0
+            return flat
+
         def _read_all_obs(self):
             obs_list = []
             for i in range(self.team_size):
@@ -216,6 +321,13 @@ try:
         def _do_reset(self):
             self.lib.sim_init_team(self.team_size, self._c_hero_ids_a, self._c_hero_ids_b)
             self._tick = 0
+            if self.autocurriculum:
+                # Opponent is sampled once per EPISODE, not per tick -- "the next episode's
+                # opponent," NORTHSTAR §25.4's own wording -- so team B plays one coherent
+                # opponent for the whole match rather than flickering between policies tick to
+                # tick, which would give neither a fair evaluation nor a stable environment for
+                # team A to learn against.
+                self._current_opponent_idx = self._sample_opponent()
             obs = self._read_all_obs()
             self._prev_obs = obs
             return obs
@@ -230,17 +342,30 @@ try:
             self._actions = np.asarray(actions, dtype=np.float32)
 
         def step_wait(self):
-            # ONE sim_step_team() call for the whole team this tick -- see this module's own doc
-            # comment for why this must be a single batched call, not team_size individual ones.
-            flat = (ctypes.c_float * (self.team_size * 5))()
-            for i in range(self.team_size):
-                a = self._actions[i]
-                flat[i * 5 + 0] = float(a[0])
-                flat[i * 5 + 1] = float(a[1])
-                flat[i * 5 + 2] = 1.0 if a[2] > 0 else 0.0
-                flat[i * 5 + 3] = 1.0 if a[3] > 0 else 0.0
-                flat[i * 5 + 4] = 1.0 if a[4] > 0 else 0.0
-            self.lib.sim_step_team(flat, self.team_size, self.dt_ms)
+            # ONE sim_step_team()/sim_step_team_vs_actions() call for the whole team this tick --
+            # see this module's own doc comment for why this must be a single batched call, not
+            # team_size individual ones.
+            flat_a = self._actions_to_flat(self._actions)
+
+            opponent = self.opponent_pool[self._current_opponent_idx] if self.autocurriculum else "heuristic"
+            if opponent == "heuristic":
+                # Unchanged path -- byte-identical to pre-§25.4 behavior, including when
+                # autocurriculum is off entirely (opponent is always "heuristic" in that case).
+                self.lib.sim_step_team(flat_a, self.team_size, self.dt_ms)
+            else:
+                # §25.4 autocurriculum: sampled opponent is a past self-play checkpoint -- get
+                # team B's OWN perspective via sim_get_obs_team_any (my_team=1), run it through
+                # that checkpoint's policy, and drive team B with the real resulting actions
+                # instead of the fixed heuristic.
+                model = self._load_opponent_model(opponent)
+                obs_b = []
+                for i in range(self.team_size):
+                    buf = (ctypes.c_float * self._obs_size)()
+                    self.lib.sim_get_obs_team_any(ARENA_TEAM_SIZE + i, 1, self.team_size, buf)
+                    obs_b.append(np.array(buf[:], dtype=np.float32))
+                actions_b, _ = model.predict(np.stack(obs_b, axis=0), deterministic=True)
+                flat_b = self._actions_to_flat(actions_b)
+                self.lib.sim_step_team_vs_actions(flat_a, flat_b, self.team_size, self.dt_ms)
             self._tick += 1
             self._global_tick += 1
 
@@ -276,6 +401,16 @@ try:
                      for _ in range(self.team_size)]
 
             if episode_over:
+                # §25.4 autocurriculum: record the outcome against whichever opponent was active
+                # THIS episode before _do_reset() below samples the NEXT one. Only on a real
+                # decided match (`done`, winner in {1, 2}) -- a truncated (timed-out) episode has
+                # no real winner and would just add noise to the win-rate estimate PFSP samples
+                # from.
+                if self.autocurriculum and done and winner in (1, 2):
+                    if winner == 1:
+                        self.opponent_wins[self._current_opponent_idx] += 1
+                    else:
+                        self.opponent_losses[self._current_opponent_idx] += 1
                 # All team_size slots terminate together (shared match outcome) -- reset the
                 # whole match now and hand back FRESH initial observations for every slot, same
                 # "auto-reset on done" contract SB3's own VecEnv expects from each sub-env,
