@@ -694,7 +694,20 @@ static void flock_offset(const BotSnapshotView *cur, const BotSnapshotView *prev
  * confidence-vs-outcome data yet to fit a better one against (see this session's own hero win-
  * rate tracking work for the kind of real data that COULD inform this later), so this is an
  * honest first pass, not a tuned final answer. A clean 1v1 (0 nearby others) stays at full
- * confidence (1.0), same as before this function existed. */
+ * confidence (1.0), same as before this function existed.
+ *
+ * Gaussian falloff (2026-08-10, founder: "we need to introduce a gaussian filter to the
+ * heuristic vs [RL-policy] based inputs" -- this is that blend weight): replaces the original
+ * discrete confidence *= 0.5 per-nearby-unit halving with a continuous Gaussian function of the
+ * same nearby_others count, confidence = exp(-n^2 / (2*sigma^2)). Same qualitative shape (full
+ * trust at 0 nearby, decaying toward 0 as the fight gets more crowded) but smooth rather than a
+ * step function -- one extra combatant drifting in/out of CONFIDENCE_RADIUS no longer causes a
+ * hard 2x jump in how much the policy's nudge is trusted, which is the actual problem a step
+ * function creates in a continuously-moving teamfight. GAUSSIAN_SIGMA=1.5 chosen so the curve's
+ * shape stays in the same order of magnitude as the old function's own values at small n --
+ * n=1: 0.80 (old: 0.5), n=2: 0.41 (old: 0.25), n=3: 0.14 (old: 0.125), n=4: 0.03 (old: 0.0625) --
+ * not a fitted curve (no logged confidence-vs-outcome data exists to fit against, same honest-
+ * first-pass caveat the original comment above already gives). */
 static float rl_engage_confidence(const BotSnapshotView *cur, int self_owner, int foe_owner) {
     const ArenaHeroSnapshot *self_h = &cur->heroes[self_owner];
     const ArenaHeroSnapshot *foe_h = &cur->heroes[foe_owner];
@@ -704,15 +717,15 @@ static float rl_engage_confidence(const BotSnapshotView *cur, int self_owner, in
        range this file's own caller already gates on (15.0) -- "close enough to this fight to
        plausibly join or interrupt it," not just anyone visible on the map. */
     const float CONFIDENCE_RADIUS = 10.0f;
+    const float GAUSSIAN_SIGMA = 1.5f;
     int nearby_others = 0;
     for (int i = 0; i < cur->world.count; i++) {
         if (i == self_owner || i == foe_owner || !cur->heroes[i].alive) continue;
         float dx = cur->heroes[i].x - mid_x, dz = cur->heroes[i].z - mid_z;
         if (dx * dx + dz * dz <= CONFIDENCE_RADIUS * CONFIDENCE_RADIUS) nearby_others++;
     }
-    float confidence = 1.0f;
-    for (int i = 0; i < nearby_others; i++) confidence *= 0.5f;
-    return confidence;
+    float n = (float)nearby_others;
+    return expf(-(n * n) / (2.0f * GAUSSIAN_SIGMA * GAUSSIAN_SIGMA));
 }
 
 /* arena_rl_fill_hero_onehot (2026-07-29, founder: "not just 2 heroes"): same one-hot encoding
