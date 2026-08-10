@@ -329,8 +329,23 @@ void sim_step_team(const float *actions, int team_size, unsigned int dt_ms) {
  * every OTHER team-A agent, ordered by team-A index (not by distance -- a fixed, stable
  * ordering, same "no false ordinal relationship" reasoning ARENA_TRAINING_OBS_SIZE's own doc
  * comment already gives for one-hot hero IDs applies here too: sorting by distance would make
- * "teammate slot 0" mean a different physical teammate every tick). Returns the actual number
- * of floats written so Python can assert its buffer size without hardcoding the formula twice. */
+ * "teammate slot 0" mean a different physical teammate every tick), PLUS a final `team_size`-
+ * long one-hot block encoding team_a_owner's OWN slot index (NORTHSTAR §25.2.2, role discovery
+ * prerequisite -- founder: "dynamic persona vectors... determined by game features"). Every
+ * agent shares ONE PPO policy (see rl_env_team.py's own module doc comment); without this block
+ * the shared policy has no way to tell "which of my team_size copies am I right now," so it
+ * mathematically cannot behave differently per slot even if differentiating would score higher
+ * -- the exact "hive mind" collapse NORTHSTAR §25.2's own problem statement names. This is the
+ * real, minimal mechanism QMIX-family role-discovery methods (ROMA/RODE) all depend on:
+ * condition the policy on agent identity, then let TRAINING (not a hand-written rule) decide
+ * whether/how agents differentiate -- a full ROMA/RODE implementation adds a dedicated learned
+ * embedding module on top of an identity signal exactly like this one; this lands the
+ * prerequisite the dedicated module would consume, honestly short of the full technique.
+ * team_size-sized (not a fixed ARENA_TRAINING_MAX_TEAM_SIZE-sized block like the hero-id one-
+ * hots use) because team_size is a per-training-run constant chosen once via --team-size, not
+ * something that varies mid-run the way which heroes get picked does -- no "false ordinal
+ * relationship" risk to guard against here. Returns the actual number of floats written so
+ * Python can assert its buffer size without hardcoding the formula twice. */
 int sim_get_obs_team(int team_a_owner, int team_size, float *out_obs) {
     if (team_size < 1) team_size = 1;
     if (team_size > ARENA_TRAINING_MAX_TEAM_SIZE) team_size = ARENA_TRAINING_MAX_TEAM_SIZE;
@@ -401,7 +416,14 @@ int sim_get_obs_team(int team_a_owner, int team_size, float *out_obs) {
         slot++;
     }
 
-    return base + (team_size - 1) * 4;
+    /* Agent-identity one-hot (§25.2.2 role discovery prerequisite) -- see this function's own
+       doc comment above for the full reasoning. */
+    int identity_base = base + (team_size - 1) * 4;
+    for (int i = 0; i < team_size; i++) {
+        out_obs[identity_base + i] = (i == team_a_owner) ? 1.0f : 0.0f;
+    }
+
+    return identity_base + team_size;
 }
 
 /* sim_get_done_team: episode ends when either whole team has no alive heroes left -- a fast

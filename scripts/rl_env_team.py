@@ -95,11 +95,15 @@ DEFAULT_TEAM_SIZE = 3  # NORTHSTAR §25.6 deliberately leaves the real first-run
                         # undecided -- 3v3 is a reasonable, small first target, easily overridden.
 
 # Per-agent observation size: the same 18+2*ARENA_HERO_COUNT self/foe/hero-id-onehot block
-# sim_get_obs's own layout already uses, PLUS (team_size-1)*4 teammate floats -- must match
+# sim_get_obs's own layout already uses, PLUS (team_size-1)*4 teammate floats, PLUS a final
+# team_size-long agent-identity one-hot (NORTHSTAR §25.2.2 role discovery prerequisite, added
+# 2026-08-10 -- see headless.c's own sim_get_obs_team doc comment for the full reasoning: without
+# this block the shared PPO policy has no signal for "which of my team_size copies am I," so it
+# cannot differentiate behavior per slot even where that would score higher). Must match
 # apps/arena_training/src/headless.c's own sim_get_obs_team() return value exactly. A function,
 # not a constant, since it depends on team_size.
 def team_obs_size(team_size):
-    return ARENA_TRAINING_OBS_SIZE + (team_size - 1) * 4
+    return ARENA_TRAINING_OBS_SIZE + (team_size - 1) * 4 + team_size
 
 
 def load_team_lib(lib_path=None):
