@@ -6526,6 +6526,33 @@ static void test_king_does_not_spawn_before_one_minute(void) {
     CHECK(all_active, "all 4 Kings spawn silently once the 1:00 delay elapses");
 }
 
+static void test_king_respawns_on_its_own_timer_after_death(void) {
+    arena_init_teams();
+    for (int i = 1; i < ARENA_MAX_HEROES; i++) arena_state.heroes[i].active = 0;
+    arena_state.heroes[0].hero_id = ARENA_HERO_DUCK;
+    arena_state.heroes[0].hp = arena_state.heroes[0].max_hp = 1000;
+
+    arena_tick_kings(ARENA_KING_SPAWN_DELAY_MS);
+    float kx, kz;
+    arena_camp_position(0, &kx, &kz);
+    arena_state.heroes[0].x = kx;
+    arena_state.heroes[0].z = kz;
+    while (arena_state.kings[0].active) {
+        arena_state.heroes[0].attack_cooldown_ms = 0;
+        arena_hero_attack_kings(0);
+    }
+    CHECK(!arena_state.kings[0].active, "setup: the North King is dead");
+
+    arena_tick_kings(ARENA_KING_RESPAWN_MS - 1000);
+    CHECK(!arena_state.kings[0].active, "a defeated King does not respawn before its own ARENA_KING_RESPAWN_MS timer elapses");
+
+    arena_tick_kings(1000);
+    CHECK(arena_state.kings[0].active, "a defeated King respawns once ARENA_KING_RESPAWN_MS elapses");
+    CHECK(arena_state.kings[0].alive, "...alive again");
+    CHECK(arena_state.kings[0].hp == ARENA_KING_HP, "...at full HP");
+    CHECK(arena_state.kings[0].x == kx && arena_state.kings[0].z == kz, "...back at its own camp's fixed position");
+}
+
 static void test_hero_kills_north_king_and_gains_wealth_aura(void) {
     arena_init_teams();
     for (int i = 1; i < ARENA_MAX_HEROES; i++) arena_state.heroes[i].active = 0;
@@ -6873,6 +6900,7 @@ int main(void) {
     test_camp_escalates_and_minions_march_toward_nearest_node();
     test_camp_escalation_rearms_once_fully_cleared();
     test_king_does_not_spawn_before_one_minute();
+    test_king_respawns_on_its_own_timer_after_death();
     test_hero_kills_north_king_and_gains_wealth_aura();
     test_hero_kills_south_king_and_stacks_growth_on_takedown();
     test_hero_kills_east_king_and_music_spreads_on_respawn();

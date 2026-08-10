@@ -2937,23 +2937,24 @@ static void king_grant_buff(int camp_index, ArenaHero *killer) {
     }
 }
 
-/* arena_tick_kings (Jungle Camps Milestone 2): see the header declaration's own doc comment.
+/* arena_tick_kings (Jungle Camps Milestones 2+4): see the header declaration's own doc comment.
  * Silent until ARENA_KING_SPAWN_DELAY_MS (1:00) per camp, then boss-scale neutral-aggro attack,
- * same shape as arena_tick_camp_minions. Also ticks down the 3 timer-based King buffs (Music's
- * king_music_carrier is not a timer, see its own field doc comment). */
+ * same shape as arena_tick_camp_minions; a defeated King respawns on ARENA_KING_RESPAWN_MS
+ * (Milestone 4, §5). Also ticks down the 3 timer-based King buffs (Music's king_music_carrier is
+ * not a timer, see its own field doc comment). */
 void arena_tick_kings(unsigned int dt_ms) {
-    /* King spawn timer reuses the same per-camp countdown idiom as camp minions, but its own
-       field (not camp_wave_timer_ms, which is minion-wave-only) and a one-time latch instead of
-       a repeating wave -- a King spawns once, not on a recurring timer, until Milestone 4
-       (King respawn, §5's still-open question) decides otherwise. Gated on max_hp > 0, not
-       active/alive: max_hp is set exactly once, at the moment of spawn, and death (below)
-       deliberately leaves it nonzero -- active/alive both go back to 0 on death too, so gating
-       on those would wrongly read "never spawned" and respawn a defeated King every tick. */
+    /* King spawn/respawn timer reuses the same per-camp countdown idiom as camp minions, but
+       its own field (not camp_wave_timer_ms, which is minion-wave-only) -- see
+       king_spawn_timer_ms's own doc comment for how one field unambiguously serves both the
+       first spawn (max_hp == 0) and every respawn after (max_hp > 0, reset to 0 the instant the
+       King dies -- see arena_hero_attack_kings' own kill branch). Gated on active, not
+       alive/max_hp: a currently-alive King (active=1) needs no countdown running at all. */
     for (int c = 0; c < ARENA_CAMP_COUNT; c++) {
         ArenaKing *k = &arena_state.kings[c];
-        if (k->max_hp > 0) continue;
+        if (k->active) continue;
+        int threshold = (k->max_hp == 0) ? ARENA_KING_SPAWN_DELAY_MS : ARENA_KING_RESPAWN_MS;
         arena_state.king_spawn_timer_ms[c] += (int)dt_ms;
-        if (arena_state.king_spawn_timer_ms[c] < ARENA_KING_SPAWN_DELAY_MS) continue;
+        if (arena_state.king_spawn_timer_ms[c] < threshold) continue;
         float kx, kz;
         arena_camp_position(c, &kx, &kz);
         k->active = 1;
@@ -3059,6 +3060,12 @@ void arena_hero_attack_kings(unsigned int dt_ms) {
                 k->hp = 0;
                 k->alive = 0;
                 k->active = 0;
+                /* Milestone 4: arm the respawn countdown from this exact moment -- see
+                   king_spawn_timer_ms's own doc comment for why resetting to 0 here (not
+                   leaving whatever stale value it held pre-death) is what makes the single
+                   shared field unambiguous between "counting to first spawn" and "counting to
+                   respawn." */
+                arena_state.king_spawn_timer_ms[c] = 0;
                 /* West/All-Seeing's own Flow bonus (Jungle Camps Milestone 2) applies to this
                    very kill if the killer's team already has it active from a PREVIOUS King --
                    a real, intended stacking-objectives interaction, not a bug: claim West early,

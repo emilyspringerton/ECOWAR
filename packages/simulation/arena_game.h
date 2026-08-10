@@ -1538,6 +1538,18 @@ typedef struct {
  * (Buddhism's Four Heavenly Kings), not an arbitrary assignment -- see the northstar's own §3.3
  * for the full mythology grounding. */
 #define ARENA_KING_SPAWN_DELAY_MS      60000 /* 1:00 into the match, real MOBA jungle-boss precedent -- longer than lane creeps' own initial delay, boss-scale gate */
+/* Milestone 4, King respawn (2026-08-10): §5's own open question -- "does a defeated King
+ * respawn later, or is each King a one-time kill per match? Not specified yet -- real MOBA
+ * precedent (jungle bosses respawning) suggests yes, but the founder hasn't confirmed a timer."
+ * Not founder-confirmed; resolved here as a real, documented judgment call rather than left
+ * open indefinitely, same "spec the model, not the numbers, but still commit to real numbers"
+ * discipline every other timer in this file already uses. Chose: yes, respawns, on a timer
+ * shorter than real MOBA jungle-boss respawns (Baron ~6-7 min, Roshan ~8-11 min) -- this game's
+ * own match pace is already deliberately faster than real-MOBA precedent throughout (lane waves
+ * 20s not League's ~30s, camp waves 25s, King's own FIRST spawn at 1:00 not 5+ minutes), same
+ * "scaled down for this game's faster match pace" reasoning ARENA_POWERUP_RESPAWN_MS's own doc
+ * comment already gives for an analogous real-WSG-precedent timer. */
+#define ARENA_KING_RESPAWN_MS         150000 /* 2:30 -- long enough that farming one King twice is a real commitment, short enough to matter again within a single fast match */
 #define ARENA_KING_HP                    500 /* boss-scale, comparable to a tower (420) -- a real fight, not a lane-creep reskin */
 #define ARENA_KING_DAMAGE                 14 /* roughly 2x a neutral camp minion's 6 -- a real threat, not instant-kill */
 #define ARENA_KING_AGGRO_RADIUS          5.0f /* slightly wider than a camp minion's 4.0 -- boss-scale presence */
@@ -2200,7 +2212,7 @@ typedef struct {
     int camp_uncleared_ms[ARENA_CAMP_COUNT]; /* §3.4 anti-stall escalation -- ticks up while a camp has any active minion, resets to 0 the instant it's fully cleared */
     int camp_escalated[ARENA_CAMP_COUNT]; /* 1 once camp_uncleared_ms crosses ARENA_CAMP_ESCALATION_THRESHOLD_MS -- that camp's minions march instead of standing still */
     ArenaKing kings[ARENA_CAMP_COUNT]; /* Jungle camps Milestone 2 -- index-matched to camps (0=N/Wealth, 1=S/Growth, 2=E/Music, 3=W/All-Seeing) */
-    int king_spawn_timer_ms[ARENA_CAMP_COUNT]; /* per-camp countdown to ARENA_KING_SPAWN_DELAY_MS -- lives in arena_state (not a function-static) same as every other per-match timer in this file, so arena_init_teams()'s memset correctly resets it between matches */
+    int king_spawn_timer_ms[ARENA_CAMP_COUNT]; /* per-camp countdown, dual-purpose (Milestone 4): counts toward ARENA_KING_SPAWN_DELAY_MS before a King's first-ever spawn (gated on max_hp == 0, see arena_tick_kings), or toward ARENA_KING_RESPAWN_MS after a kill (reset to 0 the instant a King dies, gated on !active with max_hp > 0) -- one field serves both, since a King is never simultaneously "never spawned" and "dead," so which threshold applies is never ambiguous. Lives in arena_state (not a function-static) same as every other per-match timer in this file, so arena_init_teams()'s memset correctly resets it between matches */
     int king_allseeing_team_ms[2]; /* West/All-Seeing's Farsight -- genuinely team-wide (see ArenaHero's own king_wealth_ms doc comment for why this one's different from the other three) */
     int wealth_gold_tick_ms; /* North/Wealth's gold-trickle accumulator -- see arena_tick_kings' own doc comment; arena_state, not a function-static, same reasoning as king_spawn_timer_ms above */
     int fountain_tick_ms; /* S170-147: fixed-interval (1000ms) accumulator for the fountain heal tick, same idiom as every other DPS/heal zone's own r_zone_tick_ms -- global, not per-hero, since a fountain heals whoever's nearby, not a single caster's target */
@@ -2644,13 +2656,16 @@ void arena_tick_camp_minions(unsigned int dt_ms);
  * get a free camp-minion hit. */
 void arena_hero_attack_camp_minions(unsigned int dt_ms);
 
-/* arena_tick_kings (Jungle Camps Milestone 2): arms each camp's King spawn timer at
- * ARENA_KING_SPAWN_DELAY_MS (1:00, unlike camp minions' opening-bell start), spawns it once
- * silently once the delay elapses, then advances every active King: same neutral-aggro/
- * stationary-attack shape as arena_tick_camp_minions, boss-scale numbers. Also decrements every
- * hero's king_growth_ms/king_wealth_ms and the team-wide king_allseeing_team_ms[2] -- the timer
- * side of the 3 timer-based King buffs (Music's king_music_carrier is not a timer, see its own
- * field doc comment). Called from arena_update_teams() only. */
+/* arena_tick_kings (Jungle Camps Milestones 2+4): arms each camp's King spawn timer at
+ * ARENA_KING_SPAWN_DELAY_MS (1:00, unlike camp minions' opening-bell start), spawns it silently
+ * once the delay elapses, then advances every active King: same neutral-aggro/stationary-attack
+ * shape as arena_tick_camp_minions, boss-scale numbers. Milestone 4 (King respawn, §5): a King
+ * killed by heroes respawns on ARENA_KING_RESPAWN_MS, resetting the same king_spawn_timer_ms
+ * countdown this function already uses for the first spawn (see king_spawn_timer_ms's own doc
+ * comment for how one field serves both without ambiguity). Also decrements every hero's
+ * king_growth_ms/king_wealth_ms and the team-wide king_allseeing_team_ms[2] -- the timer side of
+ * the 3 timer-based King buffs (Music's king_music_carrier is not a timer, see its own field doc
+ * comment). Called from arena_update_teams() only. */
 void arena_tick_kings(unsigned int dt_ms);
 
 /* arena_hero_attack_kings: mirrors arena_hero_attack_camp_minions -- each active, alive hero
