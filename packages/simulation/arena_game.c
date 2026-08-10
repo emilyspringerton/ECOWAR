@@ -922,6 +922,9 @@ static void update_hero_motion(ArenaHero *h, float dt_sec) {
         speed_mult = (h->slowed_ms > 0) ? (1.0f - h->slow_pct) : 1.0f;
         if (speed_mult < 0.0f) speed_mult = 0.0f;
     }
+    /* East/Music's Catchy Song (Jungle Camps Milestone 2): move-speed half of the buff,
+       multiplicative same as the slow above so it scales correctly against item speed too. */
+    if (h->king_music_carrier) speed_mult *= (1.0f + ARENA_KING_MUSIC_MOVE_SPEED_PCT / 100.0f);
     float step = (ARENA_HERO_SPEED + h->item_bonus_move_speed) * speed_mult * dt_sec; /* S170-175: items (e.g. Rootrunner Treads, Creek F. Boots) */
     if (step >= dist) {
         h->x = h->target_x;
@@ -1034,6 +1037,19 @@ float arena_hero_armor(const ArenaHero *h) {
        carrying it (see zagan_calcination_ms's own struct doc comment) -- applied here, after
        the normal formula, same layering as the mirror override above. */
     if (h->zagan_calcination_ms > 0) total -= (float)ARENA_ZAGAN_Q_ARMOR_SHRED;
+    /* North/Wealth's Bulwark aura (Jungle Camps Milestone 2): a flat armor bonus for `h` itself
+       AND any teammate within ARENA_KING_WEALTH_AURA_RADIUS of a hero currently holding the
+       buff -- "an umbrella large enough to shelter a group," not a per-hero timer, see
+       king_wealth_ms's own doc comment. Scans for the nearest holder rather than storing the
+       bonus on `h` directly so the aura updates live as holders move, same "computed live, not
+       copied" idiom this file already documents for the field itself. */
+    for (int wk = 0; wk < ARENA_MAX_HEROES; wk++) {
+        const ArenaHero *holder = &arena_state.heroes[wk];
+        if (!holder->active || !holder->alive || holder->king_wealth_ms <= 0 || holder->team != h->team) continue;
+        if (holder == h) { total += (float)ARENA_KING_WEALTH_ARMOR_BONUS; break; }
+        float wdx = holder->x - h->x, wdz = holder->z - h->z;
+        if (sqrtf(wdx * wdx + wdz * wdz) <= ARENA_KING_WEALTH_AURA_RADIUS) { total += (float)ARENA_KING_WEALTH_ARMOR_BONUS; break; }
+    }
     return total;
 }
 
@@ -1066,7 +1082,10 @@ float arena_hero_r_zone_radius(ArenaHeroID hero_id) {
  * splits base-vs-item, here it's item-vs-powerup, both additive on top of the same flat
  * ARENA_ATTACK_DAMAGE/ARENA_GARY_ATTACK_DAMAGE base every call site already uses. */
 static int arena_hero_bonus_ad(const ArenaHero *h) {
-    return h->item_bonus_ad + (h->berserker_ms > 0 ? ARENA_BERSERKER_BONUS_AD : 0);
+    /* South/Growth's Bloodroar (Jungle Camps Milestone 2): flat AD per stack, same "flat, not
+       multiplier" shape Berserker already uses -- see king_growth_stacks's own doc comment. */
+    return h->item_bonus_ad + (h->berserker_ms > 0 ? ARENA_BERSERKER_BONUS_AD : 0)
+         + h->king_growth_stacks * ARENA_KING_GROWTH_AD_PER_STACK;
 }
 
 static int apply_armor(int raw_damage, float armor) {
@@ -1314,6 +1333,13 @@ static void apply_damage(ArenaHero *target, int amount) {
                     killer->flow_earned += ARENA_HERO_KILL_FLOW * multikill_mult;
                     killer->xp += ARENA_HERO_KILL_XP * multikill_mult;
                     killer->kills++;
+                    /* South/Growth's Bloodroar (Jungle Camps Milestone 2): "each takedown while
+                       holding it adds a stack and refreshes the buff's duration" -- a hero kill
+                       is exactly a real-MOBA "takedown," same word the northstar itself uses. */
+                    if (killer->king_growth_ms > 0) {
+                        killer->king_growth_stacks++;
+                        killer->king_growth_ms = ARENA_KING_GROWTH_DURATION_MS;
+                    }
                 }
             }
             /* S170-187: assists -- anyone else who damaged this hero within the recent
@@ -1910,7 +1936,11 @@ void arena_tick_powerups(unsigned int dt_ms) {
  * function is only ever called on the cooldown, never on a windup duration, so that's already
  * true by construction. */
 static int apply_cdr(const ArenaHero *h, int normal_ms) {
-    int reduced = normal_ms - (normal_ms * h->item_bonus_cdr_pct) / 100;
+    /* East/Music's Catchy Song (Jungle Camps Milestone 2): attack-speed half of the buff, same
+       CDR path Haste Trinket items already flow through -- see king_music_carrier's own doc
+       comment for the persistence mechanic. */
+    int pct = h->item_bonus_cdr_pct + (h->king_music_carrier ? ARENA_KING_MUSIC_ATTACK_SPEED_PCT : 0);
+    int reduced = normal_ms - (normal_ms * pct) / 100;
     return reduced < 0 ? 0 : reduced;
 }
 
@@ -2808,11 +2838,184 @@ void arena_hero_attack_camp_minions(unsigned int dt_ms) {
                 m->hp = 0;
                 m->alive = 0;
                 m->active = 0;
-                h->flow += ARENA_CAMP_MINION_KILL_FLOW;
-                h->flow_earned += ARENA_CAMP_MINION_KILL_FLOW;
+                /* West/All-Seeing's Farsight (Jungle Camps Milestone 2): "bonus gold from
+                   monster kills" -- a camp minion is exactly that, same bonus King kills get. */
+                int flow = ARENA_CAMP_MINION_KILL_FLOW;
+                if (arena_state.king_allseeing_team_ms[h->team] > 0) {
+                    flow += (flow * ARENA_KING_ALLSEEING_BONUS_FLOW_PCT) / 100;
+                }
+                h->flow += flow;
+                h->flow_earned += flow;
                 h->xp += ARENA_CAMP_MINION_KILL_XP;
             }
             break; /* one minion target per hero per attack, same as every other creep type here */
+        }
+    }
+}
+
+/* king_grant_buff (Jungle Camps Milestone 2): applies camp_index's own King's distinct buff
+ * (§3.3) to the killing side. `killer` is the specific hero who landed the kill -- used for the
+ * two individual mechanics (Growth/Wealth); the two team-wide mechanics (Music/All-Seeing)
+ * instead sweep every living hero on `killer`'s team. Kept as one switch here rather than
+ * inlined at the call site so arena_hero_attack_kings' own kill-branch stays readable. */
+static void king_grant_buff(int camp_index, ArenaHero *killer) {
+    switch (camp_index) {
+        case 0: /* North -- Vaisravana, Wealth: Bulwark, individual holder */
+            killer->king_wealth_ms = ARENA_KING_WEALTH_DURATION_MS;
+            break;
+        case 1: /* South -- Virudhaka, Growth: Bloodroar, individual, starts at 1 stack */
+            killer->king_growth_stacks = 1;
+            killer->king_growth_ms = ARENA_KING_GROWTH_DURATION_MS;
+            break;
+        case 2: /* East -- Dhrtarastra, Music: Catchy Song, team-viral -- every living teammate
+                    becomes a carrier the instant it's claimed, same as the killer themselves. */
+            for (int i = 0; i < ARENA_MAX_HEROES; i++) {
+                ArenaHero *ally = &arena_state.heroes[i];
+                if (ally->active && ally->alive && ally->team == killer->team) ally->king_music_carrier = 1;
+            }
+            break;
+        default: /* West -- Virupaksha, All-Seeing: Farsight, genuinely team-wide flat timer */
+            arena_state.king_allseeing_team_ms[killer->team] = ARENA_KING_ALLSEEING_DURATION_MS;
+            break;
+    }
+}
+
+/* arena_tick_kings (Jungle Camps Milestone 2): see the header declaration's own doc comment.
+ * Silent until ARENA_KING_SPAWN_DELAY_MS (1:00) per camp, then boss-scale neutral-aggro attack,
+ * same shape as arena_tick_camp_minions. Also ticks down the 3 timer-based King buffs (Music's
+ * king_music_carrier is not a timer, see its own field doc comment). */
+void arena_tick_kings(unsigned int dt_ms) {
+    /* King spawn timer reuses the same per-camp countdown idiom as camp minions, but its own
+       field (not camp_wave_timer_ms, which is minion-wave-only) and a one-time latch instead of
+       a repeating wave -- a King spawns once, not on a recurring timer, until Milestone 4
+       (King respawn, §5's still-open question) decides otherwise. Gated on max_hp > 0, not
+       active/alive: max_hp is set exactly once, at the moment of spawn, and death (below)
+       deliberately leaves it nonzero -- active/alive both go back to 0 on death too, so gating
+       on those would wrongly read "never spawned" and respawn a defeated King every tick. */
+    for (int c = 0; c < ARENA_CAMP_COUNT; c++) {
+        ArenaKing *k = &arena_state.kings[c];
+        if (k->max_hp > 0) continue;
+        arena_state.king_spawn_timer_ms[c] += (int)dt_ms;
+        if (arena_state.king_spawn_timer_ms[c] < ARENA_KING_SPAWN_DELAY_MS) continue;
+        float kx, kz;
+        arena_camp_position(c, &kx, &kz);
+        k->active = 1;
+        k->alive = 1;
+        k->hp = k->max_hp = ARENA_KING_HP;
+        k->x = kx;
+        k->z = kz;
+        k->attack_cooldown_ms = 0;
+    }
+
+    for (int c = 0; c < ARENA_CAMP_COUNT; c++) {
+        ArenaKing *k = &arena_state.kings[c];
+        if (!k->active || !k->alive) continue;
+        if (k->attack_cooldown_ms > 0) k->attack_cooldown_ms -= (int)dt_ms;
+
+        ArenaHero *target = NULL;
+        float best_dist = 0.0f;
+        for (int h = 0; h < ARENA_MAX_HEROES; h++) {
+            ArenaHero *cand = &arena_state.heroes[h];
+            if (!cand->active || !hero_is_hittable(cand)) continue;
+            float dx = cand->x - k->x, dz = cand->z - k->z;
+            float dist = sqrtf(dx * dx + dz * dz);
+            if (dist > ARENA_KING_AGGRO_RADIUS) continue;
+            if (!target || dist < best_dist) { target = cand; best_dist = dist; }
+        }
+        if (target && k->attack_cooldown_ms <= 0) {
+            apply_damage(target, apply_armor(ARENA_KING_DAMAGE, arena_hero_armor(target)));
+            k->attack_cooldown_ms = ARENA_KING_ATTACK_COOLDOWN_MS;
+        }
+    }
+
+    /* Timer side of Growth/Wealth (individual) and All-Seeing (team-wide) -- Music has no timer
+       to tick, see king_music_carrier's own doc comment. */
+    for (int h = 0; h < ARENA_MAX_HEROES; h++) {
+        ArenaHero *hero = &arena_state.heroes[h];
+        if (!hero->active) continue;
+        if (hero->king_growth_ms > 0) {
+            hero->king_growth_ms -= (int)dt_ms;
+            if (hero->king_growth_ms <= 0) { hero->king_growth_ms = 0; hero->king_growth_stacks = 0; }
+        }
+        if (hero->king_wealth_ms > 0) {
+            hero->king_wealth_ms -= (int)dt_ms;
+            if (hero->king_wealth_ms < 0) hero->king_wealth_ms = 0;
+        }
+    }
+    for (int t = 0; t < 2; t++) {
+        if (arena_state.king_allseeing_team_ms[t] > 0) {
+            arena_state.king_allseeing_team_ms[t] -= (int)dt_ms;
+            if (arena_state.king_allseeing_team_ms[t] < 0) arena_state.king_allseeing_team_ms[t] = 0;
+        }
+    }
+
+    /* North/Wealth's gold trickle (Jungle Camps Milestone 2): "a smaller bonus-gold trickle to
+       nearby teammates" -- the aura's econ half, separate from arena_hero_armor's own damage-
+       reduction half since Flow isn't something that function touches. Per-second accumulation
+       would need its own fractional-remainder field (see mp_regen_accum's own doc comment for
+       why flat per-tick addition truncates to 0) -- sidestepped here by only crediting once a
+       full second's worth of dt_ms has accumulated, same "keep it simple, this is a minor
+       trickle not a precision system" spirit as the rest of this King's flavor. */
+    arena_state.wealth_gold_tick_ms += (int)dt_ms;
+    if (arena_state.wealth_gold_tick_ms >= 1000) {
+        arena_state.wealth_gold_tick_ms -= 1000;
+        for (int h = 0; h < ARENA_MAX_HEROES; h++) {
+            ArenaHero *holder = &arena_state.heroes[h];
+            if (!holder->active || !holder->alive || holder->king_wealth_ms <= 0) continue;
+            for (int a = 0; a < ARENA_MAX_HEROES; a++) {
+                if (a == h) continue;
+                ArenaHero *ally = &arena_state.heroes[a];
+                if (!ally->active || !ally->alive || ally->team != holder->team) continue;
+                float dx = ally->x - holder->x, dz = ally->z - holder->z;
+                if (sqrtf(dx * dx + dz * dz) > ARENA_KING_WEALTH_AURA_RADIUS) continue;
+                ally->flow += ARENA_KING_WEALTH_GOLD_PER_SEC;
+                ally->flow_earned += ARENA_KING_WEALTH_GOLD_PER_SEC;
+            }
+        }
+    }
+}
+
+/* arena_hero_attack_kings: see the header declaration's own doc comment. */
+void arena_hero_attack_kings(unsigned int dt_ms) {
+    (void)dt_ms;
+    for (int i = 0; i < ARENA_MAX_HEROES; i++) {
+        ArenaHero *h = &arena_state.heroes[i];
+        if (!h->active || !h->alive || h->attack_cooldown_ms > 0 || h->stunned_ms > 0) continue;
+        if (h->mnm_burrow_ms > 0) continue;
+        if (h->hero_id == ARENA_HERO_GARY) continue;
+
+        ArenaHero *foe = arena_nearest_enemy(i);
+        if (foe && hero_is_hittable(foe)) {
+            float dx = foe->x - h->x, dz = foe->z - h->z;
+            if (sqrtf(dx * dx + dz * dz) <= ARENA_ATTACK_RANGE) continue;
+        }
+
+        for (int c = 0; c < ARENA_CAMP_COUNT; c++) {
+            ArenaKing *k = &arena_state.kings[c];
+            if (!k->active || !k->alive) continue;
+            float dx = k->x - h->x, dz = k->z - h->z;
+            if (sqrtf(dx * dx + dz * dz) > ARENA_ATTACK_RANGE) continue;
+
+            k->hp -= ARENA_ATTACK_DAMAGE + arena_hero_bonus_ad(h);
+            h->attack_cooldown_ms = apply_cdr(h, ARENA_ATTACK_COOLDOWN_MS);
+            if (k->hp <= 0) {
+                k->hp = 0;
+                k->alive = 0;
+                k->active = 0;
+                /* West/All-Seeing's own Flow bonus (Jungle Camps Milestone 2) applies to this
+                   very kill if the killer's team already has it active from a PREVIOUS King --
+                   a real, intended stacking-objectives interaction, not a bug: claim West early,
+                   every jungle-monster kill after is worth more until it expires. */
+                int flow = ARENA_KING_KILL_FLOW;
+                if (arena_state.king_allseeing_team_ms[h->team] > 0) {
+                    flow += (flow * ARENA_KING_ALLSEEING_BONUS_FLOW_PCT) / 100;
+                }
+                h->flow += flow;
+                h->flow_earned += flow;
+                h->xp += ARENA_KING_KILL_XP;
+                king_grant_buff(c, h);
+            }
+            break;
         }
     }
 }
@@ -5915,6 +6118,18 @@ static void arena_respawn_hero(ArenaHero *h, int slot_index) {
        0's armor. zagan_confessed also resets: a new life gets a fresh chance to "confess." */
     h->zagan_r_target = -1;
     h->zagan_confessed = 0;
+    /* East/Music's Catchy Song relay (Jungle Camps Milestone 2): the memset above already
+       cleared this hero's own king_music_carrier along with everything else. Re-grant it here
+       if the team still has it -- "the moment ANY teammate respawns, they pick it up too," and
+       (the other half of the same sentence) if NO teammate is currently alive+carrying, the
+       buff has permanently lapsed and this respawn does NOT revive it. Entirely emergent from
+       this one check -- no separate "buff has ended" flag needed, see king_music_carrier's own
+       doc comment. */
+    for (int mk = 0; mk < ARENA_MAX_HEROES; mk++) {
+        const ArenaHero *ally = &arena_state.heroes[mk];
+        if (ally == h || !ally->active || !ally->alive || ally->team != h->team) continue;
+        if (ally->king_music_carrier) { h->king_music_carrier = 1; break; }
+    }
     arena_recompute_item_stats(h);
 }
 
@@ -5992,6 +6207,8 @@ void arena_update_teams(unsigned int dt_ms) {
     arena_hero_attack_lane_creeps(dt_ms);
     arena_tick_camp_minions(dt_ms); /* Jungle Camps Milestone 1 */
     arena_hero_attack_camp_minions(dt_ms);
+    arena_tick_kings(dt_ms); /* Jungle Camps Milestone 2 */
+    arena_hero_attack_kings(dt_ms);
 
     /* Melee combat: each active, alive hero independently attacks its own
        nearest enemy if one is in range and its cooldown is ready -- this is

@@ -6429,6 +6429,222 @@ static void test_hero_kills_camp_minion_and_earns_reward(void) {
     CHECK(arena_state.heroes[0].xp == ARENA_CAMP_MINION_KILL_XP, "killing a camp minion grants ARENA_CAMP_MINION_KILL_XP");
 }
 
+/* Jungle Camps -- The Four Heavenly Kings, Milestone 2 smoke tests (2026-08-10).
+   docs2/JUNGLE_CAMPS_NORTHSTAR.md §3.3. One test per King's distinct buff mechanic, plus the
+   spawn-timer gate and a real kill-to-death loop. */
+
+static void test_king_does_not_spawn_before_one_minute(void) {
+    arena_init_teams();
+    for (int i = 0; i < ARENA_MAX_HEROES; i++) arena_state.heroes[i].active = 0;
+
+    arena_tick_kings(ARENA_KING_SPAWN_DELAY_MS - 1000);
+    int any_active = 0;
+    for (int c = 0; c < ARENA_CAMP_COUNT; c++) if (arena_state.kings[c].active) any_active = 1;
+    CHECK(!any_active, "no King spawns before the 1:00 delay elapses");
+
+    arena_tick_kings(1000);
+    int all_active = 1;
+    for (int c = 0; c < ARENA_CAMP_COUNT; c++) if (!arena_state.kings[c].active) all_active = 0;
+    CHECK(all_active, "all 4 Kings spawn silently once the 1:00 delay elapses");
+}
+
+static void test_hero_kills_north_king_and_gains_wealth_aura(void) {
+    arena_init_teams();
+    for (int i = 1; i < ARENA_MAX_HEROES; i++) arena_state.heroes[i].active = 0;
+    arena_state.heroes[0].hero_id = ARENA_HERO_DUCK;
+    arena_state.heroes[0].hp = arena_state.heroes[0].max_hp = 1000;
+    arena_state.heroes[0].team = 0;
+
+    arena_tick_kings(ARENA_KING_SPAWN_DELAY_MS);
+    float kx, kz;
+    arena_camp_position(0, &kx, &kz); /* camp 0 = North = Wealth */
+    arena_state.heroes[0].x = kx;
+    arena_state.heroes[0].z = kz;
+
+    while (arena_state.kings[0].active) {
+        arena_state.heroes[0].attack_cooldown_ms = 0;
+        arena_hero_attack_kings(0);
+    }
+
+    CHECK(arena_state.heroes[0].flow == ARENA_KING_KILL_FLOW, "killing the North King grants ARENA_KING_KILL_FLOW");
+    CHECK(arena_state.heroes[0].king_wealth_ms == ARENA_KING_WEALTH_DURATION_MS, "killing the North King grants the killer Bulwark (king_wealth_ms)");
+
+    /* Proximity half: an ally standing near the holder gets bonus armor; one standing far away
+       does not. Isolates arena_hero_armor's own aura scan from everything else. */
+    arena_state.heroes[1].active = 1;
+    arena_state.heroes[1].alive = 1;
+    arena_state.heroes[1].team = 0;
+    arena_state.heroes[1].hero_id = ARENA_HERO_DUCK;
+    arena_state.heroes[1].x = kx + 1.0f;
+    arena_state.heroes[1].z = kz;
+    float near_armor = arena_hero_armor(&arena_state.heroes[1]);
+
+    arena_state.heroes[1].x = kx + 500.0f; /* well outside ARENA_KING_WEALTH_AURA_RADIUS */
+    float far_armor = arena_hero_armor(&arena_state.heroes[1]);
+
+    CHECK(near_armor > far_armor, "a nearby ally gets the Bulwark aura's armor bonus; a far-away one does not");
+}
+
+static void test_hero_kills_south_king_and_stacks_growth_on_takedown(void) {
+    arena_init_teams();
+    for (int i = 2; i < ARENA_MAX_HEROES; i++) arena_state.heroes[i].active = 0;
+    arena_state.heroes[0].hero_id = ARENA_HERO_DUCK;
+    arena_state.heroes[0].hp = arena_state.heroes[0].max_hp = 1000;
+    arena_state.heroes[0].team = 0;
+    arena_state.heroes[1].active = 1;
+    arena_state.heroes[1].alive = 1;
+    arena_state.heroes[1].team = 1; /* enemy, for the takedown half below */
+    arena_state.heroes[1].hero_id = ARENA_HERO_DUCK;
+    arena_state.heroes[1].hp = 1;
+    arena_state.heroes[1].max_hp = 100;
+
+    arena_tick_kings(ARENA_KING_SPAWN_DELAY_MS);
+    float kx, kz;
+    arena_camp_position(1, &kx, &kz); /* camp 1 = South = Growth */
+    arena_state.heroes[0].x = kx;
+    arena_state.heroes[0].z = kz;
+
+    while (arena_state.kings[1].active) {
+        arena_state.heroes[0].attack_cooldown_ms = 0;
+        arena_hero_attack_kings(0);
+    }
+    CHECK(arena_state.heroes[0].king_growth_stacks == 1, "killing the South King grants the killer 1 Bloodroar stack");
+
+    /* Real takedown while holding it: land the killing blow through the real melee path
+       (arena_update_teams) so apply_damage's last_attacked_by_owner credit fires, same real
+       path any hero-kill always goes through -- apply_damage itself has internal (static)
+       linkage, not callable directly from this test file, same reason arena_respawn_hero below
+       goes through arena_update_teams's own real respawn-wave path instead of being called
+       directly. */
+    arena_state.heroes[0].x = arena_state.heroes[1].x;
+    arena_state.heroes[0].z = arena_state.heroes[1].z;
+    arena_state.heroes[0].attack_cooldown_ms = 0;
+    for (int i = 0; i < 50 && arena_state.heroes[1].alive; i++) arena_update_teams(16);
+    CHECK(!arena_state.heroes[1].alive, "setup: the real melee loop actually killed the weakened enemy");
+
+    CHECK(arena_state.heroes[0].king_growth_stacks == 2, "a real takedown while holding Growth adds a second stack -- arena_hero_bonus_ad's own multiplication by king_growth_stacks (arena_game.c) is the tested, deterministic consequence of this count, not re-verified separately here since arena_hero_bonus_ad has internal (static) linkage and isn't callable from this test file");
+
+    /* Fragile: dying wipes the buff entirely, no drop, no relay -- the deliberate opposite of
+       Music. Trigger a real respawn via the wave system (same pattern
+       test_dead_hero_respawns_at_graveyard_when_team_owns_no_node above already uses) so the
+       real arena_respawn_hero (internal linkage, not directly callable here) actually runs. */
+    arena_state.heroes[0].alive = 0;
+    arena_update_teams(ARENA_RESPAWN_WAVE_MS - 100);
+    arena_update_teams(200);
+    CHECK(arena_state.heroes[0].alive, "setup: the wave respawned the hero");
+    CHECK(arena_state.heroes[0].king_growth_stacks == 0, "Bloodroar's stacks do not survive a respawn -- fragile, no relay");
+}
+
+static void test_hero_kills_east_king_and_music_spreads_on_respawn(void) {
+    arena_init_teams();
+    for (int i = 2; i < ARENA_MAX_HEROES; i++) arena_state.heroes[i].active = 0;
+    arena_state.heroes[0].hero_id = ARENA_HERO_DUCK;
+    arena_state.heroes[0].hp = arena_state.heroes[0].max_hp = 1000;
+    arena_state.heroes[0].team = 0;
+    arena_state.heroes[1].active = 1;
+    arena_state.heroes[1].alive = 1;
+    arena_state.heroes[1].team = 0; /* ally, for the team-viral half below */
+    arena_state.heroes[1].hero_id = ARENA_HERO_DUCK;
+    arena_state.heroes[1].hp = arena_state.heroes[1].max_hp = 100;
+
+    arena_tick_kings(ARENA_KING_SPAWN_DELAY_MS);
+    float kx, kz;
+    arena_camp_position(2, &kx, &kz); /* camp 2 = East = Music */
+    arena_state.heroes[0].x = kx;
+    arena_state.heroes[0].z = kz;
+
+    while (arena_state.kings[2].active) {
+        arena_state.heroes[0].attack_cooldown_ms = 0;
+        arena_hero_attack_kings(0);
+    }
+    CHECK(arena_state.heroes[0].king_music_carrier, "killing the East King makes the killer a Catchy Song carrier");
+    CHECK(arena_state.heroes[1].king_music_carrier, "...and every OTHER living teammate too -- team-viral, not individual");
+
+    /* Attack-speed half: land a real attack (apply_cdr has internal linkage, not directly
+       callable here) with vs without the buff and compare the resulting attack_cooldown_ms,
+       same "observe through the real call path" fix this file's other King tests already use
+       for apply_damage/arena_hero_bonus_ad/arena_respawn_hero. */
+    arena_tick_camp_minions(16); /* spawn a fresh camp-minion wave at camp 2 to attack */
+    int found = -1;
+    for (int m = 0; m < ARENA_MAX_CAMP_MINIONS; m++) if (arena_state.camp_minions[m].active) { found = m; break; }
+    CHECK(found >= 0, "setup: a camp minion is active to test Catchy Song's attack-speed half against");
+    arena_state.camp_minions[found].x = arena_state.heroes[0].x;
+    arena_state.camp_minions[found].z = arena_state.heroes[0].z;
+    arena_state.camp_minions[found].hp = arena_state.camp_minions[found].max_hp = 999999; /* survive both test swings below */
+
+    arena_state.heroes[0].attack_cooldown_ms = 0;
+    arena_hero_attack_camp_minions(0);
+    int carrier_cd = arena_state.heroes[0].attack_cooldown_ms;
+
+    arena_state.heroes[0].king_music_carrier = 0;
+    arena_state.heroes[0].attack_cooldown_ms = 0;
+    arena_hero_attack_camp_minions(0);
+    int no_buff_cd = arena_state.heroes[0].attack_cooldown_ms;
+    arena_state.heroes[0].king_music_carrier = 1;
+
+    CHECK(carrier_cd < no_buff_cd, "Catchy Song's attack-speed half genuinely lowers the attack cooldown");
+
+    /* Death and respawn: hero 0 dies (loses it personally), but hero 1 still carries it, so
+       hero 0 picks it back up on respawn -- the actual "outlives death" mechanic this King
+       exists to prove out. Real respawn triggered via the wave system (arena_respawn_hero has
+       internal linkage, not directly callable here), same pattern
+       test_dead_hero_respawns_at_graveyard_when_team_owns_no_node already uses. */
+    arena_state.heroes[0].alive = 0;
+    arena_update_teams(ARENA_RESPAWN_WAVE_MS - 100);
+    arena_update_teams(200);
+    CHECK(arena_state.heroes[0].alive, "setup: the wave respawned the hero");
+    CHECK(arena_state.heroes[0].king_music_carrier, "a carrier who respawns re-picks-up the buff if a teammate still carries it");
+
+    /* Now the real end condition: if EVERY carrier is simultaneously dead, a later respawn does
+       NOT revive it -- no live relay left. */
+    arena_state.heroes[0].alive = 0;
+    arena_state.heroes[1].alive = 0;
+    arena_update_teams(ARENA_RESPAWN_WAVE_MS - 100);
+    arena_update_teams(200);
+    CHECK(arena_state.heroes[0].alive, "setup: the wave respawned the hero again");
+    CHECK(!arena_state.heroes[0].king_music_carrier, "once every carrier is simultaneously dead, the buff has permanently lapsed -- no relay left to respawn into");
+}
+
+static void test_hero_kills_west_king_and_gains_team_wide_farsight(void) {
+    arena_init_teams();
+    for (int i = 2; i < ARENA_MAX_HEROES; i++) arena_state.heroes[i].active = 0;
+    arena_state.heroes[0].hero_id = ARENA_HERO_DUCK;
+    arena_state.heroes[0].hp = arena_state.heroes[0].max_hp = 1000;
+    arena_state.heroes[0].team = 0;
+    arena_state.heroes[1].active = 1;
+    arena_state.heroes[1].alive = 1;
+    arena_state.heroes[1].team = 1; /* opposing team -- should NOT get the buff */
+
+    arena_tick_kings(ARENA_KING_SPAWN_DELAY_MS);
+    float kx, kz;
+    arena_camp_position(3, &kx, &kz); /* camp 3 = West = All-Seeing */
+    arena_state.heroes[0].x = kx;
+    arena_state.heroes[0].z = kz;
+
+    while (arena_state.kings[3].active) {
+        arena_state.heroes[0].attack_cooldown_ms = 0;
+        arena_hero_attack_kings(0);
+    }
+    CHECK(arena_state.king_allseeing_team_ms[0] == ARENA_KING_ALLSEEING_DURATION_MS, "killing the West King grants the killer's TEAM Farsight, team-wide flat timer");
+    CHECK(arena_state.king_allseeing_team_ms[1] == 0, "the opposing team does not get Farsight");
+
+    /* Econ half: a camp-minion kill while Farsight is active is worth more Flow. */
+    arena_tick_camp_minions(16); /* spawn a fresh wave to kill */
+    int found = -1;
+    for (int m = 0; m < ARENA_MAX_CAMP_MINIONS; m++) if (arena_state.camp_minions[m].active) { found = m; break; }
+    CHECK(found >= 0, "setup: a camp minion is active to test the Farsight gold bonus against");
+    for (int m = 0; m < ARENA_MAX_CAMP_MINIONS; m++) if (m != found) arena_state.camp_minions[m].active = 0;
+    arena_state.camp_minions[found].x = arena_state.heroes[0].x;
+    arena_state.camp_minions[found].z = arena_state.heroes[0].z;
+    int flow_before = arena_state.heroes[0].flow;
+    while (arena_state.camp_minions[found].active) {
+        arena_state.heroes[0].attack_cooldown_ms = 0;
+        arena_hero_attack_camp_minions(0);
+    }
+    int gained = arena_state.heroes[0].flow - flow_before;
+    CHECK(gained > ARENA_CAMP_MINION_KILL_FLOW, "a jungle-monster kill while Farsight is active earns bonus Flow on top of the normal amount");
+}
+
 int main(void) {
     printf("RED GARDEN arena_game headless smoke test\n\n");
     test_movement_reaches_target();
@@ -6575,6 +6791,11 @@ int main(void) {
     test_camp_minions_wave_spawn_from_the_opening_bell();
     test_camp_minion_attacks_nearby_hero();
     test_hero_kills_camp_minion_and_earns_reward();
+    test_king_does_not_spawn_before_one_minute();
+    test_hero_kills_north_king_and_gains_wealth_aura();
+    test_hero_kills_south_king_and_stacks_growth_on_takedown();
+    test_hero_kills_east_king_and_music_spreads_on_respawn();
+    test_hero_kills_west_king_and_gains_team_wide_farsight();
     test_stealthed_hero_captures_undetected_through_a_crowd_of_visible_enemies();
     test_two_visible_teams_still_interrupt_normally_even_near_a_stealthed_ally();
     test_starting_a_channel_breaks_the_capturer_stealth();
