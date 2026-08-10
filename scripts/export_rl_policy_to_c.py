@@ -95,7 +95,7 @@ def extract_layers_from_sb3_policy(model):
 
 
 def write_c_header_from_layers(layers, output_path, guard_name="RL_POLICY_WEIGHTS_H",
-                                model_name="RL_POLICY_MODEL"):
+                                model_name="RL_POLICY_MODEL", symbol_prefix=""):
     """The actually-portable core of this file: given a plain list of (weight, bias,
     activation_code) tuples (regardless of where they came from -- a real SB3 model, or the
     hand-built torch.nn.Sequential this function's own verification run used), writes a
@@ -151,26 +151,37 @@ def write_c_header_from_layers(layers, output_path, guard_name="RL_POLICY_WEIGHT
     lines.append(f"static const MlpModel {model_name} = {{")
     lines.append(f"    {n_layers}, {model_name}_SIZES, {model_name}_WEIGHTS, {model_name}_BIASES, {model_name}_ACTS")
     lines.append("};")
+    # symbol_prefix (2026-08-10, found while wiring up a second model -- NORTHSTAR §25):
+    # OBS_SIZE/ACTION_SIZE/MOVE_TARGET_RANGE and rl_policy_forward() itself used to be hardcoded
+    # regardless of guard_name/model_name -- fine when only one exported header ever existed, a
+    # real bug the moment a second one (e.g. a team-mode model) needs to be #included in the same
+    # translation unit as the original: duplicate #define (silently wrong, whichever one the
+    # preprocessor keeps) and a duplicate rl_policy_forward() definition (hard compile error, two
+    # functions with the same name). symbol_prefix defaults to "" so every existing caller's
+    # output is byte-for-byte unchanged; a second model passes a real prefix (e.g. "TEAM_") to
+    # get MACRO_PREFIX_RL_POLICY_OBS_SIZE / prefix_rl_policy_forward() instead.
+    macro_prefix = symbol_prefix.upper()
+    func_prefix = symbol_prefix.lower()
     lines.append("")
-    lines.append(f"#define RL_POLICY_OBS_SIZE {layer_sizes[0]}")
-    lines.append(f"#define RL_POLICY_ACTION_SIZE {layer_sizes[-1]}")
-    lines.append("/* Move-target/cast-flag bounds -- must match scripts/rl_env.py's own")
+    lines.append(f"#define {macro_prefix}RL_POLICY_OBS_SIZE {layer_sizes[0]}")
+    lines.append(f"#define {macro_prefix}RL_POLICY_ACTION_SIZE {layer_sizes[-1]}")
+    lines.append("/* Move-target/cast-flag bounds -- must match the training env's own")
     lines.append(" * MOVE_TARGET_RANGE and action_space definition exactly. PPO's own action_net")
     lines.append(" * is a plain unconstrained Linear layer (no output activation), so the raw")
     lines.append(" * forward pass alone does not guarantee in-range values -- this wrapper clips.")
     lines.append(" */")
-    lines.append("#define RL_POLICY_MOVE_TARGET_RANGE 20.0f")
+    lines.append(f"#define {macro_prefix}RL_POLICY_MOVE_TARGET_RANGE 20.0f")
     lines.append("")
-    lines.append("/* rl_policy_forward: runs the policy network and clips the raw action-mean")
-    lines.append(" * output to the real action-space bounds -- out_action must be preallocated")
-    lines.append(" * to RL_POLICY_ACTION_SIZE floats. */")
-    lines.append(f"static inline void rl_policy_forward(const float *obs, float *out_action) {{")
+    lines.append(f"/* {func_prefix}rl_policy_forward: runs the policy network and clips the raw")
+    lines.append(" * action-mean output to the real action-space bounds -- out_action must be")
+    lines.append(f" * preallocated to {macro_prefix}RL_POLICY_ACTION_SIZE floats. */")
+    lines.append(f"static inline void {func_prefix}rl_policy_forward(const float *obs, float *out_action) {{")
     lines.append(f"    mlp_forward(&{model_name}, obs, out_action);")
-    lines.append("    if (out_action[0] < -RL_POLICY_MOVE_TARGET_RANGE) out_action[0] = -RL_POLICY_MOVE_TARGET_RANGE;")
-    lines.append("    if (out_action[0] >  RL_POLICY_MOVE_TARGET_RANGE) out_action[0] =  RL_POLICY_MOVE_TARGET_RANGE;")
-    lines.append("    if (out_action[1] < -RL_POLICY_MOVE_TARGET_RANGE) out_action[1] = -RL_POLICY_MOVE_TARGET_RANGE;")
-    lines.append("    if (out_action[1] >  RL_POLICY_MOVE_TARGET_RANGE) out_action[1] =  RL_POLICY_MOVE_TARGET_RANGE;")
-    lines.append("    for (int i = 2; i < RL_POLICY_ACTION_SIZE; i++) {")
+    lines.append(f"    if (out_action[0] < -{macro_prefix}RL_POLICY_MOVE_TARGET_RANGE) out_action[0] = -{macro_prefix}RL_POLICY_MOVE_TARGET_RANGE;")
+    lines.append(f"    if (out_action[0] >  {macro_prefix}RL_POLICY_MOVE_TARGET_RANGE) out_action[0] =  {macro_prefix}RL_POLICY_MOVE_TARGET_RANGE;")
+    lines.append(f"    if (out_action[1] < -{macro_prefix}RL_POLICY_MOVE_TARGET_RANGE) out_action[1] = -{macro_prefix}RL_POLICY_MOVE_TARGET_RANGE;")
+    lines.append(f"    if (out_action[1] >  {macro_prefix}RL_POLICY_MOVE_TARGET_RANGE) out_action[1] =  {macro_prefix}RL_POLICY_MOVE_TARGET_RANGE;")
+    lines.append(f"    for (int i = 2; i < {macro_prefix}RL_POLICY_ACTION_SIZE; i++) {{")
     lines.append("        if (out_action[i] < -1.0f) out_action[i] = -1.0f;")
     lines.append("        if (out_action[i] >  1.0f) out_action[i] =  1.0f;")
     lines.append("    }")

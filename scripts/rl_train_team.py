@@ -16,13 +16,17 @@ real, valuable future depth this script doesn't attempt -- NORTHSTAR §25.6 does
 size for the first real run either, and stacking "how many matches in parallel" on top of that
 same still-open question would be scope creep past what's actually been verified here.
 
-NOTE ON VERIFICATION: written and syntax-checked; the ctypes team-mode layer underneath it (via
-scripts/rl_env_team.py --smoke-test) was run for real. This script's own SB3 PPO training loop
-has NOT been run end-to-end (no multi-thousand-timestep run performed) -- same "flagged, not
-faked" posture every other training script in this repo already uses for the same reason (real
-training runs take real wall-clock time and, for team mode specifically, have not yet been asked
-for). Whoever runs a real pass should expect --total-timesteps in the hundreds of thousands to
-millions range, same order of magnitude scripts/rl_train.py's own 1v1 runs already use.
+NOTE ON VERIFICATION: the ctypes team-mode layer underneath it (via scripts/rl_env_team.py
+--smoke-test) was run for real. A real end-to-end SB3 PPO run WAS performed 2026-08-10
+(rl_team_checkpoints/ carries 4 real checkpoints up to step 86016) -- correcting this doc
+comment's own earlier "has NOT been run end-to-end" claim, now stale. That run predates
+--noisy-gestalt (below), which has not itself had a full run yet at the time this note was
+written -- flagged, not faked, same posture every other training script in this repo uses.
+
+--noisy-gestalt (2026-08-10, NORTHSTAR §25.2.2): the alternating Johnny/Spike phased training
+schedule from the CarePyre transcript, now actually implemented (see scripts/rl_env_team.py's
+own module doc comment for the full design) -- role discovery, synergy decay, and autocurriculum
+opponent sampling (§25.2.3-§25.4) remain spec-only, this closes one of the four.
 """
 
 import argparse
@@ -47,6 +51,14 @@ def parse_args():
     p.add_argument("--output-dir", default=os.environ.get("RL_TEAM_OUTPUT_DIR", "rl_team_checkpoints"))
     p.add_argument("--save-freq", type=int, default=int(os.environ.get("RL_SAVE_FREQ", 20_000)))
     p.add_argument("--eval-episodes", type=int, default=int(os.environ.get("RL_EVAL_EPISODES", 20)))
+    p.add_argument("--noisy-gestalt", action="store_true",
+                   default=os.environ.get("RL_NOISY_GESTALT", "0") == "1",
+                   help="alternate Johnny (synergy reward on -- discover team combos) / Spike "
+                        "(synergy reward off -- refine to meta) phases, NORTHSTAR §25.2.2. See "
+                        "rl_env_team.py's own module doc comment for the full design")
+    p.add_argument("--gestalt-phase-ticks", type=int,
+                   default=int(os.environ.get("RL_GESTALT_PHASE_TICKS", 50_000)),
+                   help="env ticks per Johnny/Spike phase when --noisy-gestalt is set")
     p.add_argument("--skip-export", action="store_true",
                    help="skip converting the trained policy to the embedded-C header format -- "
                         "note this header is NOT yet wired into any live consumer for team-mode "
@@ -61,11 +73,13 @@ def parse_args():
     return p.parse_args()
 
 
-def make_env(lib_path, team_size):
+def make_env(lib_path, team_size, noisy_gestalt=False, gestalt_phase_ticks=50_000):
     def _init():
         sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
         from rl_env_team import ArenaTeamVecEnv
-        return ArenaTeamVecEnv(lib_path=lib_path, team_size=team_size)
+        return ArenaTeamVecEnv(lib_path=lib_path, team_size=team_size,
+                                noisy_gestalt=noisy_gestalt,
+                                gestalt_phase_ticks=gestalt_phase_ticks)
     return _init
 
 
@@ -74,7 +88,8 @@ def main():
 
     from stable_baselines3 import PPO
 
-    vec_env = make_env(args.lib_path, args.team_size)()  # ArenaTeamVecEnv IS the VecEnv --
+    vec_env = make_env(args.lib_path, args.team_size, args.noisy_gestalt,
+                        args.gestalt_phase_ticks)()  # ArenaTeamVecEnv IS the VecEnv --
                                                            # no SubprocVecEnv/DummyVecEnv wrapper,
                                                            # see this file's own module doc comment
 
@@ -96,9 +111,14 @@ def main():
     print("Reward function: scripts/rl_env.py's own compute_reward(), applied per-agent -- "
           "NORTHSTAR §25.2's own note on why the 1v1 reward function is directly reusable here.")
     print("Opponent: team_size heuristic-driven bots (stable, non-circular -- NORTHSTAR §25.2.1).")
-    print("NOT yet trained here: role discovery / noisy-gestalt diversity phases / synergy decay "
-          "/ autocurriculum opponent sampling (NORTHSTAR §25.2.2-§25.4) -- this is a shared-"
-          "parameter baseline, the real foundation those build on, not those systems themselves.")
+    if args.noisy_gestalt:
+        print(f"Noisy-gestalt ENABLED: alternating Johnny/Spike phases every "
+              f"{args.gestalt_phase_ticks} env ticks (NORTHSTAR §25.2.2).")
+    else:
+        print("Noisy-gestalt disabled (pass --noisy-gestalt to enable, NORTHSTAR §25.2.2).")
+    print("NOT yet trained here: role discovery / synergy decay / autocurriculum opponent "
+          "sampling (NORTHSTAR §25.2.3-§25.4) -- this is a shared-parameter baseline plus "
+          "noisy-gestalt when enabled, not the full research thread those other 3 build toward.")
 
     checkpoint_path_template = os.path.join(args.output_dir, "ppo_arena_team_step_{}")
     timesteps_done = 0
@@ -148,12 +168,18 @@ def main():
         from export_rl_policy_to_c import extract_layers_from_sb3_policy, write_c_header_from_layers
         layers = extract_layers_from_sb3_policy(model)
         header_path = os.path.join(args.output_dir, "rl_policy_weights_team.h")
-        # Distinct guard_name/model_name from rl_train.py's own defaults (RL_POLICY_WEIGHTS_H /
-        # RL_POLICY_MODEL) -- this header must never collide with the live 1v1 one if both ever
-        # get included in the same translation unit.
+        # Distinct guard_name/model_name/symbol_prefix from rl_train.py's own defaults -- this
+        # header must never collide with the live 1v1 one (RL_POLICY_WEIGHTS_H /
+        # RL_POLICY_MODEL / rl_policy_forward) if both ever get #included in the same
+        # translation unit. symbol_prefix="TEAM_" is the other half of that fix (found live
+        # while wiring this up -- see export_rl_policy_to_c.py's own doc comment on
+        # write_c_header_from_layers): without it, OBS_SIZE/ACTION_SIZE/MOVE_TARGET_RANGE and
+        # rl_policy_forward() itself were hardcoded regardless of guard_name/model_name, a real
+        # duplicate-symbol compile error the moment both headers are included together.
         write_c_header_from_layers(layers, header_path,
                                     guard_name="RL_POLICY_WEIGHTS_TEAM_H",
-                                    model_name="RL_POLICY_TEAM_MODEL")
+                                    model_name="RL_POLICY_TEAM_MODEL",
+                                    symbol_prefix="TEAM_")
         print(f"\nExported (inspection only, NOT wired into a live consumer yet): {header_path}")
         print(f"Deliberately not git-synced to {args.export_output} automatically -- unlike "
               f"rl_train.py's own --skip-git-sync default-on behavior, promoting a team-trained "
@@ -163,9 +189,10 @@ def main():
 
     print("=" * 60)
     print(f"DONE. Final policy: {final_path}.zip")
-    print("This is VS0's shared-parameter baseline (NORTHSTAR §25.2.1/§25.5) -- role discovery,")
-    print("noisy-gestalt diversity training, synergy decay, and autocurriculum opponent sampling")
-    print("are specified in NORTHSTAR §25.2.2-§25.4 but not implemented by this script.")
+    print("This is VS0's shared-parameter baseline (NORTHSTAR §25.2.1/§25.5)"
+          + (" with noisy-gestalt phased training (§25.2.2)." if args.noisy_gestalt else "."))
+    print("Role discovery, synergy decay, and autocurriculum opponent sampling (§25.2.3-§25.4)")
+    print("are specified but not implemented by this script.")
     print("File a completion Apple and mark the relevant EMILY/BACKLOG.md item done.")
     print("=" * 60)
 

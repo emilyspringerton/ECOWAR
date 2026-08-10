@@ -51,6 +51,41 @@ from rl_env import (
     compute_reward,
 )
 
+# Noisy-gestalt alternating phased training (2026-08-10, founder: "ensure we are doing some of
+# the new exotic training" -- NORTHSTAR §25.2.2, sourced from the CarePyre transcript's
+# "Compositional Co-Adaptation" section). The transcript's own two-phase design, applied here for
+# real (this was previously spec-only -- see rl_train_team.py's own "NOT yet trained here" note,
+# now stale for this one piece):
+#   Johnny phase: crank up a Synergy Reward so bots are heavily rewarded just for staying near a
+#     living teammate -- "they will invent crazy, highly choreographed team setups. Win rate
+#     drops, but team coordination skyrockets."
+#   Spike phase: turn the Synergy Reward off entirely -- "the bots take the wild, highly
+#     choreographed combo they just invented and strip out the fluff, refining it into a lethal,
+#     meta-viable strategy." Reduces to the plain baseline reward from rl_env.py's compute_reward,
+#     unchanged from before this feature existed.
+# The transcript's own version computes synergy from a learned mutual-information objective
+# requiring model internals SB3's stock PPO doesn't expose per-tick; this is a real, grounded,
+# but simpler proxy computed straight from data already on the wire -- sim_get_obs_team's own
+# teammate block (hp_frac, dx, dz, alive) already carries relative teammate position for exactly
+# this reason -- a positional-proximity bonus for staying near a LIVING teammate, rather than the
+# transcript's own attention-based mutual-info term. Simpler, but grounded in the same "reward
+# genuinely interacting with each other" intent, and immediately runnable without a bigger
+# architecture change.
+REWARD_SYNERGY_PER_LIVING_TEAMMATE_NEARBY = 0.05  # small per-tick nudge, same order of magnitude
+                                                    # as REWARD_ALIVE_PER_TICK in rl_env.py -- a
+                                                    # constant presence incentive, not a
+                                                    # damage/kill-scale reward that could dominate
+                                                    # the real win-condition signal
+SYNERGY_PROXIMITY_RADIUS = 8.0  # matches this file's sibling arena_game.h's own
+                                  # ARENA_LANE_CREEP_XP_SHARE_RADIUS (8.0) -- "close enough to be
+                                  # meaningfully fighting together," not just anywhere on the map
+DEFAULT_GESTALT_PHASE_TICKS = 50_000  # ticks per phase (not SB3 timesteps exactly -- see
+                                        # ArenaTeamVecEnv._global_tick's own doc comment) -- long
+                                        # enough for a real Johnny-phase exploration window before
+                                        # switching to Spike-phase refinement, short enough that a
+                                        # single training run gets several alternations rather
+                                        # than one Johnny phase that never actually resolves
+
 # ARENA_TEAM_SIZE (2026-08-10): hand-synced copy of packages/simulation/arena_game.h's own real
 # constant -- same "no direct C header access from Python" reasoning every other hand-synced
 # constant in this file's sibling rl_env.py already documents for itself.
@@ -98,13 +133,27 @@ try:
         gymnasium.Env instances) is the right shape here."""
 
         def __init__(self, team_size=DEFAULT_TEAM_SIZE, lib_path=None, dt_ms=16,
-                     max_episode_ticks=4000, hero_ids_a=None, hero_ids_b=None):
+                     max_episode_ticks=4000, hero_ids_a=None, hero_ids_b=None,
+                     noisy_gestalt=False, gestalt_phase_ticks=DEFAULT_GESTALT_PHASE_TICKS):
             if team_size < 2 or team_size > ARENA_TEAM_SIZE:
                 raise ValueError(f"team_size must be in [2, {ARENA_TEAM_SIZE}], got {team_size}")
             self.team_size = team_size
             self.lib = load_team_lib(lib_path)
             self.dt_ms = dt_ms
             self.max_episode_ticks = max_episode_ticks
+            # Noisy-gestalt alternating phased training -- see this module's own doc comment
+            # above REWARD_SYNERGY_PER_LIVING_TEAMMATE_NEARBY for the full design. _global_tick
+            # counts real step_wait() calls across the WHOLE env lifetime (survives episode
+            # resets, unlike self._tick which is per-episode) -- an env-tick proxy for SB3's own
+            # global timestep counter, not an exact match to it (SB3 counts across n_steps
+            # rollout boundaries with its own bookkeeping this env has no visibility into), but
+            # close enough for "which phase are we in" purposes -- phase drift of a few hundred
+            # ticks against SB3's own counter doesn't change the qualitative Johnny/Spike
+            # alternation this feature is actually for.
+            self.noisy_gestalt = noisy_gestalt
+            self.gestalt_phase_ticks = gestalt_phase_ticks
+            self._global_tick = 0
+            self._last_logged_phase = None
             # Hero-per-slot: fixed unless the caller randomizes externally (unlike rl_env.py's
             # own randomize_heroes flag, not duplicated here yet -- NORTHSTAR §25.6 leaves this
             # open; the C API already accepts arbitrary hero_ids arrays, so adding per-episode
@@ -132,6 +181,25 @@ try:
             )
             super().__init__(team_size, observation_space, action_space)
             self._do_reset()
+
+        def _synergy_bonus(self, agent_obs):
+            """Johnny-phase-only synergy proxy: sums REWARD_SYNERGY_PER_LIVING_TEAMMATE_NEARBY
+            for every OTHER living team-A agent within SYNERGY_PROXIMITY_RADIUS, read straight
+            off this agent's own teammate block in sim_get_obs_team's layout -- (team_size-1)
+            slots of (hp_frac, dx, dz, alive) starting right after the shared 18+2*ARENA_HERO_COUNT
+            self/foe block (see headless.c's own sim_get_obs_team doc comment for the exact
+            layout this indexes into)."""
+            bonus = 0.0
+            for t in range(self.team_size - 1):
+                base = ARENA_TRAINING_OBS_SIZE + t * 4
+                alive = agent_obs[base + 3]
+                if alive <= 0.5:
+                    continue
+                dx = agent_obs[base + 1]
+                dz = agent_obs[base + 2]
+                if (dx * dx + dz * dz) ** 0.5 <= SYNERGY_PROXIMITY_RADIUS:
+                    bonus += REWARD_SYNERGY_PER_LIVING_TEAMMATE_NEARBY
+            return bonus
 
         def _read_all_obs(self):
             obs_list = []
@@ -170,6 +238,7 @@ try:
                 flat[i * 5 + 4] = 1.0 if a[4] > 0 else 0.0
             self.lib.sim_step_team(flat, self.team_size, self.dt_ms)
             self._tick += 1
+            self._global_tick += 1
 
             obs = self._read_all_obs()
             done = bool(self.lib.sim_get_done_team(self.team_size))
@@ -177,11 +246,25 @@ try:
             truncated = self._tick >= self.max_episode_ticks
             episode_over = done or truncated
 
+            # Noisy-gestalt: even phase index = Johnny (synergy reward ON), odd = Spike (OFF) --
+            # see this module's own doc comment above REWARD_SYNERGY_PER_LIVING_TEAMMATE_NEARBY.
+            in_johnny_phase = (
+                self.noisy_gestalt
+                and (self._global_tick // self.gestalt_phase_ticks) % 2 == 0
+            )
+            if self.noisy_gestalt:
+                phase_name = "Johnny (synergy ON)" if in_johnny_phase else "Spike (synergy OFF)"
+                if phase_name != self._last_logged_phase:
+                    print(f"[noisy-gestalt] tick {self._global_tick}: entering {phase_name} phase")
+                    self._last_logged_phase = phase_name
+
             rewards = np.zeros(self.team_size, dtype=np.float32)
             for i in range(self.team_size):
                 rewards[i] = compute_reward(
                     self._prev_obs[i], obs[i], done, winner, agent_owner=0
                 )
+                if in_johnny_phase:
+                    rewards[i] += self._synergy_bonus(obs[i])
             self._prev_obs = obs
 
             dones = np.full(self.team_size, episode_over, dtype=bool)
