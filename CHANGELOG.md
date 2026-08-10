@@ -1,6 +1,7 @@
 # Changelog
 
 ## 2026-08-10
+- NORTHSTAR §25.4 autocurriculum：PFSP opponent-pool sampling 實作完成，rl_train_team.py 新增 --autocurriculum (sess-20260810-0505-a53abca2)
 
 - NORTHSTAR §25-28: 多智能體 RL 團隊訓練(角色發現、noisy gestalt、synergy decay、autocurriculum)+ 跨遊戲策略遷移 + 物理資訊模擬研究 + frame-break prompting,來源是創辦人自己的 AGI R&D 對話記錄。§25 VS0(team env)真的寫完編譯過,ctypes 驗證過 (sess-20260809-1420-e9d3d7f8)
 
