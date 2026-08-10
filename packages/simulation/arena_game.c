@@ -2709,6 +2709,114 @@ void arena_hero_attack_lane_creeps(unsigned int dt_ms) {
     }
 }
 
+/* arena_camp_position (Jungle Camps Milestone 1): see the header declaration's own doc
+ * comment. Same "-margin so it's never buried in terrain" idiom arena_fountain_position/
+ * arena_graveyard_position already use -- 8.0f margin matches arena_fountain_position's own. */
+void arena_camp_position(int index, float *x, float *z) {
+    float edge = ARENA_HALF_EXTENT - 8.0f;
+    if (index < 0) index = 0;
+    if (index >= ARENA_CAMP_COUNT) index = ARENA_CAMP_COUNT - 1;
+    switch (index) {
+        case 0: *x = 0.0f;  *z = edge;  break; /* N */
+        case 1: *x = 0.0f;  *z = -edge; break; /* S */
+        case 2: *x = edge;  *z = 0.0f;  break; /* E */
+        default: *x = -edge; *z = 0.0f; break; /* W */
+    }
+}
+
+/* camp_minion_spawn_wave: fills up to ARENA_CAMP_MINIONS_PER_WAVE free pool slots with fresh
+ * minions at `camp_index`'s own position, spread along x so a wave doesn't spawn perfectly
+ * stacked on one point -- same "spread the spawn" idiom lane_creep_spawn_wave already uses (that
+ * one spreads along z since lanes run along x; camps have no fixed axis, x is an arbitrary but
+ * consistent choice). Neutral -- no team field to set, matching ArenaCampMinion's own shape. */
+static void camp_minion_spawn_wave(int camp_index) {
+    float cx, cz;
+    arena_camp_position(camp_index, &cx, &cz);
+    int spawned = 0;
+    for (int i = 0; i < ARENA_MAX_CAMP_MINIONS && spawned < ARENA_CAMP_MINIONS_PER_WAVE; i++) {
+        ArenaCampMinion *m = &arena_state.camp_minions[i];
+        if (m->active) continue;
+        m->active = 1;
+        m->alive = 1;
+        m->hp = m->max_hp = ARENA_CAMP_MINION_HP;
+        m->x = cx + (spawned - (ARENA_CAMP_MINIONS_PER_WAVE - 1) / 2.0f) * 1.0f;
+        m->z = cz;
+        m->attack_cooldown_ms = 0;
+        spawned++;
+    }
+}
+
+/* arena_tick_camp_minions (Jungle Camps Milestone 1): see the header declaration's own doc
+ * comment. Neutral aggro (nearest hittable hero of EITHER team, same ARENA_CREEP_NEUTRAL shape
+ * node-guardian creeps already use for their own neutral flavor) -- stationary otherwise, no
+ * waypoint march (that's §3.4's separate, not-yet-built anti-stall escalation). */
+void arena_tick_camp_minions(unsigned int dt_ms) {
+    for (int c = 0; c < ARENA_CAMP_COUNT; c++) {
+        arena_state.camp_wave_timer_ms[c] -= (int)dt_ms;
+        if (arena_state.camp_wave_timer_ms[c] > 0) continue;
+        arena_state.camp_wave_timer_ms[c] = ARENA_CAMP_WAVE_INTERVAL_MS;
+        camp_minion_spawn_wave(c);
+    }
+
+    for (int i = 0; i < ARENA_MAX_CAMP_MINIONS; i++) {
+        ArenaCampMinion *m = &arena_state.camp_minions[i];
+        if (!m->active || !m->alive) continue;
+        if (m->attack_cooldown_ms > 0) m->attack_cooldown_ms -= (int)dt_ms;
+
+        ArenaHero *target = NULL;
+        float best_dist = 0.0f;
+        for (int h = 0; h < ARENA_MAX_HEROES; h++) {
+            ArenaHero *cand = &arena_state.heroes[h];
+            if (!cand->active || !hero_is_hittable(cand)) continue;
+            float dx = cand->x - m->x, dz = cand->z - m->z;
+            float dist = sqrtf(dx * dx + dz * dz);
+            if (dist > ARENA_CAMP_MINION_AGGRO_RADIUS) continue;
+            if (!target || dist < best_dist) { target = cand; best_dist = dist; }
+        }
+        if (target && m->attack_cooldown_ms <= 0) {
+            apply_damage(target, apply_armor(ARENA_CAMP_MINION_DAMAGE, arena_hero_armor(target)));
+            m->attack_cooldown_ms = ARENA_CAMP_MINION_ATTACK_COOLDOWN_MS;
+        }
+        /* No movement -- stationary camp guardian, see this function's own doc comment. */
+    }
+}
+
+/* arena_hero_attack_camp_minions: see the header declaration's own doc comment. */
+void arena_hero_attack_camp_minions(unsigned int dt_ms) {
+    (void)dt_ms; /* same "only spends the cooldown, doesn't tick it" idiom as arena_hero_attack_lane_creeps */
+    for (int i = 0; i < ARENA_MAX_HEROES; i++) {
+        ArenaHero *h = &arena_state.heroes[i];
+        if (!h->active || !h->alive || h->attack_cooldown_ms > 0 || h->stunned_ms > 0) continue;
+        if (h->mnm_burrow_ms > 0) continue;
+        if (h->hero_id == ARENA_HERO_GARY) continue; /* same homing-only-basic-attack exclusion as arena_hero_attack_creeps/lane_creeps */
+
+        ArenaHero *foe = arena_nearest_enemy(i);
+        if (foe && hero_is_hittable(foe)) {
+            float dx = foe->x - h->x, dz = foe->z - h->z;
+            if (sqrtf(dx * dx + dz * dz) <= ARENA_ATTACK_RANGE) continue; /* already busy with an enemy hero this tick */
+        }
+
+        for (int c = 0; c < ARENA_MAX_CAMP_MINIONS; c++) {
+            ArenaCampMinion *m = &arena_state.camp_minions[c];
+            if (!m->active || !m->alive) continue;
+            float dx = m->x - h->x, dz = m->z - h->z;
+            if (sqrtf(dx * dx + dz * dz) > ARENA_ATTACK_RANGE) continue;
+
+            m->hp -= ARENA_ATTACK_DAMAGE + arena_hero_bonus_ad(h); /* no armor stat, same convention every other creep-damage site here uses */
+            h->attack_cooldown_ms = apply_cdr(h, ARENA_ATTACK_COOLDOWN_MS);
+            if (m->hp <= 0) {
+                m->hp = 0;
+                m->alive = 0;
+                m->active = 0;
+                h->flow += ARENA_CAMP_MINION_KILL_FLOW;
+                h->flow_earned += ARENA_CAMP_MINION_KILL_FLOW;
+                h->xp += ARENA_CAMP_MINION_KILL_XP;
+            }
+            break; /* one minion target per hero per attack, same as every other creep type here */
+        }
+    }
+}
+
 /* arena_zone_damage_creeps (S170-144, "ensure aoe damage spells hit
  * creeps"): applies `dps` flat damage to every living node-guardian creep AND lane
  * creep within `radius` of (x,z) -- AoE zone/aura ticks (Ghost's Recital,
@@ -5882,6 +5990,8 @@ void arena_update_teams(unsigned int dt_ms) {
     arena_hero_attack_towers(dt_ms);
     arena_tick_lane_creeps(dt_ms);
     arena_hero_attack_lane_creeps(dt_ms);
+    arena_tick_camp_minions(dt_ms); /* Jungle Camps Milestone 1 */
+    arena_hero_attack_camp_minions(dt_ms);
 
     /* Melee combat: each active, alive hero independently attacks its own
        nearest enemy if one is in range and its cooldown is ready -- this is

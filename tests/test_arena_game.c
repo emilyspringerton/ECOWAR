@@ -6317,6 +6317,118 @@ static void test_neutral_creep_still_attacks_anyone(void) {
           "a NEUTRAL/contested creep still attacks anyone regardless of team -- the real 'fight through the prize' challenge, unchanged");
 }
 
+/* Jungle Camps -- The Four Heavenly Kings, Milestone 1 smoke tests (2026-08-10).
+   GoblinFoxDragon/docs2/JUNGLE_CAMPS_NORTHSTAR.md §3.1-3.2. Mirrors the verification GFD's own
+   fork already did for the same code: 4 camps at the correct N/S/E/W positions, minions spawn
+   from the opening bell (no initial delay, unlike lane creeps), and a hero standing in a camp
+   takes real damage over time. */
+
+static void test_camp_positions_are_the_four_cardinal_edge_midpoints(void) {
+    float edge = ARENA_HALF_EXTENT - 8.0f;
+    float x, z;
+
+    arena_camp_position(0, &x, &z);
+    CHECK(x == 0.0f && z == edge, "camp 0 (N) sits at the north edge midpoint");
+
+    arena_camp_position(1, &x, &z);
+    CHECK(x == 0.0f && z == -edge, "camp 1 (S) sits at the south edge midpoint");
+
+    arena_camp_position(2, &x, &z);
+    CHECK(x == edge && z == 0.0f, "camp 2 (E) sits at the east edge midpoint");
+
+    arena_camp_position(3, &x, &z);
+    CHECK(x == -edge && z == 0.0f, "camp 3 (W) sits at the west edge midpoint");
+}
+
+static void test_camp_minions_wave_spawn_from_the_opening_bell(void) {
+    /* Unlike lane creeps (ARENA_LANE_WAVE_INITIAL_DELAY_MS grace period), camps have no initial
+       delay -- docs2/JUNGLE_CAMPS_NORTHSTAR.md §3.2: "Live from the opening bell." */
+    arena_init_teams();
+    for (int i = 0; i < ARENA_MAX_HEROES; i++) arena_state.heroes[i].active = 0;
+
+    arena_tick_camp_minions(16); /* one tiny tick -- first wave should already be up */
+
+    int active_count = 0;
+    for (int i = 0; i < ARENA_MAX_CAMP_MINIONS; i++) {
+        if (arena_state.camp_minions[i].active) active_count++;
+    }
+    CHECK(active_count == ARENA_CAMP_MINIONS_PER_WAVE * ARENA_CAMP_COUNT,
+          "all 4 camps spawn a full wave immediately, no initial delay unlike lane creeps");
+}
+
+static void test_camp_minion_attacks_nearby_hero(void) {
+    arena_init_teams();
+    for (int i = 1; i < ARENA_MAX_HEROES; i++) arena_state.heroes[i].active = 0;
+    arena_state.heroes[0].hero_id = ARENA_HERO_DUCK; /* 0 base armor -- exact hit-damage math */
+    arena_state.heroes[0].hp = arena_state.heroes[0].max_hp = 100;
+
+    arena_tick_camp_minions(16); /* spawn camp 0's (N) wave */
+    float cx, cz;
+    arena_camp_position(0, &cx, &cz);
+    arena_state.heroes[0].x = cx;
+    arena_state.heroes[0].z = cz;
+
+    /* Isolate to a single attacker: ARENA_CAMP_MINIONS_PER_WAVE is 2, both within aggro range of
+       a hero standing dead-center of the camp -- ported verbatim from GFD's own implementation,
+       which doesn't cap "one attacker per target per tick" on the minion side (only the hero's
+       OWN attack is one-target-per-swing). Real, intended gang-up behavior, not a bug -- deactivate
+       the second minion so this test isolates exactly one attacker's damage, same "reduce the
+       moving parts to what's actually being tested" convention this file already uses elsewhere. */
+    int seen_first = 0;
+    for (int i = 0; i < ARENA_MAX_CAMP_MINIONS; i++) {
+        if (!arena_state.camp_minions[i].active) continue;
+        if (!seen_first) { seen_first = 1; continue; }
+        arena_state.camp_minions[i].active = 0;
+    }
+
+    arena_tick_camp_minions(ARENA_CAMP_MINION_ATTACK_COOLDOWN_MS);
+
+    CHECK(arena_state.heroes[0].hp == 100 - ARENA_CAMP_MINION_DAMAGE,
+          "a hero standing in a jungle camp takes real damage from its neutral minions");
+}
+
+static void test_hero_kills_camp_minion_and_earns_reward(void) {
+    arena_init_teams();
+    for (int i = 1; i < ARENA_MAX_HEROES; i++) arena_state.heroes[i].active = 0;
+    arena_state.heroes[0].hero_id = ARENA_HERO_DUCK;
+    arena_state.heroes[0].hp = arena_state.heroes[0].max_hp = 500; /* survive the return fire */
+    arena_state.heroes[0].flow = 0;
+    arena_state.heroes[0].xp = 0;
+
+    arena_tick_camp_minions(16); /* spawn camp 0's (N) wave */
+    float cx, cz;
+    arena_camp_position(0, &cx, &cz);
+    arena_state.heroes[0].x = cx;
+    arena_state.heroes[0].z = cz;
+
+    /* Isolate the single minion this test cares about, same "reduce moving parts" convention
+       test_neutral_creep_still_attacks_anyone's own file already uses. */
+    int target_idx = -1;
+    for (int i = 0; i < ARENA_MAX_CAMP_MINIONS; i++) {
+        if (arena_state.camp_minions[i].active) { target_idx = i; break; }
+    }
+    CHECK(target_idx >= 0, "setup: at least one camp minion is active to attack");
+
+    for (int i = 0; i < ARENA_MAX_CAMP_MINIONS; i++) {
+        if (i != target_idx) arena_state.camp_minions[i].active = 0;
+    }
+
+    int hp_before = arena_state.camp_minions[target_idx].hp;
+    arena_hero_attack_camp_minions(0);
+    CHECK(arena_state.camp_minions[target_idx].hp < hp_before, "hero's auto-attack damages the camp minion");
+
+    /* Whittle it down the rest of the way -- attack_cooldown_ms is spent, not ticked, by
+       arena_hero_attack_camp_minions itself (same idiom as lane creeps), so reset it manually
+       between swings same as this file's other multi-swing kill tests do. */
+    while (arena_state.camp_minions[target_idx].active) {
+        arena_state.heroes[0].attack_cooldown_ms = 0;
+        arena_hero_attack_camp_minions(0);
+    }
+
+    CHECK(arena_state.heroes[0].flow == ARENA_CAMP_MINION_KILL_FLOW, "killing a camp minion grants ARENA_CAMP_MINION_KILL_FLOW");
+    CHECK(arena_state.heroes[0].xp == ARENA_CAMP_MINION_KILL_XP, "killing a camp minion grants ARENA_CAMP_MINION_KILL_XP");
+}
+
 int main(void) {
     printf("RED GARDEN arena_game headless smoke test\n\n");
     test_movement_reaches_target();
@@ -6459,6 +6571,10 @@ int main(void) {
     test_hero_does_not_attack_lane_creep_while_enemy_hero_in_range();
     test_lane_creep_despawns_at_final_waypoint_with_no_reward();
     test_lane_creep_wave_respawns_after_the_interval();
+    test_camp_positions_are_the_four_cardinal_edge_midpoints();
+    test_camp_minions_wave_spawn_from_the_opening_bell();
+    test_camp_minion_attacks_nearby_hero();
+    test_hero_kills_camp_minion_and_earns_reward();
     test_stealthed_hero_captures_undetected_through_a_crowd_of_visible_enemies();
     test_two_visible_teams_still_interrupt_normally_even_near_a_stealthed_ally();
     test_starting_a_channel_breaks_the_capturer_stealth();
