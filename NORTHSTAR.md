@@ -2616,7 +2616,7 @@ solved" companion-unit gap as still-open and directly relevant, and lay out a pa
 generalizes what's real rather than inventing a second parallel system — is done. No code changes
 accompany this section; implementation is separate, future work.
 
-## 25. Multi-agent RL: team environment, role discovery, noisy gestalt, synergy decay (2026-08-10) -- VS0 (team env) built, rest spec only
+## 25. Multi-agent RL: team environment, role discovery, noisy gestalt, synergy decay (2026-08-10) -- VS0 (team env) + noisy-gestalt alternating schedule built, role discovery/synergy decay/autocurriculum spec only
 
 Founder, real-time, sourced from a long personal research conversation (Gemini transcript,
 ingested into `CarePyre/source/gemini-transcript-2026-08-09.md` for an unrelated reason — that
@@ -2717,7 +2717,20 @@ similarly; the training process — not a hand-written rule — decides how many
 emerge and which agents end up in which. This directly answers the founder's own "dynamic persona
 vectors... determined by game features, not human-defined words."
 
-**25.2.3 Noisy gestalt: diversity-preserving training schedule (spec only).** To stop full
+**25.2.3 Noisy gestalt: diversity-preserving training schedule (2026-08-10 -- alternating variant
+IMPLEMENTED, `--noisy-gestalt` in `scripts/rl_train_team.py`/`rl_env_team.py`).** Founder:
+"ensure we are doing some of the new exotic training." Chose **alternating** (the "flip back and
+forth" framing this section already names as the actual content of that quote, not the blended
+fallback): `ArenaTeamVecEnv` alternates Johnny phase (a synergy reward -- proximity to a living
+teammate, read straight off `sim_get_obs_team`'s existing teammate block, no new C-side plumbing
+needed) and Spike phase (synergy reward off, plain baseline reward) every `--gestalt-phase-ticks`
+env ticks. A grounded, simpler stand-in for the diversity-bonus formulation above (novelty/
+diversity-from-teammates' current policy is a harder, model-internals-dependent signal SB3's
+stock PPO doesn't expose per-tick) -- proximity-based team coordination, not full behavioral
+diversity, but a real first step in the same alternating-schedule spirit, immediately runnable.
+Verified: ctypes smoke test passes, a short real PPO run confirms phases alternate correctly by
+tick count; a real 500k-timestep training run with this enabled was launched the same session
+(`rl_team_checkpoints/`, gitignored -- generated artifact, not committed). To stop full
 parameter sharing from collapsing every agent into the same policy, alternate two training
 phases, matching the founder's own "flip back and forth between unique and optimal" framing —
 this is a real, named pattern (population-based training with a diversity bonus, alternated
