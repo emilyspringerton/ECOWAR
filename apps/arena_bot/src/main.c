@@ -1153,10 +1153,21 @@ int main(int argc, char *argv[]) {
     const char *ip = "127.0.0.1";
     int direct_port = 0; /* 0 = go through the arena matchmaker */
     int name_index = -1;
+    /* --matchmaker-port (2026-08-10, founder: "we need full duplicate backend surfaces
+       including matchmaking and bot pools" -- REDGARDEN is now the R&D deployment,
+       GoblinFoxDragon's Battlegrounds gets its own separate, stable matchmaker instance on a
+       different port): ARENA_MATCHMAKER_PORT was a hardcoded #define with no runtime override,
+       which meant this binary could only ever point at one matchmaker regardless of which
+       deployment (R&D vs. stable) built or ran it -- the two deployments need the SAME source,
+       different runtime config, not a source fork. Defaults to ARENA_MATCHMAKER_PORT so every
+       existing invocation (scripts/run_bot_pool.sh, ops/systemd/redgarden-bot-pool.service, any
+       manual run) is unaffected. */
+    int matchmaker_port = ARENA_MATCHMAKER_PORT;
     for (int i = 1; i < argc; i++) {
         if (strcmp(argv[i], "--host") == 0 && i + 1 < argc) ip = argv[++i];
         else if (strcmp(argv[i], "--port") == 0 && i + 1 < argc) direct_port = atoi(argv[++i]);
         else if (strcmp(argv[i], "--index") == 0 && i + 1 < argc) name_index = atoi(argv[++i]);
+        else if (strcmp(argv[i], "--matchmaker-port") == 0 && i + 1 < argc) matchmaker_port = atoi(argv[++i]);
     }
     /* --index (from scripts/launch_arena_pools.sh's spawn loop): a
        deterministic, stable name per pool slot, so restarting the pool
@@ -1177,9 +1188,9 @@ int main(int argc, char *argv[]) {
         if (game_port == 0) {
             struct sockaddr_in mm_addr;
             mm_addr.sin_family = AF_INET;
-            mm_addr.sin_port = htons(ARENA_MATCHMAKER_PORT);
+            mm_addr.sin_port = htons((uint16_t)matchmaker_port);
             mm_addr.sin_addr.s_addr = inet_addr(ip);
-            printf("[arena_bot %d] finding match via arena matchmaker %s:%d...\n", (int)getpid(), ip, ARENA_MATCHMAKER_PORT);
+            printf("[arena_bot %d] finding match via arena matchmaker %s:%d...\n", (int)getpid(), ip, matchmaker_port);
             send_find_match(&mm_addr);
             game_port = wait_for_match(&mm_addr);
             if (game_port < 0) {
