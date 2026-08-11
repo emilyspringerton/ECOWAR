@@ -85,6 +85,64 @@ const ArenaItemDef ARENA_ITEMS[ARENA_ITEM_COUNT] = {
        early-buy utility item (well under Blink Dagger's 1400) matching that "modest" framing,
        not confirmed final tuning. -- */
     { "Haste Trinket",      ARENA_ITEM_SLOT_TRINKET, ARENA_ITEM_TIER_GENERIC,  900,  0,   0,   0,  0, 0.0f, 6 },
+    /* -- "expand the play space" first pass (2026-08-11), founder real-time: "do a first pass
+       generating weird items that expand the play space" -> "using ffxi items and your own best
+       judgement on how the new items with unique qualities" -> "and how they push the meta
+       forward" -> "if you cant be creative and want to block on founder direction thats fine but
+       honestly i think you can handle it." 6 items, real FFXI names (docs/FFXI_ITEM_PARITY_SEED.md
+       §3/§4), pushing this catalog into the shop UI's real page 4 (founder: "add page 4 to the
+       shop" -- see ARENA_ITEM_COUNT's own doc comment, no separate paging code needed). Two
+       genuinely NEW mechanic categories (true damage, lifesteal -- see ArenaItemDef's own doc
+       comment), one dynamic live-computed comeback stat (Balance Ring, see arena_hero_armor's
+       own doc comment), three stat-shape-only items following the existing Kraken Club/Ridill
+       convention. Index order is catalog-append order (27-32), same "fixed literal, stays stable
+       as more items get added" reasoning ARENA_BLINK_DAGGER_ITEM_ID's own doc comment gives. */
+    /* Gae Bolg (S170-parity §3 Polearm) -- real mythological spear (Cu Chulainn's, various
+       fiction's "never misses/always finds the heart"). This engine has no miss/crit RNG and
+       deliberately doesn't introduce any for this pass (same boundary Kraken Club/Ridill's own
+       doc comment already flags), so "always finds the heart" is expressed as ARMOR-PIERCING
+       true damage instead -- a real, different lever: flat bonus_true_dmg applied AFTER
+       apply_armor, the first stat in this catalog that isn't reduced by the target's armor at
+       all. Opens a real counter-build against armor-stacking compositions -- "push the meta
+       forward" in the most literal sense, a genuine answer to a strategy that previously had no
+       direct counter-item. */
+    { "Gae Bolg",           ARENA_ITEM_SLOT_WEAPON, ARENA_ITEM_TIER_WEIRD,   1000,  0,   0,   0,  0, 0.0f, 0, 18, 0 },
+    /* Masamune (S170-parity §3 Great Katana) -- real legendary blade, fiction's own recurring
+       "benevolent/protective" half of the Masamune-vs-Muramasa pairing (paired below with
+       Muramasa's own "cursed/bloodthirsty" half -- a real thematic build-around CHOICE between
+       two katana, not two flavors of the same stat). This catalog's first-ever lifesteal: heals
+       the wielder for bonus_lifesteal_pct of the FINAL (post-armor) damage on a landed
+       auto-attack -- a genuinely new sustain mechanic, opens a real "outlast, don't burst"
+       playstyle previously unavailable at all. */
+    { "Masamune",           ARENA_ITEM_SLOT_WEAPON, ARENA_ITEM_TIER_WEIRD,   1100, 15,   0,   0,  0, 0.0f, 0,  0, 15 },
+    /* Muramasa (S170-parity §3 Great Katana) -- Masamune's own real cursed counterpart, fiction's
+       "the blade that thirsts for blood, even its wielder's own." Stat-SHAPE only (same
+       discipline Kraken Club/Ridill already established -- not every weird item needs a new
+       mechanic), pushed further than Kraken Club's own glass-cannon shape: huge AD, genuinely
+       ZERO of everything else, the single most extreme risk/reward weapon in the catalog. */
+    { "Muramasa",            ARENA_ITEM_SLOT_WEAPON, ARENA_ITEM_TIER_WEIRD,   1150, 70,   0,   0,  0, 0.0f, 0,  0, 0 },
+    /* Balance Ring (S170-parity §4 Ring) -- real FFXI accessory name, reframed here around its
+       own name's literal meaning: a COMEBACK item, armor bonus that scales with the wearer's own
+       MISSING hp fraction, computed live in arena_hero_armor() (see that function's own doc
+       comment) rather than baked in once at purchase time -- can't be, since it depends on
+       state that changes every tick, the same reason Zagan's mirror/King Wealth's aura are also
+       computed live there instead of cached. The catalog's first dynamic, state-dependent item
+       stat -- rewards fighting on while low rather than always being strictly better at full HP,
+       real rubber-band design in the same spirit as §25.3's own synergy decay (a different
+       system, same "give the losing side real openings" philosophy). ARENA_BALANCE_RING_ITEM_ID
+       (arena_game.h) is the named index arena_hero_armor checks. */
+    { "Balance Ring",       ARENA_ITEM_SLOT_RING,    ARENA_ITEM_TIER_WEIRD,    900,  0,   0,   0,  0, 0.0f, 0,  0, 0 },
+    /* Empress Hairpin (S170-parity §4 Head) -- real FFXI item, real-game reputation as a
+       caster/MP-support accessory. Mana-focused stat blend: a real bonus_max_mp plus a touch of
+       the existing bonus_cdr_pct stat (Haste Trinket's own mechanic, reused not duplicated) --
+       supports an ability-spam playstyle the existing Head-slot item (Optical Hat, flat HP) does
+       nothing for. */
+    { "Empress Hairpin",    ARENA_ITEM_SLOT_HEAD,    ARENA_ITEM_TIER_GENERIC,  450,  0,   0, 100,  0, 0.0f, 4,  0, 0 },
+    /* Ninja Tekko (S170-parity §4 Hands) -- real FFXI ninja gauntlets. AD+move-speed hybrid
+       (an "assassin" stat shape -- hit hard AND get there fast), distinct from the existing
+       Hands-slot item (Battle Gloves, pure flat AD) rather than a straight upgrade to it --
+       a real alternative build path, not strictly better/worse. */
+    { "Ninja Tekko",        ARENA_ITEM_SLOT_HANDS,   ARENA_ITEM_TIER_GENERIC,  500, 20,   0,   0,  0, 1.0f, 0,  0, 0 },
 };
 
 /* arena_creeps_reset (S170-51): shared init helper for both arena_init_*
@@ -1060,6 +1118,21 @@ float arena_hero_armor(const ArenaHero *h) {
         float wdx = holder->x - h->x, wdz = holder->z - h->z;
         if (sqrtf(wdx * wdx + wdz * wdz) <= ARENA_KING_WEALTH_AURA_RADIUS) { total += (float)ARENA_KING_WEALTH_ARMOR_BONUS; break; }
     }
+    /* Balance Ring (2026-08-11, "expand the play space" pass): comeback armor, scales with the
+       wearer's OWN missing-hp fraction -- 0 bonus at full HP, approaching ARENA_BALANCE_RING_
+       MAX_ARMOR_BONUS as hp -> 0. Computed live here, not cached in item_bonus_armor at purchase
+       time, same reasoning the Zagan mirror/King Wealth aura above are also computed live --
+       this needs to change every tick as hp changes, a plain cached sum can't do that. */
+    if (h->max_hp > 0) {
+        for (int s = 0; s < ARENA_ITEM_SLOT_COUNT; s++) {
+            if (h->equipped_item[s] == ARENA_BALANCE_RING_ITEM_ID) {
+                float missing_frac = 1.0f - (float)h->hp / (float)h->max_hp;
+                if (missing_frac < 0.0f) missing_frac = 0.0f;
+                total += (float)ARENA_BALANCE_RING_MAX_ARMOR_BONUS * missing_frac;
+                break;
+            }
+        }
+    }
     return total;
 }
 
@@ -1695,6 +1768,7 @@ void arena_shop_position(int team, float *x, float *z) {
  * comment. */
 void arena_recompute_item_stats(ArenaHero *h) {
     int bonus_hp = 0, bonus_mp = 0, bonus_armor = 0, bonus_ad = 0, bonus_cdr = 0;
+    int bonus_true_dmg = 0, bonus_lifesteal = 0;
     float bonus_speed = 0.0f;
     for (int s = 0; s < ARENA_ITEM_SLOT_COUNT; s++) {
         int item_id = h->equipped_item[s];
@@ -1706,6 +1780,8 @@ void arena_recompute_item_stats(ArenaHero *h) {
         bonus_ad += def->bonus_ad;
         bonus_speed += def->bonus_move_speed;
         bonus_cdr += def->bonus_cdr_pct; /* S170-207 */
+        bonus_true_dmg += def->bonus_true_dmg; /* 2026-08-11 */
+        bonus_lifesteal += def->bonus_lifesteal_pct; /* 2026-08-11 */
     }
 
     int old_max_hp = h->max_hp;
@@ -1724,6 +1800,8 @@ void arena_recompute_item_stats(ArenaHero *h) {
     h->item_bonus_ad = bonus_ad;
     h->item_bonus_move_speed = bonus_speed;
     h->item_bonus_cdr_pct = bonus_cdr; /* S170-207 */
+    h->item_bonus_true_dmg = bonus_true_dmg; /* 2026-08-11 */
+    h->item_bonus_lifesteal_pct = bonus_lifesteal; /* 2026-08-11 */
 }
 
 /* arena_shop_buy (S170-175): see header declaration's doc comment. */
@@ -2085,7 +2163,20 @@ static void arena_tick_attack_windups(unsigned int dt_ms) {
                     int reward_owner = arena_reward_owner(i);
                     foe->last_attacked_by_owner = reward_owner;
                     record_assist_damage(foe, reward_owner); /* S170-187 */
-                    apply_damage(foe, apply_armor(ARENA_ATTACK_DAMAGE + arena_hero_bonus_ad(h), arena_hero_armor(foe))); /* S170-190 */
+                    /* Gae Bolg's true damage (2026-08-11): applied AFTER apply_armor, not
+                       before -- armor-piercing, the first stat in this catalog the target's
+                       armor does nothing to reduce. Masamune's lifesteal (2026-08-11): a percent
+                       of this FINAL (post-armor, post-true-damage) number, matching real-MOBA
+                       "lifesteal scales off damage actually dealt" convention, not raw attack
+                       power -- same inline heal-and-clamp shape every other heal site in this
+                       file already uses (no shared helper exists to reuse). */
+                    int final_dmg = apply_armor(ARENA_ATTACK_DAMAGE + arena_hero_bonus_ad(h), arena_hero_armor(foe))
+                                     + h->item_bonus_true_dmg;
+                    apply_damage(foe, final_dmg); /* S170-190 */
+                    if (h->item_bonus_lifesteal_pct > 0 && h->alive) {
+                        h->hp += (final_dmg * h->item_bonus_lifesteal_pct) / 100;
+                        if (h->hp > h->max_hp) h->hp = h->max_hp;
+                    }
                 }
             }
             h->attack_cooldown_ms = apply_cdr(h, ARENA_ATTACK_COOLDOWN_MS); /* S170-207 */

@@ -5231,6 +5231,124 @@ static void test_haste_trinket_does_not_shrink_windup(void) {
           "NORTHSTAR SS17.1: real League's own windup fraction does not shrink as attack speed increases -- only the cooldown/backswing compresses");
 }
 
+/* "Expand the play space" first pass (2026-08-11) -- Gae Bolg/Masamune/Muramasa/Balance Ring/
+ * Empress Hairpin/Ninja Tekko. find_item_id_by_name mirrors find_haste_trinket_item_id's own
+ * "search by name, don't hardcode an index" reasoning. */
+static int find_item_id_by_name(const char *name) {
+    for (int i = 0; i < ARENA_ITEM_COUNT; i++) {
+        if (strcmp(ARENA_ITEMS[i].name, name) == 0) return i;
+    }
+    return -1;
+}
+
+static void test_item_catalog_reaches_shop_page_4(void) {
+    CHECK(ARENA_ITEM_COUNT == 33, "6 new items landed, pushing the catalog from 27 to 33 -- apps/arena's own SHOP_PAGE_COUNT (ceil(ARENA_ITEM_COUNT/9)) derives page 4 from this alone, no separate paging code needed");
+}
+
+static void test_gae_bolg_true_damage_bypasses_armor(void) {
+    arena_init_teams();
+    for (int i = 2; i < ARENA_MAX_HEROES; i++) arena_state.heroes[i].active = 0;
+    arena_state.heroes[ARENA_TEAM_SIZE].active = 1;
+    arena_state.heroes[ARENA_TEAM_SIZE].alive = 1;
+    int id = find_item_id_by_name("Gae Bolg");
+    CHECK(id >= 0, "Gae Bolg exists in the catalog");
+    arena_state.heroes[0].equipped_item[ARENA_ITEM_SLOT_WEAPON] = id;
+    arena_recompute_item_stats(&arena_state.heroes[0]);
+    /* A huge armor value that would normally floor real damage down to apply_armor's 1-hp
+       minimum -- proves true damage is added AFTER that floor, not folded into the armor-reduced
+       total, since a floored 1 + true_dmg is trivially distinguishable from a real armor
+       calculation gone differently wrong. */
+    arena_state.heroes[ARENA_TEAM_SIZE].item_bonus_armor = 500;
+    arena_state.heroes[0].x = arena_state.heroes[ARENA_TEAM_SIZE].x;
+    arena_state.heroes[0].z = arena_state.heroes[ARENA_TEAM_SIZE].z;
+    int foe_hp_before = arena_state.heroes[ARENA_TEAM_SIZE].hp;
+
+    arena_update_teams(16);
+    arena_update_teams((unsigned int)ARENA_ATTACK_WINDUP_MS);
+
+    int expected_dmg = 1 /* apply_armor's floor against 500 armor */ + ARENA_ITEMS[id].bonus_true_dmg;
+    CHECK(arena_state.heroes[ARENA_TEAM_SIZE].hp == foe_hp_before - expected_dmg,
+          "Gae Bolg's true damage lands in full even against overwhelming armor -- the armor-reduced floor plus the true damage on top, not swallowed by the floor");
+}
+
+static void test_masamune_lifesteal_heals_attacker(void) {
+    arena_init_teams();
+    for (int i = 2; i < ARENA_MAX_HEROES; i++) arena_state.heroes[i].active = 0;
+    arena_state.heroes[ARENA_TEAM_SIZE].active = 1;
+    arena_state.heroes[ARENA_TEAM_SIZE].alive = 1;
+    /* The Duck has no passive armor of its own, unlike the Unicorn placeholder hero_id
+       arena_init_teams leaves every hero at by default (arena_hero_base_armor's own doc
+       comment) -- without this, the foe's own real 4.0 passive armor would silently reduce
+       final_dmg below this test's own expected-damage math, which (correctly, matching
+       production behavior) doesn't have any armor to subtract against a target it doesn't know
+       will secretly have some. */
+    arena_state.heroes[ARENA_TEAM_SIZE].hero_id = ARENA_HERO_DUCK;
+    /* Real combat is mutual -- both heroes are in range of each other and both start with
+       attack_cooldown_ms == 0, so without this the "foe" would ALSO windup and land a counter-
+       attack on hero 0 within these same two ticks, muddying hero 0's own hp delta with damage
+       taken as well as lifesteal gained. Parking its cooldown past this test's own tick budget
+       (16ms + ARENA_ATTACK_WINDUP_MS, well under a full ARENA_ATTACK_COOLDOWN_MS) isolates the
+       one-directional attack this test actually wants to measure. */
+    arena_state.heroes[ARENA_TEAM_SIZE].attack_cooldown_ms = ARENA_ATTACK_COOLDOWN_MS;
+    int id = find_item_id_by_name("Masamune");
+    CHECK(id >= 0, "Masamune exists in the catalog");
+    arena_state.heroes[0].equipped_item[ARENA_ITEM_SLOT_WEAPON] = id;
+    arena_recompute_item_stats(&arena_state.heroes[0]);
+    arena_state.heroes[0].hp = 50; /* well under max_hp so the heal has headroom, not clamped away */
+    arena_state.heroes[0].x = arena_state.heroes[ARENA_TEAM_SIZE].x;
+    arena_state.heroes[0].z = arena_state.heroes[ARENA_TEAM_SIZE].z;
+
+    arena_update_teams(16);
+    arena_update_teams((unsigned int)ARENA_ATTACK_WINDUP_MS);
+
+    /* item_bonus_armor defaults to 0 (arena_init_teams' memset) and apply_armor is `raw - armor`
+       floored at 1 -- with 0 armor the floor never engages, so the final damage is simply
+       ARENA_ATTACK_DAMAGE + Masamune's own bonus_ad, inlined here rather than calling
+       apply_armor directly (it's `static` inside arena_game.c, not visible to this test TU). */
+    int final_dmg = ARENA_ATTACK_DAMAGE + ARENA_ITEMS[id].bonus_ad;
+    int expected_heal = (final_dmg * ARENA_ITEMS[id].bonus_lifesteal_pct) / 100;
+    CHECK(arena_state.heroes[0].hp == 50 + expected_heal, "Masamune heals the attacker for its documented percent of the final damage dealt");
+}
+
+static void test_muramasa_extreme_glass_cannon_catalog_entry(void) {
+    int id = find_item_id_by_name("Muramasa");
+    CHECK(id >= 0, "Muramasa exists in the catalog");
+    CHECK(ARENA_ITEMS[id].bonus_ad > ARENA_ITEMS[find_item_id_by_name("Kraken Club")].bonus_ad,
+          "Muramasa is a more extreme glass cannon than Kraken Club, its own real-lore \"benevolent vs cursed\" counterpart Masamune's opposite number");
+    CHECK(ARENA_ITEMS[id].bonus_max_hp == 0 && ARENA_ITEMS[id].bonus_armor == 0 && ARENA_ITEMS[id].bonus_max_mp == 0,
+          "genuinely zero of every defensive stat -- the most extreme risk/reward weapon in the catalog");
+}
+
+static void test_balance_ring_armor_scales_with_missing_hp(void) {
+    arena_init_teams();
+    int id = find_item_id_by_name("Balance Ring");
+    CHECK(id >= 0, "Balance Ring exists in the catalog");
+    /* The Duck has no passive armor of its own (arena_hero_base_armor's own doc comment) --
+       Unicorn, the default placeholder hero_id arena_init_teams leaves every hero at, has a real
+       nonzero passive armor, which would make the "no bonus at full HP" absolute-zero check
+       below fail for a reason unrelated to Balance Ring itself. */
+    arena_state.heroes[0].hero_id = ARENA_HERO_DUCK;
+    arena_state.heroes[0].equipped_item[ARENA_ITEM_SLOT_RING] = id;
+    arena_state.heroes[0].max_hp = 100;
+
+    arena_state.heroes[0].hp = 100; /* full HP */
+    float armor_at_full_hp = arena_hero_armor(&arena_state.heroes[0]);
+
+    arena_state.heroes[0].hp = 10; /* critically low */
+    float armor_at_low_hp = arena_hero_armor(&arena_state.heroes[0]);
+
+    CHECK(armor_at_full_hp == 0.0f, "no comeback bonus at full HP");
+    CHECK(armor_at_low_hp > armor_at_full_hp + 30.0f, "a real, large comeback bonus once critically low -- computed live off current HP, not a flat purchase-time stat");
+}
+
+static void test_new_items_catalog_entries(void) {
+    int hairpin = find_item_id_by_name("Empress Hairpin");
+    int tekko = find_item_id_by_name("Ninja Tekko");
+    CHECK(hairpin >= 0 && ARENA_ITEMS[hairpin].bonus_max_mp == 100, "Empress Hairpin grants the documented mana bonus");
+    CHECK(tekko >= 0 && ARENA_ITEMS[tekko].bonus_ad > 0 && ARENA_ITEMS[tekko].bonus_move_speed > 0.0f,
+          "Ninja Tekko is a real AD+move-speed hybrid, not a straight upgrade to the existing Hands item");
+}
+
 static void test_weatherman_q_knocks_back_no_damage(void) {
     arena_init_teams();
     for (int i = 2; i < ARENA_MAX_HEROES; i++) arena_state.heroes[i].active = 0;
@@ -7151,6 +7269,12 @@ int main(void) {
     test_haste_trinket_reduces_ability_cooldown();
     test_haste_trinket_reduces_auto_attack_cooldown();
     test_haste_trinket_does_not_shrink_windup();
+    test_item_catalog_reaches_shop_page_4();
+    test_gae_bolg_true_damage_bypasses_armor();
+    test_masamune_lifesteal_heals_attacker();
+    test_muramasa_extreme_glass_cannon_catalog_entry();
+    test_balance_ring_armor_scales_with_missing_hp();
+    test_new_items_catalog_entries();
     test_weatherman_q_knocks_back_no_damage();
     test_weatherman_q_out_of_range_whiffs();
     test_weatherman_w_grounds_airborne_enemy();

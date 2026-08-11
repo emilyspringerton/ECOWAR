@@ -1336,10 +1336,34 @@ typedef struct {
      * so none of the existing 26 items' own initializer rows needed touching -- only Haste
      * Trinket's own entry sets it. */
     int bonus_cdr_pct;
+    /* bonus_true_dmg / bonus_lifesteal_pct (2026-08-11, founder real-time: "do a first pass
+     * generating weird items that expand the play space" / "using ffxi items and your own best
+     * judgement on how the new items with unique qualities... push the meta forward" -- an
+     * expansion-of-the-shop-catalog first pass, page 4, see arena_game.c's own ARENA_ITEMS doc
+     * comment for the full item-by-item design). Two genuinely NEW mechanic categories, not more
+     * of the same flat-stat blends every existing item already has: bonus_true_dmg (Gae Bolg) is
+     * flat damage applied AFTER apply_armor, not before -- the first armor-piercing stat this
+     * catalog has ever had, opening a real counter-build against armor-stacking. bonus_
+     * lifesteal_pct (Masamune) heals the attacker for that percent of the FINAL (post-armor)
+     * damage dealt on a landed auto-attack -- the first sustain/lifesteal mechanic in this
+     * engine at all. Both zero-fill for every existing item via the same "positional
+     * initializers with fewer values than members zero-fill the rest" convention bonus_cdr_pct's
+     * own doc comment already established -- no existing item's initializer row needs touching. */
+    int bonus_true_dmg;
+    int bonus_lifesteal_pct;
 } ArenaItemDef;
 
 extern const ArenaItemDef ARENA_ITEMS[];
-#define ARENA_ITEM_COUNT 27 /* S170-207: was 26 -- +1 for Haste Trinket (no named ID constant needed, unlike Blink Dagger/Donkey -- it's pure passive stats, no per-item equipped-item index check anywhere) */
+#define ARENA_ITEM_COUNT 33 /* 2026-08-11: was 27 -- +6 for the "expand the play space" first pass (Gae Bolg, Masamune, Muramasa, Balance Ring, Empress Hairpin, Ninja Tekko), pushing the shop UI's own SHOP_PAGE_COUNT (apps/arena/src/main.c, ceil(ARENA_ITEM_COUNT/SHOP_ITEMS_PER_PAGE)) from 3 to a real 4th page -- founder: "add page 4 to the shop." No client-side paging code needed for this: SHOP_PAGE_COUNT is entirely derived from this one constant already. */
+/* ARENA_BALANCE_RING_ITEM_ID (2026-08-11, "expand the play space" pass): a named index, same
+ * reasoning ARENA_BLINK_DAGGER_ITEM_ID's own doc comment gives -- Balance Ring's comeback armor
+ * bonus scales LIVE with the wearer's own missing-HP fraction (computed inside
+ * arena_hero_armor() itself, same "computed live, not copied" idiom the King Wealth aura bonus
+ * already uses in that same function), which can't be pre-summed once at purchase time the way
+ * every flat-stat item's own bonus can -- code needs to check "is THIS SPECIFIC item equipped"
+ * by index, not just read a cached aggregate field. */
+#define ARENA_BALANCE_RING_ITEM_ID 30
+#define ARENA_BALANCE_RING_MAX_ARMOR_BONUS 40 /* the bonus at 0 HP (approached, never quite reached while alive) -- roughly double Iron Ram Trousers' own flat 18, since this only reaches near its max value while critically low, not all the time like a flat item */
 /* ARENA_BLINK_DAGGER_ITEM_ID (S170-205, founder: "add blink dagger 1400 flow it gives a new
  * keybind on screen for tilda"): a named index into ARENA_ITEMS, not just a stat entry -- the
  * only item in the catalog whose value comes from an ACTIVE ability (arena_use_blink) rather
@@ -2121,6 +2145,11 @@ typedef struct {
     int item_bonus_ad;
     float item_bonus_move_speed;
     int item_bonus_cdr_pct;
+    /* item_bonus_true_dmg / item_bonus_lifesteal_pct (2026-08-11 "expand the play space" pass):
+     * same recomputed-cache shape as the fields above, see ArenaItemDef's own doc comment on
+     * bonus_true_dmg/bonus_lifesteal_pct for the full design. */
+    int item_bonus_true_dmg;
+    int item_bonus_lifesteal_pct;
 } ArenaHero;
 
 typedef struct {
