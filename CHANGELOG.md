@@ -1,6 +1,7 @@
 # Changelog
 
 ## 2026-08-11
+- Team model 真的接進 live bots（新 3v3 隊列）+ 記錄 draft-phase/item-tuning 的研究方向決策點 (sess-20260810-0505-a53abca2)
 
 - noisy-gestalt 500K timestep 訓練跑完：20/20 eval 全勝 vs 固定 heuristic（誠實標註：不代表通過 autocurriculum 對手池的考驗） (sess-20260810-0505-a53abca2)
 
