@@ -51,7 +51,15 @@ fi
 # deployment's bot pool would kill the OTHER deployment's already-running bots too -- exactly the
 # cross-contamination "full duplicate... totally separate" was meant to prevent. Scoping the
 # pkill pattern to this checkout's own absolute path fixes that.
-pkill -f "${ROOT_DIR}/build/red_garden_arena_bot --host 127.0.0.1" 2>/dev/null || true
+#
+# 2026-08-11: pattern now ALSO includes --matchmaker-port "$MATCHMAKER_PORT" -- the SAME bug
+# class recurring one level finer. The 3v3 team-model pool (redgarden-bot-pool-3v3.service, see
+# its own doc comment) runs from this exact same checkout/ROOT_DIR as the 10v10 R&D pool, just a
+# different matchmaker port -- the path-only pattern above matched both pools' bot processes
+# identically, so starting/restarting EITHER one would still kill the OTHER's already-running
+# bots, the checkout-scoping fix above was necessary but not sufficient. Scoping down to the
+# specific port this invocation itself is launching against fixes that.
+pkill -f "${ROOT_DIR}/build/red_garden_arena_bot --host 127.0.0.1.*--matchmaker-port ${MATCHMAKER_PORT}\$" 2>/dev/null || true
 sleep 1
 
 pids=()

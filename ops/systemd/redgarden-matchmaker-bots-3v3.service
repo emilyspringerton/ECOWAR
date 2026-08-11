@@ -1,0 +1,46 @@
+# REDGARDEN arena matchmaker — 3v3 team-model queue (:7780) — user-level systemd unit (no sudo
+# required)
+#
+# Added 2026-08-11, founder real-time: "ensure the updated model makes it into our frontier bots
+# on the server" -> "let me know when the upgraded bots are ready for me to playtest on the live
+# matchmaking." A genuinely SEPARATE queue from the existing 10v10 R&D pool (:7778,
+# redgarden-matchmaker-bots.service) -- NOT a replacement, NOT the same lobby. The team-trained
+# checkpoint driving apps/arena_bot's new team_rl_engage_nudge (see that function's own doc
+# comment in apps/arena_bot/src/main.c) was trained at team_size=3 (scripts/rl_train_team.py
+# --team-size 3), a real, fixed input/output shape baked into packages/common/
+# rl_policy_weights_team.h at export time -- it cannot correctly drive a 10v10 match (a hard
+# dimension mismatch, not a rounding difference), so this is a real, separate 6-player lobby
+# (--lobby-size 6) rather than trying to force the existing 20-player one to fit.
+#
+# Deploy:
+#   mkdir -p ~/.config/systemd/user
+#   cp ops/systemd/redgarden-matchmaker-bots-3v3.service ~/.config/systemd/user/
+#   bash scripts/build.sh   # produces build/red_garden_matchmaker + build/red_garden_arena_server
+#   systemctl --user daemon-reload
+#   systemctl --user enable --now redgarden-matchmaker-bots-3v3.service
+#
+# Same REDGARDEN_TICKET_SECRET/EnvironmentFile pattern as redgarden-matchmaker-bots.service --
+# see that unit's own doc comment for the full history of why both are needed.
+
+[Unit]
+Description=REDGARDEN arena matchmaker — 3v3 team-model queue (:7780, 6 players)
+After=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/fatbaby/REDGARDEN
+Environment=REDGARDEN_TICKET_SECRET=test-secret-for-vs0-vs1-validation
+EnvironmentFile=/home/fatbaby/REDGARDEN/var/redgarden-iduna-agent.env
+ExecStart=/home/fatbaby/REDGARDEN/build/red_garden_matchmaker \
+    --listen-port 7780 \
+    --lobby-size 6 \
+    --server-bin /home/fatbaby/REDGARDEN/build/red_garden_arena_server \
+    --first-game-port 7400
+Restart=on-failure
+RestartSec=5s
+StandardOutput=append:/home/fatbaby/REDGARDEN/var/logs/matchmaker-bots-3v3.log
+StandardError=append:/home/fatbaby/REDGARDEN/var/logs/matchmaker-bots-3v3.log
+MemoryMax=256M
+
+[Install]
+WantedBy=default.target

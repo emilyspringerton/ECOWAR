@@ -108,6 +108,17 @@ def write_c_header_from_layers(layers, output_path, guard_name="RL_POLICY_WEIGHT
     own HuggingFace Conv1D stores weights the opposite way round from nn.Linear."""
     n_layers = len(layers)
     layer_sizes = [layers[0][0].shape[1]] + [w.shape[0] for w, _, _ in layers]
+    # func_prefix computed early (was previously only computed after the layer-array lines were
+    # already emitted, below) -- the layer{i}_w/layer{i}_b arrays themselves were never actually
+    # prefixed despite this whole mechanism existing specifically so two exported headers could
+    # coexist in one translation unit (see this function's own symbol_prefix doc comment below).
+    # A real, previously-undetected gap: found 2026-08-11 wiring the team-mode checkpoint into
+    # apps/arena_bot/src/main.c, the first time both rl_policy_weights.h and
+    # rl_policy_weights_team.h actually got #included together -- "conflicting types for
+    # 'layer0_w'" (both headers declare an unprefixed static const float layer0_w[...] at file
+    # scope). MACRO_PREFIX/func_prefix alone were never sufficient; every generated identifier
+    # needs the prefix, not just the ones this comment previously called out.
+    func_prefix = symbol_prefix.lower()
 
     lines = []
     lines.append(f"#ifndef {guard_name}")
@@ -134,13 +145,13 @@ def write_c_header_from_layers(layers, output_path, guard_name="RL_POLICY_WEIGHT
         out_f, in_f = w.shape
         flat_w = ", ".join(fmt_float(v) for v in w.flatten())
         flat_b = ", ".join(fmt_float(v) for v in b.flatten())
-        lines.append(f"static const float layer{i}_w[{out_f * in_f}] = {{ {flat_w} }};")
-        lines.append(f"static const float layer{i}_b[{out_f}] = {{ {flat_b} }};")
+        lines.append(f"static const float {func_prefix}layer{i}_w[{out_f * in_f}] = {{ {flat_w} }};")
+        lines.append(f"static const float {func_prefix}layer{i}_b[{out_f}] = {{ {flat_b} }};")
         lines.append("")
 
     sizes_str = ", ".join(str(s) for s in layer_sizes)
-    weights_str = ", ".join(f"layer{i}_w" for i in range(n_layers))
-    biases_str = ", ".join(f"layer{i}_b" for i in range(n_layers))
+    weights_str = ", ".join(f"{func_prefix}layer{i}_w" for i in range(n_layers))
+    biases_str = ", ".join(f"{func_prefix}layer{i}_b" for i in range(n_layers))
     acts_str = ", ".join(str(act) for _, _, act in layers)
 
     lines.append(f"static const int {model_name}_SIZES[{n_layers + 1}] = {{ {sizes_str} }};")
@@ -161,7 +172,6 @@ def write_c_header_from_layers(layers, output_path, guard_name="RL_POLICY_WEIGHT
     # output is byte-for-byte unchanged; a second model passes a real prefix (e.g. "TEAM_") to
     # get MACRO_PREFIX_RL_POLICY_OBS_SIZE / prefix_rl_policy_forward() instead.
     macro_prefix = symbol_prefix.upper()
-    func_prefix = symbol_prefix.lower()
     lines.append("")
     lines.append(f"#define {macro_prefix}RL_POLICY_OBS_SIZE {layer_sizes[0]}")
     lines.append(f"#define {macro_prefix}RL_POLICY_ACTION_SIZE {layer_sizes[-1]}")
@@ -169,6 +179,17 @@ def write_c_header_from_layers(layers, output_path, guard_name="RL_POLICY_WEIGHT
     lines.append(" * MOVE_TARGET_RANGE and action_space definition exactly. PPO's own action_net")
     lines.append(" * is a plain unconstrained Linear layer (no output activation), so the raw")
     lines.append(" * forward pass alone does not guarantee in-range values -- this wrapper clips.")
+    lines.append(" * KNOWN GAP (found 2026-08-11, not fixed here): this 20.0f is hardcoded")
+    lines.append(" * regardless of which model is actually being exported -- correct for")
+    lines.append(" * scripts/rl_env.py's own 1v1 MOVE_TARGET_RANGE, but scripts/rl_env_team.py's")
+    lines.append(" * own team-mode action space is scaled to ARENA_HALF_EXTENT (~51.78) instead,")
+    lines.append(" * not this value. A caller that treats the raw output as a literal world-space")
+    lines.append(" * target (like rl_engage_nudge's own 1v1 usage) would get a real, silently")
+    lines.append(" * wrong clip range for a team-mode export -- a caller that only reads the")
+    lines.append(" * output's DIRECTION (normalizing before use, like team_rl_engage_nudge's own")
+    lines.append(" * apps/arena_bot/src/main.c usage) is unaffected by this gap. Real fix needs")
+    lines.append(" * the actual range threaded through from whichever training script is")
+    lines.append(" * exporting, not attempted in this pass.")
     lines.append(" */")
     lines.append(f"#define {macro_prefix}RL_POLICY_MOVE_TARGET_RANGE 20.0f")
     lines.append("")

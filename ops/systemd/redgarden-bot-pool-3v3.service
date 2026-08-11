@@ -1,0 +1,37 @@
+# REDGARDEN arena 3v3 team-model bot pool — user-level systemd unit (no sudo required)
+#
+# Added 2026-08-11, see redgarden-matchmaker-bots-3v3.service's own doc comment for the full
+# "why a separate queue" reasoning. 5 bots, not 6 -- same "leave one slot open so a human can
+# actually queue in" tradeoff redgarden-matchmaker-bots.service's own history documents for the
+# 10v10 pool (19-vs-20), just at this pool's own 6-player lobby size. The founder explicitly
+# wants to playtest this live, so a permanently-full lobby would defeat the point.
+#
+# Deploy:
+#   mkdir -p ~/.config/systemd/user
+#   cp ops/systemd/redgarden-bot-pool-3v3.service ~/.config/systemd/user/
+#   bash scripts/build.sh
+#   systemctl --user daemon-reload
+#   systemctl --user enable --now redgarden-bot-pool-3v3.service
+#
+# Must start after redgarden-matchmaker-bots-3v3.service -- ordered via After=/Wants= below,
+# same pattern as the 10v10 pool's own unit.
+
+[Unit]
+Description=REDGARDEN arena 3v3 team-model bot pool (5 bots, 1 human slot open -> :7780)
+After=network-online.target redgarden-matchmaker-bots-3v3.service
+Wants=redgarden-matchmaker-bots-3v3.service
+
+[Service]
+Type=simple
+WorkingDirectory=/home/fatbaby/REDGARDEN
+Environment=REDGARDEN_TICKET_SECRET=test-secret-for-vs0-vs1-validation
+ExecStartPre=/bin/sleep 2
+ExecStart=/home/fatbaby/REDGARDEN/scripts/run_bot_pool.sh 5 7780
+Restart=on-failure
+RestartSec=5s
+StandardOutput=append:/home/fatbaby/REDGARDEN/var/logs/bot-pool-3v3.log
+StandardError=append:/home/fatbaby/REDGARDEN/var/logs/bot-pool-3v3.log
+MemoryMax=128M
+
+[Install]
+WantedBy=default.target

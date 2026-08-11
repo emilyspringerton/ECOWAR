@@ -35,6 +35,7 @@
 #include "../../../packages/common/hmac_sha256.h"
 #include "../../../packages/common/http_client.h"
 #include "../../../packages/common/rl_policy_weights.h"
+#include "../../../packages/common/rl_policy_weights_team.h"
 
 #define TICKET_PAYLOAD_LEN 20
 #define TICKET_MAC_LEN 16
@@ -855,6 +856,106 @@ static void rl_engage_nudge(const BotSnapshotView *cur, int self_owner, int foe_
     *out_dz = (dir_z / mag) * RL_NUDGE_STEP * confidence;
 }
 
+/* team_rl_engage_nudge (2026-08-11, founder real-time: "ensure the updated model makes it into
+ * our frontier bots on the server" -- the first live consumer of a §25.2.1 team-trained checkpoint,
+ * the exact gap NORTHSTAR §25.5 flagged as unresolved ("what consumes a team-shaped input
+ * vector?"). Same additive-nudge shape as rl_engage_nudge above, but built from the ACTUAL
+ * team-mode checkpoint (scripts/rl_train_team.py --team-size 3 --noisy-gestalt, 500K timesteps,
+ * 100% eval win rate vs. the fixed heuristic -- Apple #12985), reconstructing
+ * apps/arena_training/src/headless.c's own sim_get_obs_team_any() observation layout field-for-
+ * field from LIVE wire data (BotSnapshotView) instead of the training-only ArenaHero sim state --
+ * this bot only ever sees what any client sees, same constraint every other function in this file
+ * already documents.
+ *
+ * CRITICAL: this specific checkpoint was trained at team_size=3 (a fixed input/output dimension
+ * baked into packages/common/rl_policy_weights_team.h at export time), NOT the live 10v10 bot-pool's
+ * real team_size=10 -- a real, hard shape mismatch, not a rounding difference. Gated on
+ * `cur->world.count / 2 == 3` for exactly that reason: this function must never run against a
+ * 10v10 match, where team-relative slot math below would read past real teammates into the OTHER
+ * team's own heroes and feed the network structurally wrong input. Live testing for this
+ * checkpoint therefore needs a real, separate 3v3 queue (see ops/systemd/redgarden-matchmaker-
+ * bots-3v3.service) -- it does NOT activate in the existing 10v10 pool, which keeps running
+ * heuristic-only bots unchanged until a team_size=10-trained checkpoint exists.
+ *
+ * No confidence decay the way rl_engage_confidence dampens the 1v1 model as more combatants
+ * crowd in -- that function exists because the 1v1 model is OUT of its training distribution the
+ * moment a fight isn't a clean duel. This model's training distribution IS a crowded team fight
+ * (rl_env_team.py's own ArenaTeamVecEnv), so there's no equivalent "activate at reduced trust
+ * outside training conditions" case to guard against here -- full weight whenever the team-size
+ * gate passes. */
+static void team_rl_engage_nudge(const BotSnapshotView *cur, int self_owner, int foe_owner,
+                                  int my_team, float *out_dx, float *out_dz) {
+    *out_dx = 0.0f;
+    *out_dz = 0.0f;
+    int team_size = cur->world.count / 2;
+    if (team_size != 3) return; /* see this function's own doc comment -- the hard shape gate */
+
+    int self_base = my_team == 0 ? 0 : team_size;
+    int foe_base = my_team == 0 ? team_size : 0;
+    int self_slot = self_owner - self_base;
+    if (self_slot < 0 || self_slot >= team_size) return; /* defensive -- shouldn't happen if my_team is derived correctly by the caller */
+
+    const ArenaHeroSnapshot *self_h = &cur->heroes[self_owner];
+    const ArenaHeroSnapshot *foe_h = &cur->heroes[foe_owner];
+
+    float obs[TEAM_RL_POLICY_OBS_SIZE];
+    obs[0]  = (float)self_h->hp;
+    obs[1]  = (float)self_h->max_hp;
+    obs[2]  = (float)self_h->mp;
+    obs[3]  = self_h->x; /* no mirroring -- sim_get_obs_team_any's own layout doesn't mirror x either, unlike the 1v1 obs above */
+    obs[4]  = self_h->z;
+    obs[5]  = (float)self_h->q_cooldown_ms;
+    obs[6]  = (float)self_h->w_cooldown_ms;
+    obs[7]  = (float)self_h->r_cooldown_ms;
+    obs[8]  = (float)self_h->flow;
+    obs[9]  = (float)self_h->xp;
+    obs[10] = self_h->alive ? 1.0f : 0.0f;
+    obs[11] = (float)foe_h->hp;
+    obs[12] = (float)foe_h->max_hp;
+    obs[13] = foe_h->x;
+    obs[14] = foe_h->z;
+    obs[15] = foe_h->alive ? 1.0f : 0.0f;
+    obs[16] = foe_h->x - self_h->x;
+    obs[17] = foe_h->z - self_h->z;
+    arena_rl_fill_hero_onehot(obs, self_h->hero_id, foe_h->hero_id); /* same offsets [18, 18+2*ARENA_HERO_COUNT) sim_get_obs_team_any's own layout uses -- this helper is shared, not duplicated */
+
+    int base = 18 + 2 * ARENA_HERO_COUNT;
+    int slot = 0;
+    for (int i = 0; i < team_size; i++) {
+        if (i == self_slot) continue;
+        const ArenaHeroSnapshot *mate = &cur->heroes[self_base + i];
+        float *o = &obs[base + slot * 4];
+        o[0] = mate->max_hp > 0 ? (float)mate->hp / (float)mate->max_hp : 0.0f;
+        o[1] = mate->x - self_h->x;
+        o[2] = mate->z - self_h->z;
+        o[3] = mate->alive ? 1.0f : 0.0f;
+        slot++;
+    }
+
+    int identity_base = base + (team_size - 1) * 4;
+    for (int i = 0; i < team_size; i++) {
+        obs[identity_base + i] = (i == self_slot) ? 1.0f : 0.0f;
+    }
+
+    float action[TEAM_RL_POLICY_ACTION_SIZE];
+    team_rl_policy_forward(obs, action);
+
+    /* Unlike rl_engage_nudge's own 1v1 model, this model's action range (TEAM_RL_POLICY_MOVE_
+       TARGET_RANGE) was trained against rl_env_team.py's own ARENA_HALF_EXTENT-scaled action
+       space, matching the live map's real extent -- no arena-size mismatch to route around the
+       way rl_engage_nudge's own doc comment describes. Still applied as a bounded direction
+       nudge, not a literal target, for the same "additive on top of, not instead of, the
+       existing angle-spread/flocking" reasoning that keeps S170-90's anti-stack guarantee intact
+       even with several bots independently consulting the same network. */
+    const float TEAM_RL_NUDGE_STEP = 3.0f; /* same order of magnitude as rl_engage_nudge's own RL_NUDGE_STEP */
+    float dir_x = action[0];
+    float dir_z = action[1];
+    float mag = sqrtf(dir_x * dir_x + dir_z * dir_z);
+    if (mag < 0.001f) return;
+    *out_dx = (dir_x / mag) * TEAM_RL_NUDGE_STEP;
+    *out_dz = (dir_z / mag) * TEAM_RL_NUDGE_STEP;
+}
+
 // play_one_match runs the draft + live-play loop for a single match against
 // the already-connected server. Returns once the match ends (winner != 0)
 // or the connection goes quiet for too long.
@@ -1284,8 +1385,14 @@ static void play_one_match(int game_port) {
                                with several bots independently consulting the same network. */
                             float rl_dx, rl_dz;
                             rl_engage_nudge(&last, my_owner, best, &rl_dx, &rl_dz);
-                            float tx = last.heroes[best].x + cosf(approach_angle) * approach_radius + flock_dx + rl_dx;
-                            float tz = last.heroes[best].z + sinf(approach_angle) * approach_radius + flock_dz + rl_dz;
+                            /* team_rl_engage_nudge (see its own doc comment): the team-trained
+                               checkpoint's suggestion, additive on top of everything else here --
+                               a no-op (0,0) whenever this isn't a real 3v3 match (the team_size
+                               gate inside), so this line is a safe no-op in the live 10v10 pool. */
+                            float team_rl_dx, team_rl_dz;
+                            team_rl_engage_nudge(&last, my_owner, best, my_team, &team_rl_dx, &team_rl_dz);
+                            float tx = last.heroes[best].x + cosf(approach_angle) * approach_radius + flock_dx + rl_dx + team_rl_dx;
+                            float tz = last.heroes[best].z + sinf(approach_angle) * approach_radius + flock_dz + rl_dz + team_rl_dz;
                             send_move(tx, tz);
                             /* S170-162/165: sent AFTER send_move on purpose, see
                                send_attack's own doc comment -- this is what

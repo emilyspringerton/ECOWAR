@@ -2867,6 +2867,44 @@ file. Neither noisy-gestalt nor autocurriculum has completed a full end-to-end t
 (both are mid-training or ctypes-verified only as of this note) — the plumbing is real, whether
 either one measurably improves the resulting policy is still an open, unanswered question.
 
+**Updated 2026-08-11: the noisy-gestalt run finished (Apple #12985) and its checkpoint is now a
+real live consumer, closing the exact gap this note's own §25.5 flagged ("what consumes a
+team-shaped input vector? NORTHSTAR §25.5 doesn't resolve this").** 500K timesteps, ~5.5h, zero
+errors, Johnny/Spike alternation confirmed firing live in the training log, final eval 20W/0L/0D
+(100%) vs. the fixed heuristic team — founder, real-time, on why that number isn't dismissed as
+noise: "if they are exploiting heuristics they are exploiting the current meta which is the
+point." `apps/arena_bot/src/main.c` gained `team_rl_engage_nudge()` (own doc comment has the full
+design), the live analog of `rl_engage_nudge`'s existing 1v1 wiring — reconstructs
+`sim_get_obs_team_any`'s exact observation layout from wire data (`BotSnapshotView`) instead of
+training-only sim state, additive on top of the existing angle-spread/flocking movement, same
+"nudge, not replacement" philosophy as the 1v1 version.
+
+**Real, hard constraint found while wiring this up, not glossed over**: this checkpoint was
+trained at `--team-size 3`, a fixed shape baked into the exported header
+(`packages/common/rl_policy_weights_team.h`) at export time — it cannot correctly drive the live
+10v10 R&D pool (`:7778`, `ARENA_TEAM_SIZE`), a real dimension mismatch, not a rounding gap.
+`team_rl_engage_nudge` hard-gates on `world.count/2 == 3` and is a guaranteed no-op in the 10v10
+pool for exactly that reason. Real, separate 3v3 queue stood up instead
+(`ops/systemd/redgarden-matchmaker-bots-3v3.service` + `redgarden-bot-pool-3v3.service`, port
+`:7780`, 5 bots + 1 open human slot so the founder can queue in directly) — deployed live,
+verified via a real 6-bot test match (draft → live play → no crashes) before switching to the
+5-bot founder-facing config. A `team_size=10`-trained checkpoint that could drive the existing
+10v10 pool directly does not exist yet — real future work, not attempted this pass.
+
+**Two real bugs found and fixed while wiring this, both flagged honestly**: (1)
+`export_rl_policy_to_c.py`'s own `symbol_prefix` mechanism (landed 2026-08-10 specifically so two
+exported headers could coexist in one translation unit) never actually prefixed the per-layer
+`layer{i}_w`/`layer{i}_b` weight-array symbols themselves — only macros/function names got it —
+a real gap invisible until this pass, the first time `rl_policy_weights.h` and
+`rl_policy_weights_team.h` actually got `#include`d together (`"conflicting types for
+'layer0_w'"`). Fixed by prefixing every generated identifier, not just the subset the original
+fix covered. (2) `scripts/run_bot_pool.sh`'s own orphan-guard `pkill` pattern — already fixed
+once (2026-08-10) to scope by checkout path so the REDGARDEN/redgarden-stable split wouldn't
+cross-kill each other's bots — had the SAME bug class recur one level finer: two pools sharing
+ONE checkout (the 10v10 R&D pool and this new 3v3 pool) but different matchmaker ports would
+still cross-kill on restart, since the path-only pattern didn't distinguish ports. Fixed by
+additionally scoping the pattern to `--matchmaker-port` — REDGARDEN commit (this pass).
+
 ### 25.6 What this section deliberately does not resolve
 
 - **Team size for the first real training run** — anywhere from 2v2 up to the real 10v10 is
@@ -2940,6 +2978,112 @@ per-bot information. Smaller in scope than the full commander/soldier hierarchy 
 posture scalar, not a real multi-level action hierarchy), but a genuine structural step in the
 same direction. Verified: full regression suite + live 10-bot matchmaker/server stability, both
 green. REDGARDEN commit `eb44a2e`.
+
+### 26.3.1 Above the commander: a draft-phase agent (2026-08-11, research note, not scoped)
+
+Founder real-time, while the first live team-trained checkpoint was being wired into
+`apps/arena_bot` (§25.2.1's own real-world deployment, see EMILY/BACKLOG.md's squad-training
+thread): a level ABOVE §26.3's own in-match commander. §26.3's commander directs live play once a
+match has already started; this idea is an even-higher agent trained on the **pick/ban draft
+phase itself** — which heroes to ban, which to pick, in what order — sitting above both the
+commander and the soldiers in the hierarchy, deciding the team composition those lower levels
+then have to execute with.
+
+**Explicitly named as blocked on real game systems that don't exist yet** (founder: "obviously
+those game systems need to be added to explore that") — there is currently no real ban phase
+anywhere in this codebase. `apps/arena_server`'s live draft (confirmed live while testing the new
+3v3 queue this same pass, `matchmaker-bots-3v3.log`: `"Lobby full (6 players) -- internal bot AI
+disabled, entering draft."` / `"CLIENT 0 picked hero_id=20 (1/6 picked)"`) is PICK-only, no bans,
+first-come-first-served rather than a structured turn order. A draft-phase RL agent has nothing
+real to train against until banning and a real turn order exist as actual game systems.
+
+**Draft-order shape, founder's own real-time sketch (self-flagged as uncertain, not committed)**:
+"each team bans 1 then teach [sic] team bans another -> then each team pick one -> then each team
+picks another -> then each team bans 2 more -> the they pick 2 -> then they ban 3 -> and pick 3 ->
+then 5" -- then, in the founder's own words, "im not sure if thats too elaborate or can be
+simplified." Transcribed faithfully, not smoothed over: this is an escalating alternating
+ban/pick sequence (1 ban each, 1 pick each, 1 more pick each, 2 bans each, 2 more picks each, 3
+bans each, 3 more picks each, then an unclear "5" -- ban or pick unspecified), described loosely
+as "fibonacci." Flagged honestly: 1,1,1,1,2,2,2,2,3,3,3,3 isn't the literal Fibonacci sequence
+(1,1,2,3,5,8...) -- it reads as an escalating/doubling RHYTHM the founder was reaching for, not a
+specific formula to implement as-is. The founder's own closing doubt is the load-bearing part of
+this note: **do not silently commit to a specific ban/pick count sequence from this transcript
+alone** -- confirm with the founder before building a real draft-order system, same "spec the
+model, don't guess the founder's own uncertainty away" discipline this file uses throughout.
+Real structural precedent that DOES exist to build from: League of Legends' own tournament draft
+(ban phase 1 -> pick phase 1 -> ban phase 2 -> pick phase 2, alternating between teams) is the
+closest real, external reference point for "escalating alternating ban/pick phases," if a
+concrete starting point is needed once the founder confirms direction.
+
+**Also named, not yet scoped**: "humans will need to understand the process" (founder) -- any
+real draft-order system needs a legible client-side affordance (whose turn is it, what's banned,
+what's left) for a human player, not just something a training pipeline can parse. This is a real
+UX requirement on top of the game-systems dependency above, not optional because bots don't need
+to see a UI.
+
+**Softened immediately after by the founder's own follow-up**: "but we do have an initial draft
+without bans we can start to train on that i suppose in terms of the match overall team comp does
+matter on some level." Real and correct — the pick-only draft confirmed live above (§ above,
+`matchmaker-bots-3v3.log`) already produces a genuine team composition every match, and team comp
+plausibly affects outcomes even with zero bans. So the "blocked on real game systems" framing two
+paragraphs up is not a hard blocker on ALL draft-phase training, only on a full BAN-aware version
+of it — a pick-only draft-composition signal is trainable against TODAY, using exactly the same
+win/loss signal §25's own opponent-pool sampling already reads. Not built this pass (still a real
+scoping decision the founder should make deliberately, not something to start building as a side
+effect of this note), but the dependency chain below is revised to reflect it.
+
+**Status: a real, logged research direction, not started.** Revised sequencing: (0) a pick-only
+(no-ban) draft-composition training signal is ALREADY trainable against today's real game
+systems, if/when the founder wants to prioritize it; (1) real ban-phase + structured turn-order
+game systems (server + client-legible UX) remain the actual blocker for the FULL ban-aware
+version described above; (2) once bans are real and playable, a draft-phase agent sitting above
+§26.3's commander becomes a coherent next research step for the full version. Logged in
+EMILY/BACKLOG.md's squad-training thread as a decision point, not silently dropped.
+
+### 26.3.2 v0 autocurriculum scope expansion: tuning the game via items (2026-08-11, founder real-time)
+
+A second, distinct addition from the same real-time thread, arriving right after the draft-phase
+note above: "i want v0 autocurriculum to be tuning the game via the items." This is a real,
+explicit SCOPE EXPANSION past §25.4's own current, deliberate boundary — that section's own text
+says, verbatim: *"Explicitly not claimed: procedural generation of new game content/mechanics
+driven by training (the source conversation's 'Mario Party mini-games as weight adjustments'
+idea) — that conflates curriculum-over-opponents with curriculum-over-game-design; the former is
+this section's real scope, the latter is not spec'd here at all."* The founder is now asking for
+exactly that latter thing, as a real v0 goal, not a someday-maybe. Not contradictory or a mistake
+to flag as an inconsistency — §25.4 described the boundary AS IT STOOD, honestly, at the time it
+was written; a founder deciding to move that boundary later is a real scope decision, not a bug
+in the earlier note.
+
+**What this concretely means, read against real UED/PAIRED/POET literature** (the same family
+§25.4 already cites for opponent-curriculum): those techniques don't just pick opponents, they
+can also adapt the ENVIRONMENT itself to the current policy's weaknesses/strengths — POET
+specifically co-evolves terrain difficulty alongside agent populations. "Tuning the game via
+items" maps onto this directly: instead of (or alongside) sampling WHICH opponent to train
+against, also sample or perturb ARENA_ITEMS' own stat values (`packages/simulation/arena_game.c`'s
+existing 24-item catalog, S170-175) as part of the training curriculum — a real, established
+technique (environment-parameter curricula), not an invented one.
+
+**Clarified immediately after, narrowing which of the two**: "like it introduces new items to
+meta break the top teams" — this is the LARGER of the two readings above: genuinely NEW items,
+not just perturbed stats on existing ones, and specifically framed as a counter-strategy tool —
+introduce new items to disrupt whichever team/composition is CURRENTLY dominant ("meta break the
+top teams"). This is a direct game-design analog of PFSP's own "bias toward whatever the current
+policy is losing to/being beaten by" logic (§25.4), just applied to CONTENT GENERATION instead of
+opponent selection — genuinely closer to the "Mario Party mini-games as weight adjustments"
+framing §25.4 originally, explicitly declined, now being asked for directly. Real and worth
+naming honestly: this is a substantially bigger claim than opponent-pool sampling (procedural
+item generation + an evaluation loop for "did this counter the current meta" is new machinery,
+not a parameter tweak), not something to start building from this one-line real-time ask alone.
+
+**Not scoped or attempted here** — a real design pass is still needed before building anything:
+even granting "new items, not just perturbed stats," per the clarification above, does a newly
+introduced item get evaluated the same PFSP-style way §25.4 evaluates opponents (did it measurably
+counter the currently-dominant composition), or does it need its own separate objective (e.g.
+maximize build diversity, or minimize one-item-dominates-every-build degeneracy)? What actually
+generates a candidate new item's stats — a bounded random perturbation of the existing 24-item
+catalog's own stat ranges, or something more generative? These are real founder-facing decisions,
+not implementation details to guess through. Logged as a real, named v0 goal in
+EMILY/BACKLOG.md's squad-training thread — scoping conversation, not code, is the next real step.
 
 ### 26.4 What this section deliberately does not resolve
 
