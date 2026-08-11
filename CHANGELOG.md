@@ -1,6 +1,7 @@
 # Changelog
 
 ## 2026-08-11
+- §25.4 autocurriculum 真的端對端訓練跑起來了（500K timesteps，team_size=3，獨立 output-dir） (sess-20260810-0505-a53abca2)
 - 商店擴充：6 個新道具、開出第 4 頁；記錄 AD/AP、GOLDENBAND 動畫、GPT-2 道具命名系統三個新的決策點 (sess-20260810-0505-a53abca2)
 - Team model 真的接進 live bots（新 3v3 隊列）+ 記錄 draft-phase/item-tuning 的研究方向決策點 (sess-20260810-0505-a53abca2)
 
