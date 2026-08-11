@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026-08-11
+
+- noisy-gestalt 500K timestep 訓練跑完：20/20 eval 全勝 vs 固定 heuristic（誠實標註：不代表通過 autocurriculum 對手池的考驗） (sess-20260810-0505-a53abca2)
+
+
 ## 2026-08-10
 - NORTHSTAR §25.4 autocurriculum：PFSP opponent-pool sampling 實作完成，rl_train_team.py 新增 --autocurriculum (sess-20260810-0505-a53abca2)
 
