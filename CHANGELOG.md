@@ -1,6 +1,7 @@
 # Changelog
 
 ## 2026-08-13
+- NORTHSTAR §29: ECOWAR scoping doc -- RTS command layer (existing card-RTS) + MOBA combat layer (existing arena), deck-building as the interface. Scoping only, 4 open architecture questions flagged, no build yet (sess-20260813-2154-dda37e8b)
 - Tripled Flow cost of the 6 page-4 items (Gae Bolg/Masamune/Muramasa/Balance Ring/Empress Hairpin/Ninja Tekko), first pass of a balance iteration -- other items deferred (sess-20260813-2154-dda37e8b)
 - Added an 'Item mechanics beyond the stat columns' section to README documenting Donkey/Blink Dagger/Haste Trinket/Gae Bolg/Masamune/Balance Ring/Empress Hairpin's coded mechanics that the stat table alone doesn't show (sess-20260813-2154-dda37e8b)
 
