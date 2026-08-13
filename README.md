@@ -115,6 +115,49 @@ rubber-band comeback mechanic in the same spirit as §25.3's synergy decay below
 | Empress Hairpin | Head | 450 | — | — | +100 | — | — | 4% | — | — |
 | Ninja Tekko | Hands | 500 | +20 | — | — | — | +1.0 | — | — | — |
 
+### Item mechanics beyond the stat columns
+
+The table above only shows flat stat bonuses. Several items carry real coded behavior the
+columns can't express — surfaced here explicitly rather than left implicit in code comments:
+
+- **Blink Dagger** (`` ` `` active) — grants a short instant blink toward the cursor
+  (`arena_use_blink`), on top of its +6 AD/+6 HP. The catalog's first active-ability item; unlike
+  every other item, the code has to check "is *this specific* item equipped" by index rather than
+  just summing stat fields.
+- **Donkey** (`` ` `` active, zero flat stats — the "hidden ability" case) — two real, separate
+  mechanics, both keyed off the same tilde key Blink Dagger uses (you equip one or the other, not
+  both, since they share a Trinket/Back-adjacent active slot):
+  - *Immortal's Fold* — an **automatic passive**, not player-triggered: the instant the wearer's
+    HP crosses below 25% (`ARENA_DONKEY_FOLD_HP_FRACTION`), it grants a temporary damage floor
+    plus a "fights back for you" window (4s, `ARENA_DONKEY_FOLD_MS`) that deals passive
+    melee-range damage to nearby enemies, then goes on a real 30s cooldown before it can trigger
+    again.
+  - *Paper Glide* — the tilde-activated half: not an instant teleport like Blink Dagger, a
+    longer, slower, longer-range traversal (real range 96 units vs. Blink Dagger's 12) with a
+    genuinely long 2-minute cooldown, matching its FFXI-inspired identity as the bigger,
+    slower-to-reset escape tool.
+- **Haste Trinket** — 6% cooldown reduction (`bonus_cdr_pct`) applying to both ability cooldowns
+  (Q/W/R) and the auto-attack cooldown. No flat stats at all; this *is* the item, not a bonus on
+  top of one.
+- **Gae Bolg** — 18 flat **true damage** per auto-attack, applied *after* armor is subtracted, not
+  before — the catalog's first stat that bypasses armor entirely. A real counter-build against
+  armor-stacking compositions, not just a bigger number.
+- **Masamune** — 15% **lifesteal**: heals the wielder for that fraction of the *final*
+  (post-armor) damage on a landed auto-attack. The catalog's first sustain/lifesteal mechanic.
+  Thematically paired with Muramasa below (benevolent vs. cursed half of the same legendary-blade
+  pairing) — a real build-around choice between the two, not two flavors of the same stat.
+- **Muramasa** — no hidden mechanic; the most extreme stat-shape-only item in the catalog (+70 AD,
+  genuinely zero of anything else) — Masamune's "cursed" counterpart by theme, not by code.
+- **Balance Ring** — its armor bonus is **dynamic**, not a fixed number: computed live every tick
+  as a function of the wearer's own missing-HP fraction (the more hurt you are, the more armor it
+  grants), the catalog's first state-dependent stat. A rubber-band comeback mechanic in the same
+  spirit as the synergy-decay system described under "Arena bot AI research program" below.
+- **Empress Hairpin** — +100 MP plus 4% CDR (reuses Haste Trinket's own mechanic, not a
+  duplicate implementation) — a caster/ability-spam support item, not just a bigger-MP Optical
+  Hat.
+- **Ninja Tekko** — plain flat stats (+20 AD, +1.0 move speed), no hidden mechanic — an
+  assassin-shaped hybrid alternative to Battle Gloves' pure-AD Hands item.
+
 ### Suggested heroes for new players
 
 26 heroes is a lot to pick from blind. These four cover the roster's main roles with the most
