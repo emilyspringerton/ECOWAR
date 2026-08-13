@@ -79,6 +79,10 @@ the attacker off final post-armor damage) — plus the catalog's first **dynamic
 stat (Balance Ring's armor scales with the wearer's own missing-HP fraction every tick, a
 rubber-band comeback mechanic in the same spirit as §25.3's synergy decay below).
 
+**Costs tripled 2026-08-13** (founder real-time: "the page 4 items need tripple costs") — a
+first pass at page-4-only pricing, with other items flagged for a later balance iteration, not
+touched in this pass.
+
 | Item | Slot | Cost | AD | HP | MP | Armor | Move Speed | CDR% | True Dmg | Lifesteal% |
 |---|---|---|---|---|---|---|---|---|---|---|
 | Seedling Charm | Weapon | 300 | +8 | +40 | — | — | — | — | — | — |
@@ -108,12 +112,12 @@ rubber-band comeback mechanic in the same spirit as §25.3's synergy decay below
 | Blink Dagger *(weird)* | Trinket | 1400 | +6 | +6 | — | — | — | — | — | — |
 | Donkey *(weird)* | Back | 3200 | — | — | — | — | — | — | — | — |
 | Haste Trinket | Trinket | 900 | — | — | — | — | — | 6% | — | — |
-| Gae Bolg *(weird)* | Weapon | 1000 | — | — | — | — | — | — | 18 | — |
-| Masamune *(weird)* | Weapon | 1100 | +15 | — | — | — | — | — | — | 15% |
-| Muramasa *(weird)* | Weapon | 1150 | +70 | — | — | — | — | — | — | — |
-| Balance Ring *(weird)* | Ring | 900 | — | — | — | *dynamic* | — | — | — | — |
-| Empress Hairpin | Head | 450 | — | — | +100 | — | — | 4% | — | — |
-| Ninja Tekko | Hands | 500 | +20 | — | — | — | +1.0 | — | — | — |
+| Gae Bolg *(weird)* | Weapon | 3000 | — | — | — | — | — | — | 18 | — |
+| Masamune *(weird)* | Weapon | 3300 | +15 | — | — | — | — | — | — | 15% |
+| Muramasa *(weird)* | Weapon | 3450 | +70 | — | — | — | — | — | — | — |
+| Balance Ring *(weird)* | Ring | 2700 | — | — | — | *dynamic* | — | — | — | — |
+| Empress Hairpin | Head | 1350 | — | — | +100 | — | — | 4% | — | — |
+| Ninja Tekko | Hands | 1500 | +20 | — | — | — | +1.0 | — | — | — |
 
 ### Item mechanics beyond the stat columns
 

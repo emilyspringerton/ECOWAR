@@ -106,7 +106,10 @@ const ArenaItemDef ARENA_ITEMS[ARENA_ITEM_COUNT] = {
        all. Opens a real counter-build against armor-stacking compositions -- "push the meta
        forward" in the most literal sense, a genuine answer to a strategy that previously had no
        direct counter-item. */
-    { "Gae Bolg",           ARENA_ITEM_SLOT_WEAPON, ARENA_ITEM_TIER_WEIRD,   1000,  0,   0,   0,  0, 0.0f, 0, 18, 0 },
+    /* Cost tripled 2026-08-13, founder real-time: "the page 4 items need tripple costs" --
+       1000 -> 3000, page-4-only pass (other items flagged for a future iteration, not touched
+       here). */
+    { "Gae Bolg",           ARENA_ITEM_SLOT_WEAPON, ARENA_ITEM_TIER_WEIRD,   3000,  0,   0,   0,  0, 0.0f, 0, 18, 0 },
     /* Masamune (S170-parity §3 Great Katana) -- real legendary blade, fiction's own recurring
        "benevolent/protective" half of the Masamune-vs-Muramasa pairing (paired below with
        Muramasa's own "cursed/bloodthirsty" half -- a real thematic build-around CHOICE between
@@ -114,13 +117,15 @@ const ArenaItemDef ARENA_ITEMS[ARENA_ITEM_COUNT] = {
        the wielder for bonus_lifesteal_pct of the FINAL (post-armor) damage on a landed
        auto-attack -- a genuinely new sustain mechanic, opens a real "outlast, don't burst"
        playstyle previously unavailable at all. */
-    { "Masamune",           ARENA_ITEM_SLOT_WEAPON, ARENA_ITEM_TIER_WEIRD,   1100, 15,   0,   0,  0, 0.0f, 0,  0, 15 },
+    /* Cost tripled 2026-08-13 (see Gae Bolg's comment above): 1100 -> 3300. */
+    { "Masamune",           ARENA_ITEM_SLOT_WEAPON, ARENA_ITEM_TIER_WEIRD,   3300, 15,   0,   0,  0, 0.0f, 0,  0, 15 },
     /* Muramasa (S170-parity §3 Great Katana) -- Masamune's own real cursed counterpart, fiction's
        "the blade that thirsts for blood, even its wielder's own." Stat-SHAPE only (same
        discipline Kraken Club/Ridill already established -- not every weird item needs a new
        mechanic), pushed further than Kraken Club's own glass-cannon shape: huge AD, genuinely
        ZERO of everything else, the single most extreme risk/reward weapon in the catalog. */
-    { "Muramasa",            ARENA_ITEM_SLOT_WEAPON, ARENA_ITEM_TIER_WEIRD,   1150, 70,   0,   0,  0, 0.0f, 0,  0, 0 },
+    /* Cost tripled 2026-08-13 (see Gae Bolg's comment above): 1150 -> 3450. */
+    { "Muramasa",            ARENA_ITEM_SLOT_WEAPON, ARENA_ITEM_TIER_WEIRD,   3450, 70,   0,   0,  0, 0.0f, 0,  0, 0 },
     /* Balance Ring (S170-parity §4 Ring) -- real FFXI accessory name, reframed here around its
        own name's literal meaning: a COMEBACK item, armor bonus that scales with the wearer's own
        MISSING hp fraction, computed live in arena_hero_armor() (see that function's own doc
@@ -131,18 +136,21 @@ const ArenaItemDef ARENA_ITEMS[ARENA_ITEM_COUNT] = {
        real rubber-band design in the same spirit as §25.3's own synergy decay (a different
        system, same "give the losing side real openings" philosophy). ARENA_BALANCE_RING_ITEM_ID
        (arena_game.h) is the named index arena_hero_armor checks. */
-    { "Balance Ring",       ARENA_ITEM_SLOT_RING,    ARENA_ITEM_TIER_WEIRD,    900,  0,   0,   0,  0, 0.0f, 0,  0, 0 },
+    /* Cost tripled 2026-08-13 (see Gae Bolg's comment above): 900 -> 2700. */
+    { "Balance Ring",       ARENA_ITEM_SLOT_RING,    ARENA_ITEM_TIER_WEIRD,   2700,  0,   0,   0,  0, 0.0f, 0,  0, 0 },
     /* Empress Hairpin (S170-parity §4 Head) -- real FFXI item, real-game reputation as a
        caster/MP-support accessory. Mana-focused stat blend: a real bonus_max_mp plus a touch of
        the existing bonus_cdr_pct stat (Haste Trinket's own mechanic, reused not duplicated) --
        supports an ability-spam playstyle the existing Head-slot item (Optical Hat, flat HP) does
        nothing for. */
-    { "Empress Hairpin",    ARENA_ITEM_SLOT_HEAD,    ARENA_ITEM_TIER_GENERIC,  450,  0,   0, 100,  0, 0.0f, 4,  0, 0 },
+    /* Cost tripled 2026-08-13 (see Gae Bolg's comment above): 450 -> 1350. */
+    { "Empress Hairpin",    ARENA_ITEM_SLOT_HEAD,    ARENA_ITEM_TIER_GENERIC, 1350,  0,   0, 100,  0, 0.0f, 4,  0, 0 },
     /* Ninja Tekko (S170-parity §4 Hands) -- real FFXI ninja gauntlets. AD+move-speed hybrid
        (an "assassin" stat shape -- hit hard AND get there fast), distinct from the existing
        Hands-slot item (Battle Gloves, pure flat AD) rather than a straight upgrade to it --
        a real alternative build path, not strictly better/worse. */
-    { "Ninja Tekko",        ARENA_ITEM_SLOT_HANDS,   ARENA_ITEM_TIER_GENERIC,  500, 20,   0,   0,  0, 1.0f, 0,  0, 0 },
+    /* Cost tripled 2026-08-13 (see Gae Bolg's comment above): 500 -> 1500. */
+    { "Ninja Tekko",        ARENA_ITEM_SLOT_HANDS,   ARENA_ITEM_TIER_GENERIC, 1500, 20,   0,   0,  0, 1.0f, 0,  0, 0 },
 };
 
 /* arena_creeps_reset (S170-51): shared init helper for both arena_init_*
