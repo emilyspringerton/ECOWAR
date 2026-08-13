@@ -1,6 +1,7 @@
 # Changelog
 
 ## 2026-08-13
+- Added an 'Item mechanics beyond the stat columns' section to README documenting Donkey/Blink Dagger/Haste Trinket/Gae Bolg/Masamune/Balance Ring/Empress Hairpin's coded mechanics that the stat table alone doesn't show (sess-20260813-2154-dda37e8b)
 
 - Full README refresh (3v3 queue, R&D/Stable split, Jungle Camps, bot AI research program, 33-item catalog) + fixed accidental full-document duplication in the legacy design-doc section (sess-20260813-2154-dda37e8b)
 
