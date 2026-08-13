@@ -3136,3 +3136,69 @@ milestone/VS0 shape the way §25-26 do. Recorded here because it came from the s
 session and the founder asked for the research to be captured, not because it's REDGARDEN scope —
 if/where it's worth applying in this org's own tooling (emily-agent's own prompting, HEIMDAL
 sprint translation, etc.) is a separate, undecided question this section doesn't resolve.
+
+## 29. ECOWAR — RTS command layer + MOBA combat layer, deck-building as the interface (2026-08-13) -- scoping only, no code yet
+
+Founder real-time, across several messages: name the mode **ECOWAR** (the original vertical-slice
+design doc's own "Ecosystem War (2v2): shared structures + dragon objective" game mode, §8 of the
+"RED GARDEN — Original Vertical Slice Design Capture" section of `README.md`) — but reframed as a
+genre synthesis rather than a literal build of that doc as originally scoped: *"bringing the moba
+full circle back to RTS with TCG as the moonchild... deck building as the affordance for
+commanding your army"* — i.e., the RTS's card-based command interface directs a MOBA-style
+hero-driven combat layer, not the original doc's own 16-unit/8-structure autonomous-behavior
+roster. Explicitly its own thing: **separate game mode, separate matchmaking, separate client**
+("we will unify clients later" — for now, the existing headless test-bot client is the
+affordance for quick iteration, no dedicated rendered client needed yet).
+
+### What exists today, checked directly against real code
+
+Two genuinely separate, already-isolated codepaths this mode can draw from — neither has ever
+shared state or a process with the other:
+
+- **The RTS/card layer** — `packages/simulation/local_game.c`/`.h` (274/54 lines), driven by
+  `apps/server`, `apps/client` (headless bot, `bot_main.c`), `apps/matchmaker`. Real, working, but
+  a genuine MVP slice of the original 14-section design doc, not the full thing: a 20×20
+  `GridCell` automaton (`tick_automata`, neighbor-based state conversion, matches the doc's own
+  §3 update rules), exactly **4 cards** (`CARD_MILITIA`/`SCOUT`/`SWARMLINGS`/`OUTPOST`, real costs
+  `{2,3,1,5}` and cooldowns, `PACKET_CARD_PLAY` wire protocol already shipped), an influence
+  economy, and a `tech_tier[3]` field that exists in `ServerState` but isn't yet read by any tech
+  effect (`local_apply_card` doesn't branch on it). No Tier 2-4 tech, no 16-unit roster (just the
+  4 cards' own entity types), no structures beyond Outpost, no quest system, no win condition
+  check found in `local_update`'s own real logic. `[3]`-sized team arrays (`influence`,
+  `tech_tier`, `control_hold_ms`) already assume up to 3 owners, not just 2 — worth checking
+  whether that's already 2v2-shaped or just headroom that happened to be sized that way.
+- **The MOBA/hero layer** — `packages/simulation/arena_game.c`/`.h`, `apps/arena`,
+  `apps/arena_bot`, `apps/matchmaker` (same binary, different `--lobby-size`/`--server-bin` flags
+  — see that file's own header comment; this dual-role pattern is the direct precedent for how
+  ECOWAR's own "separate matchmaking" should probably work: a third matchmaker mode/binary
+  invocation, not a new matchmaker written from scratch). 26 heroes, 33-item shop, Jungle Camps,
+  the full arena bot AI research program (§25-28) — see `README.md`'s own "Current Status" and
+  "Arena bot AI research program" sections for the current real state.
+
+### The real design question this doc does NOT resolve
+
+How a card-driven command interface actually directs hero-driven combat units is a genuine open
+architecture question, not assumed or invented here:
+
+- Does the player also get one directly-controlled hero of their own (arena-style click-to-move),
+  with cards spawning additional army units around them — or is the player *purely* a card-playing
+  commander with zero directly-piloted unit, every hero on the field spawned/ordered via cards?
+  The founder's own phrase ("deck building as the affordance for **commanding your army**") reads
+  closer to the second, but doesn't fully rule out the first.
+- Are card-spawned army units full hero kits (Q/W/E abilities, items, the existing 26-hero roster)
+  or a simpler unit tier below hero complexity — closer to the original doc's Militia/Scout/
+  Swarmlings automaton-driven behavior, just re-skinned onto arena's movement/combat code instead
+  of `local_game.c`'s?
+- "Shared structures + dragon objective" (the original Ecosystem War framing) still needs a real
+  mechanical definition — is the dragon a Jungle-Camps-style neutral boss (reusing that system,
+  see README's Jungle Camps section) or a new, separate objective?
+- Which simulation loop does ECOWAR actually run on — a new third `ServerState`-shaped struct
+  reusing pieces of both, or one of the two existing loops extended with the other's concepts
+  grafted in? This is the single biggest real engineering decision and isn't guessed at here.
+
+### Status
+
+Scoping only. No milestone plan, no code. The next real step is settling the open questions
+above — likely via a founder AskUserQuestion-style pass — before a phased build plan can be
+written honestly (matching this repo's own established discipline: `NORTHSTAR.md`'s other
+"spec only" sections don't invent milestone numbers ahead of a real design decision either).
