@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026-08-13
+
+- Full README refresh (3v3 queue, R&D/Stable split, Jungle Camps, bot AI research program, 33-item catalog) + fixed accidental full-document duplication in the legacy design-doc section (sess-20260813-2154-dda37e8b)
+
+
 ## 2026-08-11
 - §25.4 autocurriculum 端對端訓練跑完：75% vs 固定 heuristic（比 noisy-gestalt-only 的 100% 低，可能是沒有 overfit 到單一對手的正常結果，需要 pool-based eval 才能真的判斷） (sess-20260810-0505-a53abca2)
 - §25.4 autocurriculum 真的端對端訓練跑起來了（500K timesteps，team_size=3，獨立 output-dir） (sess-20260810-0505-a53abca2)
