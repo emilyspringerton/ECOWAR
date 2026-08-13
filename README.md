@@ -13,8 +13,8 @@ comments in `apps/arena/src/main.c` and left implicit across every hero entry in
 | **Q / W / E** | Your three ability slots, in order. Every hero's kit maps its abilities to exactly these three — `docs/HEROES_VS0.md` lists each hero's real Q/W/R names and effects, but the *keys* are always Q/W/E, never anything hero-specific. W is either an instant effect on cooldown or a hold-on/hold-off toggle depending on the hero (`arena_hero_w_is_toggle()`) — toggles drain mana continuously while held rather than charging a flat cost up front. |
 | **`** (backquote/tilde) | Use your equipped active item — Blink Dagger (short blink toward the cursor) or Donkey's Paper Glide (dash away from the nearest enemy), whichever one you actually have equipped. No-op with neither equipped. |
 | **B** | Toggle the shop panel (S170-175) manually. The panel also opens/closes on its own once you walk within `ARENA_SHOP_RADIUS` of your own team's shop and leave it again (2026-07-30) — `B` still works on top of that for whenever you want it open away from the shop. |
-| **1–9** (shop open) | Buy the item in that row of the *current* shop page — a single action, no confirm step. The 27-item catalog is paginated 9-per-page (2026-07-30) so every visible row always has a live `1`-`9` keybind, unlike the old single giant list. Click an occupied slot in the loadout column to sell it back for half price. Purchases only resolve for real within `ARENA_SHOP_RADIUS` of your own team's shop. |
-| **Shift+1 / Shift+2 / Shift+3** (shop open) | Jump straight to shop page 1/2/3. Three clickable page-number buttons above the item list do the same thing for mouse users. |
+| **1–9** (shop open) | Buy the item in that row of the *current* shop page — a single action, no confirm step. The 33-item catalog is paginated 9-per-page (2026-07-30) so every visible row always has a live `1`-`9` keybind, unlike the old single giant list. Click an occupied slot in the loadout column to sell it back for half price. Purchases only resolve for real within `ARENA_SHOP_RADIUS` of your own team's shop. |
+| **Shift+1 through Shift+4** (shop open) | Jump straight to shop page 1/2/3/4. Four clickable page-number buttons above the item list do the same thing for mouse users. Page 4 (2026-08-11, "add page 4 to the shop") holds the 6 newest items — see the item table below. |
 | **Held TAB** | Scoreboard: every hero's kills/deaths/Flow/XP, plus a team-aggregate row, both teams side by side. |
 | **H** | Toggle an ability-description overlay for your own hero's Q/W/E. |
 | **Right click + drag** | Rotate the camera around your hero. No-op while camera lock (`C`) is on. |
@@ -36,7 +36,11 @@ caster.
 Draft is automatic right now — no pick UI yet, you're assigned a hero based on your slot in the
 lobby (`docs/HEROES_VS0.md` documents every hero's kit if you want to know what you're about to
 play before the match starts). Team matches are **10v10** (`ARENA_TEAM_SIZE`, S170-183 —
-briefly 7v7 under S170-178, reverted).
+briefly 7v7 under S170-178, reverted). A separate, dedicated **3v3** queue also exists (`:7780`,
+`redgarden-matchmaker-bots-3v3.service`/`redgarden-bot-pool-3v3.service`) — the only queue where
+the trained team-RL checkpoint's `team_rl_engage_nudge()` actually influences bot behavior
+(hard-gated no-op everywhere else, since that checkpoint is a fixed `team_size=3` shape). See
+"Arena Bot AI" below.
 
 ### Flow, XP, and the item shop (S170-175)
 
@@ -58,39 +62,58 @@ the catalog's generic-tier items.
 
 ### Item stats
 
-The full 27-item catalog (`ARENA_ITEMS`, `packages/simulation/arena_game.c`) — every stat bonus
-applies the instant you buy, no equip delay. Weapon carries 12 named items from
-`docs/HEROES_VS0.md`'s own "Season 3 LoL" starting roster plus 2 "weird" items with unusual stat
-shapes pulled from real FFXI end-game weapon reputations (Kraken Club: huge AD, zero defense;
-Ridill: an oddly-even split across all three defensive/offensive stats). Every other slot gets one
-plain, real FFXI-named item (`docs/FFXI_ITEM_PARITY_SEED.md`).
+The full 33-item catalog (`ARENA_ITEMS`, `packages/simulation/arena_game.c`, `ARENA_ITEM_COUNT`)
+— every stat bonus applies the instant you buy, no equip delay. Weapon carries 12 named items
+from `docs/HEROES_VS0.md`'s own "Season 3 LoL" starting roster plus 2 "weird" items with unusual
+stat shapes pulled from real FFXI end-game weapon reputations (Kraken Club: huge AD, zero
+defense; Ridill: an oddly-even split across all three defensive/offensive stats). Every other
+slot gets one plain, real FFXI-named item (`docs/FFXI_ITEM_PARITY_SEED.md`), plus three items
+with real mechanics instead of/alongside flat stats — Blink Dagger (S170-205, the `` ` `` active),
+Donkey (S170-206, Immortal's Fold + Paper Glide), Haste Trinket (S170-207, flat CDR%).
 
-| Item | Slot | Cost | AD | HP | MP | Armor | Move Speed |
-|---|---|---|---|---|---|---|---|
-| Seedling Charm | Weapon | 300 | +8 | +40 | — | — | — |
-| Bramble Fang | Weapon | 1000 | +35 | — | — | — | — |
-| Thornrender | Weapon | 950 | +28 | +10 | — | — | — |
-| Bloomheart Core | Weapon | 1100 | +45 | — | — | — | — |
-| Wanecall Grimoire | Weapon | 950 | +25 | — | +60 | — | — |
-| Ironbark Plate | Weapon | 900 | +10 | +150 | — | +20 | — |
-| Willowveil | Weapon | 850 | — | +120 | — | +25 | — |
-| Vampiric Bloom | Weapon | 1000 | +32 | +30 | — | — | — |
-| Splinterfang | Weapon | 900 | +30 | — | — | — | — |
-| Hollow Needle | Weapon | 900 | +30 | — | +40 | — | — |
-| Rootrunner Treads | Weapon | 500 | — | +10 | — | — | +0.8 |
-| Gardener's Ward | Weapon | 800 | — | +100 | — | +15 | — |
-| Kraken Club *(weird)* | Weapon | 1200 | +60 | — | — | — | — |
-| Ridill *(weird)* | Weapon | 1100 | +20 | +20 | — | +20 | — |
-| Optical Hat | Head | 400 | — | +60 | — | — | — |
-| Haubergeon | Body | 450 | — | — | — | +18 | — |
-| Battle Gloves | Hands | 400 | +12 | — | — | — | — |
-| Iron Ram Trousers | Legs | 400 | — | — | — | +18 | — |
-| Creek F. Boots | Feet | 400 | — | — | — | — | +0.6 |
-| Astral Ring | Ring | 350 | — | — | +50 | — | — |
-| Justice Badge | Neck | 400 | — | — | — | +14 | — |
-| Forager's Mantle | Back | 350 | +8 | — | — | — | +0.4 |
-| Warwolf Belt | Waist | 400 | — | +80 | — | — | — |
-| Peace Earring | Trinket | 350 | — | +30 | +40 | — | — |
+**Page 4, added 2026-08-11** ("expand the play space" pass, founder: *"using ffxi items and your
+own best judgement on how the new items with unique qualities... push the meta forward"*): 6 more
+real-FFXI-named items, introducing this catalog's first two genuinely new damage mechanics —
+**true damage** (bypasses armor entirely, applied after `apply_armor`) and **lifesteal** (heals
+the attacker off final post-armor damage) — plus the catalog's first **dynamic, live-computed**
+stat (Balance Ring's armor scales with the wearer's own missing-HP fraction every tick, a
+rubber-band comeback mechanic in the same spirit as §25.3's synergy decay below).
+
+| Item | Slot | Cost | AD | HP | MP | Armor | Move Speed | CDR% | True Dmg | Lifesteal% |
+|---|---|---|---|---|---|---|---|---|---|---|
+| Seedling Charm | Weapon | 300 | +8 | +40 | — | — | — | — | — | — |
+| Bramble Fang | Weapon | 1000 | +35 | — | — | — | — | — | — | — |
+| Thornrender | Weapon | 950 | +28 | +10 | — | — | — | — | — | — |
+| Bloomheart Core | Weapon | 1100 | +45 | — | — | — | — | — | — | — |
+| Wanecall Grimoire | Weapon | 950 | +25 | — | +60 | — | — | — | — | — |
+| Ironbark Plate | Weapon | 900 | +10 | +150 | — | +20 | — | — | — | — |
+| Willowveil | Weapon | 850 | — | +120 | — | +25 | — | — | — | — |
+| Vampiric Bloom | Weapon | 1000 | +32 | +30 | — | — | — | — | — | — |
+| Splinterfang | Weapon | 900 | +30 | — | — | — | — | — | — | — |
+| Hollow Needle | Weapon | 900 | +30 | — | +40 | — | — | — | — | — |
+| Rootrunner Treads | Weapon | 500 | — | +10 | — | — | +0.8 | — | — | — |
+| Gardener's Ward | Weapon | 800 | — | +100 | — | +15 | — | — | — | — |
+| Kraken Club *(weird)* | Weapon | 1200 | +60 | — | — | — | — | — | — | — |
+| Ridill *(weird)* | Weapon | 1100 | +20 | +20 | — | +20 | — | — | — | — |
+| Optical Hat | Head | 400 | — | +60 | — | — | — | — | — | — |
+| Haubergeon | Body | 450 | — | — | — | +18 | — | — | — | — |
+| Battle Gloves | Hands | 400 | +12 | — | — | — | — | — | — | — |
+| Iron Ram Trousers | Legs | 400 | — | — | — | +18 | — | — | — | — |
+| Creek F. Boots | Feet | 400 | — | — | — | — | +0.6 | — | — | — |
+| Astral Ring | Ring | 350 | — | — | +50 | — | — | — | — | — |
+| Justice Badge | Neck | 400 | — | — | — | +14 | — | — | — | — |
+| Forager's Mantle | Back | 350 | +8 | — | — | — | +0.4 | — | — | — |
+| Warwolf Belt | Waist | 400 | — | +80 | — | — | — | — | — | — |
+| Peace Earring | Trinket | 350 | — | +30 | +40 | — | — | — | — | — |
+| Blink Dagger *(weird)* | Trinket | 1400 | +6 | +6 | — | — | — | — | — | — |
+| Donkey *(weird)* | Back | 3200 | — | — | — | — | — | — | — | — |
+| Haste Trinket | Trinket | 900 | — | — | — | — | — | 6% | — | — |
+| Gae Bolg *(weird)* | Weapon | 1000 | — | — | — | — | — | — | 18 | — |
+| Masamune *(weird)* | Weapon | 1100 | +15 | — | — | — | — | — | — | 15% |
+| Muramasa *(weird)* | Weapon | 1150 | +70 | — | — | — | — | — | — | — |
+| Balance Ring *(weird)* | Ring | 900 | — | — | — | *dynamic* | — | — | — | — |
+| Empress Hairpin | Head | 450 | — | — | +100 | — | — | 4% | — | — |
+| Ninja Tekko | Hands | 500 | +20 | — | — | — | +1.0 | — | — | — |
 
 ### Suggested heroes for new players
 
@@ -112,7 +135,7 @@ forgiving kits — no clone armies to manage (Tyler), no blink mind-games (Loki)
   off a fraction of the damage it deals), a free regen toggle on W, an ally heal-zone on R. No
   damage combos to time, no enemies to predict; just keep the heals up.
 
-## Current Status (2026-07-23)
+## Current Status (2026-08-13)
 
 See `NORTHSTAR.md` for the full, up-to-date direction — this README's "Acceptance Criteria" and
 "Full Technical Design Document" sections below are the original design capture and are not all
@@ -126,12 +149,59 @@ built yet. What's actually real, right now:
   `REDGARDEN_TICKET_SECRET`.
 - **Matchmaking**: `apps/matchmaker` — this simulation is one match per process by design, so
   matchmaking means pairing queued clients and spawning a dedicated `red_garden_server --port <N>`
-  per match.
+  per match. **R&D vs. Stable deployment split (2026-08-10):** this checkout (`:7778`/`:7779`
+  matchmakers) is the fast-iteration R&D target and can break; a separate checkout,
+  `redgarden-stable`, serves GoblinFoxDragon's Battlegrounds (`:8778`) and is only promoted
+  manually — see `CLAUDE.md`'s "Deployments" table for the full split.
 - **Content (not yet wired into code)**: `docs/HEROES_VS0.md` (hero kits, including TYLER as an
   exact reskin of DOTA's classic Meepo) and `docs/CONSUMABLES_AND_COOKING.md` (item/consumable
   names, cooking/crafting direction).
 - **Not yet built**: `apps/lobby` (the real SDL2/OpenGL rendered client) builds, but isn't wired
   into the matchmaker/ticket flow above; no packaged/distributable client exists yet.
+
+### Jungle Camps — Four Heavenly Kings (all milestones done)
+
+NORTHSTAR §8/Jungle Camps: one boss-scale creep camp per compass direction (N/S/E/W), silent
+until 1:00, killable by either team, each granting a distinct team- or individual-scoped buff —
+East/Music (team-viral Catchy Song, outlives individual death via a respawn relay),
+South/Growth (individual stacking Bloodroar), West/All-Seeing (team-wide Farsight + bonus Flow
+on jungle kills), North/Wealth (proximity-aura Bulwark, armor + gold trickle to nearby allies).
+All 5 real milestones (buffs, anti-stall §3.4 lane-march escalation, King respawn timer) are done
+in both this repo and, as of 2026-08-10, ported into GoblinFoxDragon's own
+`apps2/battlegrounds_gui` fork via a real 3-way merge (Apple #12868).
+
+### Arena bot AI research program (NORTHSTAR §25-28)
+
+The multi-agent RL research thread — role discovery, synergy decay, commander/soldier hierarchy,
+autocurriculum, cross-game transfer — lives and iterates here. Real results so far, all via
+`scripts/rl_train_team.py`/`rl_env_team.py`:
+
+- **Role discovery prerequisite**: `sim_get_obs_team` appends a team-size-long agent-identity
+  one-hot to each agent's observation, the minimal signal a shared policy needs to differentiate
+  behavior by slot at all. The full learned-embedding module (ROMA/RODE-style) is unbuilt.
+- **Synergy decay (§25.3)**: a live comeback mechanic — team cohesion tier re-rolls every 8s,
+  weighted toward more decay the further ahead a team is, scaling a small ambient CDR/move-speed
+  bonus.
+- **Commander posture, first step (§26.3)**: `commander_posture_multiplier()` scales bot
+  tower-siege patience by the live resource race (ahead → patient, behind → aggressive) — a
+  rule-based first step, not yet the full learned hierarchical version.
+- **Noisy-gestalt training**: 500K timesteps, alternating Johnny/Spike reward schedule, final
+  eval 20W/0L/0D (100%) vs. the fixed heuristic.
+- **PFSP autocurriculum training**: a separate real end-to-end 500K-timestep run
+  (`--autocurriculum`), opponent-pool sampling against past checkpoints instead of one fixed
+  heuristic. Final eval 15W/5L/0D (75%) vs. the same fixed heuristic — honestly lower than the
+  noisy-gestalt run, plausibly because training time was split across a growing opponent pool
+  instead of over-specializing on the one heuristic it's evaluated against. Whether that means
+  "more general" or "genuinely weaker" isn't resolved yet — the real open next step is a
+  pool-based eval comparing both final policies against a shared varied opponent set, not built.
+- **Live consumer**: the noisy-gestalt checkpoint is wired into `apps/arena_bot`'s
+  `team_rl_engage_nudge()`, gated to a real, separate **3v3 queue** (`:7780`) — hard no-op in the
+  existing 10v10 pool since the checkpoint is a fixed `team_size=3` shape.
+- **Open, founder-flagged decision points, not yet built**: a draft-phase commander agent
+  (blocked on ban-phase systems not existing yet); v0-autocurriculum tuning the game via new
+  items (a real scope expansion past §25.4's original boundary); a repeatable GPT-2-assisted
+  item-name-generation pipeline (prompt `gpt2-alpine-c` with 2 seed item names, capture
+  candidates) to replace hand-picking FFXI names one at a time.
 
 ### Build & Run
 
@@ -202,71 +272,12 @@ future work — flagged here, not faked.
 
 ---
 
-## RED GARDEN
-Acceptance Criteria (Vertical Slice)
-Render a 20×20 isometric grid with visible cell boundaries.
-Run a cellular-automata tick every 2 seconds for grid state updates.
-Support grid states: Neutral, Player, Enemy, Corrupted.
-ITERATE
-Place static Frontier Villages during map generation.
-Provide a card hand UI with 5 slots at the bottom of the screen.
-Implement mouse drag-and-drop to place cards onto valid grid cells.
-Show a ghost preview and valid/invalid placement feedback while dragging.
-Enforce influence cost and cooldown per card when placing.
-Include exactly 4 playable cards: Militia, Scout, Swarmlings, Outpost.
-Implement autonomous unit behaviors for Militia, Scout, and Swarmlings.
-Implement Outpost as a spawner that produces Militia on a timer.
-Implement a minimal Dominion tech tree with 2 tiers:
-Tier 1: Militia +20 HP.
-Tier 2: Outpost spawns Militia at 2× speed.
-Implement a win condition: hold 60% of cells for 60 seconds or destroy the enemy Outpost.
-Full Technical Design Document
-1. Core Concept Refinement
-What this game is: A deck-building ecosystem RTS where you seed autonomous agents into a living cellular automaton battlefield. You do not control units—you introduce pressure and watch systems collide.
 
-Mental model
+## RED GARDEN — Original Vertical Slice Design Capture
 
-Clash Royale card deployment + hand management.
-Conway’s Game of Life emergent map behavior.
-Command & Conquer strategic pacing.
-League of Legends objective control.
-Diablo II creature ecology.
-Core loop
-
-Draw cards from an evolving deck.
-Drag-drop spawners/units onto valid grid cells.
-Watch autonomous behaviors create frontlines.
-Tech tree upgrades mutate cards (not raw unit control).
-Capture objectives to evolve deck mid-match.
-2. Art Direction: Low-Poly Imperative Brutalism
-Visual pillars
-
-C99 + SDL2 + OpenGL immediate mode.
-No shaders, no textures, flat colors, vertex lighting only.
-Everything under 100 triangles per entity.
-Neon Brutalism style
-
-Solid matte black cores (RGB 0.02, 0.02, 0.02).
-Wireframe neon cages with procedural color.
-High-contrast silhouettes for instant readability.
-Geometric purity: cubes, wedges, capsules.
-Color language
-
-Player Units: Hot Pink (1.0, 0.0, 0.8)
-Enemy Units: Acid Green (0.0, 1.0, 0.4)
-Neutral Towns: Cyan (0.0, 1.0, 1.0)
-Pillager Compounds: Blood Red (1.0, 0.0, 0.0)
-Terrain Grid: Deep Blue (0.0, 0.2, 0.4)
-Tech Nodes: Electric Yellow (1.0, 1.0, 0.0)
-Camera
-
-Fixed high-tilt orthographic (Age of Empires II style).
-No rotation, slight zoom only.
-Grid always visible.
-3. The Living Grid System
-Cell struct
-
-# RED GARDEN
+*Kept as history per "Current Status" above — the design doc this repo started from, not all
+built yet. De-duplicated 2026-08-13 (this file had accidentally carried two copies of the same
+content, one unformatted, one formatted, since an earlier pass).*
 
 ## Acceptance Criteria (Vertical Slice)
 
@@ -294,7 +305,7 @@ Cell struct
 
 **Mental model**
 - Clash Royale card deployment + hand management.
-- Conway’s Game of Life emergent map behavior.
+- Conway's Game of Life emergent map behavior.
 - Command & Conquer strategic pacing.
 - League of Legends objective control.
 - Diablo II creature ecology.
@@ -343,26 +354,6 @@ typedef struct {
     int growth_rate; // -10 to +10
     float stability; // 0.0 to 1.0
 } GridCell;
-Update rules (every 2 seconds)
-
-If 3+ neighbors share alignment → convert (if pressure > 50).
-If population > 200 → split to adjacent cells.
-If population < 20 for 5 ticks → revert to neutral.
-If 4+ corrupted neighbors → become corrupted.
-Visual feedback
-
-Cell color intensity = population density.
-Pulsing borders = conversion in progress.
-Cracks for overpopulation.
-Tendrils for corruption.
-4. Card UI System (Clash Royale DNA)
-Layout
-
-Bottom-center: 5-card active hand.
-Top-left: tech tree indicator.
-Bottom strip: resource + deck preview.
-Card anatomy
-
 ```
 
 **Update rules (every 2 seconds)**
@@ -394,8 +385,6 @@ typedef struct {
     char name[32];
     float color_r, color_g, color_b; // Neon accent
 } Card;
-Mouse interaction
-
 ```
 
 **Mouse interaction**
@@ -406,8 +395,6 @@ typedef struct {
     int dragging_card_idx; // -1 = none
     int hover_cell;
 } MouseState;
-Valid placement
-
 ```
 
 **Valid placement**
@@ -418,104 +405,6 @@ int is_valid_spawn(GridCell *cell, Card *card) {
     if (cell->population > 200) return 0;
     return 1;
 }
-5. Entity Roster (16 Units + 8 Structures)
-Units
-Tier 1
-
-Militia: frontline bruiser, forms shield walls.
-Scout: ranged kiter, long aggro.
-Swarmlings: fast horde, weakest-target focus.
-Ravager: objective breaker, ignores units initially.
-Tier 2
-
-Hexbound: debuffer, spreads corruption.
-Verdant Behemoth: slow anchor, stabilizes cells.
-Shade Stalker: stealth assassin, backstab.
-Pyromancer: AoE caster, splash + burn.
-Tier 3
-
-Warden: defensive specialist, reflect damage.
-Tide Caller: healer/support, resurrection path.
-Siege Golem: tank with siege mode.
-Void Reaver: self-draining, explosive death.
-Tier 4
-
-Archon: hero unit, buffs + ultimate.
-Chaos Spawn: random outcomes, volatility.
-Wraith King: revive loops, summons militia.
-Dragon: map boss, unlockable via quest.
-Structures
-Outpost: Militia spawner, alignment pressure.
-Mana Well: influence generator, town-adjacent.
-Corruption Spire: Hexbound spawner + corruption.
-Grove Heart: Behemoth spawner + healing.
-Siege Workshop: Golem spawner + repairs.
-Shadow Sanctum: Stalker spawner + stealth.
-Inferno Tower: AoE defense.
-Nexus Core: win-condition structure.
-6. NPC Entities (Third Faction)
-Towns
-
-Frontier Village: peasants + easy flip.
-Walled Hamlet: guards + hard flip.
-Jungle Enclave: hunters + expansion.
-Blighted Settlement: cultists + instability.
-Creep camps
-
-Goblin Warren: 3 goblins, loot influence.
-Orc Stronghold: orcs, unlocks Ravager.
-Dragon Roost: neutral dragon, major objective.
-Pillager compounds
-
-Corruption Node: spreads corruption, spawns pillagers.
-Pillagers: Marauder, Destroyer, Corruptor.
-7. Tech Tree System
-Design rules
-
-3 vertical paths, pick 2 per match.
-Tech upgrades cards (not global stats).
-Unlocks via objectives, not just time.
-Doctrines
-
-Dominion
-
-T1: Militia +20 HP, Outpost 2× spawn, +10% structure HP.
-T2: Shield Bash, Barracks upgrade, Siege Workshop unlocked.
-T3: Captain upgrade, Nexus Core unlocked, +50% structure HP.
-T4: Archon unlocked, Unbreakable buff.
-Symbiosis
-
-T1: Scout +2 vision, faster cell growth, towns never defect.
-T2: Behemoth regen, Grove Heart unlocked, camps neutral.
-T3: Behemoth spawns Militia, towns auto-upgrade, permanent conversions.
-T4: World Tree unlocked, territory heal, hostile environment for enemies.
-Corruption
-
-T1: Hexbound radius +1, faster corruption, pillager hijack.
-T2: Corruption Spire + Void Reaver unlocked, structure corruption damage.
-T3: Chaos Spawn unlocked, corrupted cell explosions, volatile deaths.
-T4: Cataclysm Beacon unlocked, permanent corruption, zombie effect.
-Quest unlocks
-
-First Blood → Pyromancer
-Fortify → Warden
-Treasure Hunter → +5 hand size
-Dragon Slayer → Dragon card + influence cap
-Ecosystem Collapse → Chaos Spawn
-Necromancer → Wraith King
-8. Game Modes
-Skirmish (1v1 Ranked): 30 min, destroy Nexus or hold 50% map.
-Survival (Co-op PvE): survive 20 waves.
-Ecosystem War (2v2): shared structures + dragon objective.
-Chaos Mode (FFA): corruption expands, last player standing.
-9. UI Specification
-Main layout
-
-Top bar: tech tier + influence.
-Center: 3D isometric battlefield.
-Bottom: 5-card hand + deck preview.
-Cooldowns shown as radial fills.
-10. Conway Integration
 ```
 
 ### 5. Entity Roster (16 Units + 8 Structures)
@@ -649,12 +538,6 @@ void update_town_ecology() {
         if (t->morale <= 0) convert_to_ruins(t);
     }
 }
-11. Networking Adaptation
-New packets
-
-PACKET_CARD_PLAY: client → server card placement.
-PACKET_TECH_UNLOCK: server → clients tech progression.
-PACKET_QUEST_COMPLETE: server → client quest rewards.
 ```
 
 ### 11. Networking Adaptation
@@ -676,65 +559,6 @@ typedef struct {
     unsigned char reward_card_id;
     int bonus_influence;
 } QuestComplete;
-Server simulation
-
-Authoritative 60 TPS.
-Validates card placement.
-Broadcasts entity snapshots + cell states.
-Handles NPC AI (towns, creeps, pillagers).
-12. Fork Adaptation Guide
-Keep
-
-SDL2 window management.
-OpenGL immediate mode rendering.
-Network stack (UDP sockets).
-Remove
-
-FPS camera.
-Weapon system.
-Jump/crouch physics.
-Add
-
-Orthographic/isometric camera.
-Grid-based spatial partition.
-Card deck system.
-Mouse → world raycast.
-Cellular automata updater (2s tick).
-Quest tracker + tech tree.
-Key files
-
-card_system.h
-grid.h
-entity_behaviors.h
-quest_system.h
-tech_tree.h
-mouse_input.h
-13. Emergence Examples
-The Cascade: corruption + pillagers + pyromancer → chain wipe.
-The Living Wall: Grove Hearts create a pushing defensive front.
-The Dragon Gambit: last-hit dragon swings a late-game siege.
-14. Visual Identity Summary
-Palette
-
-Deep Space Blue: #050514
-Hot Pink: #FF00CC
-Acid Green: #00FF66
-Cyan: #00FFFF
-Blood Red: #FF0000
-Electric Yellow: #FFFF00
-Matte Black: #050505
-Silhouettes
-
-Bruisers: cubes + wide stance.
-Skirmishers: tall capsules.
-Swarms: triangular shards.
-Casters: spheres + floaters.
-Tanks: stacked cubes.
-Support: ribbon geometry.
-Typography
-
-Wireframe vector font (2px line thickness).
-Cyan for info, yellow for warnings, red for errors.
 ```
 
 **Server simulation**
