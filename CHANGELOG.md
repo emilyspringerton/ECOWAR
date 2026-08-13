@@ -1,6 +1,7 @@
 # Changelog
 
 ## 2026-08-13
+- Tripled Flow cost of the 6 page-4 items (Gae Bolg/Masamune/Muramasa/Balance Ring/Empress Hairpin/Ninja Tekko), first pass of a balance iteration -- other items deferred (sess-20260813-2154-dda37e8b)
 - Added an 'Item mechanics beyond the stat columns' section to README documenting Donkey/Blink Dagger/Haste Trinket/Gae Bolg/Masamune/Balance Ring/Empress Hairpin's coded mechanics that the stat table alone doesn't show (sess-20260813-2154-dda37e8b)
 
 - Full README refresh (3v3 queue, R&D/Stable split, Jungle Camps, bot AI research program, 33-item catalog) + fixed accidental full-document duplication in the legacy design-doc section (sess-20260813-2154-dda37e8b)
