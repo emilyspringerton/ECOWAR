@@ -1,6 +1,7 @@
 # Changelog
 
 ## 2026-08-14
+- 啟動新一輪 --autocurriculum + --noisy-gestalt 訓練(200K timesteps,3v3),驗證 NORTHSTAR §26.3.1 記錄的'真正 end-to-end autocurriculum run'待辦項。輸出至 rl_team_checkpoints_autocurriculum/。 (sess-20260813-2154-dda37e8b)
 
 - NORTHSTAR §20.5: re-investigated CANNON/siege minions -- the structures blocker §20.4 named is resolved, but found a real, different blocker (lane creeps and towers are on geometrically unrelated systems, zero interaction code) -- documented, real design question flagged, not built yet (sess-20260813-2154-dda37e8b)
 
