@@ -2002,6 +2002,41 @@ sequenced target design -- is done, per the founder's own "lol parity northstar 
 No code changes accompany this section; S170-209's implementation phase (sprints against §20.3's
 checklist) is separate, future work.
 
+### 20.5 Cannon/siege minions -- re-checked 2026-08-14, real blocker found, not the one §20.4 named
+
+Founder real-time: "at some point ensure the CANNON/siege-minion feature lands clean." Re-checked
+against the actual current codebase before touching anything, since §20.4 (above) is now three
+weeks stale and a lot has shipped since: §20.4's own stated blocker -- "a wave with nothing to
+push against" -- is **resolved**. Real towers exist now (`ARENA_TOWER_MAX_HP`/`_DAMAGE`/
+`_KILL_FLOW`, real projectile combat, `packages/simulation/arena_game.h`), and §20.3's melee/
+caster role split shipped for real too (S170-218, `ARENA_LANE_CREEP_MELEE`/`_CASTER`).
+
+But a **different, deeper blocker** turned up that neither §20.4 nor S170-218 flagged: lane
+creeps and towers are on two geometrically unrelated systems, with **zero code path between
+them today** (confirmed: grepping the whole simulation for any lane-creep-vs-tower interaction
+returns nothing). Lane creeps walk a fixed 3-point path (`lane_creep_waypoint` --
+team-spawn → center (0,0) → enemy-spawn, a straight line). Towers sit at the 5 scattered
+Arathi-Basin-style capture nodes (`ARENA_NODE_COUNT`, S170-119's own "real Arathi Basin has 5"
+framing) -- a capture-point layout, not a lane-tower layout, and not necessarily anywhere near
+the lane's own straight-line path. A cannon minion's entire identity is "hits towers harder";
+building that on top of a wave that structurally can't reach a tower at all would ship a
+reskinned melee creep with a name that lies about what it does.
+
+**Real open question, not resolved here** (matches this section's own established discipline of
+naming the gap rather than forcing an answer): does the lane path get re-anchored so its final
+waypoint(s) sit at/near real node positions (making "push the lane" and "capture a node" the same
+act, a bigger design change than it sounds), or does tower engagement need its own separate
+lane-to-node proximity check bolted on without moving the path itself (smaller, but a lane creep
+"sieging" a tower it never geometrically approached would look wrong)? Neither is decided here on
+purpose -- this is a real design call, not an implementation detail.
+
+**Once that's settled**, cannon minions themselves are a small, well-understood addition on top --
+same shape as S170-218's own caster role: a third `ArenaLaneCreepRole` value, spawned in place of
+one melee slot on a wave-count cadence (a `lane_wave_count[2]` counter needs adding first, doesn't
+exist yet either), higher HP/damage than melee, plus a flat bonus specifically against tower HP.
+Not built this pass -- the geometry question above needs a real answer first, and guessing at one
+risks exactly the kind of half-integrated feature this section's own §20.4 was written to avoid.
+
 ## 21. Reinforcement learning for the arena bot AI — reward-driven, Unity ML-Agents-shaped (2026-07-29, S170-223)
 
 **Status update (2026-07-29, S170-224/225/226/227): the full pipeline this section specs is now
