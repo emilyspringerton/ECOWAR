@@ -1,6 +1,7 @@
 # Changelog
 
 ## 2026-08-14
+- 首次真正end-to-end --autocurriculum訓練完成:7W/13L/0D(35%)對抗固定heuristic,遠低於noisy-gestalt的100%——很可能確認先前100%是過擬合單一對手。5個checkpoint進opponent pool。不建議現在接成live consumer。Apple #13608。 (sess-20260813-2154-dda37e8b)
 - redgarden-stable(GFD Battlegrounds真正部署)promote:自08-10落後4天多,已git pull+rebuild+重啟,Four Kings現在真的在stable部署上線了。Apple #13584。 (sess-20260813-2154-dda37e8b)
 - 啟動新一輪 --autocurriculum + --noisy-gestalt 訓練(200K timesteps,3v3),驗證 NORTHSTAR §26.3.1 記錄的'真正 end-to-end autocurriculum run'待辦項。輸出至 rl_team_checkpoints_autocurriculum/。 (sess-20260813-2154-dda37e8b)
 
