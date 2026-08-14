@@ -30,9 +30,14 @@ own module doc comment for the full design).
 --autocurriculum (2026-08-10, NORTHSTAR §25.4): PFSP-biased opponent-pool sampling (heuristic +
 past self-play checkpoints, biased toward whichever the current policy is losing to most), also
 now implemented -- see ArenaTeamVecEnv's own _sample_opponent()/add_opponent_checkpoint() doc
-comments. Verified via a standalone ctypes+SB3 script exercising real checkpoints from this
-session's own in-progress training run (opponent sampling/switching, real model.predict()-driven
-team-B actions, pool eviction) -- NOT yet exercised inside a real end-to-end model.learn() run.
+comments. Now HAS been exercised inside a real end-to-end model.learn() run -- correcting this
+doc comment's own earlier "NOT yet exercised" claim, which had already gone stale once (a
+2026-08-11 run, 500K timesteps, scored 75% vs. the fixed heuristic) and then stayed stale in
+this comment through a second run (2026-08-14, 200K timesteps -- shorter, less converged --
+scored 35%). Both real, both eval'd against the same fixed heuristic only, not yet against the
+opponent pool itself; the lower second score is most likely under-convergence at half the prior
+timestep budget, not a regression in the mechanism. Whoever runs this next: check EMILY/BACKLOG.md
+and REDGARDEN/CHANGELOG.md for the current run count before assuming this note is still accurate.
 Role discovery and synergy decay (§25.2.3) remain spec-only; this closes two of the three
 remaining pieces, not all of them.
 """
