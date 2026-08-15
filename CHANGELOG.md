@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026-08-15
+
+- team_size=10(真正10v10)首次RL訓練啟動:先smoke test確認313fps(C simulation+Python env層本就通用支援team_size 2-10,不需改code),再啟動500K timesteps正式run(--noisy-gestalt,比照先前最佳3v3規模),預估~27分鐘。輸出至rl_team_checkpoints_10v10/。Apple #13699。 (sess-20260813-2154-dda37e8b)
+
+
 ## 2026-08-14
 - 【修正】上一條寫「首次」是錯的——2026-08-11已經跑過一次真正end-to-end --autocurriculum訓練(500K timesteps,75% win rate,見下方2026-08-11條目)。這次(2026-08-14)其實是第二次,只跑200K timesteps(前次一半),結果35%比前次75%更低,收斂不足很可能是主因,不是機制本身變差。兩次都只對抗固定heuristic評估,還沒對抗opponent pool本身。5個checkpoint進opponent pool。不建議現在接成live consumer。scripts/rl_train_team.py自己的module doc comment也已修正(那個過時的"NOT yet exercised"斷言就是這次誤判的來源)。Apple #13608 + #13610(自我修正)。 (sess-20260813-2154-dda37e8b)
 - redgarden-stable(GFD Battlegrounds真正部署)promote:自08-10落後4天多,已git pull+rebuild+重啟,Four Kings現在真的在stable部署上線了。Apple #13584。 (sess-20260813-2154-dda37e8b)
