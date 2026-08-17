@@ -10,7 +10,7 @@
   `rl_team_checkpoints_autocurriculum_500k/ppo_arena_team_final.zip`。權重也匯出到
   `rl_policy_weights_team.h`(146314 bytes)供檢視,**明確尚未接入任何實際consumer**——team-shaped
   input vector要接什麼consumer是NORTHSTAR §25.5沒解決的真實設計問題,不是這次訓練run的副作用該決定的。
-  誠實回報,不誇大。Apple #13930。 (sess-20260813-2154-dda37e8b)
+  誠實回報,不誇大。Apple #13945。 (sess-20260813-2154-dda37e8b)
 
 - ops檢查(founder即時指示:「ensure ops for our exotic training」,澄清「exotic training」=autocurriculum):
   確認先前兩輪autocurriculum跑都已完整結束並回報過(2026-08-14 200K timesteps/35% win rate已在Apple
