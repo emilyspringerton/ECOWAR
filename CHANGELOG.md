@@ -1,5 +1,17 @@
 # Changelog
 
+## 2026-08-17
+
+- ops檢查(founder即時指示:「ensure ops for our exotic training」,澄清「exotic training」=autocurriculum):
+  確認先前兩輪autocurriculum跑都已完整結束並回報過(2026-08-14 200K timesteps/35% win rate已在Apple
+  #13608/#13610記錄；2026-08-15 10v10版512K timesteps/40% win rate已在Apple #13748記錄),目前沒有訓練
+  程序在跑,無systemd unit監督訓練本身(training是手動背景跑,不是常駐服務——這是預期行為,不是ops缺口)。
+  發現先前35%那輪其實同時改了兩個變數(timesteps從500K減半到200K「且」加了--noisy-gestalt),不是乾淨對照
+  組。為了真正驗證CHANGELOG自己下的「應為收斂不足,非機制退步」假設,重新啟動一輪與75%那次(2026-08-11)完全
+  同config的乾淨對照:team_size=3、500K timesteps、僅--autocurriculum(noisy-gestalt關閉)。啟動後確認
+  process存活、fps=99、正常寫入checkpoint,健康運行中,輸出至`rl_team_checkpoints_autocurriculum_500k/`。
+  Apple #13908。 (sess-20260813-2154-dda37e8b)
+
 ## 2026-08-15
 
 - team_size=10(真正10v10)首次RL訓練啟動:先smoke test確認313fps(C simulation+Python env層本就通用支援team_size 2-10,不需改code),再啟動500K timesteps正式run(--noisy-gestalt,比照先前最佳3v3規模),預估~27分鐘。輸出至rl_team_checkpoints_10v10/。Apple #13699。 (sess-20260813-2154-dda37e8b)
