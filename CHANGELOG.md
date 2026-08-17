@@ -2,6 +2,16 @@
 
 ## 2026-08-17
 
+- 乾淨對照組訓練跑完(S170-294延續):team_size=3、503808/500000 timesteps(PPO overshoot到下一個完整
+  rollout邊界)、僅--autocurriculum(noisy-gestalt關閉),跟2026-08-11那次75%勝率的reference run完全同
+  config。結果:14勝6敗0平,**70.0%勝率**——跟75% reference run同一量級,不是2026-08-14那次35%的低分。
+  這證實了先前的假設:35%不是機制退步,是那次同時改了兩個變數(timesteps砍半+加了--noisy-gestalt)造成
+  的收斂不足,不是乾淨對照。70% vs 75%的落差在兩次獨立訓練run之間屬於正常變異範圍。最終policy:
+  `rl_team_checkpoints_autocurriculum_500k/ppo_arena_team_final.zip`。權重也匯出到
+  `rl_policy_weights_team.h`(146314 bytes)供檢視,**明確尚未接入任何實際consumer**——team-shaped
+  input vector要接什麼consumer是NORTHSTAR §25.5沒解決的真實設計問題,不是這次訓練run的副作用該決定的。
+  誠實回報,不誇大。Apple #13930。 (sess-20260813-2154-dda37e8b)
+
 - ops檢查(founder即時指示:「ensure ops for our exotic training」,澄清「exotic training」=autocurriculum):
   確認先前兩輪autocurriculum跑都已完整結束並回報過(2026-08-14 200K timesteps/35% win rate已在Apple
   #13608/#13610記錄；2026-08-15 10v10版512K timesteps/40% win rate已在Apple #13748記錄),目前沒有訓練
