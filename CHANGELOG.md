@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026-08-19
+
+- Added cel-shading (outline + quantized diffuse banding) to apps/arena, first step toward the founder's Prompt-o-verse-referenced DragonsNShit graphics quality bar (sess-20260813-2154-dda37e8b)
+
+
 ## 2026-08-17
 
 - 乾淨對照組訓練跑完(S170-294延續):team_size=3、503808/500000 timesteps(PPO overshoot到下一個完整
