@@ -4017,6 +4017,87 @@ int main(int argc, char *argv[]) {
         }
         g_hover_target = hovered_i; /* S170-143: publish this frame's hover result for the QWE keybind handler to read next frame */
         if (hovered_i < 0) SDL_SetCursor(cursor_default); /* S170-69: hovering empty ground/terrain -- no lingering crosshair from a previous hover */
+
+        /* Procedural minimap (S181-04, RENDERING_QUALITY_NORTHSTAR.md's #1
+         * priority item -- "the single biggest visual gap versus the Duck
+         * reference... no minimap exists at all today"). Top-right circular
+         * radar: terrain-colored disc, bordered ring, a dot per alive hero
+         * (same relationship-color convention the health bars above use)
+         * and per ArenaNode (owner-colored). World position -> minimap
+         * position via ARENA_HALF_EXTENT (the real map half-extent,
+         * S170-191's golden-ratio scale), clamped to the circle radius so
+         * a hero out past the normal play area doesn't plot outside the
+         * minimap's own border. Immediate-mode GL_TRIANGLE_FAN/GL_LINE_LOOP,
+         * matching this same 2D HUD pass's existing ability-pie-timer/ring
+         * drawing convention -- no new VBO/mesh needed for something drawn
+         * once per frame in ortho pixel space. */
+        {
+            float mm_cx = win_w - 74.0f;
+            float mm_cy = win_h - 74.0f;
+            float mm_r = 60.0f;
+
+            glColor4f(0.24f, 0.26f, 0.15f, 0.88f);
+            glBegin(GL_TRIANGLE_FAN);
+            glVertex2f(mm_cx, mm_cy);
+            for (int mi = 0; mi <= 32; mi++) {
+                float a = (float)mi / 32.0f * 2.0f * (float)M_PI;
+                glVertex2f(mm_cx + cosf(a) * mm_r, mm_cy + sinf(a) * mm_r);
+            }
+            glEnd();
+
+            glColor3f(0.78f, 0.72f, 0.5f);
+            glLineWidth(2.0f);
+            glBegin(GL_LINE_LOOP);
+            for (int mi = 0; mi < 32; mi++) {
+                float a = (float)mi / 32.0f * 2.0f * (float)M_PI;
+                glVertex2f(mm_cx + cosf(a) * mm_r, mm_cy + sinf(a) * mm_r);
+            }
+            glEnd();
+
+            int my_team = arena_state.heroes[my_owner].team;
+            for (int n = 0; n < ARENA_NODE_COUNT; n++) {
+                ArenaNode *node = &arena_state.nodes[n];
+                float nx = node->x / ARENA_HALF_EXTENT;
+                float nz = node->z / ARENA_HALF_EXTENT;
+                float ndist = sqrtf(nx * nx + nz * nz);
+                if (ndist > 1.0f) { nx /= ndist; nz /= ndist; }
+                float px = mm_cx + nx * mm_r;
+                float py = mm_cy + nz * mm_r;
+                if (node->owner == 0) glColor3f(0.6f, 0.6f, 0.6f);
+                else if (node->owner == my_team + 1) glColor3f(0.15f, 0.55f, 0.95f);
+                else glColor3f(0.9f, 0.25f, 0.15f);
+                glBegin(GL_TRIANGLE_FAN);
+                glVertex2f(px, py);
+                for (int mi = 0; mi <= 8; mi++) {
+                    float a = (float)mi / 8.0f * 2.0f * (float)M_PI;
+                    glVertex2f(px + cosf(a) * 3.0f, py + sinf(a) * 3.0f);
+                }
+                glEnd();
+            }
+
+            for (int i = 0; i < ARENA_HEROES_ARRAY_SIZE; i++) {
+                ArenaHero *h = &arena_state.heroes[i];
+                if (!h->alive) continue;
+                float hx = h->x / ARENA_HALF_EXTENT;
+                float hz = h->z / ARENA_HALF_EXTENT;
+                float hdist2 = sqrtf(hx * hx + hz * hz);
+                if (hdist2 > 1.0f) { hx /= hdist2; hz /= hdist2; }
+                float px = mm_cx + hx * mm_r;
+                float py = mm_cy + hz * mm_r;
+                int is_mine = (i == my_owner) || (h->is_clone && h->clone_owner == my_owner);
+                if (is_mine) glColor3f(0.1f, 0.8f, 0.95f);
+                else if (h->team == my_team) glColor3f(0.15f, 0.55f, 0.95f);
+                else glColor3f(0.9f, 0.25f, 0.15f);
+                float dot_r = is_mine ? 4.0f : 3.0f;
+                glBegin(GL_TRIANGLE_FAN);
+                glVertex2f(px, py);
+                for (int mi = 0; mi <= 8; mi++) {
+                    float a = (float)mi / 8.0f * 2.0f * (float)M_PI;
+                    glVertex2f(px + cosf(a) * dot_r, py + sinf(a) * dot_r);
+                }
+                glEnd();
+            }
+        }
         if (hovered_i >= 0) {
             ArenaHero *hh = &arena_state.heroes[hovered_i];
             float bw = 40.0f, bh = 5.0f;
