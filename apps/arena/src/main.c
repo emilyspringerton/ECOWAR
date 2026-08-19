@@ -961,6 +961,7 @@ static PFNGLGETUNIFORMLOCATIONPROC glGetUniformLocation_;
 static PFNGLUNIFORMMATRIX4FVPROC glUniformMatrix4fv_;
 static PFNGLUNIFORM4FPROC glUniform4f_;
 static PFNGLUNIFORM3FPROC glUniform3f_;
+static PFNGLUNIFORM1FPROC glUniform1f_; /* S180-09: outline pass width uniform */
 static PFNGLBINDATTRIBLOCATIONPROC glBindAttribLocation_;
 
 #define LOAD(name, type) name##_ = (type)SDL_GL_GetProcAddress(#name)
@@ -990,6 +991,7 @@ static int load_gl_functions(void) {
     LOAD(glUniformMatrix4fv, PFNGLUNIFORMMATRIX4FVPROC);
     LOAD(glUniform4f, PFNGLUNIFORM4FPROC);
     LOAD(glUniform3f, PFNGLUNIFORM3FPROC);
+    LOAD(glUniform1f, PFNGLUNIFORM1FPROC);
     LOAD(glBindAttribLocation, PFNGLBINDATTRIBLOCATIONPROC);
     return glCreateShader_ && glShaderSource_ && glCompileShader_ && glLinkProgram_ &&
            glUseProgram_ && glGenVertexArrays_ && glBindVertexArray_ && glGenBuffers_ &&
@@ -1009,6 +1011,17 @@ static const char *VS_SRC =
     "    gl_Position = uMVP * vec4(aPos, 1.0);\n"
     "}\n";
 
+/* Cel-shading (S180-09, founder real-time: "iterate dragonsnshit interface
+ * and graphics ... the abraxas FFXI gen is an awesome cell shaded low poly
+ * look ... that as the gold standard ... like cell shading engine then
+ * source engine quality before unreal engine quality"). Quantizing the
+ * diffuse term into discrete bands instead of a smooth gradient is the
+ * whole visual difference between "flat-shaded primitive" and "cel-shaded
+ * character" -- it needs zero new geometry/art, just this one change,
+ * which is why it's the first concrete step toward that reference image's
+ * look rather than something blocked on real 3D models. Paired with the
+ * outline pass below (VS_OUTLINE_SRC/FS_OUTLINE_SRC) for the hard black
+ * silhouette line the reference also has. */
 static const char *FS_SRC =
     "#version 150\n"
     "in vec3 vNormal;\n"
@@ -1016,9 +1029,57 @@ static const char *FS_SRC =
     "uniform vec3 uLightDir;\n"
     "out vec4 fragColor;\n"
     "void main() {\n"
-    "    float diff = max(dot(normalize(vNormal), normalize(uLightDir)), 0.2);\n"
-    "    fragColor = vec4(uColor.rgb * diff, uColor.a);\n"
+    "    float diff = max(dot(normalize(vNormal), normalize(uLightDir)), 0.0);\n"
+    "    float band;\n"
+    "    if (diff > 0.75) band = 1.0;\n"
+    "    else if (diff > 0.35) band = 0.65;\n"
+    "    else band = 0.35;\n"
+    "    fragColor = vec4(uColor.rgb * band, uColor.a);\n"
     "}\n";
+
+/* Outline pass: classic "inverted hull" cel-shading technique (expand each
+ * vertex outward along its own normal by a small world-space amount, draw
+ * back-facing-only in solid near-black, BEFORE the real front-facing
+ * cel-shaded draw) -- Wind Waker's rendering approach, not invented here.
+ * Applied per hero-box primitive (draw_hero_box_facing below), not as a
+ * whole-character screen-space post-process, since this renderer has no
+ * FBO/post-process pipeline yet -- a real, known limitation: a multi-box
+ * hero silhouette gets an outline seam between its own boxes, not one
+ * single clean silhouette line. Good enough for "lay the groundwork";
+ * worth revisiting with a proper edge-detection post-process pass when
+ * this moves toward "Source engine" tier. */
+static const char *VS_OUTLINE_SRC =
+    "#version 150\n"
+    "in vec3 aPos;\n"
+    "in vec3 aNormal;\n"
+    "uniform mat4 uOutlineMVP;\n"
+    "uniform float uOutlineWidth;\n"
+    "void main() {\n"
+    "    vec3 expanded = aPos + aNormal * uOutlineWidth;\n"
+    "    gl_Position = uOutlineMVP * vec4(expanded, 1.0);\n"
+    "}\n";
+
+static const char *FS_OUTLINE_SRC =
+    "#version 150\n"
+    "out vec4 fragColor;\n"
+    "void main() {\n"
+    "    fragColor = vec4(0.05, 0.05, 0.08, 1.0);\n"
+    "}\n";
+
+/* Set once at startup (main()), read by draw_hero_box_facing on every hero
+ * draw call -- same "fixed-for-the-session globals bridging rendering
+ * state across this file's helper functions" pattern g_gband_loc_mvp/
+ * g_gband_loc_model already use below. g_outline_prog == 0 means "outline
+ * pass unavailable" (link failure) -- checked, not assumed. */
+static GLuint g_outline_prog = 0;
+static GLint g_outline_loc_mvp = -1;
+static GLint g_outline_loc_width = -1;
+/* The main cel-shaded program's handle -- draw_hero_box_facing needs this
+ * to switch back after its outline pre-pass runs on g_outline_prog, since
+ * glUseProgram_(prog) is otherwise only ever called once per frame, well
+ * before the per-hero draw loop (see the 3D render pass), not re-bound
+ * per draw call. */
+static GLuint g_main_prog = 0;
 
 static GLuint compile_shader(GLenum type, const char *src) {
     GLuint s = glCreateShader_(type);
@@ -1262,6 +1323,33 @@ static void draw_hero_box_facing(float hero_x, float hero_z, float facing_rad, f
     Mat4 world = mat4_multiply(&world_t, &rot);
     Mat4 model = mat4_multiply(&world, &local);
     Mat4 mvp = mat4_multiply(vp, &model);
+
+    if (g_outline_prog) {
+        /* Outline pre-pass (S180-09): back-facing triangles only, expanded
+         * outward along their own normal in mesh-local space (so the
+         * resulting world-space outline thickness scales naturally with
+         * this box's own size, via the same mvp), solid near-black. Culls
+         * GL_FRONT (keeps only back faces) -- verified empirically against
+         * CUBE_VERTS' real winding via a live Xvfb screenshot (0.30 width
+         * exaggerated test first, to confirm the technique itself was
+         * correct before tuning down -- too thin to read at 0.06, clean at
+         * 0.12). Must restore glUseProgram_(prog) and disable culling
+         * before returning -- neither is otherwise touched again this
+         * frame (see g_main_prog's own doc comment). Known limitation on
+         * box primitives specifically: a cube's hard 90-degree face
+         * transitions mean a wide outline value produces "ear"-like
+         * artifacts at corners rather than a clean rim (visible testing
+         * this at 0.30) -- 0.12 stays well clear of that. */
+        glUseProgram_(g_outline_prog);
+        glUniformMatrix4fv_(g_outline_loc_mvp, 1, GL_FALSE, mvp.m);
+        glUniform1f_(g_outline_loc_width, 0.12f);
+        glEnable(GL_CULL_FACE);
+        glCullFace(GL_FRONT);
+        draw_mesh(cube_mesh);
+        glDisable(GL_CULL_FACE);
+        glUseProgram_(g_main_prog);
+    }
+
     glUniformMatrix4fv_(loc_mvp, 1, GL_FALSE, mvp.m);
     glUniformMatrix4fv_(loc_model, 1, GL_FALSE, model.m);
     draw_mesh(cube_mesh);
@@ -2473,10 +2561,19 @@ int main(int argc, char *argv[]) {
     }
 
     GLuint prog = link_program(VS_SRC, FS_SRC);
+    g_main_prog = prog;
     GLint loc_mvp = glGetUniformLocation_(prog, "uMVP");
     GLint loc_model = glGetUniformLocation_(prog, "uModel");
     GLint loc_color = glGetUniformLocation_(prog, "uColor");
     GLint loc_light = glGetUniformLocation_(prog, "uLightDir");
+
+    /* S180-09 cel-shading outline pass -- see VS_OUTLINE_SRC/FS_OUTLINE_SRC's
+     * own doc comment. g_outline_prog stays 0 (falsy) if this link somehow
+     * fails, which draw_hero_box_facing checks before using it -- degrades
+     * to the old no-outline draw rather than crashing. */
+    g_outline_prog = link_program(VS_OUTLINE_SRC, FS_OUTLINE_SRC);
+    g_outline_loc_mvp = glGetUniformLocation_(g_outline_prog, "uOutlineMVP");
+    g_outline_loc_width = glGetUniformLocation_(g_outline_prog, "uOutlineWidth");
 
     build_ring_mesh(0.8f, 1.0f);
     build_disc_mesh(); /* S170-200 */
