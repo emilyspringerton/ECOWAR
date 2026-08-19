@@ -1,6 +1,7 @@
 # Changelog
 
 ## 2026-08-19
+- Added procedural minimap to apps/arena (top-right circular radar, hero+node dots) (sess-20260813-2154-dda37e8b)
 
 - Added cel-shading (outline + quantized diffuse banding) to apps/arena, first step toward the founder's Prompt-o-verse-referenced DragonsNShit graphics quality bar (sess-20260813-2154-dda37e8b)
 
