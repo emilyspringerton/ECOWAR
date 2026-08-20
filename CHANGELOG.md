@@ -1,5 +1,15 @@
 # Changelog
 
+## 2026-08-20
+- NORTHSTAR.md §29 (ECOWAR) addendum: resolved 2 of the section's 4 open architecture questions
+  from real-time founder fragments (hero is directly piloted + cards cover everything else;
+  simulation loop recommendation is arena_game.c/apps/arena, extended, not local_game.c or a new
+  third loop), added a full net-new card/economy design (22-card deck, rarity tiers, marble-bag +
+  Fibonacci-pity pull algo for both draw and packs, non-depleting Clash-Royale-style cycling,
+  Prompt-o-verse-farmed card art), and flagged a real Flow-naming collision between REDGARDEN's
+  own kill-fed Flow and TRAPX/SHANKPIT's territory-generation Flow rather than silently picking
+  one. Spec only, no code. (sess-20260813-2154-dda37e8b)
+
 ## 2026-08-19
 - Added procedural minimap to apps/arena (top-right circular radar, hero+node dots) (sess-20260813-2154-dda37e8b)
 

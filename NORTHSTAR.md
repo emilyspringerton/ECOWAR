@@ -3231,9 +3231,102 @@ architecture question, not assumed or invented here:
   reusing pieces of both, or one of the two existing loops extended with the other's concepts
   grafted in? This is the single biggest real engineering decision and isn't guessed at here.
 
+### Addendum (2026-08-20): two of the four open questions resolved, card/economy design added
+
+Founder, real-time, across many short fragments (`emily observe` posts ~03:30–03:41Z this
+session, before this write-up per Principle 18): 1v1, a separate binary "same model as all our
+other games," online matchmaking with bots first, hero mechanics, MOBA-style skill upgrades for
+build variety, RTS building + commanding troops, diplomatic relations, media, street cred, all of
+it deck-based (22-card deck + hero pick), some cards hero-specific and some generic, a design rule
+that "any affordance that doesn't involve directly moving your hero, pets, or clones can be a
+card," rarity tiers, a marble-bag + Fibonacci-pity pull algorithm for both in-match draw and pack
+acquisition, non-depleting Clash-Royale-style card cycling, a resource speed-up/catch-up mechanic
+after ~2 minutes, packs purchasable with Flow, card art farmed from Prompt-o-verse taxonomy node
+combinations (e.g. Medusa) as reference/placeholder art with real 3D models to follow later, and
+that simple tower models already exist in the codebase as a real starting asset for RTS
+structures.
+
+**Resolves open question 1 (directly-piloted hero vs. pure card-commander):** it's both, not
+either/or. "We will have the hero mechanics" plus the explicit card-boundary rule ("anything that
+doesn't involve directly moving your hero, pets, or clones can be a card") settles this cleanly —
+the player directly click-to-moves one hero, arena-style, same as REDGARDEN's existing MOBA layer,
+*and* directly controls that hero's pets/clones the same way. Everything else — RTS building,
+commanding troops (as opposed to directly walking them), diplomatic relations, media, street cred,
+buffs/spells/summons — is the deck's job. This reframes the founder's own original "commanding
+your army" phrase from this section's first pass: the army isn't *entirely* card-summoned-and-
+forgotten, only the parts that aren't a hero/pet/clone are.
+
+**Resolves open question 4 (which simulation loop) — recommendation, not yet built:** "same model
+as all our other games" plus a directly-piloted hero point at `packages/simulation/arena_game.c`/
+`apps/arena` (the MOBA/hero layer) as ECOWAR's base simulation loop, extended with card-driven RTS
+systems grafted on — not a fresh third `ServerState`, and not `local_game.c`'s automaton (per this
+repo's own established convention: "MOBA" means `apps/arena`, the card-RTS is a different, separate
+thing — do not conflate them). Matchmaking follows the arena/arena_bot dual-role precedent this
+section already cites: a third `--lobby-size`/`--server-bin` invocation of the existing
+matchmaker binary, 1v1-sized, bots-first for queue-fill the same way REDGARDEN's other modes
+already do it — not a new matchmaker service. This is a recommendation grounded in tonight's real
+fragments, not yet implemented or confirmed with the founder as final.
+
+**Still open, unresolved by tonight's fragments:** card-spawned-troop complexity (open question 2
+— "commanding troops" via cards reads like a simpler unit tier below full hero-kit complexity,
+consistent with this section's own original guess, but not explicitly confirmed) and the dragon/
+shared-structures objective (open question 3, untouched tonight).
+
+**A real naming collision, flagged rather than silently resolved:** REDGARDEN already has a "Flow"
+(§19, kill-fed per-hero shop currency, distinct from the team-level `resources[team]` win-condition
+meter) and TRAPX/SHANKPIT has a separate, unrelated "Flow" (Field-Office territory-generation
+currency, `SHANKPIT/docs2/TRAPX_NORTHSTAR.md`). Tonight's "packs purchasable with Flow" doesn't
+specify which — and two more fragments the same session (an account apparently already holding
+Flow in GoblinFoxDragon; a floated reuse of Flow as the currency for IDUNA's legacy-documented
+poker-tournament-platform phase-2 concept) suggest the founder may be leaning toward one *shared*
+Flow economy across REDGARDEN/GFD/GTA7/ECOWAR/poker rather than these staying separate systems
+that happen to share a name. That's a real, monorepo-wide economy-architecture decision, bigger
+than this one doc — flagged here, not decided here.
+
+**Card & economy design, net-new (no prior art found anywhere in this repo, TRAPX_NORTHSTAR.md,
+or the REDGARDEN-wiki specs for rarity/pack/pity mechanics — confirmed via a real doc survey
+before writing this):**
+
+- **Deck:** 22 cards per deck, some hero-specific (locked to whichever hero you picked that match)
+  and some generic (usable by any hero) — mirrors the hero-specific-vs-shared item/ability split
+  MOBAs already use, applied to the card layer instead.
+- **Draw:** non-depleting, Clash Royale-style rolling cycle — the deck never runs dry mid-match,
+  cards cycle back in rather than being consumed permanently.
+- **Rarity tiers:** Normal (base tier, confirmed) → Rare (placeholder single tier above Normal for
+  now) → Legendary (locked in) → Mythic / Archonic (floated as candidates above Legendary, final
+  naming and count of tiers between Rare and Legendary still TBD).
+- **Pull algorithm — one mechanism, two call sites:** a weighted marble-bag selection with a
+  Fibonacci pity counter (a rare/legendary tier that's gone unusually long without appearing gets
+  progressively more likely rather than staying flatly improbable forever) drives *both* in-match
+  card draw *and* player pack-opening/card acquisition. The same mechanism was independently
+  floated this session for Prompt-o-verse's own style/subject discovery, which currently has no
+  comparable fairness floor — real cross-pollination opportunity, worth building once as a shared
+  utility rather than twice as unrelated bespoke code (see the published Prompt-o-verse sprite-
+  engine dialogue post, 2026-08-20, for the fuller version of this idea).
+- **Acquisition:** packs purchased with Flow (see the naming-collision flag above).
+- **Resource pacing:** a Clash-Royale-style catch-up/speed-up effect kicks in after roughly 2
+  minutes, same genre-standard shape as elixir/resource acceleration in comparable games.
+- **Card art:** farmed from Prompt-o-verse taxonomy node combinations (e.g. the real
+  `medusa-ffxi` generation already used as BRAWLPIT/GOLDENBAND's own visual reference this
+  session) as reference/placeholder art — a 3D card object is an acceptable placeholder shape too.
+  Real 3D models are the intended eventual asset pipeline, same "gold standard before going more
+  realistic" staging this session already established for DragonsNShit's own rendering roadmap —
+  not assumed to arrive alongside this doc.
+- **RTS structures:** simple tower models already exist in the codebase (unconfirmed exactly
+  where as of this writing — flagged for the next session that touches asset pipelines to locate
+  and confirm) as a real starting point for the building/commanding-troops card set, rather than
+  needing new models before any RTS-layer card can be prototyped.
+- **Faction/diplomacy/media/street-cred prior art:** TRAPX's real Faction Reputation system
+  (`SHANKPIT/docs2/TRAPX_NORTHSTAR.md`, and GTA7's own live implementation of it —
+  `FactionManager`/`MediaManager` in `GTA7/plugin`) is the closest existing mechanical precedent
+  for these four card-driven systems, even though it currently lives on a completely different
+  engine (Paper/Minecraft, not this repo's own simulation loop) — worth reading before designing
+  ECOWAR's own version from scratch.
+
 ### Status
 
-Scoping only. No milestone plan, no code. The next real step is settling the open questions
-above — likely via a founder AskUserQuestion-style pass — before a phased build plan can be
-written honestly (matching this repo's own established discipline: `NORTHSTAR.md`'s other
-"spec only" sections don't invent milestone numbers ahead of a real design decision either).
+Scoping only. No milestone plan, no code. The next real step is settling the two still-open
+questions above (card-spawned-troop complexity, the dragon/shared-structures objective) — likely
+via a founder AskUserQuestion-style pass — before a phased build plan can be written honestly
+(matching this repo's own established discipline: `NORTHSTAR.md`'s other "spec only" sections
+don't invent milestone numbers ahead of a real design decision either).
