@@ -1,6 +1,7 @@
 # Changelog
 
 ## 2026-08-20
+- Fixed the real cause of the Four Kings/jungle-camp invisibility bug: fully simulated server-side since Milestones 1/2, never had a wire-protocol representation. Added ArenaCampMinionSnapshot/ArenaKingSnapshot to ArenaSnapshotMsg, populated server-side, rendered client-side. Commit 9cdbb09. (sess-20260820-0649-a3f19d93)
 - NORTHSTAR.md §29 (ECOWAR) addendum: resolved 2 of the section's 4 open architecture questions
   from real-time founder fragments (hero is directly piloted + cards cover everything else;
   simulation loop recommendation is arena_game.c/apps/arena, extended, not local_game.c or a new
