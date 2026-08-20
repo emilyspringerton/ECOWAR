@@ -468,6 +468,37 @@ typedef struct {
                      max_hp alone */
 } ArenaLaneCreepSnapshot;
 
+// Per-camp-minion state (Jungle Camps Milestone 1). Sparse pool, most slots inactive at any
+// given tick (camps wave periodically), same "count + fixed array" convention as projectiles
+// and lane creeps above. Simulated server-side since REDGARDEN commit 1402702 but never had a
+// wire representation until now -- the client-visibility gap this closes.
+typedef struct {
+    float x, z;
+    uint16_t hp;
+    uint16_t max_hp;
+    uint8_t camp_index; /* which camp spawned this minion, 0..ARENA_SNAPSHOT_CAMP_COUNT-1 */
+} ArenaCampMinionSnapshot;
+
+// ARENA_SNAPSHOT_MAX_CAMP_MINIONS must match packages/simulation/arena_game.h's
+// ARENA_MAX_CAMP_MINIONS (ARENA_CAMP_MINIONS_PER_WAVE(2) * ARENA_CAMP_COUNT(4) * 2 = 16), same
+// duplication reasoning as every other ARENA_SNAPSHOT_* size constant.
+#define ARENA_SNAPSHOT_MAX_CAMP_MINIONS 16
+
+// ARENA_SNAPSHOT_CAMP_COUNT must match arena_game.h's ARENA_CAMP_COUNT.
+#define ARENA_SNAPSHOT_CAMP_COUNT 4
+
+// Per-King state (Jungle Camps Milestones 2/4). Always exactly ARENA_SNAPSHOT_CAMP_COUNT
+// entries, index-matched to camps (0=N/Wealth, 1=S/Growth, 2=E/Music, 3=W/All-Seeing), same
+// "always fully populated" convention as powerups above -- a not-yet-spawned or dead King just
+// sits at alive=0. Simulated server-side since commit 3943f94 but, like camp minions, never had
+// a wire representation -- see this struct's use in ArenaSnapshotMsg for the full story.
+typedef struct {
+    float x, z;
+    uint16_t hp;
+    uint16_t max_hp;
+    uint8_t alive;
+} ArenaKingSnapshot;
+
 // ARENA_SNAPSHOT_MAX_LANE_CREEPS must match packages/simulation/arena_game.h's
 // ARENA_MAX_LANE_CREEPS, same duplication reasoning as the others above.
 #define ARENA_SNAPSHOT_MAX_LANE_CREEPS 12
@@ -495,6 +526,9 @@ typedef struct {
     uint8_t lane_creep_count; /* S170-146 */
     ArenaLaneCreepSnapshot lane_creeps[ARENA_SNAPSHOT_MAX_LANE_CREEPS];
     uint16_t resources[2]; /* S170-153: team resource race, capped at ARENA_RESOURCE_CAP */
+    uint8_t camp_minion_count; /* jungle camps client-visibility fix, 2026-08-20 */
+    ArenaCampMinionSnapshot camp_minions[ARENA_SNAPSHOT_MAX_CAMP_MINIONS];
+    ArenaKingSnapshot kings[ARENA_SNAPSHOT_CAMP_COUNT]; /* always fully populated, see that struct's doc comment */
 } ArenaSnapshotMsg;
 
 // PACKET_ARENA_SNAPSHOT_HEROES payload (S170-193, founder: split the

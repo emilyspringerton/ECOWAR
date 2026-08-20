@@ -644,6 +644,31 @@ static void server_broadcast(void) {
     msg.resources[0] = (uint16_t)arena_state.resources[0]; /* S170-153 */
     msg.resources[1] = (uint16_t)arena_state.resources[1];
 
+    /* Jungle camps client-visibility fix, 2026-08-20: camp_minions/kings have been simulated
+       server-side since Jungle Camps Milestones 1/2 (commits 1402702/3943f94) but never had a
+       wire representation, so no client ever received or rendered them. Camp minions are a
+       sparse pool, same pack-only-active convention as projectiles/lane creeps above. */
+    for (int i = 0; i < ARENA_MAX_CAMP_MINIONS && msg.camp_minion_count < ARENA_SNAPSHOT_MAX_CAMP_MINIONS; i++) {
+        ArenaCampMinion *cm = &arena_state.camp_minions[i];
+        if (!cm->active || !cm->alive) continue;
+        int slot = msg.camp_minion_count++;
+        msg.camp_minions[slot].x = cm->x;
+        msg.camp_minions[slot].z = cm->z;
+        msg.camp_minions[slot].hp = (uint16_t)(cm->hp > 0 ? cm->hp : 0);
+        msg.camp_minions[slot].max_hp = (uint16_t)cm->max_hp;
+        msg.camp_minions[slot].camp_index = (uint8_t)cm->camp_index;
+    }
+    /* Kings are always fully populated (one per camp), same "not sparse-packed" convention as
+       node towers/creeps above -- a not-yet-spawned or dead King just sits at alive=0. */
+    for (int i = 0; i < ARENA_SNAPSHOT_CAMP_COUNT; i++) {
+        ArenaKing *k = &arena_state.kings[i];
+        msg.kings[i].x = k->x;
+        msg.kings[i].z = k->z;
+        msg.kings[i].hp = (uint16_t)(k->hp > 0 ? k->hp : 0);
+        msg.kings[i].max_hp = (uint16_t)k->max_hp;
+        msg.kings[i].alive = (uint8_t)k->alive;
+    }
+
     memcpy(buffer, &head, sizeof(NetHeader));
     memcpy(buffer + sizeof(NetHeader), &msg, sizeof(ArenaSnapshotMsg));
 

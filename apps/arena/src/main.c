@@ -851,6 +851,39 @@ static void net_poll_snapshots(uint32_t now_ms) {
                         arena_state.lane_creeps[i].alive = 0;
                     }
                 }
+                /* Jungle camps client-visibility fix, 2026-08-20: camp minions/Kings were
+                   simulated server-side since Milestones 1/2 but never had a wire
+                   representation until now -- same parse pattern as lane creeps above. */
+                {
+                    int ccount = msg->camp_minion_count;
+                    if (ccount > ARENA_SNAPSHOT_MAX_CAMP_MINIONS) ccount = ARENA_SNAPSHOT_MAX_CAMP_MINIONS;
+                    if (ccount > ARENA_MAX_CAMP_MINIONS) ccount = ARENA_MAX_CAMP_MINIONS;
+                    for (int i = 0; i < ccount; i++) {
+                        ArenaCampMinion *dst = &arena_state.camp_minions[i];
+                        dst->active = 1;
+                        dst->alive = 1;
+                        dst->x = msg->camp_minions[i].x;
+                        dst->z = msg->camp_minions[i].z;
+                        dst->hp = msg->camp_minions[i].hp;
+                        dst->max_hp = msg->camp_minions[i].max_hp;
+                        dst->camp_index = msg->camp_minions[i].camp_index;
+                    }
+                    for (int i = ccount; i < ARENA_MAX_CAMP_MINIONS; i++) {
+                        arena_state.camp_minions[i].active = 0;
+                        arena_state.camp_minions[i].alive = 0;
+                    }
+                }
+                /* Kings are always fully populated (one per camp), same convention as
+                   node towers/creeps -- not sparse-packed. */
+                for (int i = 0; i < ARENA_SNAPSHOT_CAMP_COUNT && i < ARENA_CAMP_COUNT; i++) {
+                    ArenaKing *dst = &arena_state.kings[i];
+                    dst->x = msg->kings[i].x;
+                    dst->z = msg->kings[i].z;
+                    dst->hp = msg->kings[i].hp;
+                    dst->max_hp = msg->kings[i].max_hp;
+                    dst->alive = msg->kings[i].alive;
+                    dst->active = msg->kings[i].alive; /* client only needs "is it here to draw" */
+                }
                 arena_state.resources[0] = msg->resources[0]; /* S170-153 */
                 arena_state.resources[1] = msg->resources[1];
             }
@@ -3610,6 +3643,37 @@ int main(int argc, char *argv[]) {
                 glUniform4f_(loc_color, lc_r * 0.6f, lc_g * 0.6f, lc_b * 0.6f, 1.0f);
                 draw_hero_box_facing(lc->x, lc->z, lane_creep_facing_rad[i], 0.0f, 0.35f, 0.35f, 0.16f, 0.16f, 0.16f, 1.0f,
                                       &vp, loc_mvp, loc_model, &cube_mesh);
+            }
+        }
+
+        /* Jungle camp minions + Kings, 2026-08-20: simulated server-side since Jungle Camps
+           Milestones 1/2 but never rendered anywhere -- a pure wire-protocol gap (see
+           ArenaCampMinionSnapshot/ArenaKingSnapshot's own doc comments in protocol.h), not a
+           new gameplay feature. Neutral olive color for camp minions (distinct from lane
+           creeps' team blue/red -- these belong to neither team) and per-camp thematic colors
+           for Kings, boss-scaled (taller/wider than a lane creep, matching their real boss-tier
+           HP/damage per docs2/JUNGLE_CAMPS_NORTHSTAR.md), so a King reads as a real objective
+           at a glance rather than blending into the jungle-minion silhouette below it. */
+        for (int i = 0; i < ARENA_MAX_CAMP_MINIONS; i++) {
+            ArenaCampMinion *cm = &arena_state.camp_minions[i];
+            if (!cm->active || !cm->alive) continue;
+            glUniform4f_(loc_color, 0.55f, 0.5f, 0.2f, 1.0f); /* olive: neutral, neither team */
+            draw_hero_box(cm->x, cm->z, 0.0f, 0.35f, 0.0f, 0.5f, 0.5f, 0.5f, 1.0f,
+                           &vp, loc_mvp, loc_model, &cube_mesh);
+        }
+        {
+            static const float king_color[ARENA_CAMP_COUNT][3] = {
+                {0.85f, 0.7f, 0.15f},  /* 0 = North/Wealth: gold */
+                {0.25f, 0.75f, 0.2f},  /* 1 = South/Growth: green */
+                {0.75f, 0.2f, 0.75f},  /* 2 = East/Music: magenta */
+                {0.2f, 0.6f, 0.85f},   /* 3 = West/All-Seeing: cyan-blue */
+            };
+            for (int i = 0; i < ARENA_CAMP_COUNT; i++) {
+                ArenaKing *k = &arena_state.kings[i];
+                if (!k->active || !k->alive) continue;
+                glUniform4f_(loc_color, king_color[i][0], king_color[i][1], king_color[i][2], 1.0f);
+                draw_hero_box(k->x, k->z, 0.0f, 0.8f, 0.0f, 1.1f, 1.6f, 1.1f, 1.0f,
+                               &vp, loc_mvp, loc_model, &cube_mesh);
             }
         }
 
