@@ -529,6 +529,15 @@ static void fill_hero_snapshot(ArenaHeroSnapshot *hs, const ArenaHero *h) {
     hs->cast_total_ms = (uint16_t)(h->cast_total_ms > 0 ? h->cast_total_ms : 0);
     hs->blink_cooldown_ms = (uint16_t)(h->blink_cooldown_ms > 0 ? h->blink_cooldown_ms : 0); /* S170-205 */
     hs->donkey_glide_cooldown_ms = (uint16_t)(h->donkey_glide_cooldown_ms > 0 ? h->donkey_glide_cooldown_ms : 0); /* S170-206 */
+    /* King buff status, 2026-08-20 -- see ArenaHeroSnapshot's own doc comment for the bit
+       layout. team_id_is_valid guards the All-Seeing lookup the same way select_ctf_bot_intent
+       already guards team-indexed King state elsewhere in this file's own package. */
+    hs->king_buff_flags = 0;
+    if (h->king_music_carrier) hs->king_buff_flags |= 0x01;
+    if (h->king_growth_ms > 0) hs->king_buff_flags |= 0x02;
+    if (h->king_wealth_ms > 0) hs->king_buff_flags |= 0x04;
+    if (h->team >= 0 && h->team < 2 && arena_state.king_allseeing_team_ms[h->team] > 0) hs->king_buff_flags |= 0x08;
+    hs->king_growth_stacks = (uint8_t)(h->king_growth_stacks > 0 ? h->king_growth_stacks : 0);
 }
 
 static void server_broadcast(void) {

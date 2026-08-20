@@ -1947,6 +1947,14 @@ typedef struct {
     int king_growth_stacks;
     int king_growth_ms;
     int king_wealth_ms;
+    /* king_allseeing_display, 2026-08-20: client-network-parse-only mirror of ArenaState's
+     * team-wide king_allseeing_team_ms[2] (see that field's own doc comment for why All-Seeing
+     * is team-wide, not per-hero, unlike everything else in this struct) -- ArenaHeroSnapshot's
+     * king_buff_flags bit 3 packs the killer's own team's value onto every hero snapshot so the
+     * client's buff HUD can read one consistent per-hero field like the other three buffs,
+     * without needing a separate team-wide network message. Never read or written by the
+     * server-side simulation itself -- purely a display mirror. */
+    int king_allseeing_display;
     /* w_drain_accum (S170-181, founder: "instead of initial mana cost toggle spells should
      * drain mana over time"): same fractional-accumulator idiom as mp_regen_accum right above,
      * for the same reason -- ARENA_MP_DRAIN_W_PER_SEC * dt_ms/1000 truncates to 0 almost every

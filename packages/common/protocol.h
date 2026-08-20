@@ -350,6 +350,17 @@ typedef struct {
     // synced, same "purely server-side bookkeeping the client's own rendering never needs" call
     // r_zone_x's own doc comment already made for cast_anchor_x/cast_target.
     uint16_t donkey_glide_cooldown_ms;
+    // King buff status, 2026-08-20: same class of gap as ArenaKingSnapshot/ArenaCampMinionSnapshot
+    // above (real simulation state -- ArenaHero.king_music_carrier/king_growth_stacks/
+    // king_growth_ms/king_wealth_ms, plus team-wide king_allseeing_team_ms -- had zero wire
+    // representation). Founder, real-time: "i killed the purple king and couldnt even tell if i
+    // got a buff." king_buff_flags bit 0 = Music (bool carrier), bit 1 = Growth (ms>0), bit 2 =
+    // Wealth (ms>0), bit 3 = All-Seeing (team ms>0, read off the killer's own team so every hero
+    // on that team reports the same bit without needing a separate team-wide snapshot field).
+    // king_growth_stacks synced separately since it's a real number the HUD needs to show
+    // (Bloodroar visibly stacking), not just an on/off state.
+    uint8_t king_buff_flags;
+    uint8_t king_growth_stacks;
 } ArenaHeroSnapshot;
 
 // ARENA_SNAPSHOT_MAX_HEROES must match packages/simulation/arena_game.h's

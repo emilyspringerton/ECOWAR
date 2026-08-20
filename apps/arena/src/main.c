@@ -724,6 +724,17 @@ static void net_poll_snapshots(uint32_t now_ms) {
                     dst->cast_total_ms = chunk->heroes[j].cast_total_ms;
                     dst->blink_cooldown_ms = chunk->heroes[j].blink_cooldown_ms; /* S170-205 */
                     dst->donkey_glide_cooldown_ms = chunk->heroes[j].donkey_glide_cooldown_ms; /* S170-206 */
+                    /* King buff status, 2026-08-20 -- see ArenaHeroSnapshot's own doc comment
+                       for the king_buff_flags bit layout. Real ms/stack values aren't needed
+                       client-side (the buff HUD is on/off + stack count, not a countdown), so
+                       these just carry a nonzero sentinel except king_growth_stacks, which is
+                       the real number. */
+                    uint8_t kbf = chunk->heroes[j].king_buff_flags;
+                    dst->king_music_carrier = (kbf & 0x01) ? 1 : 0;
+                    dst->king_growth_ms = (kbf & 0x02) ? 1 : 0;
+                    dst->king_wealth_ms = (kbf & 0x04) ? 1 : 0;
+                    dst->king_allseeing_display = (kbf & 0x08) ? 1 : 0;
+                    dst->king_growth_stacks = chunk->heroes[j].king_growth_stacks;
                     if (chunk->heroes[j].cast_flash_slot > 0) {
                         spawn_spell_flash(dst->x, dst->z, chunk->heroes[j].cast_flash_slot, dst->hero_id);
                         trigger_squish(i);
@@ -4318,6 +4329,48 @@ int main(int argc, char *argv[]) {
             if (my_team == 1) glColor3f(0.6f, 0.8f, 1.0f); else glColor3f(1.0f, 0.6f, 0.55f);
             snprintf(resbuf, sizeof(resbuf), "%d", arena_state.resources[1]);
             draw_string(resbuf, bar_x + bar_w + 8.0f, bar_y - bar_h + 3.0f, 11);
+        }
+
+        /* King buff status HUD, 2026-08-20. Founder, real-time: "i killed the purple king and
+           couldnt even tell if i got a buff" -- root cause was that the buff state itself never
+           reached the client at all (ArenaHeroSnapshot's own doc comment), not just a missing
+           widget; this is the widget half now that the data exists. Bottom-right per founder's
+           own "buff frames in the bottom right" -- one square tile per active King buff, stacked
+           upward, in that King's own thematic color (matching the boss-model colors from S188-01:
+           gold/green/magenta/cyan for Wealth/Growth/Music/All-Seeing) so a player who missed the
+           kill can still tell WHICH King they picked up from color alone. Deliberately reuses
+           the resource bar's plain glRectf+draw_string idiom, not draw_ability_tile's radial-wipe
+           machinery -- these are persistent on/off buffs with no cooldown to animate. */
+        if (my_owner >= 0 && my_owner < ARENA_MAX_HEROES) {
+            ArenaHero *me = &arena_state.heroes[my_owner];
+            struct { int active; float r, g, b; const char *label; int stacks; } buffs[4] = {
+                { me->king_wealth_ms > 0,        0.85f, 0.7f,  0.15f, "BULWARK",     0 },
+                { me->king_growth_ms > 0,        0.25f, 0.75f, 0.2f,  "BLOODROAR",   me->king_growth_stacks },
+                { me->king_music_carrier,        0.75f, 0.2f,  0.75f, "CATCHY SONG", 0 },
+                { me->king_allseeing_display > 0,0.2f,  0.6f,  0.85f, "FARSIGHT",    0 },
+            };
+            float tile = 44.0f, gap = 8.0f;
+            float bx = win_w - tile - 16.0f;
+            float by = 16.0f;
+            int shown = 0;
+            for (int bi = 0; bi < 4; bi++) {
+                if (!buffs[bi].active) continue;
+                float ty = by + shown * (tile + gap);
+                glColor4f(buffs[bi].r * 0.5f, buffs[bi].g * 0.5f, buffs[bi].b * 0.5f, 0.9f);
+                glRectf(bx, ty, bx + tile, ty + tile);
+                glColor3f(buffs[bi].r, buffs[bi].g, buffs[bi].b);
+                glBegin(GL_LINE_LOOP);
+                glVertex2f(bx, ty); glVertex2f(bx + tile, ty);
+                glVertex2f(bx + tile, ty + tile); glVertex2f(bx, ty + tile);
+                glEnd();
+                draw_string(buffs[bi].label, bx - 6.0f, ty + tile + 4.0f, 7);
+                if (buffs[bi].stacks > 0) {
+                    char stackbuf[8];
+                    snprintf(stackbuf, sizeof(stackbuf), "%d", buffs[bi].stacks);
+                    draw_string(stackbuf, bx + tile / 2.0f - 4.0f, ty + tile / 2.0f - 5.0f, 12);
+                }
+                shown++;
+            }
         }
 
         {
