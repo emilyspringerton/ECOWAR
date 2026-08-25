@@ -1,6 +1,7 @@
 # Changelog
 
 ## 2026-08-25
+- build templates: tech trees as item templates, shop auto-buy (Bruiser/Assassin/Caster presets), PARENA-mod-driven (sess-20260825-1938-f6bd411e)
 - fixed CI break: build_arena.sh + Windows cross-compile missing tree_passive_mod.c link (sess-20260825-1938-f6bd411e)
 - Tree hero passive: auto-attacks nearby jungle trees for self-heal, PARENA-mod-driven, wire-synced with client squish animation (sess-20260825-1938-f6bd411e)
 
