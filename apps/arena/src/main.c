@@ -3281,7 +3281,16 @@ int main(int argc, char *argv[]) {
         }
 
         glViewport(0, 0, win_w, win_h);
-        glClearColor(0.03f, 0.05f, 0.04f, 1.0f);
+        {
+            /* 2026-08-25: day/night ambient tint replaces the old fixed clear color -- only in
+             * the actual in-match render loop (not draw_queuing_screen/draw_draft_screen's own
+             * pre-match glClearColor calls, which stay fixed since day/night doesn't apply
+             * before a match's own clock is running). See arena_game.h's own doc comment on
+             * arena_daynight_ambient_rgb for the SHANKPIT retro_lighting.c source this ports. */
+            float dn_r, dn_g, dn_b;
+            arena_daynight_ambient_rgb(&dn_r, &dn_g, &dn_b);
+            glClearColor(dn_r, dn_g, dn_b, 1.0f);
+        }
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
         float focus_x = arena_state.heroes[my_owner].x, focus_z = arena_state.heroes[my_owner].z;

@@ -3,9 +3,97 @@
 #include <stdlib.h>
 #include <string.h>
 #include "../common/rl_policy_weights.h"
+#include "bloodflower_mod_host.h"
 
 ArenaState arena_state;
 int arena_bot_enabled = 1;
+
+/* arena_tick_daynight / arena_hero_claim_bloodflower / redgarden_host_spawn_bloodflower
+ * (2026-08-25): see arena_game.h's own doc comments (near ARENA_DAYNIGHT_ORBIT_SPEED and each
+ * function's declaration) for the full design. Placed here, right after arena_state's own
+ * definition, so redgarden_host_spawn_bloodflower -- called back into from the PARENA-compiled
+ * on_moon_zenith -- is defined before any other translation unit could need its address; it's
+ * only referenced via the extern in bloodflower_mod_host.h, but keeping the real host
+ * implementation textually close to that extern (matching this file's existing convention of
+ * defining tick functions near their own state) rather than scattered at the bottom. */
+
+void redgarden_host_spawn_bloodflower(int x, int z) {
+    arena_state.bloodflower_active = 1;
+    arena_state.bloodflower_x = (float)x;
+    arena_state.bloodflower_z = (float)z;
+    arena_state.bloodflower_ms_remaining = ARENA_BLOODFLOWER_LIFETIME_MS;
+}
+
+void arena_hero_claim_bloodflower(void) {
+    if (!arena_state.bloodflower_active) return;
+    for (int i = 0; i < ARENA_HEROES_ARRAY_SIZE; i++) {
+        ArenaHero *h = &arena_state.heroes[i];
+        if (!h->active || !h->alive) continue;
+        float dx = h->x - arena_state.bloodflower_x;
+        float dz = h->z - arena_state.bloodflower_z;
+        float dist_sq = dx * dx + dz * dz;
+        if (dist_sq <= ARENA_BLOODFLOWER_CLAIM_RADIUS * ARENA_BLOODFLOWER_CLAIM_RADIUS) {
+            h->flow += ARENA_BLOODFLOWER_CLAIM_FLOW;
+            arena_state.bloodflower_active = 0;
+            return; /* first claim wins, same "stop scanning once resolved" idiom this file's other claim-style loops use */
+        }
+    }
+}
+
+void arena_tick_daynight(unsigned int dt_ms) {
+    float dt_sec = (float)dt_ms / 1000.0f;
+    arena_state.time_of_day_sec += dt_sec;
+
+    /* Ported from SHANKPIT retro_sky.c's retro_sky_eval_sun_dir -- same orbit_t/tilt math, same
+     * sun_y formula. moon_dir_y = -sun_dir_y (retro_lighting.c's own s.moon_dir_x/y/z = -sun_dir
+     * relation) -- moon height is highest exactly when sun height is lowest. */
+    float orbit_t = arena_state.time_of_day_sec * ARENA_DAYNIGHT_ORBIT_SPEED;
+    float sun_height = sinf(orbit_t) * cosf(ARENA_DAYNIGHT_TILT);
+    float moon_height = -sun_height;
+
+    int rising_now = (moon_height > arena_state.prev_moon_height);
+    if (!rising_now && arena_state.moon_was_rising && !arena_state.daynight_zenith_fired) {
+        /* moon_height was climbing last tick, isn't climbing this tick -- we just passed its
+         * local maximum (zenith). Real event, through the PARENA mod surface -- see this
+         * function's own header comment. */
+        arena_state.daynight_zenith_fired = 1;
+        on_moon_zenith(0, 0); /* map center -- see ArenaState.bloodflower_x/z's own doc comment */
+    }
+    if (moon_height < ARENA_DAYNIGHT_ZENITH_REARM_THRESHOLD) {
+        arena_state.daynight_zenith_fired = 0;
+    }
+    arena_state.moon_was_rising = rising_now;
+    arena_state.prev_moon_height = moon_height;
+
+    if (arena_state.bloodflower_active) {
+        arena_state.bloodflower_ms_remaining -= (int)dt_ms;
+        if (arena_state.bloodflower_ms_remaining <= 0) {
+            arena_state.bloodflower_active = 0; /* unclaimed, timed out -- real time pressure, see ARENA_BLOODFLOWER_LIFETIME_MS's own doc comment */
+        }
+    }
+}
+
+static float arena_daynight_smoothstep(float edge0, float edge1, float x) {
+    float t = (x - edge0) / (edge1 - edge0);
+    if (t < 0.0f) t = 0.0f;
+    if (t > 1.0f) t = 1.0f;
+    return t * t * (3.0f - 2.0f * t);
+}
+
+void arena_daynight_ambient_rgb(float *out_r, float *out_g, float *out_b) {
+    float orbit_t = arena_state.time_of_day_sec * ARENA_DAYNIGHT_ORBIT_SPEED;
+    float sun_height = sinf(orbit_t) * cosf(ARENA_DAYNIGHT_TILT);
+    /* Ported from SHANKPIT retro_lighting.c's RETRO_LIGHTING_DYNAMIC ambient formula
+     * (sun_visibility = smoothstep(0, 0.22, sun_dir_y); ambient_r/g/b blend by sun_visibility) --
+     * same edge values, same blend shape, this game's own dark-green base tone (0.03, 0.05,
+     * 0.04, the existing hardcoded glClearColor this replaces) used as the night-side floor
+     * instead of SHANKPIT's own night-ambient numbers, so night in this game still reads as
+     * "this game's palette at night," not a copy-pasted different game's color grade. */
+    float sun_visibility = arena_daynight_smoothstep(0.0f, 0.22f, sun_height);
+    if (out_r) *out_r = 0.03f + sun_visibility * 0.10f;
+    if (out_g) *out_g = 0.05f + sun_visibility * 0.10f;
+    if (out_b) *out_b = 0.04f + sun_visibility * 0.08f;
+}
 
 /* ARENA_ITEMS (S170-175): the actual 24-item shop catalog. See
  * arena_game.h's own doc comment on ArenaItemDef/ArenaItemTier for the
@@ -6469,6 +6557,8 @@ void arena_update_teams(unsigned int dt_ms) {
     arena_hero_attack_camp_minions(dt_ms);
     arena_tick_kings(dt_ms); /* Jungle Camps Milestone 2 */
     arena_hero_attack_kings(dt_ms);
+    arena_tick_daynight(dt_ms); /* 2026-08-25: day/night cycle + moon-zenith Bloodflower event */
+    arena_hero_claim_bloodflower();
 
     /* Melee combat: each active, alive hero independently attacks its own
        nearest enemy if one is in range and its cooldown is ready -- this is

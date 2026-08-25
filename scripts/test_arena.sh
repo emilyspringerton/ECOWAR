@@ -15,8 +15,10 @@ mkdir -p "${BUILD_DIR}"
 # same reasoning scripts/build.sh's own comment for this already gives.
 gcc -std=c99 -O2 -Wall -Wextra -I"${ROOT_DIR}/packages" \
   -o "${BUILD_DIR}/test_arena_game" \
+  -include "${ROOT_DIR}/packages/simulation/bloodflower_mod_host.h" \
   "${ROOT_DIR}/tests/test_arena_game.c" \
   "${ROOT_DIR}/packages/simulation/arena_game.c" \
+  "${ROOT_DIR}/packages/simulation/bloodflower_mod.c" \
   "${ROOT_DIR}/packages/common/mlp_infer.c" \
   -lm
 
@@ -29,9 +31,11 @@ gcc -std=c99 -O2 -Wall -Wextra -I"${ROOT_DIR}/packages" \
 # same headless-testable reasoning as test_arena_game above.
 gcc -std=c99 -O2 -Wall -Wextra -I"${ROOT_DIR}/packages" \
   -o "${BUILD_DIR}/test_arena_replay" \
+  -include "${ROOT_DIR}/packages/simulation/bloodflower_mod_host.h" \
   "${ROOT_DIR}/tests/test_arena_replay.c" \
   "${ROOT_DIR}/packages/simulation/arena_game.c" \
   "${ROOT_DIR}/packages/simulation/arena_replay.c" \
+  "${ROOT_DIR}/packages/simulation/bloodflower_mod.c" \
   "${ROOT_DIR}/packages/common/mlp_infer.c" \
   -lm
 
@@ -39,9 +43,11 @@ gcc -std=c99 -O2 -Wall -Wextra -I"${ROOT_DIR}/packages" \
 # Milestone-6 equivalent, S170-36) -- same headless-testable reasoning.
 gcc -std=c99 -O2 -Wall -Wextra -I"${ROOT_DIR}/packages" \
   -o "${BUILD_DIR}/test_arena_ai_bridge" \
+  -include "${ROOT_DIR}/packages/simulation/bloodflower_mod_host.h" \
   "${ROOT_DIR}/tests/test_arena_ai_bridge.c" \
   "${ROOT_DIR}/packages/simulation/arena_game.c" \
   "${ROOT_DIR}/packages/simulation/arena_ai_bridge.c" \
+  "${ROOT_DIR}/packages/simulation/bloodflower_mod.c" \
   "${ROOT_DIR}/packages/common/mlp_infer.c" \
   -lm
 
@@ -58,9 +64,11 @@ gcc -std=c99 -O2 -Wall -Wextra -I"${ROOT_DIR}/packages" \
 # catch a regression in this repo's own test suite.
 gcc -std=c99 -D_DEFAULT_SOURCE -O2 -Wall -Wextra -I"${ROOT_DIR}/packages" \
   -o "${BUILD_DIR}/test_arena_training" \
+  -include "${ROOT_DIR}/packages/simulation/bloodflower_mod_host.h" \
   "${ROOT_DIR}/tests/test_arena_training.c" \
   "${ROOT_DIR}/apps/arena_training/src/headless.c" \
   "${ROOT_DIR}/packages/simulation/arena_game.c" \
+  "${ROOT_DIR}/packages/simulation/bloodflower_mod.c" \
   "${ROOT_DIR}/packages/common/mlp_infer.c" \
   -lm
 
@@ -72,7 +80,20 @@ gcc -std=c99 -O2 -Wall -Wextra -I"${ROOT_DIR}/packages" \
   "${ROOT_DIR}/packages/common/mlp_infer.c" \
   -lm
 
+# Bloodflower / day-night cycle (2026-08-25): real live round-trip through the compiled PARENA
+# mod (stdlib/redgarden/bloodflower_mod.prn), same headless-testable reasoning as the rest of
+# this file.
+gcc -std=c99 -O2 -Wall -Wextra -I"${ROOT_DIR}/packages" \
+  -o "${BUILD_DIR}/test_bloodflower" \
+  -include "${ROOT_DIR}/packages/simulation/bloodflower_mod_host.h" \
+  "${ROOT_DIR}/tests/test_bloodflower.c" \
+  "${ROOT_DIR}/packages/simulation/arena_game.c" \
+  "${ROOT_DIR}/packages/simulation/bloodflower_mod.c" \
+  "${ROOT_DIR}/packages/common/mlp_infer.c" \
+  -lm
+
 "${BUILD_DIR}/test_arena_game"
+"${BUILD_DIR}/test_bloodflower"
 "${BUILD_DIR}/test_mat4"
 "${BUILD_DIR}/test_arena_replay"
 "${BUILD_DIR}/test_arena_ai_bridge"

@@ -1626,6 +1626,42 @@ typedef struct {
 #define ARENA_KING_WEALTH_DURATION_MS   30000
 #define ARENA_KING_WEALTH_ARMOR_BONUS     12 /* flat armor, this engine's damage model is flat-subtraction (apply_armor), not percentage -- comparable in scale to real armor items (e.g. Iron Ram Trousers' 18) */
 #define ARENA_KING_WEALTH_AURA_RADIUS    6.0f /* wider than a normal ability radius on purpose -- "shelter a group" */
+
+/* Day/night cycle + Bloodflower world event (2026-08-25). Founder real-time: "bring in the day
+ * night cycle from SHANKPIT main" -> "including the lighting" -> "but have the moon trigger an
+ * event called the bloodflower" -> "the bloodflower triggers when the moon is at its highest
+ * point in the sky" -> "but bring it into GFD totally as parena" -> "fuck it do it into
+ * redgarden first" (upstream-first, same precedent as Jungle Camps/Four Heavenly Kings, see
+ * that section's own doc comment above) -> "but it should all be events with parena mods ya
+ * know?" (event-driven: the host fires a named event, a PARENA-compiled mod handles it -- same
+ * shape PITVIPER's S192-01 wheel-scroll mod already proved, see stdlib/redgarden/
+ * bloodflower_mod.prn's own header comment for the exact ABI).
+ *
+ * Time-of-day math (sun/moon direction, ambient tint) is ported from SHANKPIT's
+ * packages/render/retro_sky.c/retro_lighting.c reference implementation (the founder's own
+ * named source), adapted for this game's top-down/isometric camera: no 3D sky dome, just an
+ * ambient RGB tint driven by the same time_sec -> phase math, consumed by apps/arena's
+ * glClearColor background. Core cycle state lives in arena_game.c (server-authoritative, real
+ * simulation state, synced to clients the same way King/camp state already is) -- only the
+ * Bloodflower's *trigger*, at moon zenith, goes through the PARENA mod surface, matching how
+ * PITVIPER's own underlying scrollback mechanism already existed and only the wheel-event
+ * trigger went through the mod. */
+#define ARENA_DAYNIGHT_ORBIT_SPEED 0.025f /* radians/sec, ported verbatim from SHANKPIT retro_sky.c's retro_sky_eval_sun_dir -- same real orbit rate, not re-tuned for this game. Natural period = 2*PI/0.025 = ~251s (~4:11), giving roughly two full day/night cycles in a typical under-15-min match */
+#define ARENA_DAYNIGHT_TILT        0.40f /* radians, same ported constant as SHANKPIT's own `tilt` local in retro_sky_eval_sun_dir */
+#define ARENA_DAYNIGHT_ZENITH_REARM_THRESHOLD 0.30f /* moon_height must drop back below this before daynight_zenith_fired re-arms -- clearly past the peak, not a near-zenith wobble; same smoothstep-scale magnitude retro_lighting.c's own sun_visibility/moon_visibility thresholds use (0.22-0.28) */
+
+/* Bloodflower (2026-08-25): a real, server-authoritative world object that spawns at map
+ * center (0,0 -- same "deterministic, real coordinate" convention as arena_fountain_position/
+ * arena_camp_position, see those functions' own doc comments) the instant the moon crosses
+ * zenith, grants a real Flow bonus to whichever team's hero claims it first (walks within
+ * ARENA_BLOODFLOWER_CLAIM_RADIUS), then despawns -- deliberately simple and demonstrable rather
+ * than a guessed-at deeper gameplay system, since the founder specified only the trigger
+ * condition ("triggers when the moon is at its highest point"), not the effect. Reuses the same
+ * "econ reward, computed live, not copied onto a hero field" shape King/All-Seeing's own Flow
+ * bonus already established, rather than inventing a new buff-application idiom. */
+#define ARENA_BLOODFLOWER_LIFETIME_MS      20000 /* despawns unclaimed after 20s -- real time pressure, shorter than a King's own multi-minute presence since this is a single-tick econ pickup, not a boss fight */
+#define ARENA_BLOODFLOWER_CLAIM_RADIUS      2.0f /* tight -- a hero has to actually walk onto it, not proximity-aura like King/Wealth */
+#define ARENA_BLOODFLOWER_CLAIM_FLOW         150 /* between a camp minion (60) and a King (300) -- a real but not dominant reward, matching this file's existing tiering */
 #define ARENA_KING_WEALTH_GOLD_PER_SEC      4 /* small trickle to nearby allies -- deliberately smaller than All-Seeing's own bonus, "a smaller bonus-gold trickle" per the holder's real domain */
 
 /* §25.3 Synergy decay -- a REAL LIVE-MATCH COMEBACK MECHANIC, not a training technique
@@ -2307,6 +2343,13 @@ typedef struct {
      * same sentinel-after-memset idiom as ArenaCreep's
      * last_attacked_by_owner). */
     int hover_target[ARENA_MAX_HEROES];
+    float time_of_day_sec; /* day/night cycle accumulator (seconds, not ms -- matches SHANKPIT retro_sky.c's own time_sec convention directly, no unit conversion at the call site), ticked from the same arena_update_teams path arena_tick_kings already uses */
+    float prev_moon_height; /* moon_dir_y from the previous tick -- local-maximum (zenith) detection compares consecutive samples instead of computing an exact analytical crossing, robust to the accumulator running indefinitely with no explicit wrap logic needed */
+    int moon_was_rising; /* 1 if moon_height was still increasing as of the previous tick -- "was rising, now falling" is the zenith-just-passed condition */
+    int daynight_zenith_fired; /* edge-trigger guard: 1 once this cycle's moon-zenith event has fired, reset to 0 once moon_height drops back below ARENA_DAYNIGHT_ZENITH_REARM_THRESHOLD (clearly-descended, not near zenith) -- without this the mod would fire on every tiny wobble near the peak instead of exactly once per real cycle */
+    int bloodflower_active; /* 1 while an unclaimed Bloodflower exists in the world */
+    float bloodflower_x, bloodflower_z; /* always (0,0), map center -- kept as real fields (not a hardcoded literal at every read site) so a future non-center spawn point is a one-line change, same pattern ArenaCampMinion.x/z use even though camp positions are currently deterministic too */
+    int bloodflower_ms_remaining; /* counts down from ARENA_BLOODFLOWER_LIFETIME_MS; despawns at 0 */
     int winner; /* 0 = none yet, 1 = player/team 0, 2 = bot/team 1 */
 } ArenaState;
 
@@ -2736,6 +2779,42 @@ void arena_hero_attack_camp_minions(unsigned int dt_ms);
  * the 3 timer-based King buffs (Music's king_music_carrier is not a timer, see its own field doc
  * comment). Called from arena_update_teams() only. */
 void arena_tick_kings(unsigned int dt_ms);
+
+/* arena_tick_daynight (2026-08-25): advances time_of_day_sec, computes the current moon height
+ * (ported from SHANKPIT retro_sky.c's sun/moon orbit math -- moon_dir_y = -sun_dir_y), and
+ * detects the instant the moon passes its zenith (local maximum of moon height) via consecutive-
+ * sample comparison (see ArenaState.prev_moon_height/moon_was_rising's own doc comments) rather
+ * than an exact analytical crossing -- simpler, and exact enough for a gameplay trigger. On a
+ * real zenith crossing, calls into the PARENA-compiled on_moon_zenith (stdlib/redgarden/
+ * bloodflower_mod.prn) at map center, which calls back into redgarden_host_spawn_bloodflower
+ * below -- a real round-trip through compiled PARENA code, not a direct call to the spawn logic.
+ * Also advances bloodflower_ms_remaining and despawns/claims it. Called from arena_update_teams()
+ * only, same as arena_tick_kings -- see that function's own doc comment. */
+void arena_tick_daynight(unsigned int dt_ms);
+
+/* arena_hero_claim_bloodflower: each active, alive hero within ARENA_BLOODFLOWER_CLAIM_RADIUS of
+ * an active Bloodflower claims it (first hero checked each tick wins -- heroes array order is
+ * the same implicit priority arena_hero_attack_creeps' own nearest-target scan already relies
+ * on elsewhere in this file), granting ARENA_BLOODFLOWER_CLAIM_FLOW and despawning it
+ * immediately. Called from arena_update_teams() right after arena_tick_daynight. */
+void arena_hero_claim_bloodflower(void);
+
+/* arena_daynight_ambient_rgb: pure query, no side effects -- recomputes sun_height from
+ * arena_state.time_of_day_sec fresh each call (same formula arena_tick_daynight already uses)
+ * and maps it to an ambient tint, same smoothstep-driven day/night blend shape SHANKPIT
+ * retro_lighting.c's own ambient_r/g/b formula uses (ported constants, adapted: this game's
+ * top-down camera has no sky dome to light, so this feeds a background/ambient clear-color tint
+ * directly rather than per-surface Lambertian shading). Callers: apps/arena/src/main.c's
+ * in-match render loop (not the pre-match queuing/draft screens -- day/night doesn't apply
+ * before a match's own clock is running). */
+void arena_daynight_ambient_rgb(float *out_r, float *out_g, float *out_b);
+
+/* redgarden_host_spawn_bloodflower: the real host-side implementation the PARENA-compiled
+ * on_moon_zenith calls back into (see bloodflower_mod_host.h). Sets bloodflower_active/x/z/
+ * ms_remaining on arena_state -- the actual, real world-state mutation; on_moon_zenith itself
+ * has no logic beyond this one call, matching vterm_mod.prn's own "one function, no dispatch
+ * table" minimalism. */
+void redgarden_host_spawn_bloodflower(int x, int z);
 
 /* arena_hero_attack_kings: mirrors arena_hero_attack_camp_minions -- each active, alive hero
  * without a closer enemy hero or camp minion already occupying its attack this tick instead
