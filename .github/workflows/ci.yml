@@ -67,15 +67,25 @@ jobs:
           tar xzf SDL2-devel-2.30.10-mingw.tar.gz
           mv SDL2-2.30.10/x86_64-w64-mingw32 ./sdl2_mingw
 
+      # packages/simulation/bloodflower_mod.c (S194-01/S194-04): arena_game.c's own
+      # arena_tick_daynight calls on_moon_zenith(), defined in the PARENA-compiled
+      # bloodflower mod -- this Windows cross-compile is a third, separate build path
+      # from scripts/build.sh and scripts/build_arena.sh (both already fixed) and was
+      # missed too, breaking this step the same way build_arena.sh broke (undefined
+      # reference at link time). Verified locally via a real mingw cross-compile
+      # against the exact SDL2-devel-2.30.10-mingw package this step downloads, not
+      # just assumed to match the Linux fix.
       - name: Cross-compile Windows arena client
         run: |
           set -euo pipefail
           x86_64-w64-mingw32-gcc -std=c99 -D_DEFAULT_SOURCE -O2 \
+            -include packages/simulation/bloodflower_mod_host.h \
             -o RedGarden.exe \
             apps/arena/src/main.c \
             packages/simulation/arena_game.c \
             packages/simulation/arena_replay.c \
             packages/simulation/arena_ai_bridge.c \
+            packages/simulation/bloodflower_mod.c \
             packages/common/mlp_infer.c \
             packages/goldenband/gband.c \
             packages/goldenband/gband_rig.c \
