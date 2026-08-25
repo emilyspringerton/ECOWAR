@@ -1,11 +1,13 @@
 #include "arena_game.h"
 #include <math.h>
 #include <stdlib.h>
+#include <stdio.h>
 #include <string.h>
 #include "../common/rl_policy_weights.h"
 #include "bloodflower_mod_host.h"
 #include "tree_passive_mod_host.h"
 #include "build_template_mod_host.h"
+#include "item_curriculum_mod_host.h"
 
 ArenaState arena_state;
 int arena_bot_enabled = 1;
@@ -242,6 +244,84 @@ const ArenaItemDef ARENA_ITEMS[ARENA_ITEM_COUNT] = {
     /* Cost tripled 2026-08-13 (see Gae Bolg's comment above): 500 -> 1500. */
     { "Ninja Tekko",        ARENA_ITEM_SLOT_HANDS,   ARENA_ITEM_TIER_GENERIC, 1500, 20,   0,   0,  0, 1.0f, 0,  0, 0 },
 };
+
+/* Item curriculum: see arena_game.h's own "Item curriculum" section doc comment for the full
+ * founder-quote chain and honest scope note. Runtime-mutable, separate from the fixed, const
+ * ARENA_ITEMS[] catalog above -- deliberately not appended into it, see that doc comment for
+ * why. Zero-initialized to a safe, clearly-labeled "not yet generated" placeholder rather than
+ * left name=NULL, so any accidental early read (before the training loop ever calls the
+ * generator) doesn't crash on a null string. */
+static char arena_item_curriculum_names[ARENA_ITEM_CURRICULUM_SLOT_COUNT][80] = {
+    { "(curriculum slot: not yet generated)" },
+    { "(curriculum slot: not yet generated)" },
+    { "(curriculum slot: not yet generated)" },
+    { "(curriculum slot: not yet generated)" },
+};
+ArenaItemDef ARENA_ITEM_CURRICULUM_SLOTS[ARENA_ITEM_CURRICULUM_SLOT_COUNT] = {
+    { arena_item_curriculum_names[0], ARENA_ITEM_SLOT_WEAPON, ARENA_ITEM_TIER_WEIRD, 0, 0, 0, 0, 0, 0.0f, 0, 0, 0 },
+    { arena_item_curriculum_names[1], ARENA_ITEM_SLOT_WEAPON, ARENA_ITEM_TIER_WEIRD, 0, 0, 0, 0, 0, 0.0f, 0, 0, 0 },
+    { arena_item_curriculum_names[2], ARENA_ITEM_SLOT_WEAPON, ARENA_ITEM_TIER_WEIRD, 0, 0, 0, 0, 0, 0.0f, 0, 0, 0 },
+    { arena_item_curriculum_names[3], ARENA_ITEM_SLOT_WEAPON, ARENA_ITEM_TIER_WEIRD, 0, 0, 0, 0, 0, 0.0f, 0, 0, 0 },
+};
+
+/* arena_item_curriculum_blend_int: average two base stats, then apply a small, DETERMINISTIC
+ * jitter (a plain integer hash of the two item ids + slot, not rand()/srand()) so the same pair
+ * of base items always generates the same result -- reproducibility matters for a training
+ * pipeline that will re-run this deterministically across restarts, and avoids the global
+ * rand() state every other real-RNG use in this codebase (item drops, etc.) doesn't need to
+ * share with a curriculum-generation call. Jitter is bounded to +/-12% of the averaged value
+ * (never negative) so a blend of two real items stays a plausible item, not an outlier. */
+static int arena_item_curriculum_blend_int(int a, int b, unsigned int hash) {
+    int base = (a + b) / 2;
+    if (base == 0) return 0;
+    int jitter_range = base * 12 / 100;
+    if (jitter_range < 1) return base;
+    int jitter = (int)(hash % (unsigned int)(2 * jitter_range + 1)) - jitter_range;
+    int result = base + jitter;
+    return result < 0 ? 0 : result;
+}
+
+/* redgarden_host_item_curriculum_generate_counter_item: the real work behind
+ * on-generate-counter-item (stdlib/redgarden/item_curriculum_mod.prn) -- same "mod is the
+ * trigger, host C does the mutation" split every prior REDGARDEN mod (Bloodflower, Tree
+ * passive, Build templates) already established. Blends base_item_a and base_item_b's own
+ * stat fields into ARENA_ITEM_CURRICULUM_SLOTS[slot_index]. Returns the synthetic item id
+ * (ARENA_ITEM_COUNT + slot_index) on success, -1 on an out-of-range base item or slot index. */
+int redgarden_host_item_curriculum_generate_counter_item(int base_item_a, int base_item_b, int slot_index) {
+    if (base_item_a < 0 || base_item_a >= ARENA_ITEM_COUNT) return -1;
+    if (base_item_b < 0 || base_item_b >= ARENA_ITEM_COUNT) return -1;
+    if (slot_index < 0 || slot_index >= ARENA_ITEM_CURRICULUM_SLOT_COUNT) return -1;
+
+    const ArenaItemDef *a = &ARENA_ITEMS[base_item_a];
+    const ArenaItemDef *b = &ARENA_ITEMS[base_item_b];
+    /* One deterministic hash seed per stat field so two blends of the same pair don't jitter
+     * every field in lockstep (which would just scale the whole item up or down uniformly,
+     * defeating the point of a per-stat jitter). */
+    unsigned int seed = (unsigned int)(base_item_a * 733 + base_item_b * 41 + slot_index * 17 + 2026);
+
+    ArenaItemDef *out = &ARENA_ITEM_CURRICULUM_SLOTS[slot_index];
+    snprintf(arena_item_curriculum_names[slot_index], sizeof(arena_item_curriculum_names[slot_index]),
+             "Curriculum: %.28s x %.28s", a->name, b->name);
+    out->name = arena_item_curriculum_names[slot_index];
+    out->slot = a->slot; /* the resulting item equips into base_item_a's own slot */
+    out->tier = ARENA_ITEM_TIER_WEIRD; /* an unusual, generated stat shape, not a hand-authored one */
+    out->cost = arena_item_curriculum_blend_int(a->cost, b->cost, seed * 2654435761u);
+    out->bonus_ad = arena_item_curriculum_blend_int(a->bonus_ad, b->bonus_ad, seed * 2654435761u + 1);
+    out->bonus_max_hp = arena_item_curriculum_blend_int(a->bonus_max_hp, b->bonus_max_hp, seed * 2654435761u + 2);
+    out->bonus_max_mp = arena_item_curriculum_blend_int(a->bonus_max_mp, b->bonus_max_mp, seed * 2654435761u + 3);
+    out->bonus_armor = arena_item_curriculum_blend_int(a->bonus_armor, b->bonus_armor, seed * 2654435761u + 4);
+    out->bonus_move_speed = (a->bonus_move_speed + b->bonus_move_speed) / 2.0f;
+    out->bonus_cdr_pct = arena_item_curriculum_blend_int(a->bonus_cdr_pct, b->bonus_cdr_pct, seed * 2654435761u + 5);
+    out->bonus_true_dmg = arena_item_curriculum_blend_int(a->bonus_true_dmg, b->bonus_true_dmg, seed * 2654435761u + 6);
+    out->bonus_lifesteal_pct = arena_item_curriculum_blend_int(a->bonus_lifesteal_pct, b->bonus_lifesteal_pct, seed * 2654435761u + 7);
+
+    return ARENA_ITEM_COUNT + slot_index;
+}
+
+const ArenaItemDef *redgarden_host_item_curriculum_get(int slot_index) {
+    if (slot_index < 0 || slot_index >= ARENA_ITEM_CURRICULUM_SLOT_COUNT) return NULL;
+    return &ARENA_ITEM_CURRICULUM_SLOTS[slot_index];
+}
 
 /* ARENA_BUILD_TEMPLATES: see arena_game.h's own "Build templates" section doc comment for the
    full founder-quote chain and design reasoning. A first, generic (any-hero) pass -- item

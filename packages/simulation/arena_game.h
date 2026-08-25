@@ -1381,6 +1381,40 @@ extern const ArenaItemDef ARENA_ITEMS[];
  * doc comment just above -- same reasoning, second (and currently last) fixed-index active item. */
 #define ARENA_DONKEY_ITEM_ID 25
 
+/* ---- Item curriculum (NORTHSTAR.md §26.3.2, 2026-08-25) ----
+ * Founder real-time: "continue the exotic auto curriculum redgarden work" -> "training" ->
+ * "parena mod driven first" -- §25.4's existing autocurriculum picks WHICH OPPONENT to train
+ * against from a pool of past checkpoints; §26.3.2 is a real, explicit scope expansion asked
+ * for directly by the founder: also curriculum-generate NEW ITEMS meant to "meta break the top
+ * teams" (counter whichever team composition the current policy is losing to), a POET/PAIRED-
+ * style environment-parameter curriculum layered on top of the opponent one, not a replacement
+ * for it.
+ *
+ * This section is the GENERATION PRIMITIVE only, PARENA-mod-driven per the founder's own
+ * sequencing ("parena mod driven first"): redgarden_host_item_curriculum_generate_counter_item
+ * blends two existing ARENA_ITEMS catalog entries' own stat fields (average + a small
+ * deterministic jitter, reproducible from the same two base items rather than truly random)
+ * into one of a small number of runtime-mutable "curriculum slots". Deciding WHICH two items
+ * to blend from (reading which items the currently-dominant team composition is using -- not
+ * even observable to the Python training loop yet, `sim_get_obs_team_any`'s observation vector
+ * carries no item-purchase state today) and evaluating whether a generated item actually
+ * counters that composition are real, unresolved training-loop questions, same honesty
+ * convention NORTHSTAR.md §26.3.2 itself already uses -- NOT built in this pass.
+ *
+ * Curriculum items live in a SEPARATE, runtime-mutable array (ARENA_ITEM_CURRICULUM_SLOTS
+ * below), not appended into the fixed, `const`, compile-time-sized ARENA_ITEMS[] catalog --
+ * every existing call site that indexes ARENA_ITEMS by a raw int id (shop UI, inventory
+ * application, network snapshot item ids, ARENA_BLINK_DAGGER_ITEM_ID-style fixed indices) would
+ * need auditing to become curriculum-slot-aware before a generated item could safely enter live
+ * gameplay -- deliberately not attempted here. This is training-side machinery a future
+ * consumer reads via redgarden_host_item_curriculum_get, same "plumbing first, consumption
+ * later" shape §25.4's own C-level prerequisite (sim_step_team_vs_actions) was built in. */
+#define ARENA_ITEM_CURRICULUM_SLOT_COUNT 4
+extern ArenaItemDef ARENA_ITEM_CURRICULUM_SLOTS[ARENA_ITEM_CURRICULUM_SLOT_COUNT];
+
+int redgarden_host_item_curriculum_generate_counter_item(int base_item_a, int base_item_b, int slot_index);
+const ArenaItemDef *redgarden_host_item_curriculum_get(int slot_index);
+
 #define ARENA_ITEM_SELL_REFUND_PCT 50 /* founder: "sell it back for less" */
 #define ARENA_SHOP_RADIUS 3.0f /* same "stand near it" convention as ARENA_FOUNTAIN_RADIUS */
 
