@@ -6513,6 +6513,22 @@ void arena_update(unsigned int dt_ms) {
        anyone's channel survives this tick. */
     arena_tick_nodes(dt_ms);
 
+    /* Real, live bug found and fixed 2026-08-25 (founder, real-time: "im playing redgarden on
+       latest and the tree is not generating health from auto attacking the other trees ensure
+       the server knows about that and its all wired up to work"): arena_tick_daynight/
+       arena_tick_obstacles/arena_hero_tree_passive were wired into arena_update_teams (below)
+       when Bloodflower/Tree passive landed, but never into THIS function -- the 1v1 tick
+       (lobby_size == 2, apps/arena_server/src/main.c's own `if (lobby_size == 2) arena_update
+       else arena_update_teams` branch). The founder's own 1v1 matchmaker (:7779, lobby-size 2,
+       per REDGARDEN/CLAUDE.md's own deployment table) runs exclusively through this function,
+       so Tree's passive (and the day/night cycle + Bloodflower event) silently never fired
+       there at all -- team-mode/bot-pool matches (:7778) were unaffected. Same class of gap
+       §25.4's own "arena_update hardcodes heroes[0]/heroes[1]" bug already flagged: two
+       parallel simulation-tick functions, one gets a new mechanic wired in, the other doesn't. */
+    arena_tick_daynight(dt_ms);
+    arena_tick_obstacles(dt_ms);
+    arena_hero_tree_passive(dt_ms);
+
     if (!arena_state.heroes[0].alive) arena_state.winner = 2;
     else if (!arena_state.heroes[1].alive) arena_state.winner = 1;
 }

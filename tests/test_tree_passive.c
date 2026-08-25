@@ -170,6 +170,36 @@ static void test_tree_never_destroyed_stays_a_real_obstacle(void) {
     CHECK(arena_state.obstacles[ti].kind == ARENA_OBSTACLE_TREE, "the obstacle itself is never despawned/changed -- a permanent resource, not a kill target");
 }
 
+/* Real, live production bug found and fixed 2026-08-25 (founder, real-time: "im playing
+   redgarden on latest and the tree is not generating health from auto attacking the other
+   trees ensure the server knows about that and its all wired up to work"): every test above
+   calls arena_hero_tree_passive/arena_tick_obstacles DIRECTLY, never through the real top-level
+   arena_update()/arena_update_teams() tick functions -- so none of them would have caught the
+   actual bug, which was that arena_update() (the 1v1 tick, apps/arena_server/src/main.c's own
+   `if (lobby_size == 2) arena_update(...) else arena_update_teams(...)` branch) never called
+   arena_tick_obstacles/arena_hero_tree_passive at all, only arena_update_teams did. The
+   founder's own 1v1 matchmaker (:7779, lobby-size 2) runs exclusively through arena_update, so
+   the passive silently never fired there. This test exercises the real top-level function a
+   live 1v1 match actually calls, closing that gap. */
+static void test_tree_passive_fires_through_the_real_1v1_arena_update(void) {
+    arena_init_with_heroes(ARENA_HERO_TREE, ARENA_HERO_DUCK);
+    int ti = first_tree_obstacle_index();
+    ArenaHero *h = &arena_state.heroes[0];
+    h->x = arena_state.obstacles[ti].x;
+    h->z = arena_state.obstacles[ti].z; /* well within ARENA_ATTACK_RANGE, far from hero 1 (Duck at x=6) */
+    h->hp = 50;
+    h->max_hp = 100;
+    int obstacle_hp_before = arena_state.obstacles[ti].hp;
+    int hero_hp_before = h->hp;
+
+    arena_update(16); /* the REAL 1v1 tick function -- not a direct call to the mechanic itself */
+
+    CHECK(arena_state.obstacles[ti].hp == obstacle_hp_before - ARENA_TREE_PASSIVE_DAMAGE,
+          "arena_update() (the 1v1 tick) now damages the nearest tree obstacle, same as arena_update_teams() already did");
+    CHECK(h->hp == hero_hp_before + ARENA_TREE_PASSIVE_HEAL_PER_HIT,
+          "arena_update() (the 1v1 tick) now heals the Tree hero from the strike, same as arena_update_teams() already did");
+}
+
 int main(void) {
     test_reset_layout_gives_trees_real_hp_rocks_stay_zero();
     test_tree_passive_strikes_nearest_tree_via_real_parena_mod();
@@ -177,6 +207,7 @@ int main(void) {
     test_tree_passive_yields_to_a_closer_enemy_hero();
     test_tree_regen_ticks_toward_max_and_caps();
     test_tree_never_destroyed_stays_a_real_obstacle();
+    test_tree_passive_fires_through_the_real_1v1_arena_update();
     printf("\n%s\n", failures == 0 ? "ALL PASS" : "SOME FAILED");
     return failures == 0 ? 0 : 1;
 }
