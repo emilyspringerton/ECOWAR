@@ -162,6 +162,53 @@ jobs:
             RedGarden_Client_*.zip
             RedGarden_Server_*.zip
 
+      # Real gap closed 2026-08-25 (S202-19): every other active repo with real CI
+      # already had a *_CONSTRUCT.txt build artifact (a full concatenation of its
+      # own source, matching emily.cli's own ci.yml "Generate Construct Bundle"
+      # step) -- REDGARDEN was one of 9 confirmed missing it (S202-18's audit).
+      - name: Generate Construct Bundle
+        shell: bash
+        run: |
+          set -euo pipefail
+          OUT="REDGARDEN_CONSTRUCT.txt"
+          {
+            echo "REDGARDEN CONSTRUCT ${{ github.run_number }}"
+            echo "commit: $GITHUB_SHA"
+            echo "generated_utc: $(date -u +"%Y-%m-%dT%H:%M:%SZ")"
+            echo
+          } > "$OUT"
+
+          ROOTS=""
+          for d in packages apps docs docs2 scripts; do
+            if [ -d "$d" ]; then ROOTS="$ROOTS $d"; fi
+          done
+
+          while IFS= read -r relpath; do
+            {
+              echo "--- FILE START: ${relpath} ---"
+              cat "${relpath}"
+              echo
+              echo "--- FILE END: ${relpath} ---"
+              echo
+            } >> "$OUT"
+          done < <(
+            find $ROOTS \
+              \( -name "*.c" -o -name "*.h" -o -name "*.py" -o -name "*.prn" -o \
+                 -name "*.md" -o -name "Makefile" -o -name "*.yml" -o -name "*.yaml" -o \
+                 -name "*.sh" \) \
+              ! -path "*/rl_team_checkpoints*" \
+              -print | LC_ALL=C sort
+          )
+
+          test -s "$OUT"
+
+      - name: Upload Construct Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: REDGARDEN_Construct_${{ github.run_number }}_${{ github.sha }}
+          path: REDGARDEN_CONSTRUCT.txt
+          if-no-files-found: error
+
   # Founder real-time: "ensure all our core repos have auto release non pre release" -- same
   # exact pattern PITVIPER's own ci.yml established (2026-08-21), also just applied to SHANKPIT/
   # shankpit-460 this same session: auto-bumps MINOR version only on every real push to main
