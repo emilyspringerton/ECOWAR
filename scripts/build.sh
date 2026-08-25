@@ -38,10 +38,12 @@ gcc "${COMMON_FLAGS[@]}" \
 gcc "${COMMON_FLAGS[@]}" \
   -o "${BUILD_DIR}/red_garden_arena_server" \
   -include "${ROOT_DIR}/packages/simulation/bloodflower_mod_host.h" \
+  -include "${ROOT_DIR}/packages/simulation/tree_passive_mod_host.h" \
   "${ROOT_DIR}/apps/arena_server/src/main.c" \
   "${ROOT_DIR}/packages/simulation/arena_game.c" \
   "${ROOT_DIR}/packages/simulation/arena_ai_bridge.c" \
   "${ROOT_DIR}/packages/simulation/bloodflower_mod.c" \
+  "${ROOT_DIR}/packages/simulation/tree_passive_mod.c" \
   "${ROOT_DIR}/packages/common/mlp_infer.c" \
   -lm
 
@@ -69,11 +71,13 @@ gcc "${COMMON_FLAGS[@]}" \
 gcc -std=c99 -D_DEFAULT_SOURCE -O2 -Wall -Wextra -I"${ROOT_DIR}/packages" \
   -o "${BUILD_DIR}/red_garden_arena" \
   -include "${ROOT_DIR}/packages/simulation/bloodflower_mod_host.h" \
+  -include "${ROOT_DIR}/packages/simulation/tree_passive_mod_host.h" \
   "${ROOT_DIR}/apps/arena/src/main.c" \
   "${ROOT_DIR}/packages/simulation/arena_game.c" \
   "${ROOT_DIR}/packages/simulation/arena_replay.c" \
   "${ROOT_DIR}/packages/simulation/arena_ai_bridge.c" \
   "${ROOT_DIR}/packages/simulation/bloodflower_mod.c" \
+  "${ROOT_DIR}/packages/simulation/tree_passive_mod.c" \
   "${ROOT_DIR}/packages/common/mlp_infer.c" \
   "${ROOT_DIR}/packages/goldenband/gband.c" \
   "${ROOT_DIR}/packages/goldenband/gband_rig.c" \

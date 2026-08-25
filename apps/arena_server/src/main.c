@@ -678,6 +678,13 @@ static void server_broadcast(void) {
         msg.kings[i].alive = (uint8_t)k->alive;
     }
 
+    /* Tree passive (2026-08-25): obstacles are always fully populated (fixed layout, never
+       sparse), same convention as kings/towers/creeps above -- only ARENA_OBSTACLE_TREE entries
+       carry a real value, rocks stay 0. */
+    for (int i = 0; i < ARENA_SNAPSHOT_OBSTACLE_COUNT && i < ARENA_OBSTACLE_COUNT; i++) {
+        msg.obstacle_hp[i] = (uint16_t)(arena_state.obstacles[i].hp > 0 ? arena_state.obstacles[i].hp : 0);
+    }
+
     memcpy(buffer, &head, sizeof(NetHeader));
     memcpy(buffer + sizeof(NetHeader), &msg, sizeof(ArenaSnapshotMsg));
 

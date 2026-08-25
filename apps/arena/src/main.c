@@ -613,6 +613,19 @@ static void spawn_spell_flash(float x, float z, int slot, int hero_id);
 static void play_tone(float freq_hz, float duration_ms, float volume);
 static void play_cast_tone(int slot);
 static void trigger_squish(int owner);
+/* Tree passive (2026-08-25): same forward-declare-early reasoning as trigger_squish just above --
+   net_poll_snapshots needs to fire this the instant a snapshot shows a tree obstacle's hp
+   decreased, well before this file's own real definition (alongside trigger_squish/compute_squish
+   further down). See that definition's own doc comment for the full "why obstacle-indexed, not
+   hero-indexed" story. */
+static void trigger_tree_squish(int obstacle_index);
+/* Last-known obstacle hp, purely to detect a decrease (a hit) vs. an increase (regen) between
+   consecutive snapshots -- ARENA_OBSTACLE_COUNT-sized, not ARENA_SNAPSHOT_OBSTACLE_COUNT, so it
+   stays correct even if the two constants ever drift (the apply loop already clamps to the
+   smaller of the two). _valid starts at 0/false (static zero-init) so the very first snapshot
+   never misreads its own initial value as a "decrease" from an uninitialized 0. */
+static uint16_t obstacle_hp_prev[ARENA_OBSTACLE_COUNT];
+static int obstacle_hp_prev_valid[ARENA_OBSTACLE_COUNT];
 #define ARENA_AUDIO_HEARING_RADIUS 15.0f /* how far from the local player's own hero a cast/hit sound is still audible */
 
 static void net_poll_snapshots(uint32_t now_ms) {
@@ -897,6 +910,21 @@ static void net_poll_snapshots(uint32_t now_ms) {
                 }
                 arena_state.resources[0] = msg->resources[0]; /* S170-153 */
                 arena_state.resources[1] = msg->resources[1];
+                /* Tree passive (2026-08-25): obstacles are always fully populated, same
+                   convention as kings just above -- only tree obstacles carry a real value.
+                   Any decrease vs. the last snapshot's own value fires the local hit-reaction
+                   squish (compute_tree_squish's own doc comment); a regen-driven increase does
+                   not -- same "only a hit looks like a hit" reasoning a heal-flash-vs-damage-flash
+                   distinction elsewhere in this file already draws. */
+                for (int i = 0; i < ARENA_SNAPSHOT_OBSTACLE_COUNT && i < ARENA_OBSTACLE_COUNT; i++) {
+                    uint16_t new_hp = msg->obstacle_hp[i];
+                    if (obstacle_hp_prev_valid[i] && new_hp < obstacle_hp_prev[i]) {
+                        trigger_tree_squish(i);
+                    }
+                    arena_state.obstacles[i].hp = new_hp;
+                    obstacle_hp_prev[i] = new_hp;
+                    obstacle_hp_prev_valid[i] = 1;
+                }
             }
         }
         len = recvfrom(net_sock, rbuf, sizeof(rbuf), 0, (struct sockaddr *)&sender, &slen);
@@ -2181,6 +2209,31 @@ static float compute_squish(int owner) {
     return 1.0f - amplitude * decay * wobble;
 }
 
+/* Tree passive (2026-08-25, founder real-time: "the tree he attacks never does or anything have
+ * it jiggle animate extra squishy"): same decaying-cosine squash-and-stretch bounce as
+ * trigger_squish/compute_squish just above, array-indexed by obstacle instead of hero owner --
+ * trees are static world objects, not spawned/despawned entities, so a plain
+ * ARENA_OBSTACLE_COUNT-sized array (like squish_age_ms's own ARENA_MAX_HEROES sizing) is the
+ * simplest fit, no pooling needed. Triggered from net_poll_snapshots the instant a snapshot shows
+ * a tree's hp decreased (see that call site's own doc comment) -- purely cosmetic, the real hp
+ * change already happened server-side by the time this fires. */
+static float tree_squish_age_ms[ARENA_OBSTACLE_COUNT];
+
+static void trigger_tree_squish(int obstacle_index) {
+    if (obstacle_index < 0 || obstacle_index >= ARENA_OBSTACLE_COUNT) return;
+    tree_squish_age_ms[obstacle_index] = 0.0f;
+}
+
+static float compute_tree_squish(int obstacle_index) {
+    if (obstacle_index < 0 || obstacle_index >= ARENA_OBSTACLE_COUNT) return 1.0f;
+    float t = tree_squish_age_ms[obstacle_index];
+    if (t < 0.0f || t >= SQUISH_ANIM_MS) return 1.0f;
+    float amplitude = 0.32f;
+    float decay = expf(-t / (SQUISH_ANIM_MS * 0.35f));
+    float wobble = cosf(t / SQUISH_ANIM_MS * 3.14159265f * 2.4f);
+    return 1.0f - amplitude * decay * wobble;
+}
+
 /* ---------------- spell flashes (S170-124, "add particle effects to
  * spells") ---------------- */
 /* Unlike auto-attacks (S170-122, HP-delta is a decent-enough proxy), a real
@@ -2509,6 +2562,11 @@ int main(int argc, char *argv[]) {
        window so compute_squish() reads neutral (1.0f) until trigger_squish() actually resets it. */
     for (int squish_init_i = 0; squish_init_i < ARENA_MAX_HEROES; squish_init_i++) {
         squish_age_ms[squish_init_i] = SQUISH_ANIM_MS + 1.0f;
+    }
+    /* Same zero-init pitfall as squish_age_ms just above, same fix -- without this every tree
+       obstacle would appear squashed for one frame on launch (compute_tree_squish, 2026-08-25). */
+    for (int tree_squish_init_i = 0; tree_squish_init_i < ARENA_OBSTACLE_COUNT; tree_squish_init_i++) {
+        tree_squish_age_ms[tree_squish_init_i] = SQUISH_ANIM_MS + 1.0f;
     }
     /* Observer mode (NORTHSTAR §12 Phase C, EMILY/BACKLOG.md S170-30):
      * `red_garden_arena --observe var/matches/arena-<ts>.jsonl` plays back
@@ -3255,6 +3313,11 @@ int main(int argc, char *argv[]) {
                 squish_age_ms[i] += dt;
             }
         }
+        for (int i = 0; i < ARENA_OBSTACLE_COUNT; i++) {
+            if (tree_squish_age_ms[i] >= 0.0f && tree_squish_age_ms[i] < SQUISH_ANIM_MS) {
+                tree_squish_age_ms[i] += dt;
+            }
+        }
         /* Local-mode cast_flash_slot drain (S170-124): net_mode already spawns spell
            flashes directly off the wire snapshot inside net_poll_snapshots and never
            writes this field locally, so this loop is a no-op there -- it only ever
@@ -3357,6 +3420,12 @@ int main(int argc, char *argv[]) {
         for (int i = 0; i < ARENA_OBSTACLE_COUNT; i++) {
             const ArenaObstacle *o = &arena_state.obstacles[i];
             if (o->kind == ARENA_OBSTACLE_TREE) {
+                /* Tree passive (2026-08-25, founder: "have it jiggle animate extra squishy"):
+                   canopy gets the hit-reaction squish, same draw_hero_box squish param heroes
+                   already use (see compute_tree_squish's own doc comment) -- trunk stays rigid
+                   (1.0f, unsquished) so the tree reads as rooted in place, only the leafy top
+                   reacts, closer to a real branch shaking off a hit than the whole trunk wobbling. */
+                float squish = compute_tree_squish(i);
                 glUniform4f_(loc_color, 0.32f, 0.22f, 0.12f, 1.0f); /* trunk: brown */
                 draw_hero_box(o->x, o->z, 0.0f, o->radius * 0.7f, 0.0f,
                               o->radius * 0.35f, o->radius * 1.4f, o->radius * 0.35f,
@@ -3364,7 +3433,7 @@ int main(int argc, char *argv[]) {
                 glUniform4f_(loc_color, 0.15f, 0.45f, 0.18f, 1.0f); /* canopy: green */
                 draw_hero_box(o->x, o->z, 0.0f, o->radius * 1.7f, 0.0f,
                               o->radius, o->radius * 0.9f, o->radius,
-                              1.0f, &vp, loc_mvp, loc_model, &cube_mesh);
+                              squish, &vp, loc_mvp, loc_model, &cube_mesh);
             } else {
                 glUniform4f_(loc_color, 0.45f, 0.44f, 0.42f, 1.0f); /* rock: grey */
                 draw_hero_box(o->x, o->z, 0.0f, o->radius * 0.55f, 0.0f,

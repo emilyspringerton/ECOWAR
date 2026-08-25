@@ -2293,11 +2293,23 @@ typedef struct {
  * comment above for placement rationale. `radius` is the collision/visual
  * footprint (a circle -- the client draws it as one or two boxes, see
  * draw_obstacle in apps/arena, but collision itself stays circle-vs-circle
- * for the same cheap-and-good-enough reason hero-vs-hero would be). */
+ * for the same cheap-and-good-enough reason hero-vs-hero would be).
+ *
+ * hp/max_hp (2026-08-25, ARENA_HERO_TREE passive, see this file's own
+ * "Tree passive" section below): only meaningful for ARENA_OBSTACLE_TREE --
+ * rocks leave both at 0/unused, same "field exists but only one kind reads
+ * it" convention ArenaHero's own kit-specific fields (e.g. king_growth_ms)
+ * already use rather than a separate per-kind struct. Position/radius/kind
+ * stay static and never wire-synced (this struct's own doc comment above);
+ * hp is the one genuinely dynamic field and IS wire-synced (protocol.h's
+ * ArenaSnapshotMsg.obstacle_hp), same "static layout, dynamic state
+ * synced separately" split powerups already use for kind/active vs
+ * position. */
 typedef struct {
     float x, z;
     float radius;
     ArenaObstacleKind kind;
+    int hp, max_hp;
 } ArenaObstacle;
 
 /* ArenaDamageLogEntry (S189-01, "go ahead and add the damage log to REDGARDEN"): one real
@@ -2843,6 +2855,55 @@ void arena_daynight_ambient_rgb(float *out_r, float *out_g, float *out_b);
  * has no logic beyond this one call, matching vterm_mod.prn's own "one function, no dispatch
  * table" minimalism. */
 void redgarden_host_spawn_bloodflower(int x, int z);
+
+/* ---------------- Tree passive (2026-08-25) ----------------
+ * Founder real-time: "can you add a passive to tree that when he is close enough to a tree to
+ * auto attack it he auto attacks it and slowly regenerates health?" -> "the tree he attacks
+ * never does or anything have it jiggle animate extra squishy" -> "as a parena first mod led dev
+ * cycle." "tree" = ARENA_HERO_TREE; "a tree" = the existing decorative ARENA_OBSTACLE_TREE
+ * jungle-obstacle pieces (arena_obstacles_reset_layout) -- those had zero interaction before this,
+ * pure static collision geometry. Same "PARENA mod is the trigger, host C does the real work"
+ * split as bloodflower_mod.prn/on_moon_zenith (S194-01), see tree_passive_mod.prn's own header
+ * comment and tree_passive_mod_host.h.
+ *
+ * Trees are a permanent, regenerating resource, not a kill target -- they never fully deplete or
+ * despawn (ARENA_TREE_REGEN_PER_SEC always ticks them back toward max_hp), matching "slowly
+ * regenerates health" being about a repeatable sustain tool, not a one-time farm-and-destroy
+ * mechanic. Numbers picked using this file's own existing tiering (camp minion HP=45, King
+ * HP=huge) rather than asked for -- same "founder specifies the trigger, reasonable numbers fill
+ * the rest" precedent Bloodflower's own ARENA_BLOODFLOWER_CLAIM_FLOW documented. */
+#define ARENA_TREE_HP                   120  /* above a camp minion (45) -- meant to be leaned on repeatedly, not felled */
+#define ARENA_TREE_REGEN_PER_SEC          6  /* keeps a tree from staying empty forever if left alone between visits */
+#define ARENA_TREE_PASSIVE_DAMAGE        10  /* light -- a sustain tool, not a kill-target's worth of damage */
+#define ARENA_TREE_PASSIVE_HEAL_PER_HIT   4  /* Tree hero's own self-heal per successful strike */
+#define ARENA_TREE_PASSIVE_COOLDOWN_MS 1200  /* slower than ARENA_ATTACK_COOLDOWN_MS's hero-vs-hero pace -- passive sustain, not meant to out-tempo real combat */
+
+/* arena_hero_tree_passive: gated to ARENA_HERO_TREE only (this is a kit-specific passive, not a
+ * general mechanic every hero gets). Mirrors arena_hero_attack_camp_minions' own precedence
+ * check (skips a hero already busy with an enemy hero in range) and shares the hero's normal
+ * attack_cooldown_ms rather than a separate timer, so the Tree hero can't also attack a camp
+ * minion/enemy hero the same tick this fires -- one basic-attack-shaped action per cooldown,
+ * same as every other auto-attack type in this file. On finding the nearest ARENA_OBSTACLE_TREE
+ * within ARENA_ATTACK_RANGE, calls the PARENA-compiled on_tree_passive_strike (not
+ * redgarden_host_tree_passive_strike directly) -- the mod call IS the trigger, per the founder's
+ * explicit "as a parena first mod led dev cycle." */
+void arena_hero_tree_passive(unsigned int dt_ms);
+
+/* arena_tick_obstacles: regenerates tree obstacles' hp toward max_hp at ARENA_TREE_REGEN_PER_SEC.
+ * Rocks (hp/max_hp always 0) are a no-op pass-through, cheap enough not to bother skipping. */
+void arena_tick_obstacles(unsigned int dt_ms);
+
+/* redgarden_host_tree_passive_strike: the real host-side implementation the PARENA-compiled
+ * on_tree_passive_strike calls back into (see tree_passive_mod_host.h). Applies
+ * ARENA_TREE_PASSIVE_DAMAGE to the obstacle (clamped at 0, never destroyed/despawned -- see this
+ * section's own doc comment on why trees are permanent), heals the hero
+ * ARENA_TREE_PASSIVE_HEAL_PER_HIT (clamped to max_hp), and arms the tree's hit-reaction by
+ * resetting its hp to a value the client can observe decrease -- the actual squish/jiggle
+ * animation itself is purely client-side (apps/arena/src/main.c's own squish_age_ms idiom,
+ * array-indexed by obstacle instead of hero, triggered on any wire-synced hp decrease), same
+ * "server is authoritative for state, client owns purely cosmetic reaction" split fountains'
+ * heal-flash already uses. */
+void redgarden_host_tree_passive_strike(int hero_index, int obstacle_index);
 
 /* arena_hero_attack_kings: mirrors arena_hero_attack_camp_minions -- each active, alive hero
  * without a closer enemy hero or camp minion already occupying its attack this tick instead

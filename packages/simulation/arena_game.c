@@ -4,6 +4,7 @@
 #include <string.h>
 #include "../common/rl_policy_weights.h"
 #include "bloodflower_mod_host.h"
+#include "tree_passive_mod_host.h"
 
 ArenaState arena_state;
 int arena_bot_enabled = 1;
@@ -618,8 +619,33 @@ void arena_obstacles_reset_layout(void) {
         arena_state.obstacles[i].z = layout[i].z;
         arena_state.obstacles[i].radius = layout[i].radius;
         arena_state.obstacles[i].kind = layout[i].kind;
+        /* Tree passive (2026-08-25): only ARENA_OBSTACLE_TREE gets real hp -- rocks stay at
+           0/0, same "field exists but only one kind reads it" convention this struct's own doc
+           comment describes. */
+        if (layout[i].kind == ARENA_OBSTACLE_TREE) {
+            arena_state.obstacles[i].hp = ARENA_TREE_HP;
+            arena_state.obstacles[i].max_hp = ARENA_TREE_HP;
+        } else {
+            arena_state.obstacles[i].hp = 0;
+            arena_state.obstacles[i].max_hp = 0;
+        }
     }
 }
+
+/* arena_tick_obstacles: see header declaration's own doc comment. */
+void arena_tick_obstacles(unsigned int dt_ms) {
+    for (int i = 0; i < ARENA_OBSTACLE_COUNT; i++) {
+        ArenaObstacle *o = &arena_state.obstacles[i];
+        if (o->max_hp <= 0 || o->hp >= o->max_hp) continue;
+        o->hp += (ARENA_TREE_REGEN_PER_SEC * (int)dt_ms) / 1000;
+        if (o->hp > o->max_hp) o->hp = o->max_hp;
+    }
+}
+
+/* redgarden_host_tree_passive_strike and arena_hero_tree_passive themselves are defined further
+   down (right after arena_hero_attack_camp_minions), not here -- both need hero_is_hittable/
+   apply_cdr, static helpers whose real definitions (not just forward declarations) don't exist
+   yet at this point in the file; camp_minions' own attack function already sits past both. */
 
 void arena_init_with_heroes(ArenaHeroID player_hero, ArenaHeroID bot_hero) {
     memset(&arena_state, 0, sizeof(arena_state));
@@ -3129,6 +3155,55 @@ void arena_hero_attack_camp_minions(unsigned int dt_ms) {
             }
             break; /* one minion target per hero per attack, same as every other creep type here */
         }
+    }
+}
+
+/* redgarden_host_tree_passive_strike: see header declaration's own doc comment. Placed here,
+   not next to arena_obstacles_reset_layout/arena_tick_obstacles, because it (like
+   arena_hero_tree_passive below) needs apply_cdr -- only forward-declared, not yet defined, that
+   early in the file; arena_hero_attack_camp_minions just above already established this is where
+   real definitions of these helpers first become available. */
+void redgarden_host_tree_passive_strike(int hero_index, int obstacle_index) {
+    if (hero_index < 0 || hero_index >= ARENA_MAX_HEROES) return;
+    if (obstacle_index < 0 || obstacle_index >= ARENA_OBSTACLE_COUNT) return;
+    ArenaHero *h = &arena_state.heroes[hero_index];
+    ArenaObstacle *o = &arena_state.obstacles[obstacle_index];
+    if (o->kind != ARENA_OBSTACLE_TREE) return; /* defensive -- arena_hero_tree_passive only ever targets TREE-kind obstacles, this just refuses to misfire if that ever changes */
+
+    o->hp -= ARENA_TREE_PASSIVE_DAMAGE;
+    if (o->hp < 0) o->hp = 0; /* never destroyed/despawned -- see this feature's own doc comment on why trees are a permanent resource */
+
+    h->hp += ARENA_TREE_PASSIVE_HEAL_PER_HIT;
+    if (h->hp > h->max_hp) h->hp = h->max_hp;
+}
+
+/* arena_hero_tree_passive: see header declaration's own doc comment. */
+void arena_hero_tree_passive(unsigned int dt_ms) {
+    (void)dt_ms; /* same "only spends the cooldown, doesn't tick it" idiom as arena_hero_attack_camp_minions */
+    for (int i = 0; i < ARENA_MAX_HEROES; i++) {
+        ArenaHero *h = &arena_state.heroes[i];
+        if (!h->active || !h->alive || h->hero_id != ARENA_HERO_TREE) continue;
+        if (h->attack_cooldown_ms > 0 || h->stunned_ms > 0) continue;
+
+        ArenaHero *foe = arena_nearest_enemy(i);
+        if (foe && hero_is_hittable(foe)) {
+            float dx = foe->x - h->x, dz = foe->z - h->z;
+            if (sqrtf(dx * dx + dz * dz) <= ARENA_ATTACK_RANGE) continue; /* already busy with an enemy hero this tick */
+        }
+
+        int best = -1;
+        float best_dist = 0.0f;
+        for (int o = 0; o < ARENA_OBSTACLE_COUNT; o++) {
+            if (arena_state.obstacles[o].kind != ARENA_OBSTACLE_TREE) continue;
+            float dx = arena_state.obstacles[o].x - h->x, dz = arena_state.obstacles[o].z - h->z;
+            float dist = sqrtf(dx * dx + dz * dz);
+            if (dist > ARENA_ATTACK_RANGE) continue;
+            if (best < 0 || dist < best_dist) { best = o; best_dist = dist; }
+        }
+        if (best < 0) continue;
+
+        on_tree_passive_strike(i, best); /* PARENA-compiled -- the mod call IS the trigger, see this feature's own doc comment */
+        h->attack_cooldown_ms = apply_cdr(h, ARENA_TREE_PASSIVE_COOLDOWN_MS);
     }
 }
 
@@ -6585,6 +6660,8 @@ void arena_update_teams(unsigned int dt_ms) {
     arena_hero_attack_kings(dt_ms);
     arena_tick_daynight(dt_ms); /* 2026-08-25: day/night cycle + moon-zenith Bloodflower event */
     arena_hero_claim_bloodflower();
+    arena_tick_obstacles(dt_ms); /* 2026-08-25: Tree passive -- tree obstacle hp regen */
+    arena_hero_tree_passive(dt_ms);
 
     /* Melee combat: each active, alive hero independently attacks its own
        nearest enemy if one is in range and its cooldown is ready -- this is

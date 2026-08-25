@@ -498,6 +498,14 @@ typedef struct {
 // ARENA_SNAPSHOT_CAMP_COUNT must match arena_game.h's ARENA_CAMP_COUNT.
 #define ARENA_SNAPSHOT_CAMP_COUNT 4
 
+// ARENA_SNAPSHOT_OBSTACLE_COUNT must match arena_game.h's ARENA_OBSTACLE_COUNT. Tree passive
+// (2026-08-25): obstacles are otherwise a static, never-wire-synced layout (both sides compute
+// the same deterministic positions independently, see ArenaObstacle's own doc comment) -- hp is
+// the one genuinely dynamic field, "always fully populated" same as kings/creeps/towers below
+// rather than a sparse pool, since the layout itself never changes size or order mid-match. Only
+// ARENA_OBSTACLE_TREE entries carry a real value; rocks stay 0.
+#define ARENA_SNAPSHOT_OBSTACLE_COUNT 32
+
 // Per-King state (Jungle Camps Milestones 2/4). Always exactly ARENA_SNAPSHOT_CAMP_COUNT
 // entries, index-matched to camps (0=N/Wealth, 1=S/Growth, 2=E/Music, 3=W/All-Seeing), same
 // "always fully populated" convention as powerups above -- a not-yet-spawned or dead King just
@@ -540,6 +548,7 @@ typedef struct {
     uint8_t camp_minion_count; /* jungle camps client-visibility fix, 2026-08-20 */
     ArenaCampMinionSnapshot camp_minions[ARENA_SNAPSHOT_MAX_CAMP_MINIONS];
     ArenaKingSnapshot kings[ARENA_SNAPSHOT_CAMP_COUNT]; /* always fully populated, see that struct's doc comment */
+    uint16_t obstacle_hp[ARENA_SNAPSHOT_OBSTACLE_COUNT]; /* Tree passive (2026-08-25) -- see ARENA_SNAPSHOT_OBSTACLE_COUNT's own doc comment. Index-matched to the deterministic obstacle layout both sides already compute identically. */
 } ArenaSnapshotMsg;
 
 // PACKET_ARENA_SNAPSHOT_HEROES payload (S170-193, founder: split the
