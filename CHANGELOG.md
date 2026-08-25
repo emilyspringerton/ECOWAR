@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026-08-25
+
+- Day/night cycle + lighting ported from SHANKPIT retro_sky.c/retro_lighting.c into arena_game.c; moon-zenith Bloodflower event delivered as REDGARDEN's first real PARENA mod (stdlib/redgarden/bloodflower_mod.prn). Live round-trip verified via new tests/test_bloodflower.c (12 checks), full existing suite still green. (sess-20260825-0828-cc32a704)
+
+
 ## 2026-08-20
 - King buff status synced to clients + bottom-right buff HUD (founder: 'couldnt even tell if i got a buff'). King health bars + name tags added (founder: 'the 4 kings need health bars and name tags'). Deployed live to redgarden-stable. (sess-20260820-0649-a3f19d93)
 - Fixed the real cause of the Four Kings/jungle-camp invisibility bug: fully simulated server-side since Milestones 1/2, never had a wire-protocol representation. Added ArenaCampMinionSnapshot/ArenaKingSnapshot to ArenaSnapshotMsg, populated server-side, rendered client-side. Commit 9cdbb09. (sess-20260820-0649-a3f19d93)
