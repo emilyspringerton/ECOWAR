@@ -2624,6 +2624,67 @@ int arena_shop_buy(int owner, int item_id);
  * only way to clear a slot. */
 int arena_shop_sell(int owner, ArenaItemSlot slot);
 
+/* ---------------- Build templates (2026-08-25) ----------------
+ * Founder real-time, fragmented: "ok in redgarden lets experiment with the idea that tech trees
+ * are just item templates" -> "choosing a build can let you auto buy at the shop" -> "or you can
+ * make your own build obviously" -> "or do a custom build to buy your items" -> "or some
+ * combination a build doesn't have to define all items" -> "and there can be complex ordering
+ * rules" -> "all powered by parena scripting and parena mods" -> "not sure on the affordances
+ * command based via the chat for now is fine."
+ *
+ * Reading: a build is a NAMED, ORDERED, POSSIBLY-PARTIAL list of items (it doesn't have to fill
+ * all ARENA_ITEM_SLOT_COUNT slots) that the shop auto-buys from, in order, as Flow allows -- the
+ * "complex ordering rules" this pass implements as the literal purchase-priority order baked
+ * into each template (cheapest-affordable-first within a theme, so partial Flow still buys
+ * something useful rather than stalling on one expensive first pick). "Or you can make your own
+ * build obviously" reads as: item-by-item manual purchase (arena_shop_buy, already real, already
+ * shipped) stays exactly as available as it always was -- a template is a shortcut on top of
+ * that, not a replacement requiring a new build-EDITOR UI, which isn't attempted this pass.
+ *
+ * Affordance: apps/arena has no chat/command box at all (that's specific to GFD's own
+ * apps2/battlegrounds_gui fork) -- the founder's own "not sure... chat... is fine for now" left
+ * this genuinely open, so this instead extends the shop's EXISTING click-based page UI with one
+ * more page listing build presets, matching the affordance the shop already trains players on
+ * rather than inventing a second, unrelated input surface. Chat-based selection can still be
+ * added later if GFD's own chat pattern gets ported upstream into apps/arena; not a dead end. */
+#define ARENA_BUILD_TEMPLATE_MAX_ITEMS 6 /* headroom above every preset below (4 items each); a template need not use them all -- item_count says how many are real */
+
+typedef struct {
+    const char *name;
+    const char *desc;
+    int item_ids[ARENA_BUILD_TEMPLATE_MAX_ITEMS]; /* PURCHASE ORDER -- the "complex ordering rules" -- cheapest-first within the theme */
+    int item_count;
+} ArenaBuildTemplate;
+
+extern const ArenaBuildTemplate ARENA_BUILD_TEMPLATES[];
+#define ARENA_BUILD_TEMPLATE_COUNT 3 /* Bruiser, Assassin, Caster -- a first, generic (any-hero) pass; per-hero curated builds are real, separate future scope, not attempted here */
+
+/* arena_hero_apply_build_template: buys as many of template_id's items as `owner` can currently
+ * afford, IN ORDER, skipping any item already equipped in its own slot (idempotent re-click --
+ * clicking the same build twice never re-buys what you already have) and STOPPING (not failing)
+ * at the first item that's unaffordable right now -- so a partial Flow balance still buys real
+ * progress toward the build instead of an all-or-nothing purchase, matching "a build doesn't
+ * have to define all items" applying just as much to what a *player* can afford as to what the
+ * template author chose to list. Same shop-proximity/alive/active gating as arena_shop_buy
+ * (delegated to it directly -- every individual purchase in the sequence IS a real
+ * arena_shop_buy call, not a parallel reimplementation). Each successful purchase routes through
+ * the PARENA-compiled on_apply_build_template_item (the trigger, per "all powered by parena
+ * scripting and parena mods"), which calls back into redgarden_host_buy_build_item -- same
+ * "mod is the trigger, host C does the mutation" split bloodflower_mod.prn/tree_passive_mod.prn
+ * both already established. Returns the number of items actually purchased this call (0 if the
+ * template is fully owned already, out of range, or the hero can't afford/reach the shop at
+ * all). */
+int arena_hero_apply_build_template(int owner, int template_id);
+
+/* redgarden_host_buy_build_item: the real host-side implementation the PARENA-compiled
+ * on_apply_build_template_item calls back into (see build_template_mod_host.h). Thin wrapper
+ * around arena_shop_buy -- exists as its own function (rather than calling arena_shop_buy
+ * directly from the mod) only because the mod boundary needs a stable, minimal C ABI to cross,
+ * same reasoning redgarden_host_spawn_bloodflower/redgarden_host_tree_passive_strike both already
+ * establish. Returns 1 on a real purchase, 0 otherwise -- arena_hero_apply_build_template uses
+ * this to know whether to keep advancing through the template or stop. */
+int redgarden_host_buy_build_item(int hero_index, int item_id);
+
 /* arena_use_blink (S170-205): activates Blink Dagger -- no-op (no cooldown spent) unless the
  * hero has ARENA_BLINK_DAGGER_ITEM_ID actually equipped, is alive, not stunned, and
  * blink_cooldown_ms has elapsed. Direction: toward the current move target if moving, else

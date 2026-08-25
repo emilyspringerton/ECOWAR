@@ -81,6 +81,10 @@ static int shop_was_in_range = 0; /* S170-231, founder: "pop the shop window up 
  * didn't (S170-210 had to hand-bump it). */
 #define SHOP_ITEMS_PER_PAGE 9
 #define SHOP_PAGE_COUNT ((ARENA_ITEM_COUNT + SHOP_ITEMS_PER_PAGE - 1) / SHOP_ITEMS_PER_PAGE)
+/* SHOP_BUILDS_PAGE (2026-08-25, build templates): one virtual page past the real item catalog
+   pages -- shop_page reaching this value means "show build presets, not a catalog page," same
+   page-button strip, its own row content (see the click handler and draw pass). */
+#define SHOP_BUILDS_PAGE SHOP_PAGE_COUNT
 #define SHOP_PAGE_BTN_W 30.0f
 #define SHOP_PAGE_BTN_H 18.0f
 #define SHOP_PAGE_BTN_GAP 6.0f
@@ -513,6 +517,19 @@ static void net_send_shop_sell(int slot) {
     h->type = PACKET_ARENA_SHOP_SELL;
     ArenaShopSellCmd *cmd = (ArenaShopSellCmd *)(buf + sizeof(NetHeader));
     cmd->slot = (uint8_t)slot;
+    sendto(net_sock, buf, sizeof(buf), 0, (struct sockaddr *)&net_server_addr, sizeof(net_server_addr));
+}
+
+/* PACKET_ARENA_APPLY_BUILD_TEMPLATE's client-side sender (2026-08-25, build templates). Same
+   shape as net_send_shop_buy -- server infers "which hero" from the sending client's own slot,
+   all real validation happens server-side in arena_hero_apply_build_template. */
+static void net_send_apply_build_template(int template_id) {
+    char buf[sizeof(NetHeader) + sizeof(ArenaApplyBuildTemplateCmd)];
+    NetHeader *h = (NetHeader *)buf;
+    memset(h, 0, sizeof(NetHeader));
+    h->type = PACKET_ARENA_APPLY_BUILD_TEMPLATE;
+    ArenaApplyBuildTemplateCmd *cmd = (ArenaApplyBuildTemplateCmd *)(buf + sizeof(NetHeader));
+    cmd->template_id = (uint8_t)template_id;
     sendto(net_sock, buf, sizeof(buf), 0, (struct sockaddr *)&net_server_addr, sizeof(net_server_addr));
 }
 
@@ -2852,7 +2869,9 @@ int main(int argc, char *argv[]) {
                    directly above the buy list, one small box per page, current page drawn
                    highlighted solid in the render pass below. Checked before the buy grid
                    since they occupy the row directly above it. */
-                for (int p = 0; p < SHOP_PAGE_COUNT && !handled; p++) {
+                /* +1 tab: SHOP_BUILDS_PAGE (2026-08-25, build templates) -- one virtual page past
+                   the real item pages, same page-button strip, own row content below. */
+                for (int p = 0; p < SHOP_PAGE_COUNT + 1 && !handled; p++) {
                     float btn_x = sp_x + (float)p * (SHOP_PAGE_BTN_W + SHOP_PAGE_BTN_GAP);
                     float btn_top = sp_y_top;
                     float btn_bottom = sp_y_top - SHOP_PAGE_BTN_H;
@@ -2861,15 +2880,30 @@ int main(int argc, char *argv[]) {
                         handled = 1;
                     }
                 }
-                for (int row = 0; row < SHOP_ITEMS_PER_PAGE && !handled; row++) {
-                    int item_id = shop_page * SHOP_ITEMS_PER_PAGE + row;
-                    if (item_id >= ARENA_ITEM_COUNT) break;
-                    float row_top = sp_y_top - SHOP_ROW_H - (float)row * SHOP_ROW_H;
-                    float row_bottom = row_top - (SHOP_ROW_H - 2.0f);
-                    if (bx >= sp_x && bx <= sp_x + SHOP_COL_W - 8.0f && by >= row_bottom && by <= row_top) {
-                        if (net_mode) net_send_shop_buy(item_id);
-                        else arena_shop_buy(my_owner, item_id);
-                        handled = 1;
+                if (shop_page == SHOP_BUILDS_PAGE) {
+                    /* Build templates (2026-08-25): each row auto-buys that template's items in
+                       order, same real arena_shop_buy path every individual item purchase
+                       already uses -- see arena_hero_apply_build_template's own doc comment. */
+                    for (int row = 0; row < ARENA_BUILD_TEMPLATE_COUNT && !handled; row++) {
+                        float row_top = sp_y_top - SHOP_ROW_H - (float)row * SHOP_ROW_H;
+                        float row_bottom = row_top - (SHOP_ROW_H - 2.0f);
+                        if (bx >= sp_x && bx <= sp_x + SHOP_COL_W - 8.0f && by >= row_bottom && by <= row_top) {
+                            if (net_mode) net_send_apply_build_template(row);
+                            else arena_hero_apply_build_template(my_owner, row);
+                            handled = 1;
+                        }
+                    }
+                } else {
+                    for (int row = 0; row < SHOP_ITEMS_PER_PAGE && !handled; row++) {
+                        int item_id = shop_page * SHOP_ITEMS_PER_PAGE + row;
+                        if (item_id >= ARENA_ITEM_COUNT) break;
+                        float row_top = sp_y_top - SHOP_ROW_H - (float)row * SHOP_ROW_H;
+                        float row_bottom = row_top - (SHOP_ROW_H - 2.0f);
+                        if (bx >= sp_x && bx <= sp_x + SHOP_COL_W - 8.0f && by >= row_bottom && by <= row_top) {
+                            if (net_mode) net_send_shop_buy(item_id);
+                            else arena_shop_buy(my_owner, item_id);
+                            handled = 1;
+                        }
                     }
                 }
                 if (!handled) {
@@ -4719,7 +4753,9 @@ int main(int argc, char *argv[]) {
                affordability-color-coding instinct the item rows below already use
                to make state legible at a glance, applied here to "which page." Click
                hit-test for these lives in the event loop above, same box geometry. */
-            for (int p = 0; p < SHOP_PAGE_COUNT; p++) {
+            /* +1 tab: SHOP_BUILDS_PAGE (2026-08-25, build templates), labeled "B" instead of a
+               page number since it isn't one of the real catalog pages. */
+            for (int p = 0; p < SHOP_PAGE_COUNT + 1; p++) {
                 float btn_x = sp_x + (float)p * (SHOP_PAGE_BTN_W + SHOP_PAGE_BTN_GAP);
                 float btn_top = sp_y_top;
                 float btn_bottom = sp_y_top - SHOP_PAGE_BTN_H;
@@ -4736,20 +4772,46 @@ int main(int argc, char *argv[]) {
                     glColor3f(0.7f, 0.7f, 0.72f);
                 }
                 char pbuf[4];
-                snprintf(pbuf, sizeof(pbuf), "%d", p + 1);
+                if (p == SHOP_BUILDS_PAGE) snprintf(pbuf, sizeof(pbuf), "B");
+                else snprintf(pbuf, sizeof(pbuf), "%d", p + 1);
                 draw_string(pbuf, btn_x + 9.0f, btn_bottom + 4.0f, 8);
             }
 
-            for (int row = 0; row < SHOP_ITEMS_PER_PAGE; row++) {
-                int item_id = shop_page * SHOP_ITEMS_PER_PAGE + row;
-                if (item_id >= ARENA_ITEM_COUNT) break;
-                const ArenaItemDef *def = &ARENA_ITEMS[item_id];
-                float row_y = sp_y_top - SHOP_ROW_H - (float)row * SHOP_ROW_H - 12.0f;
-                if (me->flow >= def->cost) glColor3f(0.5f, 0.9f, 0.5f);
-                else glColor3f(0.6f, 0.35f, 0.35f);
-                char rowbuf[64];
-                snprintf(rowbuf, sizeof(rowbuf), "%d %s %d", row + 1, def->name, def->cost);
-                draw_string(rowbuf, sp_x, row_y, 7);
+            if (shop_page == SHOP_BUILDS_PAGE) {
+                /* Build templates (2026-08-25): each row auto-buys that template's ordered item
+                   list, same real arena_shop_buy path individual item rows already use. Affordable
+                   color-coding reuses "can I afford the FIRST unowned item in it right now" as the
+                   legibility signal, same instinct the item rows below already apply per-item. */
+                for (int row = 0; row < ARENA_BUILD_TEMPLATE_COUNT; row++) {
+                    const ArenaBuildTemplate *tmpl = &ARENA_BUILD_TEMPLATES[row];
+                    float row_y = sp_y_top - SHOP_ROW_H - (float)row * SHOP_ROW_H - 12.0f;
+                    int next_cost = -1;
+                    for (int i = 0; i < tmpl->item_count; i++) {
+                        int iid = tmpl->item_ids[i];
+                        if (iid < 0 || iid >= ARENA_ITEM_COUNT) continue;
+                        if (me->equipped_item[ARENA_ITEMS[iid].slot] == iid) continue;
+                        next_cost = ARENA_ITEMS[iid].cost;
+                        break;
+                    }
+                    if (next_cost < 0) glColor3f(0.6f, 0.7f, 0.95f); /* fully owned already */
+                    else if (me->flow >= next_cost) glColor3f(0.5f, 0.9f, 0.5f);
+                    else glColor3f(0.6f, 0.35f, 0.35f);
+                    char rowbuf[96];
+                    snprintf(rowbuf, sizeof(rowbuf), "%d %s -- %s", row + 1, tmpl->name, tmpl->desc);
+                    draw_string(rowbuf, sp_x, row_y, 7);
+                }
+            } else {
+                for (int row = 0; row < SHOP_ITEMS_PER_PAGE; row++) {
+                    int item_id = shop_page * SHOP_ITEMS_PER_PAGE + row;
+                    if (item_id >= ARENA_ITEM_COUNT) break;
+                    const ArenaItemDef *def = &ARENA_ITEMS[item_id];
+                    float row_y = sp_y_top - SHOP_ROW_H - (float)row * SHOP_ROW_H - 12.0f;
+                    if (me->flow >= def->cost) glColor3f(0.5f, 0.9f, 0.5f);
+                    else glColor3f(0.6f, 0.35f, 0.35f);
+                    char rowbuf[64];
+                    snprintf(rowbuf, sizeof(rowbuf), "%d %s %d", row + 1, def->name, def->cost);
+                    draw_string(rowbuf, sp_x, row_y, 7);
+                }
             }
 
             float sell_x = sp_x + SHOP_COL_W + 20.0f;

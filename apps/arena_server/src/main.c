@@ -888,6 +888,12 @@ static void server_handle_packet(struct sockaddr_in *sender, char *buffer, int s
         if (size < (int)(sizeof(NetHeader) + sizeof(ArenaShopSellCmd))) return;
         ArenaShopSellCmd *cmd = (ArenaShopSellCmd *)(buffer + sizeof(NetHeader));
         arena_shop_sell(client_id, (ArenaItemSlot)cmd->slot);
+    } else if (head->type == PACKET_ARENA_APPLY_BUILD_TEMPLATE) {
+        if (size < (int)(sizeof(NetHeader) + sizeof(ArenaApplyBuildTemplateCmd))) return;
+        ArenaApplyBuildTemplateCmd *cmd = (ArenaApplyBuildTemplateCmd *)(buffer + sizeof(NetHeader));
+        /* arena_hero_apply_build_template itself validates everything (range/proximity/Flow per
+           item, via arena_shop_buy underneath) -- same trust model as PACKET_ARENA_SHOP_BUY. */
+        arena_hero_apply_build_template(client_id, cmd->template_id);
     } else if (head->type == PACKET_ARENA_BLINK) {
         /* S170-205/S170-206: no payload -- arena_use_active_item itself figures out which
            active item (Blink Dagger or Donkey) the sending client actually has equipped and

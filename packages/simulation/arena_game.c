@@ -5,6 +5,7 @@
 #include "../common/rl_policy_weights.h"
 #include "bloodflower_mod_host.h"
 #include "tree_passive_mod_host.h"
+#include "build_template_mod_host.h"
 
 ArenaState arena_state;
 int arena_bot_enabled = 1;
@@ -240,6 +241,41 @@ const ArenaItemDef ARENA_ITEMS[ARENA_ITEM_COUNT] = {
        a real alternative build path, not strictly better/worse. */
     /* Cost tripled 2026-08-13 (see Gae Bolg's comment above): 500 -> 1500. */
     { "Ninja Tekko",        ARENA_ITEM_SLOT_HANDS,   ARENA_ITEM_TIER_GENERIC, 1500, 20,   0,   0,  0, 1.0f, 0,  0, 0 },
+};
+
+/* ARENA_BUILD_TEMPLATES: see arena_game.h's own "Build templates" section doc comment for the
+   full founder-quote chain and design reasoning. A first, generic (any-hero) pass -- item
+   picks/ordering are a real judgment call, not founder-specified numbers, same "reasonable
+   defaults, document the choice" precedent ARENA_BLOODFLOWER_CLAIM_FLOW's own doc comment set.
+   Each template's item_ids are ordered CHEAPEST-FIRST within its theme (the "complex ordering
+   rules" the founder asked for, expressed as literal purchase priority) so a partial Flow
+   balance still lands real, useful progress instead of stalling on one expensive first pick.
+   One item per slot, verified by hand against ARENA_ITEMS' own indices above -- no two entries
+   in the same template share a slot. */
+const ArenaBuildTemplate ARENA_BUILD_TEMPLATES[ARENA_BUILD_TEMPLATE_COUNT] = {
+    {
+        "Bruiser", "Tanky, front-line -- armor and HP first, a heavy weapon last.",
+        { 22 /* Warwolf Belt: waist, 400, +80hp */,
+          20 /* Justice Badge: neck, 400, +14armor */,
+          15 /* Haubergeon: body, 450, +18armor */,
+          5  /* Ironbark Plate: weapon, 900, +10ad +150hp +20armor */ },
+        4
+    },
+    {
+        "Assassin", "AD and mobility -- hit hard, get there fast.",
+        { 21 /* Forager's Mantle: back, 350, +8ad +0.4spd */,
+          18 /* Creek F. Boots: feet, 400, +0.6spd */,
+          16 /* Battle Gloves: hands, 400, +12ad */,
+          8  /* Splinterfang: weapon, 900, +30ad */ },
+        4
+    },
+    {
+        "Caster", "MP and cooldown reduction -- an ability-spam playstyle.",
+        { 19 /* Astral Ring: ring, 350, +50mp */,
+          26 /* Haste Trinket: trinket, 900, +6% cdr */,
+          4  /* Wanecall Grimoire: weapon, 950, +25ad +60mp */ },
+        3
+    },
 };
 
 /* arena_creeps_reset (S170-51): shared init helper for both arena_init_*
@@ -1999,6 +2035,35 @@ int arena_shop_sell(int owner, ArenaItemSlot slot) {
     h->equipped_item[slot] = -1;
     arena_recompute_item_stats(h);
     return 1;
+}
+
+/* redgarden_host_buy_build_item: see header declaration's own doc comment. Thin wrapper --
+   arena_shop_buy already does everything (proximity, affordability, auto-sell-on-occupied-slot,
+   stat recompute), this exists purely so the PARENA mod boundary has a stable name to call. */
+int redgarden_host_buy_build_item(int hero_index, int item_id) {
+    return arena_shop_buy(hero_index, item_id);
+}
+
+/* arena_hero_apply_build_template: see header declaration's own doc comment. */
+int arena_hero_apply_build_template(int owner, int template_id) {
+    if (owner < 0 || owner >= ARENA_MAX_HEROES) return 0;
+    if (template_id < 0 || template_id >= ARENA_BUILD_TEMPLATE_COUNT) return 0;
+    ArenaHero *h = &arena_state.heroes[owner];
+    if (!h->active || !h->alive) return 0;
+
+    const ArenaBuildTemplate *tmpl = &ARENA_BUILD_TEMPLATES[template_id];
+    int bought = 0;
+    for (int i = 0; i < tmpl->item_count; i++) {
+        int item_id = tmpl->item_ids[i];
+        if (item_id < 0 || item_id >= ARENA_ITEM_COUNT) continue;
+        /* Idempotent re-click: skip an item this hero already has equipped in that slot rather
+           than re-buying it (which arena_shop_buy would otherwise happily do, auto-selling and
+           re-buying the identical item for a net loss via the sell-refund gap). */
+        if (h->equipped_item[ARENA_ITEMS[item_id].slot] == item_id) continue;
+        if (!on_apply_build_template_item(owner, item_id)) break; /* first unaffordable item stops the sequence -- partial progress, not all-or-nothing */
+        bought++;
+    }
+    return bought;
 }
 
 /* arena_use_blink (S170-205): see header declaration's doc comment. Direction-derivation

@@ -86,6 +86,7 @@ jobs:
           x86_64-w64-mingw32-gcc -std=c99 -D_DEFAULT_SOURCE -O2 \
             -include packages/simulation/bloodflower_mod_host.h \
             -include packages/simulation/tree_passive_mod_host.h \
+            -include packages/simulation/build_template_mod_host.h \
             -o RedGarden.exe \
             apps/arena/src/main.c \
             packages/simulation/arena_game.c \
@@ -93,6 +94,7 @@ jobs:
             packages/simulation/arena_ai_bridge.c \
             packages/simulation/bloodflower_mod.c \
             packages/simulation/tree_passive_mod.c \
+            packages/simulation/build_template_mod.c \
             packages/common/mlp_infer.c \
             packages/goldenband/gband.c \
             packages/goldenband/gband_rig.c \

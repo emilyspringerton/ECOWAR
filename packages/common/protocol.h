@@ -27,6 +27,7 @@
 #define PACKET_ARENA_ATTACK_MOVE 16 /* client -> arena_server: real LoL/WC3 "A + click", NORTHSTAR.md §17.4 + §24 Milestone 2 (2026-07-31) -- see ArenaAttackMoveCmd's own doc comment */
 #define PACKET_ARENA_HOLD 17 /* client -> arena_server: real WC3 "Hold Position", NORTHSTAR.md §24 Milestone 2 (2026-07-31) -- see ArenaHoldCmd's own doc comment */
 #define PACKET_ARENA_PATROL 18 /* client -> arena_server: real WC3 "Patrol", NORTHSTAR.md §24 Milestone 2 (2026-07-31) -- see ArenaPatrolCmd's own doc comment */
+#define PACKET_ARENA_APPLY_BUILD_TEMPLATE 19 /* client -> arena_server: auto-buy a named build template's items in order, 2026-08-25 -- see ArenaApplyBuildTemplateCmd's own doc comment */
 
 #define ARENA_PHASE_WAITING 0 /* fewer than 2 real players connected yet */
 #define ARENA_PHASE_DRAFT   1 /* both connected, waiting on hero picks */
@@ -204,6 +205,15 @@ typedef struct {
 typedef struct {
     uint8_t slot;
 } ArenaShopSellCmd;
+
+// PACKET_ARENA_APPLY_BUILD_TEMPLATE payload (2026-08-25, build templates): which preset
+// (index into packages/simulation/arena_game.c's ARENA_BUILD_TEMPLATES catalog) to auto-buy
+// from. Server validates shop-proximity + Flow per item, same trust model as
+// PACKET_ARENA_SHOP_BUY -- this is just that same real purchase path called in a loop
+// (arena_hero_apply_build_template), not a separate mechanism.
+typedef struct {
+    uint8_t template_id;
+} ArenaApplyBuildTemplateCmd;
 
 // ARENA_SNAPSHOT_ITEM_SLOT_COUNT must match packages/simulation/arena_game.h's
 // ARENA_ITEM_SLOT_COUNT (S170-175), same duplication reasoning as every
