@@ -1,6 +1,7 @@
 # Changelog
 
 ## 2026-08-25
+- Tree hero passive: auto-attacks nearby jungle trees for self-heal, PARENA-mod-driven, wire-synced with client squish animation (sess-20260825-1938-f6bd411e)
 
 - Day/night cycle + lighting ported from SHANKPIT retro_sky.c/retro_lighting.c into arena_game.c; moon-zenith Bloodflower event delivered as REDGARDEN's first real PARENA mod (stdlib/redgarden/bloodflower_mod.prn). Live round-trip verified via new tests/test_bloodflower.c (12 checks), full existing suite still green. (sess-20260825-0828-cc32a704)
 
