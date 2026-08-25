@@ -162,6 +162,50 @@ columns can't express — surfaced here explicitly rather than left implicit in 
 - **Ninja Tekko** — plain flat stats (+20 AD, +1.0 move speed), no hidden mechanic — an
   assassin-shaped hybrid alternative to Battle Gloves' pure-AD Hands item.
 
+### Hero passives
+
+Beyond a hero's own Q/W/R kit, one hero currently carries a real, always-on **passive** — an
+automatic behavior the player never presses a button for, same "surfaced explicitly, not left
+implicit in code" discipline the item-mechanics section above uses:
+
+- **Tree** — the map's own decorative jungle trees (`ARENA_OBSTACLE_TREE`, the same scattered
+  scenery dotted around every lane) are, for this one hero only, a real interactive resource, not
+  just scenery. Whenever Tree has no enemy hero within auto-attack range, and their own attack
+  isn't on cooldown, they automatically auto-attack the *nearest* jungle tree instead — a real
+  enemy hero always takes priority; this only fires when there's genuinely nothing else to fight.
+  Each strike:
+  - Deals **10 damage** to the tree's own hit points (`ARENA_TREE_PASSIVE_DAMAGE`) — trees start
+    at **120 hp** (`ARENA_TREE_HP`) and passively regenerate **6 hp/second**
+    (`ARENA_TREE_REGEN_PER_SEC`) whether or not anyone's hitting them, so a tree left alone
+    fully recovers.
+  - Heals Tree for **4 hp** (`ARENA_TREE_PASSIVE_HEAL_PER_HIT`), capped at their own max hp — the
+    whole point of the passive: a jungle-camping Tree sustains off the scenery itself instead of
+    needing to recall to base.
+  - Runs on its own **1.2s cooldown** (`ARENA_TREE_PASSIVE_COOLDOWN_MS`, subject to the same CDR
+    stat every other cooldown in this catalog respects), separate from — and gated the same way
+    as — Tree's own real auto-attack-vs-hero cooldown, so it can't double-fire alongside a real
+    fight.
+  - Never destroys the tree — hp clamps at 0, but the obstacle itself, its collision, and its
+    position are permanent. A tree is a renewable resource to camp near, not a kill target.
+  - Triggers a client-side jiggle/squish hit-reaction on the tree's own canopy (not its trunk),
+    purely cosmetic, mirroring the same squish animation a hero plays when they take a hit.
+
+  Server-authoritative like every other real mechanic in this codebase: the strike is decided and
+  applied inside the game server's own simulation tick (`arena_hero_tree_passive`,
+  `packages/simulation/arena_game.c`), then synced to every connected client via each tree's own
+  `obstacle_hp` field in the regular snapshot broadcast — a client never decides this locally.
+  **PARENA-mod-driven**: the actual damage/heal application routes through a real compiled PARENA
+  mod (`stdlib/redgarden/tree_passive_mod.prn` in the PARENA repo) rather than being inlined
+  directly in the C simulation code, the same "PARENA mod is the trigger, host C does the
+  mutation" split every mod-driven mechanic in this codebase uses.
+
+  **Real bug, found and fixed 2026-08-25**: this passive was wired into the team-mode simulation
+  tick (`arena_update_teams`) when it first shipped, but not into the separate 1v1 tick
+  (`arena_update`) that solo practice/1v1 matches actually run through — so it silently never
+  fired outside team-mode matches for a stretch of the same day it landed. Fixed and covered by a
+  regression test that exercises the real top-level tick function directly, not just the passive
+  in isolation, so a repeat of this specific class of gap fails loudly instead of shipping quiet.
+
 ### Suggested heroes for new players
 
 26 heroes is a lot to pick from blind. These four cover the roster's main roles with the most
