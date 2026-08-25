@@ -24,14 +24,22 @@ mkdir -p "${BUILD_DIR}"
 # check" build (undefined reference at link time) without affecting scripts/build.sh's own
 # build or local `bash scripts/test_arena.sh`, which is why this passed locally and only
 # broke in CI.
+# packages/simulation/tree_passive_mod.c (2026-08-25): same exact gap, same fix, this time for
+# arena_hero_tree_passive's on_tree_passive_strike call (Tree hero passive) -- this script was
+# missed again when THAT mod landed, for the identical reason: it's redundant with
+# scripts/build.sh's own apps/arena target and isn't exercised by `bash scripts/test_arena.sh`,
+# so it only broke in CI, not locally. Found live via CI failure on commit c0e3ee6, not caught
+# ahead of time -- flagging here so the next PARENA mod doesn't repeat this a third time.
 gcc -std=c99 -D_DEFAULT_SOURCE -O2 -Wall -Wextra -I"${ROOT_DIR}/packages" \
   -include "${ROOT_DIR}/packages/simulation/bloodflower_mod_host.h" \
+  -include "${ROOT_DIR}/packages/simulation/tree_passive_mod_host.h" \
   -o "${BUILD_DIR}/red_garden_arena" \
   "${ROOT_DIR}/apps/arena/src/main.c" \
   "${ROOT_DIR}/packages/simulation/arena_game.c" \
   "${ROOT_DIR}/packages/simulation/arena_replay.c" \
   "${ROOT_DIR}/packages/simulation/arena_ai_bridge.c" \
   "${ROOT_DIR}/packages/simulation/bloodflower_mod.c" \
+  "${ROOT_DIR}/packages/simulation/tree_passive_mod.c" \
   "${ROOT_DIR}/packages/common/mlp_infer.c" \
   "${ROOT_DIR}/packages/goldenband/gband.c" \
   "${ROOT_DIR}/packages/goldenband/gband_rig.c" \
