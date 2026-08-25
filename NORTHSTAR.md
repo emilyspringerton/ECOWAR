@@ -3120,6 +3120,32 @@ catalog's own stat ranges, or something more generative? These are real founder-
 not implementation details to guess through. Logged as a real, named v0 goal in
 EMILY/BACKLOG.md's squad-training thread — scoping conversation, not code, is the next real step.
 
+**Update 2026-08-25: the generation primitive is now real, built.** Founder real-time:
+"continue the exotic auto curriculum redgarden work" → "training" → "parena mod driven first" —
+the founder's own sequencing answer to "what generates a candidate new item's stats" above:
+start with the PARENA-mod entry point, following the exact "mod is the trigger, host C does the
+mutation" split every other REDGARDEN mod (Bloodflower, Tree passive, Build templates) already
+uses. Landed: `stdlib/redgarden/item_curriculum_mod.prn` (PARENA repo) → `on-generate-counter-item`
+→ `redgarden_host_item_curriculum_generate_counter_item` (`arena_game.c`), which blends two
+existing `ARENA_ITEMS` catalog entries' own stat fields (average + a small, deterministic
+per-field jitter — reproducible from the same two base items, not `rand()`-driven) into one of
+`ARENA_ITEM_CURRICULUM_SLOT_COUNT=4` runtime-mutable slots kept SEPARATE from the fixed, const,
+compile-time-sized `ARENA_ITEMS[]` catalog itself (every existing raw-int-id call site — shop UI,
+inventory application, network snapshot item ids — would need auditing before a generated item
+could safely enter live gameplay; deliberately not attempted here). 15 new tests, live round-trip
+through the real compiled mod, full `test_arena.sh` green, all 4 build paths wired up front.
+REDGARDEN `6d0443d`, PARENA `d63590a`.
+
+**Still genuinely open, not resolved by this pass** — this is the "bounded random perturbation"
+half of the two-part design question above, chosen as the honest, buildable v0 (not the "more
+generative" alternative, which remains unscoped). The bigger, still-untouched half: WHICH two
+items to blend from (reading which items the currently-dominant team composition is using isn't
+even observable to the Python training loop today — `sim_get_obs_team_any`'s observation vector
+carries no item-purchase state at all) and the evaluation objective (did a generated item
+measurably counter the dominant composition, vs. some other diversity/degeneracy metric) are
+both still real, unresolved training-loop questions. This pass is the generation primitive a
+future consumer calls into, not the autocurriculum loop itself.
+
 ### 26.4 What this section deliberately does not resolve
 
 - Whether representation transfer actually generalizes across games at all — untestable until a

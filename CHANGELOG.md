@@ -1,6 +1,7 @@
 # Changelog
 
 ## 2026-08-25
+- item curriculum: PARENA-mod-driven generation primitive for NORTHSTAR.md §26.3.2's "tuning the game via items" v0 (blend two catalog items' stats into a runtime curriculum slot, deterministic, 15 new tests, honest scope -- training-loop consumption not built yet) (sess-20260825-1938-f6bd411e)
 - added auto-release CI job (PITVIPER pattern): real, non-prerelease GitHub release on every push to main (sess-20260825-1938-f6bd411e)
 - build templates: tech trees as item templates, shop auto-buy (Bruiser/Assassin/Caster presets), PARENA-mod-driven (sess-20260825-1938-f6bd411e)
 - fixed CI break: build_arena.sh + Windows cross-compile missing tree_passive_mod.c link (sess-20260825-1938-f6bd411e)
