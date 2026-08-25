@@ -2300,6 +2300,31 @@ typedef struct {
     ArenaObstacleKind kind;
 } ArenaObstacle;
 
+/* ArenaDamageLogEntry (S189-01, "go ahead and add the damage log to REDGARDEN"): one real
+ * damage event, rolling last-N feed (standard real-MOBA combat-log UX -- League of Legends and
+ * Dota 2 both do this, not a scrollable persistent history). v0 scope, deliberately: damage
+ * events only, not kills/buffs/objectives (those are real, separate features).
+ *
+ * source_hero_id honest limitation: apply_damage() (this file's own single choke point for all
+ * hero damage, ~50 call sites) is NOT changed to thread an attacker through every site -- that
+ * would mean touching all ~50 call sites' argument lists under real time pressure, a bigger,
+ * riskier change than this feature needs. ArenaHero's own last_attacked_by_owner field looked
+ * like a shortcut but isn't reliably fresh for this purpose (S170-175's own doc comment: "only
+ * ever set at the melee/homing-shot damage sites," left stale by ability-damage calls that don't
+ * touch it) -- using it here would misattribute ability damage to a stale prior melee attacker.
+ * So: apply_damage()'s own default path logs with source_hero_id = ARENA_HERO_COUNT (a real,
+ * out-of-range sentinel -- every real ArenaHeroID is < ARENA_HERO_COUNT) meaning "unattributed."
+ * The one path upgraded to real attribution is resolve_combat's direct hero-vs-hero duel (both
+ * hero pointers already in scope there, zero risk) via apply_damage_ex(). Ability/creep/tower
+ * damage stays unattributed in this pass -- flagged as a real, deliberate scope narrowing, not
+ * silently dropped. */
+#define ARENA_DAMAGE_LOG_CAPACITY 12
+typedef struct {
+    ArenaHeroID target_hero_id;
+    ArenaHeroID source_hero_id; /* ARENA_HERO_COUNT sentinel = unattributed, see doc comment above */
+    int amount;
+} ArenaDamageLogEntry;
+
 typedef struct {
     ArenaHero heroes[ARENA_HEROES_ARRAY_SIZE]; /* S170-141: real per-player range 0..ARENA_MAX_HEROES-1, puppet-clone range after it -- see ARENA_HEROES_ARRAY_SIZE's own doc comment */
     ArenaNode nodes[ARENA_NODE_COUNT];
@@ -2350,6 +2375,9 @@ typedef struct {
     int bloodflower_active; /* 1 while an unclaimed Bloodflower exists in the world */
     float bloodflower_x, bloodflower_z; /* always (0,0), map center -- kept as real fields (not a hardcoded literal at every read site) so a future non-center spawn point is a one-line change, same pattern ArenaCampMinion.x/z use even though camp positions are currently deterministic too */
     int bloodflower_ms_remaining; /* counts down from ARENA_BLOODFLOWER_LIFETIME_MS; despawns at 0 */
+    ArenaDamageLogEntry damage_log[ARENA_DAMAGE_LOG_CAPACITY]; /* S189-01: real combat damage log, ring buffer -- see ArenaDamageLogEntry's own doc comment */
+    int damage_log_head; /* next write index, wraps -- 0 (memset default) is correct at match start */
+    int damage_log_count; /* how many entries are actually valid so far, caps at ARENA_DAMAGE_LOG_CAPACITY -- distinct from head so the UI doesn't render stale zeroed slots before the buffer's first lap */
     int winner; /* 0 = none yet, 1 = player/team 0, 2 = bot/team 1 */
 } ArenaState;
 

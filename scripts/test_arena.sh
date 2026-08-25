@@ -92,8 +92,20 @@ gcc -std=c99 -O2 -Wall -Wextra -I"${ROOT_DIR}/packages" \
   "${ROOT_DIR}/packages/common/mlp_infer.c" \
   -lm
 
+# Damage log (S189-01, 2026-08-25): real combat-log ring buffer, driven through the real
+# apply_damage_ex/resolve_combat path via arena_update(), same headless-testable reasoning.
+gcc -std=c99 -O2 -Wall -Wextra -I"${ROOT_DIR}/packages" \
+  -o "${BUILD_DIR}/test_damage_log" \
+  -include "${ROOT_DIR}/packages/simulation/bloodflower_mod_host.h" \
+  "${ROOT_DIR}/tests/test_damage_log.c" \
+  "${ROOT_DIR}/packages/simulation/arena_game.c" \
+  "${ROOT_DIR}/packages/simulation/bloodflower_mod.c" \
+  "${ROOT_DIR}/packages/common/mlp_infer.c" \
+  -lm
+
 "${BUILD_DIR}/test_arena_game"
 "${BUILD_DIR}/test_bloodflower"
+"${BUILD_DIR}/test_damage_log"
 "${BUILD_DIR}/test_mat4"
 "${BUILD_DIR}/test_arena_replay"
 "${BUILD_DIR}/test_arena_ai_bridge"

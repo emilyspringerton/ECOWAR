@@ -4571,6 +4571,46 @@ int main(int argc, char *argv[]) {
             draw_string(line, px + 8.0f, py + 2.0f, 8);
         }
 
+        /* Damage log panel (S189-01, "go ahead and add the damage log to REDGARDEN"): real
+           combat-log feed, rolling last-N (see ArenaDamageLogEntry's own doc comment in
+           arena_game.h for the full design/scope reasoning, including why attacker
+           attribution is only real for direct hero-vs-hero melee, not ability/creep/tower
+           damage). Right side, clear of every other HUD panel (stat pane bottom-left, shop
+           panel its own placement, ability tiles bottom-center) -- persistent, not a toggle,
+           same "always visible" convention the character stat pane above already uses,
+           matching how a real MOBA's combat log is always on. Most recent entry at the top,
+           oldest at the bottom, standard rolling-feed order. */
+        {
+            float dlog_w = 260.0f;
+            float dlog_x = (float)win_w - dlog_w - 20.0f;
+            float dlog_y_top = (float)win_h - 20.0f;
+            float row_h = 16.0f;
+            float dlog_h = (float)ARENA_DAMAGE_LOG_CAPACITY * row_h + 12.0f;
+            glEnable(GL_BLEND);
+            glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+            glColor4f(0.05f, 0.08f, 0.1f, 0.75f);
+            glRectf(dlog_x, dlog_y_top - dlog_h, dlog_x + dlog_w, dlog_y_top);
+            glDisable(GL_BLEND);
+            glColor3f(0.75f, 0.8f, 0.85f);
+            draw_string("DAMAGE LOG", dlog_x + 8.0f, dlog_y_top - 14.0f, 9);
+            /* Walk backwards from the most recently written entry -- damage_log_head always
+               points at the NEXT write slot, so head-1 (wrapped) is the most recent one. */
+            for (int row = 0; row < arena_state.damage_log_count && row < ARENA_DAMAGE_LOG_CAPACITY; row++) {
+                int idx = (arena_state.damage_log_head - 1 - row + ARENA_DAMAGE_LOG_CAPACITY) % ARENA_DAMAGE_LOG_CAPACITY;
+                const ArenaDamageLogEntry *e = &arena_state.damage_log[idx];
+                char entry_line[64];
+                if (e->source_hero_id < ARENA_HERO_COUNT) {
+                    snprintf(entry_line, sizeof(entry_line), "%s hit %s for %d",
+                             arena_hero_name(e->source_hero_id), arena_hero_name(e->target_hero_id), e->amount);
+                } else {
+                    snprintf(entry_line, sizeof(entry_line), "%s took %d dmg",
+                             arena_hero_name(e->target_hero_id), e->amount);
+                }
+                glColor3f(0.85f, 0.85f, 0.8f);
+                draw_string(entry_line, dlog_x + 8.0f, dlog_y_top - 14.0f - (float)(row + 1) * row_h, 8);
+            }
+        }
+
         /* Shop panel (S170-175, founder: "do a first pass shop interface... buying an item
            auto equips it for now no bag you can sell it back for less but no unequip into
            bag for now"). Left two columns are the buy list (catalog order, same grouping the

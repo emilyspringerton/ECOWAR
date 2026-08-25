@@ -1272,10 +1272,24 @@ static int apply_armor(int raw_damage, float armor) {
     return dmg < 1 ? 1 : dmg;
 }
 
-/* apply_damage is defined further down this file -- forward-declared here so
+/* apply_damage/apply_damage_ex are defined further down this file -- forward-declared here so
  * apply_weapon_skill_damage below can call it, same "not every caller comes after the real
  * definition" idiom hero_is_hittable's own forward declaration already uses in this file. */
+static void apply_damage_ex(ArenaHero *target, int amount, ArenaHeroID source_hero_id);
 static void apply_damage(ArenaHero *target, int amount);
+
+/* arena_log_damage (S189-01): pushes one entry into the rolling damage-log ring buffer --
+ * see ArenaDamageLogEntry's own doc comment in arena_game.h for the full design/scope
+ * reasoning. Always succeeds (no failure mode -- oldest entry is simply overwritten once the
+ * buffer wraps, the intended rolling-feed behavior, not a bug). */
+static void arena_log_damage(ArenaHeroID target_hero_id, ArenaHeroID source_hero_id, int amount) {
+    ArenaDamageLogEntry *e = &arena_state.damage_log[arena_state.damage_log_head];
+    e->target_hero_id = target_hero_id;
+    e->source_hero_id = source_hero_id;
+    e->amount = amount;
+    arena_state.damage_log_head = (arena_state.damage_log_head + 1) % ARENA_DAMAGE_LOG_CAPACITY;
+    if (arena_state.damage_log_count < ARENA_DAMAGE_LOG_CAPACITY) arena_state.damage_log_count++;
+}
 
 /* resonance_combo (REDGARDEN_GUI_NORTHSTAR.md Milestone 2): a straight port of
  * GoblinFoxDragon/server/skillchain.go's own `combinationTable` -- same real (ws1, ws2) pairs,
@@ -1469,10 +1483,11 @@ static int arena_multikill_fib(int n) {
  * "this hero took damage this tick," which arena_tick_nodes reads to
  * interrupt a capture channel -- every damage source in this file already
  * routes through here, so this needed no new call sites of its own. */
-static void apply_damage(ArenaHero *target, int amount) {
+static void apply_damage_ex(ArenaHero *target, int amount, ArenaHeroID source_hero_id) {
     target->damaged_this_tick = 1;
     target->combat_timer_ms = ARENA_COMBAT_TIMEOUT_MS; /* S170-148: any damage taken re-arms the "in combat" window, gating mana regen */
     target->hp -= amount;
+    arena_log_damage(target->hero_id, source_hero_id, amount); /* S189-01 */
     if (target->hp <= 0) {
         if (target->survive_floor_ms > 0) {
             target->hp = 1;
@@ -1548,6 +1563,14 @@ static void apply_damage(ArenaHero *target, int amount) {
             }
         }
     }
+}
+
+/* apply_damage: thin wrapper over apply_damage_ex with source_hero_id = ARENA_HERO_COUNT
+ * (unattributed) -- every one of this file's ~50 existing call sites keeps calling this
+ * unchanged, zero risk to any of them. See ArenaDamageLogEntry's own doc comment in
+ * arena_game.h for the full attribution-scope reasoning. */
+static void apply_damage(ArenaHero *target, int amount) {
+    apply_damage_ex(target, amount, ARENA_HERO_COUNT);
 }
 
 /* arena_nearest_enemy: the nearest active, living hero on a different team
@@ -3414,11 +3437,14 @@ static void resolve_combat(unsigned int dt_ms) {
        same way it gates the team-mode melee/creep-attack loops -- burrowed, not present to
        swing at anything. */
     if (a->attack_cooldown_ms <= 0 && a->mnm_burrow_ms <= 0) {
-        if (hero_is_hittable(b)) apply_damage(b, apply_armor(ARENA_ATTACK_DAMAGE, arena_hero_armor(b)));
+        /* S189-01: real attacker attribution -- both hero pointers already in scope here,
+           zero risk, the one call site upgraded to apply_damage_ex (see its own doc comment
+           in arena_game.h for why the other ~50 apply_damage sites aren't). */
+        if (hero_is_hittable(b)) apply_damage_ex(b, apply_armor(ARENA_ATTACK_DAMAGE, arena_hero_armor(b)), a->hero_id);
         a->attack_cooldown_ms = ARENA_ATTACK_COOLDOWN_MS;
     }
     if (b->attack_cooldown_ms <= 0 && b->mnm_burrow_ms <= 0) {
-        if (hero_is_hittable(a)) apply_damage(a, apply_armor(ARENA_ATTACK_DAMAGE, arena_hero_armor(a)));
+        if (hero_is_hittable(a)) apply_damage_ex(a, apply_armor(ARENA_ATTACK_DAMAGE, arena_hero_armor(a)), b->hero_id);
         b->attack_cooldown_ms = ARENA_ATTACK_COOLDOWN_MS;
     }
 }
