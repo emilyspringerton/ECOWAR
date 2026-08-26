@@ -177,6 +177,45 @@ static void test_fireball_ignites_the_foe_it_hits(void) {
     CHECK(foe->burn_dps == ARENA_ABRAHAM_FIREBALL_BURN_DPS, "burn damage matches the real constant");
 }
 
+/* Cast-freeze (2026-08-26, founder: "when you hit w on abraham and you are moving dont have it
+   blow the cooldown and do nothing have it freeze the player for the length of the cast for
+   that ability"): before this, tick_hero_kit's own generic "movement interrupts an in-progress
+   cast" rule (S170-203, real and still correct for Gary's own Aimed Shot) silently ate the
+   fireball's mana/cooldown with no fireball if the caster was moving -- same drift-from-
+   cast_anchor check every casting_slot user shares. Fixed for Abraham specifically (see
+   update_hero_motion's own doc comment for why Gary is untouched): pressing W while already
+   walking now freezes him in place for the windup instead, so the cast always actually lands. */
+static void test_abraham_w_freezes_movement_and_still_fires_while_moving(void) {
+    arena_init_with_heroes(ARENA_HERO_ABRAHAM, ARENA_HERO_UNICORN);
+    arena_bot_enabled = 0;
+    ArenaHero *abe = &arena_state.heroes[0];
+    ArenaHero *foe = &arena_state.heroes[1];
+    foe->x = abe->x + 30.0f; foe->z = abe->z; /* far enough not to interfere */
+    abe->mp = 999;
+
+    arena_set_move_target(0, abe->x + 20.0f, abe->z);
+    for (int t = 0; t < 5; t++) arena_update(16); /* real movement in progress before the cast */
+    float x_before_cast = abe->x;
+
+    arena_toggle_w(0); /* press W while already moving */
+    CHECK(abe->casting_slot == 2, "W still begins a real windup even while already moving");
+
+    int stayed_frozen = 1;
+    int ticks = 0;
+    while (abe->casting_slot != 0 && ticks < 100) {
+        arena_update(16);
+        if (abe->x != x_before_cast) stayed_frozen = 0;
+        ticks++;
+    }
+    CHECK(stayed_frozen, "position stays frozen every tick of the windup, not just the first");
+    CHECK(abe->casting_slot == 0, "the windup completes on its own, uninterrupted by the earlier movement");
+    int fired = 0;
+    for (int i = 0; i < ARENA_MAX_PROJECTILES; i++) {
+        if (arena_state.projectiles[i].active && arena_state.projectiles[i].hero_id == ARENA_HERO_ABRAHAM) fired = 1;
+    }
+    CHECK(fired, "the fireball actually fires -- the cooldown/mana already spent at cast start wasn't wasted");
+}
+
 static void test_abraham_w_only_fires_for_abraham(void) {
     arena_init_with_heroes(ARENA_HERO_UNICORN, ARENA_HERO_ABRAHAM);
     ArenaHero *unicorn = &arena_state.heroes[0];
@@ -197,6 +236,7 @@ int main(void) {
     test_fireball_completion_spawns_a_real_piercing_shot();
     test_piercing_shot_damages_multiple_enemies_in_one_pass();
     test_fireball_ignites_the_foe_it_hits();
+    test_abraham_w_freezes_movement_and_still_fires_while_moving();
     test_abraham_w_only_fires_for_abraham();
     printf("\n%s\n", failures == 0 ? "ALL PASS" : "SOME FAILED");
     return failures == 0 ? 0 : 1;

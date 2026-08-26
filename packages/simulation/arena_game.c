@@ -1262,8 +1262,16 @@ static void update_hero_motion(ArenaHero *h, int self_index, float dt_sec) {
        but there's no meaningful difference in what THIS function does for either -- both just
        mean "don't advance position this tick."
        attack_windup_ms_remaining (S170-204, NORTHSTAR §17.1): same "don't advance position"
-       treatment -- a champion mid-windup stands still, full stop, same as real League. */
-    if (!h->alive || !h->moving || h->rooted_ms > 0 || h->stunned_ms > 0 || h->attack_windup_ms_remaining > 0) return;
+       treatment -- a champion mid-windup stands still, full stop, same as real League.
+       Abraham's own casting_slot (2026-08-26, founder: "when you hit w on abraham and you are
+       moving dont have it blow the cooldown and do nothing have it freeze the player for the
+       length of the cast for that ability"): scoped to Abraham specifically, not every
+       casting_slot-using hero (Gary's own Aimed Shot deliberately keeps its established
+       "movement interrupts the cast" feel, per the founder's own earlier S170-203 spec --
+       not touched here) -- see tick_hero_kit's own cast-interrupt block for the matching
+       Abraham-only immunity to that same interrupt. */
+    if (!h->alive || !h->moving || h->rooted_ms > 0 || h->stunned_ms > 0 || h->attack_windup_ms_remaining > 0 ||
+        (h->hero_id == ARENA_HERO_ABRAHAM && h->casting_slot != 0)) return;
     float dx = h->target_x - h->x;
     float dz = h->target_z - h->z;
     float dist = sqrtf(dx * dx + dz * dz);
@@ -5804,7 +5812,18 @@ static void tick_hero_kit(ArenaHero *h, ArenaHero *foe, ArenaHero *ally, unsigne
             h->cast_target = -1;
         } else {
             float cast_dx = h->x - h->cast_anchor_x, cast_dz = h->z - h->cast_anchor_z;
-            if (cast_dx * cast_dx + cast_dz * cast_dz > 0.0001f) {
+            /* Abraham exemption (2026-08-26, founder: "freeze the player for the length of the
+               cast for that ability" instead of wasting the cooldown on a movement-interrupted
+               cast): update_hero_motion's own matching Abraham-only freeze (see that function's
+               doc comment) means h->x/z genuinely can't drift from cast_anchor_x/z while he's
+               casting anyway -- this check would always read 0 drift for him now, so the
+               `!= ARENA_HERO_ABRAHAM` guard is here mainly for clarity/defense-in-depth (a
+               knockback/pull forcing his position mid-cast, which the freeze above doesn't
+               block, still shouldn't interrupt this specific ability either -- the founder's
+               own ask was "freeze the player," not "still cancel on any forced displacement"
+               the way Gary's own cast deliberately still does). Gary's own established
+               "movement interrupts" feel (S170-203) is untouched. */
+            if (h->hero_id != ARENA_HERO_ABRAHAM && cast_dx * cast_dx + cast_dz * cast_dz > 0.0001f) {
                 /* Movement interrupts -- any real drift from where the cast began, whether a
                    fresh move command or a forced displacement (a pull, a knockback), not just a
                    deliberate click; comparing live position against the cast-start anchor every
