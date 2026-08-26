@@ -4043,35 +4043,56 @@ static void test_he_xiangu_passive_regenerates_hp(void) {
     CHECK(he_xiangu->hp > 50, "The passive regenerates HP every tick with no cast at all");
 }
 
-static void test_he_xiangu_q_damages_foe_and_heals_self(void) {
+/* Moira Orb redesign (2026-08-26): Q no longer instant-hitscans -- see
+   arena_game.h's own ARENA_HE_XIANGU_Q_ORB_SPEED doc comment for the full founder-quote
+   chain. Casting now only SPAWNS a real homing projectile (arena_spawn_projectile +
+   homing_target); damage lands once it actually travels there, so these tests tick the sim
+   forward after casting instead of checking foe->hp immediately. Self-heal is still
+   immediate (cast-time, not hit-dependent -- a real, deliberate simplification, not an
+   oversight, see the same header comment). */
+static void test_he_xiangu_q_spawns_a_homing_orb_and_heals_self_on_cast(void) {
     arena_init_with_heroes(ARENA_HERO_UNICORN, ARENA_HERO_HE_XIANGU);
     ArenaHero *he_xiangu = &arena_state.heroes[1];
     ArenaHero *foe = &arena_state.heroes[0];
-    foe->x = he_xiangu->x + 4.0f; /* within ARENA_HE_XIANGU_Q_RANGE */
+    foe->x = he_xiangu->x + 4.0f;
     foe->z = he_xiangu->z;
     he_xiangu->hp = 50;
     int foe_hp_before = foe->hp;
 
     arena_cast_q(1);
 
-    CHECK(foe->hp < foe_hp_before, "Q damages the foe when in range");
-    CHECK(he_xiangu->hp > 50, "Subsisting on Mother-of-Pearl and Moonlight heals her for a fraction of the damage dealt");
-    CHECK(he_xiangu->q_cooldown_ms == ARENA_HE_XIANGU_Q_COOLDOWN_MS, "Q starts on cooldown after a landed hit");
+    CHECK(he_xiangu->hp == 50 + ARENA_HE_XIANGU_Q_ORB_SELF_HEAL, "the self-heal fires immediately on cast, not on hit");
+    CHECK(he_xiangu->q_cooldown_ms == ARENA_HE_XIANGU_Q_COOLDOWN_MS, "Q starts on cooldown on cast, not on landing");
+
+    int found_homing_orb = 0;
+    for (int i = 0; i < ARENA_MAX_PROJECTILES; i++) {
+        if (arena_state.projectiles[i].active && arena_state.projectiles[i].owner == 1 &&
+            arena_state.projectiles[i].homing_target == 0) {
+            found_homing_orb = 1;
+        }
+    }
+    CHECK(found_homing_orb, "casting Q spawns a real homing projectile locked onto the nearest enemy");
+
+    for (int t = 0; t < 200 && foe->hp == foe_hp_before; t++) arena_update(16);
+    CHECK(foe->hp < foe_hp_before, "the homing orb actually lands and damages the foe once it travels there");
 }
 
-static void test_he_xiangu_q_out_of_range_whiffs(void) {
+/* "no matter how far away" (founder, real-time, 2026-08-26): Q no longer has a range limit at
+   all -- it auto-targets the nearest enemy anywhere on the map (arena_nearest_enemy has no
+   range cap of its own). This replaces the old test_he_xiangu_q_out_of_range_whiffs, which
+   tested a "range gate" concept that no longer exists by design. */
+static void test_he_xiangu_q_has_no_range_limit(void) {
     arena_init_with_heroes(ARENA_HERO_UNICORN, ARENA_HERO_HE_XIANGU);
     ArenaHero *he_xiangu = &arena_state.heroes[1];
     ArenaHero *foe = &arena_state.heroes[0];
-    foe->x = he_xiangu->x + ARENA_HE_XIANGU_Q_RANGE + 5.0f;
+    foe->x = he_xiangu->x + ARENA_HE_XIANGU_Q_RANGE + 30.0f; /* well past the old, now-dead range constant */
     foe->z = he_xiangu->z;
     he_xiangu->hp = 50;
-    int foe_hp_before = foe->hp;
 
     arena_cast_q(1);
 
-    CHECK(foe->hp == foe_hp_before, "Q out of range does not damage the foe");
-    CHECK(he_xiangu->hp == 50, "Q out of range does not heal her either -- it whiffed, not cast");
+    CHECK(he_xiangu->hp == 50 + ARENA_HE_XIANGU_Q_ORB_SELF_HEAL,
+          "Q still casts (and heals) against a foe far past the old range limit -- no more whiffing on distance");
 }
 
 static void test_he_xiangu_w_is_a_free_toggle_regen(void) {
@@ -7292,8 +7313,8 @@ int main(void) {
     test_vassago_w_no_ally_in_1v1_whiffs();
     test_vassago_r_zone_silences_but_deals_no_damage();
     test_he_xiangu_passive_regenerates_hp();
-    test_he_xiangu_q_damages_foe_and_heals_self();
-    test_he_xiangu_q_out_of_range_whiffs();
+    test_he_xiangu_q_spawns_a_homing_orb_and_heals_self_on_cast();
+    test_he_xiangu_q_has_no_range_limit();
     test_he_xiangu_w_is_a_free_toggle_regen();
     test_he_xiangu_r_zone_heals_ally_no_enemy_damage();
     test_beleth_passive_grants_flat_armor();

@@ -3260,16 +3260,15 @@ int main(int argc, char *argv[]) {
                 if (e.key.keysym.sym == SDLK_q || e.key.keysym.sym == SDLK_w || e.key.keysym.sym == SDLK_e) {
                     apm_record_action(now);
                 }
-                /* S202-34: Abraham's W is ground-targeted -- pressing it enters the
-                   two-phase "green reticle, click to confirm" aiming mode instead of
-                   casting immediately, same as the founder's own WoW-macro-style hover
-                   casting already established a distinct input mode for. Every other
-                   hero's W (and every Q/E) is unaffected -- immediate-cast as before. */
-                int is_abraham = (my_owner >= 0 && my_owner < ARENA_MAX_HEROES &&
-                                   arena_state.heroes[my_owner].hero_id == ARENA_HERO_ABRAHAM);
-                if (is_abraham && e.key.keysym.sym == SDLK_w) {
-                    g_ground_target_pending_slot = 1; /* W */
-                } else if (net_mode) {
+                /* S202-34, then the 2026-08-26 auto-target redesign (see arena_toggle_w's own
+                   ARENA_HERO_ABRAHAM case for the full founder-quote chain): Abraham's W used
+                   to require a two-phase "green reticle, click to confirm" ground-targeting
+                   aim mode -- removed entirely now that the server auto-targets the nearest
+                   enemy itself, so W presses the same as every other hero's: immediate cast,
+                   no separate input mode. g_ground_target_pending_slot/screen_to_ground/the
+                   reticle draw pass are all dead code for Abraham now (still real, general
+                   machinery a future ground-targeted ability could reuse -- not ripped out). */
+                if (net_mode) {
                     if (e.key.keysym.sym == SDLK_q) net_send_cast(0, g_hover_target, 0, 0.0f, 0.0f);
                     if (e.key.keysym.sym == SDLK_w) net_send_cast(1, g_hover_target, 0, 0.0f, 0.0f);
                     if (e.key.keysym.sym == SDLK_e) net_send_cast(2, g_hover_target, 0, 0.0f, 0.0f);

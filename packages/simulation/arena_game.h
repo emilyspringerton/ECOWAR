@@ -1039,11 +1039,38 @@ typedef enum {
  * heal-only, no enemy damage at all -- the roster's first purely-supportive ultimate, the mirror
  * of Vassago's purely-controlling one: she shares her sustenance, doesn't hurt anyone. */
 #define ARENA_HE_XIANGU_PASSIVE_REGEN_PER_SEC   2
+/* Moira Orb redesign (2026-08-26, founder real-time: "switch the targeted ability to another
+   hero who has a trash w and give them moira orb from overwatch" -> "give them moira orb on
+   their q" -> "give it to xehinhshu" -> "keep the code paths for the original fireball
+   ability... move it to that hero and it doesnt have to fully work for now"): He Xiangu's own
+   old Q (instant hitscan, ARENA_HE_XIANGU_Q_RANGE=6, heal-on-hit) is replaced by a real,
+   auto-targeting (arena_nearest_enemy, no range cap -- same "keep the code path" reuse as
+   Abraham's own W redesign) homing projectile, matching Overwatch's Biotic Orb in shape if not
+   in exact mechanics. Real, deliberate simplification per the founder's own "doesn't have to
+   fully work" allowance: the self-heal fires at CAST time (a flat amount, not tied to whether
+   the orb actually lands) rather than adding new on-hit-effect plumbing to ArenaProjectile for
+   a heal-the-caster case nothing else in this catalog needs yet -- an honest, smaller scope,
+   not a silently-dropped feature. ARENA_HE_XIANGU_Q_RANGE/Q_DAMAGE/Q_HEAL_PCT above are now
+   dead (left in place, not deleted, matching the founder's own "keep the code paths" framing)
+   -- the new ability uses its own constants below. */
+#define ARENA_HE_XIANGU_Q_ORB_SPEED              6.0f  /* faster than Abraham's slow fireball (3.0) -- Moira Orb reads as a moderate-paced projectile in its own source material, not a glacial skillshot */
+#define ARENA_HE_XIANGU_Q_ORB_RADIUS             0.5f
+#define ARENA_HE_XIANGU_Q_ORB_DAMAGE             9
+#define ARENA_HE_XIANGU_Q_ORB_MAX_RANGE   (ARENA_HALF_EXTENT * 4.0f) /* map-spanning, same "no matter how far away" reuse as Abraham's own fireball range */
+#define ARENA_HE_XIANGU_Q_ORB_SELF_HEAL          5     /* flat self-heal on cast -- see the redesign comment above for why this isn't heal-on-hit */
 #define ARENA_HE_XIANGU_Q_RANGE                 6.0f
 #define ARENA_HE_XIANGU_Q_DAMAGE                 7
 #define ARENA_HE_XIANGU_Q_HEAL_PCT               0.6f  /* fraction of Q's damage returned as self-heal */
 #define ARENA_HE_XIANGU_Q_COOLDOWN_MS         4200
 #define ARENA_HE_XIANGU_W_REGEN_PER_SEC          4
+/* Light/Dark stance (2026-08-26, founder: "someone that has a toggle have their toggle switch
+   between light and dark"): her existing free W toggle now genuinely switches between two
+   real stances instead of "buff when on, nothing when off" -- Light (w_active=1) keeps the
+   original regen-while-active mechanic unchanged; Dark (w_active=0, now the OTHER real stance
+   rather than just "off") grants a flat armor bonus, same "flat stat while toggled" shape
+   Ada's own W plating (ARENA_ADA_W_ARMOR_BONUS) already established -- reusing that pattern,
+   not inventing a new one. */
+#define ARENA_HE_XIANGU_DARK_ARMOR_BONUS          8
 #define ARENA_HE_XIANGU_R_RADIUS                 4.5f
 #define ARENA_HE_XIANGU_R_DURATION_MS         4000
 #define ARENA_HE_XIANGU_R_HEAL_PER_TICK          7

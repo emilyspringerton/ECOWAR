@@ -9,6 +9,7 @@
 #include "build_template_mod_host.h"
 #include "item_curriculum_mod_host.h"
 #include "duck_smoke_bomb_mod_host.h"
+#include "abraham_fireball_mod_host.h"
 
 ArenaState arena_state;
 int arena_bot_enabled = 1;
@@ -1347,6 +1348,13 @@ static float arena_hero_base_armor(const ArenaHero *h) {
     /* Ada's frame plating (W, S170-103): flat armor while toggled on. */
     if (h->hero_id == ARENA_HERO_ADA && h->w_active) {
         return (float)ARENA_ADA_W_ARMOR_BONUS;
+    }
+    /* He Xiangu's Dark stance (W toggle, 2026-08-26): flat armor while in the OFF/Dark half of
+       the Light/Dark toggle -- see ARENA_HE_XIANGU_DARK_ARMOR_BONUS's own header comment. Same
+       shape as Ada's plating just above, just gated on !w_active instead of w_active since
+       Dark is the "toggled off" state of this particular toggle. */
+    if (h->hero_id == ARENA_HERO_HE_XIANGU && !h->w_active) {
+        return (float)ARENA_HE_XIANGU_DARK_ARMOR_BONUS;
     }
     /* Tyler's Divided We Stand (R, S170-111): armor goes NEGATIVE for the window --
        apply_armor does raw_damage - armor, so a negative value increases damage taken.
@@ -4617,16 +4625,26 @@ static int vassago_cast_q(ArenaHero *vassago, ArenaHero *foe) {
     return 1;
 }
 
-/* he_xiangu_cast_q: Subsisting on Mother-of-Pearl and Moonlight -- a ranged bolt that heals her
- * for a fraction of the damage it deals, same heal-off-a-fraction mechanic as Bacon+Puck's R,
- * repeatable on Q instead of a one-off burst. Returns 1 if it landed. */
+/* he_xiangu_cast_q: Moira Orb redesign (2026-08-26) -- see arena_game.h's own doc comment on
+ * ARENA_HE_XIANGU_Q_ORB_SPEED for the full founder-quote chain. No longer an instant hitscan
+ * bolt against the passed-in `foe` -- auto-targets the nearest enemy anywhere on the map
+ * (arena_nearest_enemy has no range cap), same auto-target reuse Abraham's own W redesign
+ * established, and spawns a real, slower, HOMING projectile (arena_spawn_projectile +
+ * homing_target, same mechanic Gary/Abraham's own ranged auto-attacks already use) instead of
+ * resolving damage instantly. Self-heal fires at cast time, a real, deliberate simplification
+ * (see the header comment) rather than new on-hit-heal plumbing. Returns 1 if a real orb was
+ * fired. */
 static int he_xiangu_cast_q(ArenaHero *he_xiangu, ArenaHero *foe) {
-    if (!hero_is_hittable(foe)) return 0;
-    float dx = foe->x - he_xiangu->x, dz = foe->z - he_xiangu->z;
-    if (sqrtf(dx * dx + dz * dz) > ARENA_HE_XIANGU_Q_RANGE) return 0;
-    int dmg = apply_armor(ARENA_HE_XIANGU_Q_DAMAGE, arena_hero_armor(foe));
-    apply_damage(foe, dmg);
-    he_xiangu->hp += (int)(dmg * ARENA_HE_XIANGU_Q_HEAL_PCT);
+    (void)foe; /* the old single-target hitscan parameter -- unused now, auto-targets instead */
+    ArenaHero *target = arena_nearest_enemy(he_xiangu->owner);
+    if (!target) return 0;
+    ArenaProjectile *shot = arena_spawn_projectile(he_xiangu->owner, he_xiangu->team, ARENA_HERO_HE_XIANGU,
+        he_xiangu->x, he_xiangu->z, target->x, target->z,
+        ARENA_HE_XIANGU_Q_ORB_SPEED, ARENA_HE_XIANGU_Q_ORB_RADIUS,
+        ARENA_HE_XIANGU_Q_ORB_DAMAGE, ARENA_HE_XIANGU_Q_ORB_MAX_RANGE);
+    if (!shot) return 0;
+    shot->homing_target = target->owner;
+    he_xiangu->hp += ARENA_HE_XIANGU_Q_ORB_SELF_HEAL;
     if (he_xiangu->hp > he_xiangu->max_hp) he_xiangu->hp = he_xiangu->max_hp;
     return 1;
 }
@@ -5110,23 +5128,30 @@ void arena_toggle_w(int owner) {
         h->w_active = !h->w_active;
         break;
     case ARENA_HERO_ABRAHAM: {
-        /* A Line of Fire (S202-34): begins a cast, doesn't fire anything itself -- same
-           windup/completion split as Gary's Aimed Shot just above, except ground-targeted
-           instead of unit-targeted. Requires a real ground-target point on this exact cast
-           packet (arena_state.has_ground_target, set by arena_set_ground_target right before
-           dispatch) -- no point means the client hasn't actually clicked a target yet (still
-           in the green-reticle aiming state, or W got pressed with no target at all), so this
-           is a no-op, same "real commitment" convention as Gary's own no-target no-op above. */
+        /* A Line of Fire, auto-target redesign (2026-08-26, founder real-time, after the
+           manual ground-click flow proved genuinely hard to get firing reliably in a live
+           20-hero match: "why does gary work but abraham doesnt" -> "fuck it have the
+           fireball go infinitely across the map" -> "have it fire at the nearest enemy no
+           matter how far away"). No longer requires arena_state.has_ground_target at all --
+           auto-targets the nearest living enemy anywhere on the map (arena_nearest_enemy has
+           no range cap of its own), same "no real range limit" spirit the ability's own
+           original design already had, just auto-aimed instead of click-aimed. A no-op if
+           there's no living enemy anywhere (nothing to fire at), same "real commitment, no
+           wasted cast" convention every other kit piece in this switch already holds itself
+           to. The client's own green-reticle ground-targeting UI (screen_to_ground et al.)
+           is now dead code for this ability -- left in place rather than ripped out
+           mid-investigation, real cleanup is separate follow-up work. */
         if (h->w_cooldown_ms > 0 || h->mp < ARENA_MP_COST_W) return;
-        if (!arena_state.has_ground_target[owner]) return;
+        ArenaHero *fireball_target = arena_nearest_enemy(owner);
+        if (!fireball_target) return;
         h->casting_slot = 2;
         h->cast_time_remaining_ms = ARENA_ABRAHAM_FIREBALL_WINDUP_MS;
         h->cast_total_ms = ARENA_ABRAHAM_FIREBALL_WINDUP_MS;
         h->cast_anchor_x = h->x;
         h->cast_anchor_z = h->z;
         h->cast_target = -1;
-        h->cast_target_x = arena_state.ground_target_x[owner];
-        h->cast_target_z = arena_state.ground_target_z[owner];
+        h->cast_target_x = fireball_target->x;
+        h->cast_target_z = fireball_target->z;
         h->w_cooldown_ms = cast_cooldown(h, ARENA_ABRAHAM_FIREBALL_COOLDOWN_MS);
         h->mp -= ARENA_MP_COST_W;
         break;
@@ -5199,9 +5224,11 @@ void arena_toggle_w(int owner) {
         break;
     }
     case ARENA_HERO_HE_XIANGU:
-        /* Self-Denial Taken Past the Point: free toggle, no cooldown -- tick_hero_kit
-           reads w_active directly for the regen, same shape as Flute Debt's Recouping
-           Interest. */
+        /* Light/Dark stance (2026-08-26 redesign, see ARENA_HE_XIANGU_DARK_ARMOR_BONUS's own
+           header comment): still a free toggle, no cooldown -- Light (w_active=1) keeps the
+           original regen tick_hero_kit already reads w_active for; Dark (w_active=0) is now a
+           real second stance too, granting flat armor via arena_hero_armor's own w_active==0
+           check, not just "the buff turned off." */
         if (!h->w_active && h->mp <= 0) return; /* S170-181: activating no longer charges a flat cost, just requires some mana to sustain -- see ARENA_MP_DRAIN_W_PER_SEC; toggling off is always free */
         h->w_active = !h->w_active;
         break;

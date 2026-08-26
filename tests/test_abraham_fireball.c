@@ -26,31 +26,40 @@ static int failures = 0;
     else { printf("PASS: %s\n", msg); } \
 } while (0)
 
-static void test_abraham_w_requires_a_ground_target(void) {
+/* Auto-target redesign (2026-08-26, founder real-time: "why does gary work but abraham doesnt"
+   -> "fuck it have the fireball go infinitely across the map" -> "have it fire at the nearest
+   enemy no matter how far away"): W no longer needs a manual ground-target click at all --
+   arena_set_ground_target/has_ground_target are dead for this ability now (see
+   arena_toggle_w's own ARENA_HERO_ABRAHAM case doc comment). It auto-targets the nearest
+   living enemy instead, so the real "no-op" case is now "no living enemy exists anywhere,"
+   not "no ground target was set." */
+static void test_abraham_w_requires_a_living_enemy(void) {
     arena_init_with_heroes(ARENA_HERO_ABRAHAM, ARENA_HERO_UNICORN);
     ArenaHero *abe = &arena_state.heroes[0];
     abe->mp = 999;
+    arena_state.heroes[1].alive = 0; /* the only other hero, dead -- no valid target anywhere */
 
-    arena_toggle_w(0); /* no arena_set_ground_target call first -- has_ground_target[0] stays 0 */
+    arena_toggle_w(0);
 
-    CHECK(abe->casting_slot == 0, "W with no ground target on the cast packet is a no-op -- no windup begins");
+    CHECK(abe->casting_slot == 0, "W with no living enemy anywhere is a no-op -- no windup begins");
     CHECK(abe->w_cooldown_ms == 0, "no cooldown spent on the no-op case");
 }
 
 static void test_abraham_w_begins_a_real_windup(void) {
     arena_init_with_heroes(ARENA_HERO_ABRAHAM, ARENA_HERO_UNICORN);
     ArenaHero *abe = &arena_state.heroes[0];
+    ArenaHero *foe = &arena_state.heroes[1];
     abe->x = 10.0f; abe->z = 10.0f;
     abe->mp = 999;
+    foe->x = 50.0f; foe->z = 10.0f; /* due "east," same z -- arena_init_with_heroes already puts them on opposing teams */
 
-    arena_set_ground_target(0, 1, 50.0f, 10.0f); /* due "east," same z */
-    arena_toggle_w(0);
+    arena_toggle_w(0); /* no arena_set_ground_target call -- auto-targets the nearest enemy (foe) */
 
-    CHECK(abe->casting_slot == 2, "casting a ground-targeted W begins a real windup (slot 2)");
+    CHECK(abe->casting_slot == 2, "casting W auto-targets the nearest enemy and begins a real windup (slot 2)");
     CHECK(abe->cast_total_ms == ARENA_ABRAHAM_FIREBALL_WINDUP_MS, "windup duration matches the real constant");
     CHECK(abe->cast_time_remaining_ms == ARENA_ABRAHAM_FIREBALL_WINDUP_MS, "windup starts at full duration");
     CHECK(abe->cast_target_x == 50.0f && abe->cast_target_z == 10.0f,
-          "the real click point is locked in at cast start");
+          "the nearest enemy's own position is locked in as the cast target at cast start");
     CHECK(abe->w_cooldown_ms == ARENA_ABRAHAM_FIREBALL_COOLDOWN_MS, "cooldown is spent on cast");
     CHECK(arena_state.projectiles[0].active == 0,
           "no projectile exists yet -- the shot only fires once the windup completes");
@@ -62,7 +71,6 @@ static void test_abraham_w_gated_by_cooldown(void) {
     abe->mp = 999;
     abe->w_cooldown_ms = 5000;
 
-    arena_set_ground_target(0, 1, 50.0f, 10.0f);
     arena_toggle_w(0);
 
     CHECK(abe->casting_slot == 0, "a cast blocked by cooldown never begins a windup");
@@ -73,7 +81,6 @@ static void test_abraham_w_gated_by_mana(void) {
     ArenaHero *abe = &arena_state.heroes[0];
     abe->mp = 0;
 
-    arena_set_ground_target(0, 1, 50.0f, 10.0f);
     arena_toggle_w(0);
 
     CHECK(abe->casting_slot == 0, "a cast blocked by insufficient mana never begins a windup");
@@ -86,12 +93,17 @@ static void test_fireball_completion_spawns_a_real_piercing_shot(void) {
     arena_init_teams();
     for (int i = 2; i < ARENA_MAX_HEROES; i++) arena_state.heroes[i].active = 0;
     ArenaHero *abe = &arena_state.heroes[0];
+    ArenaHero *foe = &arena_state.heroes[1];
     abe->hero_id = ARENA_HERO_ABRAHAM;
     abe->x = 0.0f; abe->z = 0.0f;
     abe->mp = 999;
+    /* arena_init_teams() puts indices 0..9 on team 0 -- heroes[1] needs to be a real enemy
+       (team 1) for the auto-target redesign to find it at all, not just "the other active
+       hero." Positioned due east so the directional assertions below stay meaningful. */
+    foe->team = 1;
+    foe->x = 100.0f; foe->z = 0.0f;
 
-    arena_set_ground_target(0, 1, 100.0f, 0.0f); /* due "east," effectively along the whole map */
-    arena_toggle_w(0);
+    arena_toggle_w(0); /* auto-targets foe, the only living enemy */
     CHECK(abe->casting_slot == 2, "setup: windup began");
 
     /* Drive the windup to completion through the REAL tick function, not a direct field write. */
@@ -158,7 +170,7 @@ static void test_abraham_w_only_fires_for_abraham(void) {
 }
 
 int main(void) {
-    test_abraham_w_requires_a_ground_target();
+    test_abraham_w_requires_a_living_enemy();
     test_abraham_w_begins_a_real_windup();
     test_abraham_w_gated_by_cooldown();
     test_abraham_w_gated_by_mana();
