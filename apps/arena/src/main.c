@@ -3017,50 +3017,40 @@ int main(int argc, char *argv[]) {
                 g_ground_target_pending_slot = 0;
             }
             /* ground_target_click_consumed (same "consumed this exact click" idiom as
-               shop_click_consumed just above): the confirming click for a pending ground-
-               targeted ability (Abraham's W so far) -- intercepted here, BEFORE the ordinary
-               drag-select/move-click flow below, so this click fires the ability instead of
-               also issuing a move command or starting a box-select. Fires on mouse-DOWN (not
-               up, unlike the ordinary click flow) since there's no drag-vs-click ambiguity to
-               resolve here -- a ground-target confirm is always a single deliberate click. A
-               local flag, not a re-check of g_ground_target_pending_slot (which this same
-               block clears), so the ordinary-click guard below can't be fooled into firing for
-               this same click the instant the global goes back to 0. */
-            /* Real-time diagnostic (2026-08-26, founder: "when i click it should cast" ->
-               "it doesnt" -> "ensure there is a projectile drawn to the screen for me to
-               see"): stderr traces at every real decision point in this block -- whether a
-               left-click even lands here while aiming, whether screen_to_ground succeeds,
-               whether net_send_cast actually fires. Every prior investigation this session
-               (a direct headless repro of the exact same server-side call sequence) already
-               proved arena_toggle_w's own ARENA_HERO_ABRAHAM case works correctly once
-               invoked -- these traces are for the one remaining unverified link, the actual
-               client-side click path, not something to leave in permanently. */
+               shop_click_consumed just above): the confirming click for a pending targeted
+               ability -- intercepted here, BEFORE the ordinary drag-select/move-click flow
+               below, so this click fires the ability instead of also issuing a move command or
+               starting a box-select. Fires on mouse-DOWN (not up, unlike the ordinary click
+               flow) since there's no drag-vs-click ambiguity to resolve here -- a targeted
+               confirm is always a single deliberate click. A local flag, not a re-check of
+               g_ground_target_pending_slot (which this same block clears), so the
+               ordinary-click guard below can't be fooled into firing for this same click the
+               instant the global goes back to 0.
+               Bacon+Puck's Shadow Step (2026-08-26, founder: "have it click on a hero to
+               teleport roughly behind them"): reads g_hover_target (the hero currently under
+               the cursor, the same per-frame hit-test the plain click-to-attack flow already
+               computes -- see g_hover_target's own declaration comment) instead of calling
+               screen_to_ground for a ground point. A miss (no hero under the cursor when the
+               click lands) is a real no-op, same "real commitment" convention as every other
+               targeted ability -- nothing is sent, the cooldown/mana never get touched, per the
+               founder's own earlier "dont have it blow the cooldown and do nothing" fix for
+               Abraham's own cast. screen_to_ground/the reticle draw pass stay real, general
+               machinery any future GROUND-targeted ability can still reuse -- not touched here,
+               this ability just doesn't need them. */
             int ground_target_click_consumed = 0;
-            if (g_ground_target_pending_slot != 0 && e.type == SDL_MOUSEBUTTONDOWN && e.button.button == SDL_BUTTON_LEFT) {
-                fprintf(stderr, "[fireball-debug] left-click while aiming: observing=%d winner=%d my_owner=%d net_mode=%d\n",
-                        observing, arena_state.winner, my_owner, net_mode);
-            }
             if (!observing && g_ground_target_pending_slot != 0 && e.type == SDL_MOUSEBUTTONDOWN &&
                 e.button.button == SDL_BUTTON_LEFT && arena_state.winner == 0 &&
                 my_owner >= 0 && my_owner < ARENA_MAX_HEROES) {
                 ground_target_click_consumed = 1;
-                float gx, gz;
-                float focus_x = arena_state.heroes[my_owner].x, focus_z = arena_state.heroes[my_owner].z;
-                if (screen_to_ground(e.button.x, e.button.y, win_w, win_h, 60.0f, focus_x, focus_z, &gx, &gz)) {
+                if (g_hover_target >= 0) {
                     int slot = g_ground_target_pending_slot;
-                    fprintf(stderr, "[fireball-debug] screen_to_ground ok: gx=%.2f gz=%.2f slot=%d net_mode=%d -- sending cast now\n",
-                            gx, gz, slot, net_mode);
                     if (net_mode) {
-                        net_send_cast(slot - 1, g_hover_target, 1, gx, gz);
+                        net_send_cast(slot - 1, g_hover_target, 0, 0.0f, 0.0f);
                     } else {
                         arena_set_hover_target(my_owner, g_hover_target);
-                        arena_set_ground_target(my_owner, 1, gx, gz);
                         if (slot == 1) { arena_toggle_w(my_owner); arena_log_ability("W"); }
                     }
                     apm_record_action(now);
-                } else {
-                    fprintf(stderr, "[fireball-debug] screen_to_ground FAILED at mx=%d my=%d focus=(%.2f,%.2f) -- no packet sent\n",
-                            e.button.x, e.button.y, focus_x, focus_z);
                 }
                 g_ground_target_pending_slot = 0;
             }
@@ -3265,10 +3255,19 @@ int main(int argc, char *argv[]) {
                    to require a two-phase "green reticle, click to confirm" ground-targeting
                    aim mode -- removed entirely now that the server auto-targets the nearest
                    enemy itself, so W presses the same as every other hero's: immediate cast,
-                   no separate input mode. g_ground_target_pending_slot/screen_to_ground/the
-                   reticle draw pass are all dead code for Abraham now (still real, general
-                   machinery a future ground-targeted ability could reuse -- not ripped out). */
-                if (net_mode) {
+                   no separate input mode.
+                   Same aiming-mode machinery revived here for Bacon+Puck's own W (Shadow Step,
+                   2026-08-26, founder: "use the targeting system you had for abraham fireball
+                   before we changed it... but have it click on a hero to teleport roughly
+                   behind them") -- g_ground_target_pending_slot re-enters the same real
+                   targeting mode, but the confirm click now reads g_hover_target (a hero under
+                   the cursor) instead of calling screen_to_ground for a ground point; see that
+                   confirm block's own doc comment below. */
+                int is_bacon_puck = (my_owner >= 0 && my_owner < ARENA_MAX_HEROES &&
+                                     arena_state.heroes[my_owner].hero_id == ARENA_HERO_BACON_PUCK);
+                if (is_bacon_puck && e.key.keysym.sym == SDLK_w) {
+                    g_ground_target_pending_slot = 1; /* W */
+                } else if (net_mode) {
                     if (e.key.keysym.sym == SDLK_q) net_send_cast(0, g_hover_target, 0, 0.0f, 0.0f);
                     if (e.key.keysym.sym == SDLK_w) net_send_cast(1, g_hover_target, 0, 0.0f, 0.0f);
                     if (e.key.keysym.sym == SDLK_e) net_send_cast(2, g_hover_target, 0, 0.0f, 0.0f);

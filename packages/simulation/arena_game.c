@@ -1279,6 +1279,9 @@ static void update_hero_motion(ArenaHero *h, int self_index, float dt_sec) {
         h->moving = 0;
         return;
     }
+    /* S202-40: real facing, updated whenever there's a genuine direction to face -- see
+       facing_rad's own header doc comment. */
+    h->facing_rad = atan2f(dx, dz);
     /* slowed_ms/slow_pct (S170-184, GFD's Slow): a proportional multiplier on top of the base
        speed + item bonus, so it scales correctly regardless of how much flat item speed a hero
        already has (a slow that just subtracted a flat amount could go negative against a
@@ -4303,11 +4306,53 @@ static void flute_debt_cast_r(ArenaHero *fd, ArenaHero *foe) {
 }
 
 /* bacon_puck_cast_q: Ask Again Later -- self intangible_ms, the shared can't-be-hit status
- * (S170-32), for longer while W is toggled on. Always "lands" (there's no foe/range check --
- * it's purely self-targeted), same as Ghost's W/Frog's R. */
+ * (S170-32). Always "lands" (there's no foe/range check -- it's purely self-targeted), same as
+ * Ghost's W/Frog's R.
+ *
+ * Real, honest simplification (2026-08-26, W redesign to Shadow Step, see bacon_puck_cast_w's
+ * own doc comment): this used to grant a LONGER intangible duration while W was toggled on
+ * (ARENA_BACON_PUCK_Q_INTANGIBLE_MS_WATCHING) -- W is no longer a toggle at all (an instant
+ * blink now, doesn't touch w_active), so that longer duration is dead: w_active permanently
+ * reads 0 for this hero now. Always uses the base duration -- not compensated with a buff
+ * elsewhere, a real, accepted power change from losing the old toggle's own utility, not
+ * silently patched over. ARENA_BACON_PUCK_Q_INTANGIBLE_MS_WATCHING itself is left defined,
+ * unused, matching this session's own "leave dead constants in place, don't rip out" convention
+ * for redesigned abilities. */
 static void bacon_puck_cast_q(ArenaHero *bp) {
-    bp->intangible_ms = bp->w_active ? ARENA_BACON_PUCK_Q_INTANGIBLE_MS_WATCHING
-                                      : ARENA_BACON_PUCK_Q_INTANGIBLE_MS;
+    bp->intangible_ms = ARENA_BACON_PUCK_Q_INTANGIBLE_MS;
+}
+
+/* bacon_puck_cast_w: Shadow Step (2026-08-26 redesign) -- see ARENA_BACON_PUCK_W_RANGE's own
+ * header comment for the full founder-quote chain. Reads the real target hero from
+ * arena_state.hover_target[owner] (set by arena_set_hover_target right before dispatch, same
+ * generic "record right before dispatch" convention every hover-consulted ability already
+ * uses) -- an untargeted W (no hero hovered when the click confirmed) is a real no-op, same
+ * "real commitment" shape every other kit piece in this file holds itself to. Lands the caster
+ * a short, real distance PAST the target's own position, along the target's own real
+ * facing_rad (S202-40) -- "roughly behind them" from the target's own perspective, not the
+ * caster's approach angle. Instant, no windup -- a blink, not a cast-time ability, same shape
+ * Blink Dagger's own arena_use_blink already established (clamp to map bounds, no interrupt
+ * concept needed since there's no time window to interrupt). */
+static void bacon_puck_cast_w(int owner) {
+    ArenaHero *bp = &arena_state.heroes[owner];
+    if (bp->w_cooldown_ms > 0 || bp->mp < ARENA_MP_COST_W) return;
+    int target_idx = arena_state.hover_target[owner];
+    if (target_idx < 0 || target_idx >= ARENA_MAX_HEROES) return;
+    ArenaHero *target = &arena_state.heroes[target_idx];
+    if (!target->active || target->team == bp->team || !hero_is_hittable(target)) return;
+    float dx = target->x - bp->x, dz = target->z - bp->z;
+    if (sqrtf(dx * dx + dz * dz) > ARENA_BACON_PUCK_W_RANGE) return;
+
+    float bx = target->x + sinf(target->facing_rad) * ARENA_BACON_PUCK_W_BEHIND_OFFSET;
+    float bz = target->z + cosf(target->facing_rad) * ARENA_BACON_PUCK_W_BEHIND_OFFSET;
+    if (bx < -ARENA_HALF_EXTENT) bx = -ARENA_HALF_EXTENT;
+    if (bx > ARENA_HALF_EXTENT) bx = ARENA_HALF_EXTENT;
+    if (bz < -ARENA_HALF_EXTENT) bz = -ARENA_HALF_EXTENT;
+    if (bz > ARENA_HALF_EXTENT) bz = ARENA_HALF_EXTENT;
+    bp->x = bx;
+    bp->z = bz;
+    bp->w_cooldown_ms = cast_cooldown(bp, ARENA_BACON_PUCK_W_COOLDOWN_MS);
+    bp->mp -= ARENA_MP_COST_W;
 }
 
 /* bacon_puck_cast_r: The Trick Was Always the Same -- real damage plus a self-heal off a
@@ -5138,11 +5183,7 @@ void arena_toggle_w(int owner) {
         h->w_active = !h->w_active;
         break;
     case ARENA_HERO_BACON_PUCK:
-        /* Which One Is The Real One: free toggle, no cooldown --
-           bacon_puck_cast_q() reads w_active directly for Q's extended
-           intangibility duration, not a stat bonus. */
-        if (!h->w_active && h->mp <= 0) return; /* S170-181: activating no longer charges a flat cost, just requires some mana to sustain -- see ARENA_MP_DRAIN_W_PER_SEC; toggling off is always free */
-        h->w_active = !h->w_active;
+        bacon_puck_cast_w(owner);
         break;
     case ARENA_HERO_ABRAHAM: {
         /* A Line of Fire, auto-target redesign (2026-08-26, founder real-time, after the

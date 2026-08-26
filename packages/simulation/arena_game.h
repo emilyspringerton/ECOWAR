@@ -754,8 +754,20 @@ typedef enum {
  * intangibility duration, rather than granting a stat like most toggles. R pays off the
  * mischief: real damage plus a self-heal off it, "the trick was always the same" either way. */
 #define ARENA_BACON_PUCK_Q_INTANGIBLE_MS          1500
-#define ARENA_BACON_PUCK_Q_INTANGIBLE_MS_WATCHING 3000 /* Q's intangible duration while W is toggled on */
+#define ARENA_BACON_PUCK_Q_INTANGIBLE_MS_WATCHING 3000 /* dead since the 2026-08-26 W redesign (Shadow Step) -- see bacon_puck_cast_q's own doc comment */
 #define ARENA_BACON_PUCK_Q_COOLDOWN_MS             6000
+/* Shadow Step (2026-08-26, founder: "make bacon buck w instead of a toggle have it turn into
+   sghadow step use the targeting system you had for abraham fireball before we changed it" ->
+   "but have it click on a hero to teleport roughly behind them" -> "add a sense of hero
+   direction i guess so we can actually teleport behind them" -> "hive it a generous range but
+   not crazy like give it the same range as the ranged auto attacks"): replaces the old
+   toggle. Reuses the client's own ground-targeting reticle/aiming-mode machinery (left in
+   place, not ripped out, when Abraham's W moved off it) -- but the confirm click now detects a
+   HOVERED HERO (g_hover_target, the same mechanism the plain click-to-attack flow already
+   uses), not a ground point. */
+#define ARENA_BACON_PUCK_W_RANGE ARENA_GARY_ATTACK_RANGE /* "the same range as the ranged auto attacks," literally */
+#define ARENA_BACON_PUCK_W_BEHIND_OFFSET 2.0f /* how far past the target's own position, along their real facing_rad, the blink lands */
+#define ARENA_BACON_PUCK_W_COOLDOWN_MS 8000
 #define ARENA_BACON_PUCK_R_RANGE                   2.2f
 #define ARENA_BACON_PUCK_R_DAMAGE                  16
 #define ARENA_BACON_PUCK_R_HEAL_PCT                0.5f /* fraction of R's damage returned as self-heal */
@@ -2345,6 +2357,15 @@ typedef struct {
      * increases auto attack range by 4% 3333 flow"): same recomputed-cache shape as the fields
      * above, consumed by arena_hero_attack_range(). */
     int item_bonus_attack_range_pct;
+    /* facing_rad (S202-40, Bacon+Puck's Shadow Step, founder: "add a sense of hero direction i
+     * guess so we can actually teleport behind them"): a real, server-authoritative facing
+     * angle, updated in update_hero_motion from the live movement direction (atan2f(dx, dz),
+     * same x/z-ordering convention apps/arena's own CLIENT-side hero_facing_rad already used
+     * purely for rendering) -- this is the first time a facing concept exists server-side, not
+     * just interpolated client-visual. Preserved (not reset) while stationary, matching every
+     * real MOBA's own "you keep facing whichever way you last moved" convention. Radians,
+     * standard atan2f range (-pi, pi]. */
+    float facing_rad;
 } ArenaHero;
 
 typedef struct {

@@ -99,6 +99,13 @@ cc_test(
 )
 
 cc_test(
+    name = "test_shadow_step",
+    srcs = ["test_shadow_step.c"],
+    deps = ["//packages/simulation:arena_game"],
+    copts = COMMON_TEST_COPTS,
+)
+
+cc_test(
     name = "test_damage_log",
     srcs = ["test_damage_log.c"],
     deps = ["//packages/simulation:arena_game"],
