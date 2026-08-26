@@ -1,6 +1,7 @@
 # Changelog
 
 ## 2026-08-26
+- fixed live bug: Abraham never auto-attacked at all (windup-start check hardcoded to Gary only -- S202-34 excluded him from the old melee loop everywhere but missed adding him to the new ranged trigger), plus bot AI still ran his pre-rework kit for W. Verified via direct headless repros. Also finished Kite String (S202-34 trinket, +4% auto-attack range, 3333 flow), found as real uncommitted half-finished work. Apple #16090, commits ea0787a (CI wiring) + d4fd6c7 (fix) (sess-20260825-1938-f6bd411e)
 - Abraham W rework -- A Line of Fire: real ground-targeted piercing fireball (S202-34), 400ms GOLDENBAND-driven windup animation, ranged auto-attack. Apple #16084, commit 961d500 (sess-20260825-1938-f6bd411e)
 - Body blocking shipped (S202-27): real hero-hero collision via resolve_hero_hero_collision, same shape as the existing obstacle collision. Applies to allies too (real MOBA convention), skipped during Paper Glide. 4 new tests, full suite green. Apple #16057. (sess-20260825-1938-f6bd411e)
 
