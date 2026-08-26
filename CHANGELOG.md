@@ -1,6 +1,7 @@
 # Changelog
 
 ## 2026-08-26
+- Abraham's W now freezes him in place for the windup instead of silently wasting the cooldown/mana when the movement-interrupt rule cancelled the cast because he was walking. Gary's own "movement interrupts cast" feel is untouched. Apple #16108, commit 7671b2a (sess-20260825-1938-f6bd411e)
 - Abraham's fireball now ignites enemies it touches (real burn DoT, reuses the existing on_hit_burn mechanic) and travels a bit faster (3.0 -> 4.0). Apple #16105, commit 43a286d (sess-20260825-1938-f6bd411e)
 - migrated REDGARDEN's build to Bazel (S202-36) -- all 7 binaries + 14 test targets build/pass under `bazel build/test //...`, following PARENA's own existing setup. arena_game.c now #includes all 6 PARENA-mod host headers directly (closes the "-include flag missed in one build path" bug class hit 3 times this session). Shell scripts kept alongside for now. Apple #16101, commit 1158929 (sess-20260825-1938-f6bd411e)
 - Abraham's W (fireball) now auto-targets the nearest enemy (no manual ground-click, no range limit) instead of requiring a screen click that proved genuinely hard to get registering reliably. He Xiangu's old Q replaced with Moira Orb (Overwatch), a real homing projectile reusing the same auto-target path; her W toggle reframed into a real Light/Dark stance (regen vs flat armor). Real server-side diagnostic logging added to arena_server. Apple #16101, commit 6a27f00 (sess-20260825-1938-f6bd411e)
