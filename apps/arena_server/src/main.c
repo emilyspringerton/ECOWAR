@@ -832,22 +832,6 @@ static void server_handle_packet(struct sockaddr_in *sender, char *buffer, int s
     } else if (head->type == PACKET_ARENA_CAST) {
         if (size < (int)(sizeof(NetHeader) + sizeof(ArenaCastCmd))) return;
         ArenaCastCmd *cmd = (ArenaCastCmd *)(buffer + sizeof(NetHeader));
-        /* Real, server-side diagnostic (2026-08-26, founder: "set up server side logging from
-           the client or someghing" -> "i cant read shit off a screen to you" -- the arena_server
-           child process inherits the matchmaker's own stdout/stderr, redirected to
-           var/logs/matchmaker-bots.log, so this needs no relay at all, read directly). Fires
-           for every real PACKET_ARENA_CAST slot==1 (W) from a hero whose hero_id is Abraham,
-           before and after dispatch -- pins down exactly which real guard (cooldown/mana/no
-           ground target) is refusing the cast, if any, versus the packet never arriving at
-           all. Temporary, meant to come back out once this is root-caused. */
-        if (client_id >= 0 && client_id < ARENA_MAX_HEROES && cmd->slot == 1 &&
-            arena_state.heroes[client_id].hero_id == ARENA_HERO_ABRAHAM) {
-            ArenaHero *dbg = &arena_state.heroes[client_id];
-            fprintf(stderr, "[abraham-debug] CAST W received: client_id=%d has_ground_target=%d target=(%.2f,%.2f) "
-                            "BEFORE: w_cd=%d mp=%d alive=%d silenced=%d stunned=%d\n",
-                    client_id, cmd->has_ground_target, cmd->target_x, cmd->target_z,
-                    dbg->w_cooldown_ms, dbg->mp, dbg->alive, dbg->silenced_ms, dbg->stunned_ms);
-        }
         /* S170-143: record the hover target BEFORE dispatching -- generic
            on the server side (any slot could consult it), the individual
            cast function decides whether it actually cares (only Doc
@@ -859,26 +843,9 @@ static void server_handle_packet(struct sockaddr_in *sender, char *buffer, int s
         if (cmd->slot == 0) arena_cast_q(client_id);
         else if (cmd->slot == 1) arena_toggle_w(client_id);
         else if (cmd->slot == 2) arena_cast_r(client_id);
-        if (client_id >= 0 && client_id < ARENA_MAX_HEROES && cmd->slot == 1 &&
-            arena_state.heroes[client_id].hero_id == ARENA_HERO_ABRAHAM) {
-            ArenaHero *dbg = &arena_state.heroes[client_id];
-            fprintf(stderr, "[abraham-debug] CAST W dispatched: AFTER: w_cd=%d mp=%d casting_slot=%d cast_time_remaining=%d\n",
-                    dbg->w_cooldown_ms, dbg->mp, dbg->casting_slot, dbg->cast_time_remaining_ms);
-        }
     } else if (head->type == PACKET_ARENA_ATTACK) {
         if (size < (int)(sizeof(NetHeader) + sizeof(ArenaAttackCmd))) return;
         ArenaAttackCmd *cmd = (ArenaAttackCmd *)(buffer + sizeof(NetHeader));
-        /* Real, server-side diagnostic, same reasoning/temporariness as the CAST W trace above
-           -- fires for any PACKET_ARENA_ATTACK naming an Abraham as the commander_unit, logging
-           whether the authorization check itself passes (a real, separate way this could
-           silently no-op: arena_owner_controls failing for a reason unrelated to the auto-
-           attack windup fix already shipped in d4fd6c7). */
-        if (cmd->commander_unit >= 0 && cmd->commander_unit < ARENA_MAX_HEROES &&
-            arena_state.heroes[cmd->commander_unit].hero_id == ARENA_HERO_ABRAHAM) {
-            fprintf(stderr, "[abraham-debug] ATTACK received: client_id=%d commander_unit=%d target_owner=%d owner_controls=%d\n",
-                    client_id, cmd->commander_unit, cmd->target_owner,
-                    arena_owner_controls(client_id, cmd->commander_unit));
-        }
         /* Same commander_unit authorization as PACKET_ARENA_MOVE above -- see that branch's own
            doc comment. */
         if (arena_owner_controls(client_id, cmd->commander_unit)) {
