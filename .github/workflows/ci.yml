@@ -89,6 +89,7 @@ jobs:
             -include packages/simulation/build_template_mod_host.h \
             -include packages/simulation/item_curriculum_mod_host.h \
             -include packages/simulation/duck_smoke_bomb_mod_host.h \
+            -include packages/simulation/abraham_fireball_mod_host.h \
             -o RedGarden.exe \
             apps/arena/src/main.c \
             packages/simulation/arena_game.c \
@@ -99,6 +100,7 @@ jobs:
             packages/simulation/build_template_mod.c \
             packages/simulation/item_curriculum_mod.c \
             packages/simulation/duck_smoke_bomb_mod.c \
+            packages/simulation/abraham_fireball_mod.c \
             packages/common/mlp_infer.c \
             packages/goldenband/gband.c \
             packages/goldenband/gband_rig.c \
