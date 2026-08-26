@@ -460,9 +460,13 @@ The disputed author of a real grimoire — *The Book of the Sacred Magic of Abra
 whose own existence has never been confirmed, but whose ritual real occultists (Crowley) actually
 organized their lives around centuries later.
 
-- **Q — The Sacred Magic**: a real ranged magic bolt, stronger while W is toggled on.
-- **W — The Book, Unattested**: a free toggle (no cooldown) that boosts Q's own damage rather than
-  granting a stat like most toggles in this roster.
+- **Q — The Sacred Magic**: a real ranged magic bolt.
+- **W — A Line of Fire** (S202-34, replacing the old free-toggle "The Book, Unattested"): a real
+  ground-targeted skill-shot — click a point (green reticle while aiming), fires a slow-moving
+  fireball with no meaningful range limit that pierces and damages every enemy it passes through,
+  not just the first one it touches. A real 400ms windup plays a rotation-and-squish animation
+  before it fires. Basic auto-attack is also ranged/homing now, same mechanic Gary's own uses,
+  with its own projectile color.
 - **R — The Guardian Angel, Contacted**: a full self-cleanse (every debuff this roster tracks)
   plus a real heal — the ritual's actual promised payoff.
 
