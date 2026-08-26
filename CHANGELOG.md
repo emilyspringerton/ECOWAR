@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026-08-26
+
+- Duck W -- Smoke Bomb shipped (S202-10, real AoE target-denial: hero_obscured_from blocks arena_nearest_enemy from outside an active cloud). PARENA mod (on_duck_smoke_bomb_cast), wire-synced, client-rendered, 13 new tests. Found + flagged (not fixed) a pre-existing test_arena_replay segfault, confirmed via git-stash bisect to predate this change. Apple #16044. (sess-20260825-1938-f6bd411e)
+
+
 ## 2026-08-25
 - fixed live bug: Tree passive (and day/night/Bloodflower) never ticked in arena_update, the 1v1 simulation tick -- only arena_update_teams had it wired in, so it silently never fired outside team-mode matches. New regression test exercises the real top-level tick function. Fully documented Tree's passive in README.md's new "Hero passives" section (sess-20260825-1938-f6bd411e)
 - item curriculum: PARENA-mod-driven generation primitive for NORTHSTAR.md §26.3.2's "tuning the game via items" v0 (blend two catalog items' stats into a runtime curriculum slot, deterministic, 15 new tests, honest scope -- training-loop consumption not built yet) (sess-20260825-1938-f6bd411e)
