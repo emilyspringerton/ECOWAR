@@ -217,8 +217,9 @@ forgiving kits — no clone armies to manage (Tyler), no blink mind-games (Loki)
   up on the same spot for a small AoE hit — R makes you unkillable (HP can't drop below 1) for a
   few seconds. Walk up, root, survive — about as simple as a kit gets.
 - **The Duck** — *Fighter/Assassin.* Q yanks the nearest enemy toward you and deals AD damage on
-  impact; land the killing blow and E briefly makes you stronger. One button does most of the
-  work.
+  impact. W (Smoke Bomb, S202-10) drops a real AoE cloud on yourself — anyone standing inside it
+  can't be targeted by a hero outside it, arena's own honest analog for "vision-blocking" since
+  no real fog-of-war system exists here. One or two buttons cover most of the kit.
 - **Gary** — *Marksman.* The only hero with zero dash/blink/gap-closer in his whole kit — he just
   aims and shoots from a stationary position, no positioning tech to learn beyond "stand at
   range." The easiest hero to understand a MOBA marksman role through.
@@ -226,7 +227,7 @@ forgiving kits — no clone armies to manage (Tyler), no blink mind-games (Loki)
   off a fraction of the damage it deals), a free regen toggle on W, an ally heal-zone on R. No
   damage combos to time, no enemies to predict; just keep the heals up.
 
-## Current Status (2026-08-13)
+## Current Status (2026-08-26)
 
 See `NORTHSTAR.md` for the full, up-to-date direction — this README's "Acceptance Criteria" and
 "Full Technical Design Document" sections below are the original design capture and are not all
@@ -260,6 +261,27 @@ on jungle kills), North/Wealth (proximity-aura Bulwark, armor + gold trickle to 
 All 5 real milestones (buffs, anti-stall §3.4 lane-march escalation, King respawn timer) are done
 in both this repo and, as of 2026-08-10, ported into GoblinFoxDragon's own
 `apps2/battlegrounds_gui` fork via a real 3-way merge (Apple #12868).
+
+### PARENA-mod-driven hero mechanics (2026-08-25/26)
+
+Real, live PARENA mods now compile into REDGARDEN's own C binaries and drive real gameplay —
+"the mod is the trigger, host C does the real work" — see `EMILY/BACKLOG.md` S202-08/10/14/22/27
+and `PARENA/stdlib/redgarden/` for the source:
+
+- **Tree passive** (`tree_passive_mod.prn`) — The Tree auto-attacks nearby decorative jungle
+  trees for a slow self-heal, giving the map's own scenery a real interaction for the one hero
+  whose kit fits it.
+- **Build templates** (`build_template_mod.prn`) — named, ordered item presets (Bruiser/Assassin/
+  Caster) that auto-buy from the shop in cheapest-affordable-first order; manual item-by-item
+  purchase is unchanged.
+- **Item curriculum** (`item_curriculum_mod.prn`) — a real generation primitive (NORTHSTAR
+  §26.3.2) that blends two catalog items' stats into a new, runtime-mutable item slot — the v0
+  autocurriculum-tunes-the-meta scope expansion's own generation half.
+- **Duck's Smoke Bomb** (`duck_smoke_bomb_mod.prn`, S202-10) — Duck's W, a real AoE cloud that
+  blocks targeting from outside it (see "How to Play" above).
+- **Body blocking** (S202-27, pure engine mechanic, no PARENA mod) — real hero-hero collision:
+  heroes can no longer walk through each other (allies included, matching real MOBA convention),
+  skipped during Paper Glide the same way terrain collision already was.
 
 ### Arena bot AI research program (NORTHSTAR §25-28)
 
