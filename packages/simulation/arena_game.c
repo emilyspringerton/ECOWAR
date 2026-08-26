@@ -1188,6 +1188,41 @@ static void resolve_hero_obstacle_collision(ArenaHero *h) {
     }
 }
 
+/* resolve_hero_hero_collision (S202-27, "body blocking"): founder real-time, "we need to add
+ * body blocking" -> "currently players can ghost through eachother". Same real, honest analog
+ * resolve_hero_obstacle_collision just above already uses -- an obstacle is a static circle a
+ * hero pushes itself back out of; a hero is now ALSO one, to every other hero. Applies
+ * regardless of team (real MOBAs body-block allies too, not just enemies) and across the full
+ * ARENA_HEROES_ARRAY_SIZE range (Tyler's puppet clones included -- S170-141's own precedent for
+ * widening hero-vs-hero interactions to cover them). Deliberately only called from
+ * update_hero_motion's own organic walking-toward-target step, never from forced displacement
+ * (Duck's Q/R pulls, Morrigan's W gap-close, knockbacks) -- those set position directly and
+ * don't route through this function, so a pull can still land a target inside another hero's
+ * radius for that one instant; the NEXT tick's own normal movement resolution pushes it back
+ * out again, same "don't fight the ability, let movement self-correct" reasoning
+ * donkey_airborne_ms's own skip-collision-while-flying carve-out above already established for
+ * a different case. Each hero resolves against every other hero independently (no shared
+ * "who moves first" bookkeeping) -- a real, simple v0, not perfectly stable under a 3+-hero
+ * pileup (a later hero's own resolution can nudge an earlier one back into slight overlap), but
+ * correct and non-jittery for the common 1v1/small-cluster case this engine's own real matches
+ * actually produce. */
+static void resolve_hero_hero_collision(ArenaHero *h, int self_index) {
+    for (int i = 0; i < ARENA_HEROES_ARRAY_SIZE; i++) {
+        if (i == self_index) continue;
+        const ArenaHero *other = &arena_state.heroes[i];
+        if (!other->active || !other->alive) continue;
+        float dx = h->x - other->x;
+        float dz = h->z - other->z;
+        float min_dist = ARENA_HERO_COLLISION_RADIUS * 2.0f;
+        float dist = sqrtf(dx * dx + dz * dz);
+        if (dist >= min_dist) continue;
+        if (dist < 0.0001f) { dx = 1.0f; dz = 0.0f; dist = 0.0001f; }
+        float push = min_dist - dist;
+        h->x += dx / dist * push;
+        h->z += dz / dist * push;
+    }
+}
+
 /* §25.3 synergy-decay helpers -- defined much further down this file (near arena_tick_synergy,
  * their natural home), forward-declared here same as hero_is_hittable/apply_damage's own
  * pattern elsewhere in this file, since both update_hero_motion and apply_cdr below need them
@@ -1195,7 +1230,7 @@ static void resolve_hero_obstacle_collision(ArenaHero *h) {
 static int arena_synergy_cdr_pct(const ArenaHero *h);
 static float arena_synergy_move_speed_pct(const ArenaHero *h);
 
-static void update_hero_motion(ArenaHero *h, float dt_sec) {
+static void update_hero_motion(ArenaHero *h, int self_index, float dt_sec) {
     /* rooted_ms (S170-46)/stunned_ms (S170-184): a queued move command is preserved (not
        cancelled) but doesn't advance while either is active -- matches how silence blocks
        casting without clearing the ability off cooldown. Stun is the stronger of the two
@@ -1244,7 +1279,10 @@ static void update_hero_motion(ArenaHero *h, float dt_sec) {
     /* Skipped while airborne (S170-206) -- "flies over trees etc," the founder's own original
        2026-07-24 direction on Paper Glide, predating this whole item pivot. Every other hero's
        movement still collides normally. */
-    if (h->donkey_airborne_ms <= 0) resolve_hero_obstacle_collision(h);
+    if (h->donkey_airborne_ms <= 0) {
+        resolve_hero_obstacle_collision(h);
+        resolve_hero_hero_collision(h, self_index);
+    }
 }
 
 /* arena_hero_base_armor: every hero-specific armor rule (S170-175:
@@ -6522,8 +6560,8 @@ void arena_update(unsigned int dt_ms) {
         }
     }
 
-    update_hero_motion(&arena_state.heroes[0], dt_sec);
-    update_hero_motion(&arena_state.heroes[1], dt_sec);
+    update_hero_motion(&arena_state.heroes[0], 0, dt_sec);
+    update_hero_motion(&arena_state.heroes[1], 1, dt_sec);
     arena_tick_creeps(dt_ms);
     arena_hero_attack_creeps(dt_ms);
     /* Node towers (2026-07-30) are team-mode only, same scope as lane creep waves just below --
@@ -6865,7 +6903,7 @@ void arena_update_teams(unsigned int dt_ms) {
     for (int i = 0; i < ARENA_HEROES_ARRAY_SIZE; i++) {
         ArenaHero *h = &arena_state.heroes[i];
         if (!h->active) continue;
-        update_hero_motion(h, dt_sec);
+        update_hero_motion(h, i, dt_sec);
     }
     arena_tick_creeps(dt_ms);
     arena_hero_attack_creeps(dt_ms);

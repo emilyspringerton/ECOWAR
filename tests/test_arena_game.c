@@ -5151,6 +5151,88 @@ static void test_donkey_glide_flies_over_obstacles(void) {
           "while airborne, the hero's real position moved past where a grounded collision push-out would have stopped it -- it flew over the obstacle instead");
 }
 
+/* Body blocking (S202-27, 2026-08-26). Founder real-time: "we need to add body blocking" ->
+ * "currently players can ghost through eachother". Same real, honest analog as the obstacle-
+ * collision tests just above -- a hero is now also a circle every OTHER hero pushes itself back
+ * out of, via resolve_hero_hero_collision (arena_game.c, static, exercised here only through
+ * the real top-level arena_update_teams tick, never called directly). */
+static void test_body_blocking_pushes_a_hero_back_out_of_another(void) {
+    arena_init_teams();
+    for (int i = 2; i < ARENA_MAX_HEROES; i++) arena_state.heroes[i].active = 0;
+    arena_state.heroes[ARENA_TEAM_SIZE].active = 1; /* re-activate the one enemy slot this test needs */
+    ArenaHero *mover = &arena_state.heroes[0];
+    ArenaHero *blocker = &arena_state.heroes[ARENA_TEAM_SIZE];
+    blocker->x = 1.0f; blocker->z = 0.0f; /* stationary, directly in mover's path */
+    mover->x = 0.0f; mover->z = 0.0f;
+    mover->target_x = 5.0f; mover->target_z = 0.0f;
+    mover->moving = 1;
+
+    /* Enough real ticks, at real move speed, to have walked well past the blocker if nothing
+       stopped it -- a real multi-tick simulation, not one big dt_ms step, so the collision
+       push-out has to hold up tick after tick, not just once. */
+    for (int i = 0; i < 200; i++) arena_update_teams(16);
+
+    float dx = mover->x - blocker->x, dz = mover->z - blocker->z;
+    float dist = sqrtf(dx * dx + dz * dz);
+    CHECK(dist >= ARENA_HERO_COLLISION_RADIUS * 2.0f - 0.01f,
+          "a hero moving toward a target beyond another hero is stopped at the real collision boundary, not walking through it");
+    CHECK(mover->x < blocker->x + 0.5f,
+          "the mover never actually crosses past the blocker's own position -- genuinely blocked, not just slowed");
+}
+
+static void test_body_blocking_applies_to_allies_too(void) {
+    arena_init_teams();
+    for (int i = 2; i < ARENA_MAX_HEROES; i++) arena_state.heroes[i].active = 0;
+    ArenaHero *mover = &arena_state.heroes[0];
+    ArenaHero *ally_blocker = &arena_state.heroes[1]; /* same team as mover */
+    ally_blocker->x = 1.0f; ally_blocker->z = 0.0f;
+    mover->x = 0.0f; mover->z = 0.0f;
+    mover->target_x = 5.0f; mover->target_z = 0.0f;
+    mover->moving = 1;
+
+    for (int i = 0; i < 200; i++) arena_update_teams(16);
+
+    float dx = mover->x - ally_blocker->x, dz = mover->z - ally_blocker->z;
+    float dist = sqrtf(dx * dx + dz * dz);
+    CHECK(dist >= ARENA_HERO_COLLISION_RADIUS * 2.0f - 0.01f,
+          "real MOBA body-blocking applies to allies too, not just enemies -- an ally standing in the way still blocks");
+}
+
+static void test_body_blocking_does_not_apply_to_dead_heroes(void) {
+    arena_init_teams();
+    for (int i = 2; i < ARENA_MAX_HEROES; i++) arena_state.heroes[i].active = 0;
+    arena_state.heroes[ARENA_TEAM_SIZE].active = 1; /* re-activate the one enemy slot this test needs */
+    ArenaHero *mover = &arena_state.heroes[0];
+    ArenaHero *corpse = &arena_state.heroes[ARENA_TEAM_SIZE];
+    corpse->x = 1.0f; corpse->z = 0.0f;
+    corpse->alive = 0; /* dead -- should not block */
+    mover->x = 0.0f; mover->z = 0.0f;
+    mover->target_x = 5.0f; mover->target_z = 0.0f;
+    mover->moving = 1;
+
+    arena_update_teams(2000); /* 2s, plenty to cross a dead hero's old position */
+
+    CHECK(mover->x > corpse->x + 0.5f, "a dead hero's old position doesn't body-block -- the mover walks straight through it");
+}
+
+static void test_body_blocking_skips_donkey_glide_same_as_obstacles(void) {
+    arena_init_teams();
+    for (int i = 2; i < ARENA_MAX_HEROES; i++) arena_state.heroes[i].active = 0;
+    arena_state.heroes[ARENA_TEAM_SIZE].active = 1; /* re-activate the one enemy slot this test needs */
+    ArenaHero *mover = &arena_state.heroes[0];
+    ArenaHero *blocker = &arena_state.heroes[ARENA_TEAM_SIZE];
+    blocker->x = 1.0f; blocker->z = 0.0f;
+    mover->x = 0.0f; mover->z = 0.0f;
+    mover->target_x = 2.0f; mover->target_z = 0.0f;
+    mover->moving = 1;
+    mover->donkey_airborne_ms = ARENA_DONKEY_GLIDE_DURATION_MS; /* flying -- same carve-out as obstacle collision */
+
+    arena_update_teams(60);
+
+    CHECK(mover->x > blocker->x - 0.5f,
+          "Paper Glide flies over other heroes too, same as it flies over terrain obstacles -- collision is skipped while airborne");
+}
+
 static void test_donkey_catalog_entry_costs_3200(void) {
     CHECK(ARENA_ITEMS[ARENA_DONKEY_ITEM_ID].cost == 3200, "Donkey costs the documented 3200 Flow");
     CHECK(ARENA_ITEMS[ARENA_DONKEY_ITEM_ID].slot == ARENA_ITEM_SLOT_BACK, "Donkey occupies the Back slot");
@@ -7264,6 +7346,10 @@ int main(void) {
     test_donkey_glide_respects_cooldown();
     test_donkey_glide_grants_high_speed();
     test_donkey_glide_flies_over_obstacles();
+    test_body_blocking_pushes_a_hero_back_out_of_another();
+    test_body_blocking_applies_to_allies_too();
+    test_body_blocking_does_not_apply_to_dead_heroes();
+    test_body_blocking_skips_donkey_glide_same_as_obstacles();
     test_donkey_catalog_entry_costs_3200();
     test_haste_trinket_catalog_entry();
     test_haste_trinket_reduces_ability_cooldown();
