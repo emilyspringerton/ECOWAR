@@ -3026,7 +3026,20 @@ int main(int argc, char *argv[]) {
                local flag, not a re-check of g_ground_target_pending_slot (which this same
                block clears), so the ordinary-click guard below can't be fooled into firing for
                this same click the instant the global goes back to 0. */
+            /* Real-time diagnostic (2026-08-26, founder: "when i click it should cast" ->
+               "it doesnt" -> "ensure there is a projectile drawn to the screen for me to
+               see"): stderr traces at every real decision point in this block -- whether a
+               left-click even lands here while aiming, whether screen_to_ground succeeds,
+               whether net_send_cast actually fires. Every prior investigation this session
+               (a direct headless repro of the exact same server-side call sequence) already
+               proved arena_toggle_w's own ARENA_HERO_ABRAHAM case works correctly once
+               invoked -- these traces are for the one remaining unverified link, the actual
+               client-side click path, not something to leave in permanently. */
             int ground_target_click_consumed = 0;
+            if (g_ground_target_pending_slot != 0 && e.type == SDL_MOUSEBUTTONDOWN && e.button.button == SDL_BUTTON_LEFT) {
+                fprintf(stderr, "[fireball-debug] left-click while aiming: observing=%d winner=%d my_owner=%d net_mode=%d\n",
+                        observing, arena_state.winner, my_owner, net_mode);
+            }
             if (!observing && g_ground_target_pending_slot != 0 && e.type == SDL_MOUSEBUTTONDOWN &&
                 e.button.button == SDL_BUTTON_LEFT && arena_state.winner == 0 &&
                 my_owner >= 0 && my_owner < ARENA_MAX_HEROES) {
@@ -3035,6 +3048,8 @@ int main(int argc, char *argv[]) {
                 float focus_x = arena_state.heroes[my_owner].x, focus_z = arena_state.heroes[my_owner].z;
                 if (screen_to_ground(e.button.x, e.button.y, win_w, win_h, 60.0f, focus_x, focus_z, &gx, &gz)) {
                     int slot = g_ground_target_pending_slot;
+                    fprintf(stderr, "[fireball-debug] screen_to_ground ok: gx=%.2f gz=%.2f slot=%d net_mode=%d -- sending cast now\n",
+                            gx, gz, slot, net_mode);
                     if (net_mode) {
                         net_send_cast(slot - 1, g_hover_target, 1, gx, gz);
                     } else {
@@ -3043,6 +3058,9 @@ int main(int argc, char *argv[]) {
                         if (slot == 1) { arena_toggle_w(my_owner); arena_log_ability("W"); }
                     }
                     apm_record_action(now);
+                } else {
+                    fprintf(stderr, "[fireball-debug] screen_to_ground FAILED at mx=%d my=%d focus=(%.2f,%.2f) -- no packet sent\n",
+                            e.button.x, e.button.y, focus_x, focus_z);
                 }
                 g_ground_target_pending_slot = 0;
             }
