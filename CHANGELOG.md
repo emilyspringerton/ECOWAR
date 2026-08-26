@@ -1,6 +1,7 @@
 # Changelog
 
 ## 2026-08-26
+- Autocurriculum RL training run complete (team_size=3, 503808/500000 timesteps): 35% win rate vs heuristic bot AI (worse than baseline, reported honestly). Weights exported (rl_policy_weights_team.h) but not wired into any live consumer. Apple #16125 (sess-20260825-1938-f6bd411e)
 - Bacon+Puck's W replaced with Shadow Step: click an enemy hero to blink behind them, reading their real server-tracked facing_rad (new ArenaHero field, first real facing concept, not just client-visual). Revived the ground-target reticle system for hero-click targeting instead of ground points. Real range/cooldown/mana, no-op on miss. Apple #16113, commit 14e37e1 (sess-20260825-1938-f6bd411e)
 - Abraham's W now freezes him in place for the windup instead of silently wasting the cooldown/mana when the movement-interrupt rule cancelled the cast because he was walking. Gary's own "movement interrupts cast" feel is untouched. Apple #16108, commit 7671b2a (sess-20260825-1938-f6bd411e)
 - Abraham's fireball now ignites enemies it touches (real burn DoT, reuses the existing on_hit_burn mechanic) and travels a bit faster (3.0 -> 4.0). Apple #16105, commit 43a286d (sess-20260825-1938-f6bd411e)
