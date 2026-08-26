@@ -794,11 +794,21 @@ typedef enum {
 #define ARENA_ABRAHAM_R_HEAL              20
 #define ARENA_ABRAHAM_R_COOLDOWN_MS       17000
 #define ARENA_ABRAHAM_FIREBALL_DAMAGE      14
-#define ARENA_ABRAHAM_FIREBALL_SPEED       3.0f    /* units/sec -- slower than ARENA_HERO_SPEED (4.0), a real dodgeable read, not a guaranteed poke */
+#define ARENA_ABRAHAM_FIREBALL_SPEED       4.0f    /* units/sec -- bumped from 3.0 (2026-08-26, founder: "make the fireball move just a bit faster") to match ARENA_HERO_SPEED exactly -- still a real dodgeable read against a stationary target, just no longer slower than a hero can walk */
 #define ARENA_ABRAHAM_FIREBALL_RADIUS      0.9f
 #define ARENA_ABRAHAM_FIREBALL_COOLDOWN_MS 9000
 #define ARENA_ABRAHAM_FIREBALL_WINDUP_MS   400     /* matches assets/anim/rotation_ease.gband's real baked duration (16 ticks @ 40Hz) exactly */
 #define ARENA_ABRAHAM_FIREBALL_MAX_RANGE   (ARENA_HALF_EXTENT * 4.0f) /* "no real range limit" -- comfortably longer than any real line of sight across the whole map (ARENA_HALF_EXTENT corners to corner) rather than a literal infinite/unbounded travel distance, which arena_spawn_projectile's own max_range field isn't designed to represent */
+/* Ignite (2026-08-26, founder: "make it so that the fireball ignites the enemies it touches
+   making them have burning too"): a real burn DoT on every hit, using the existing generic
+   on_hit_burn_ms/on_hit_burn_dps ArenaProjectile mechanic (Pizza's Q, Flute Debt's Q, Tyler's Q
+   all already apply burn the same way) -- the hit-resolution code that applies it already runs
+   once per enemy a piercing shot passes through, so this needed no new plumbing, only setting
+   the two fields on the fireball's own projectile at spawn. Same duration/DPS as Pizza's own Q
+   burn (a real, established "how strong is a burn tick" baseline in this catalog), not a new
+   number invented from nothing. */
+#define ARENA_ABRAHAM_FIREBALL_BURN_MS     3000
+#define ARENA_ABRAHAM_FIREBALL_BURN_DPS    5
 /* Abraham's ranged basic auto-attack (S202-34, founder: "make his auto attack ranged like
  * garys with a different color projectile"): reuses Gary's exact homing-auto-attack mechanic
  * (ArenaProjectile.homing_target, see that field's own doc comment) rather than inventing a

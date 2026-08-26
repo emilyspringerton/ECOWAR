@@ -157,6 +157,26 @@ static void test_piercing_shot_damages_multiple_enemies_in_one_pass(void) {
           "the second enemy further down the same path ALSO takes real damage from the same shot");
 }
 
+/* Ignite (2026-08-26, founder: "make it so that the fireball ignites the enemies it touches
+   making them have burning too"): the fireball's own on_hit_burn_ms/on_hit_burn_dps fields
+   (set in redgarden_host_abraham_fireball_cast, the same host function the real compiled
+   PARENA mod already calls into -- no bypass) should apply a real burn DoT on landing, same
+   generic mechanic Pizza/Flute Debt/Tyler's own Q abilities already use. */
+static void test_fireball_ignites_the_foe_it_hits(void) {
+    arena_init_with_heroes(ARENA_HERO_ABRAHAM, ARENA_HERO_UNICORN);
+    arena_bot_enabled = 0; /* isolate the fireball's own effect from internal bot combat noise */
+    ArenaHero *abe = &arena_state.heroes[0];
+    ArenaHero *foe = &arena_state.heroes[1];
+    foe->x = abe->x + 5.0f; foe->z = abe->z;
+    abe->mp = 999;
+
+    arena_toggle_w(0); /* auto-targets foe */
+    for (int t = 0; t < 300 && foe->burning_ms == 0; t++) arena_update(16);
+
+    CHECK(foe->burning_ms > 0, "the fireball applies a real burn DoT on landing");
+    CHECK(foe->burn_dps == ARENA_ABRAHAM_FIREBALL_BURN_DPS, "burn damage matches the real constant");
+}
+
 static void test_abraham_w_only_fires_for_abraham(void) {
     arena_init_with_heroes(ARENA_HERO_UNICORN, ARENA_HERO_ABRAHAM);
     ArenaHero *unicorn = &arena_state.heroes[0];
@@ -176,6 +196,7 @@ int main(void) {
     test_abraham_w_gated_by_mana();
     test_fireball_completion_spawns_a_real_piercing_shot();
     test_piercing_shot_damages_multiple_enemies_in_one_pass();
+    test_fireball_ignites_the_foe_it_hits();
     test_abraham_w_only_fires_for_abraham();
     printf("\n%s\n", failures == 0 ? "ALL PASS" : "SOME FAILED");
     return failures == 0 ? 0 : 1;

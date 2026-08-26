@@ -3497,7 +3497,16 @@ void redgarden_host_abraham_fireball_cast(int hero_index, int target_x, int targ
         h->x, h->z, far_x, far_z,
         ARENA_ABRAHAM_FIREBALL_SPEED, ARENA_ABRAHAM_FIREBALL_RADIUS, ARENA_ABRAHAM_FIREBALL_DAMAGE,
         ARENA_ABRAHAM_FIREBALL_MAX_RANGE);
-    if (shot) shot->pierce = 1;
+    if (shot) {
+        shot->pierce = 1;
+        /* Ignite (2026-08-26, founder: "make it so that the fireball ignites the enemies it
+           touches making them have burning too"): the generic per-hit resolution code (see its
+           own comment on p->on_hit_burn_ms, this exact function's own header comment above)
+           already runs once per enemy a piercing shot passes through -- setting these two
+           fields is the whole change, every enemy the shot touches gets ignited automatically. */
+        shot->on_hit_burn_ms = ARENA_ABRAHAM_FIREBALL_BURN_MS;
+        shot->on_hit_burn_dps = ARENA_ABRAHAM_FIREBALL_BURN_DPS;
+    }
 }
 
 /* arena_hero_tree_passive: see header declaration's own doc comment. */
