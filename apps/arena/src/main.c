@@ -765,6 +765,9 @@ static void net_poll_snapshots(uint32_t now_ms) {
                     dst->king_wealth_ms = (kbf & 0x04) ? 1 : 0;
                     dst->king_allseeing_display = (kbf & 0x08) ? 1 : 0;
                     dst->king_growth_stacks = chunk->heroes[j].king_growth_stacks;
+                    dst->duck_smoke_x = chunk->heroes[j].duck_smoke_x; /* S202-10 */
+                    dst->duck_smoke_z = chunk->heroes[j].duck_smoke_z;
+                    dst->duck_smoke_ms = chunk->heroes[j].duck_smoke_ms;
                     if (chunk->heroes[j].cast_flash_slot > 0) {
                         spawn_spell_flash(dst->x, dst->z, chunk->heroes[j].cast_flash_slot, dst->hero_id);
                         trigger_squish(i);
@@ -3928,6 +3931,30 @@ int main(int argc, char *argv[]) {
             glUniform4f_(loc_color, zr, zg, zb, 0.55f + 0.25f * pulse);
             draw_mesh(&ring_mesh);
         }
+        /* Duck's Smoke Bomb (S202-10): same real, radius-accurate ground-footprint
+           rendering as the zone-ability circles just above (disc + brighter boundary
+           ring, gently pulsing), drawn at duck_smoke_x/z with ARENA_DUCK_W_RADIUS --
+           but a flat smoke-gray rather than hero_flash_color, and noticeably more
+           opaque (this is meant to read as "you cannot see into this," not just a
+           cast-radius indicator). Every hero in the match sees this identically --
+           driven by synced server state (duck_smoke_ms, protocol.h), not a
+           local-only effect, same "the whole battlefield should read clearly"
+           convention as every other zone circle here. */
+        for (int i = 0; i < ARENA_MAX_HEROES; i++) {
+            ArenaHero *sh = &arena_state.heroes[i];
+            if (!sh->active || sh->duck_smoke_ms <= 0) continue;
+            float pulse = 0.7f + 0.3f * sinf((float)now * 0.004f);
+            Mat4 str = mat4_translate(sh->duck_smoke_x, 0.04f, sh->duck_smoke_z);
+            Mat4 ssc = mat4_scale(ARENA_DUCK_W_RADIUS, 1.0f, ARENA_DUCK_W_RADIUS);
+            Mat4 smodel = mat4_multiply(&str, &ssc);
+            Mat4 smvp = mat4_multiply(&vp, &smodel);
+            glUniformMatrix4fv_(loc_mvp, 1, GL_FALSE, smvp.m);
+            glUniformMatrix4fv_(loc_model, 1, GL_FALSE, smodel.m);
+            glUniform4f_(loc_color, 0.55f, 0.55f, 0.58f, 0.45f * pulse);
+            draw_mesh(&disc_mesh);
+            glUniform4f_(loc_color, 0.8f, 0.8f, 0.82f, 0.6f + 0.2f * pulse);
+            draw_mesh(&ring_mesh);
+        }
         /* Cast-radius preview (S170-200's own "click affordances that show cast radius" half):
            while YOUR OWN hero's R is a real zone ability and is actually castable right now
            (alive, not silenced/stunned, off cooldown, enough mana -- the exact gate arena_cast_r
@@ -3953,6 +3980,24 @@ int main(int argc, char *argv[]) {
                 glUniformMatrix4fv_(loc_mvp, 1, GL_FALSE, pmvp.m);
                 glUniformMatrix4fv_(loc_model, 1, GL_FALSE, pmodel.m);
                 glUniform4f_(loc_color, 0.9f, 0.9f, 0.95f, 0.35f);
+                draw_mesh(&ring_mesh);
+            }
+        }
+        /* Duck W cast-radius preview (S202-10): same reasoning as the R-zone preview
+           just above, for Smoke Bomb's own W slot -- Duck's R (Total Telekinesis) has
+           no zone of its own, so this doesn't collide with the block above. */
+        if (!observing) {
+            ArenaHero *me_smoke = &arena_state.heroes[my_owner];
+            if (me_smoke->hero_id == ARENA_HERO_DUCK && me_smoke->alive &&
+                me_smoke->silenced_ms <= 0 && me_smoke->stunned_ms <= 0 &&
+                me_smoke->w_cooldown_ms <= 0 && me_smoke->mp >= ARENA_MP_COST_W) {
+                Mat4 ptr = mat4_translate(me_smoke->x, 0.04f, me_smoke->z);
+                Mat4 psc = mat4_scale(ARENA_DUCK_W_RADIUS, 1.0f, ARENA_DUCK_W_RADIUS);
+                Mat4 pmodel = mat4_multiply(&ptr, &psc);
+                Mat4 pmvp = mat4_multiply(&vp, &pmodel);
+                glUniformMatrix4fv_(loc_mvp, 1, GL_FALSE, pmvp.m);
+                glUniformMatrix4fv_(loc_model, 1, GL_FALSE, pmodel.m);
+                glUniform4f_(loc_color, 0.8f, 0.8f, 0.82f, 0.35f);
                 draw_mesh(&ring_mesh);
             }
         }

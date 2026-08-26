@@ -8,6 +8,7 @@
 #include "tree_passive_mod_host.h"
 #include "build_template_mod_host.h"
 #include "item_curriculum_mod_host.h"
+#include "duck_smoke_bomb_mod_host.h"
 
 ArenaState arena_state;
 int arena_bot_enabled = 1;
@@ -1731,6 +1732,29 @@ static void apply_damage(ArenaHero *target, int amount) {
  * is the one shared lookup every kit cast and the team-mode melee loop
  * already goes through, so widening it here is what makes clones "just
  * fight like a real hero" rather than needing a parallel combat system. */
+/* hero_obscured_from (S202-10, Duck's Smoke Bomb): true if `target` is
+ * standing inside an active smoke cloud that `viewer` is NOT also standing
+ * inside -- the one concrete, honest "vision-blocking" mechanic this engine
+ * can actually support with no real vision/LOS system anywhere (see
+ * ARENA_DUCK_W_RADIUS's own doc comment). Symmetric per-cloud, not
+ * per-caster: two heroes both inside the same cloud can still see/target
+ * each other (real smoke works the same way -- it blocks the outside
+ * looking in, not everyone inside from each other). Iterates every active
+ * hero's own duck_smoke_ms rather than assuming a single Duck, so it stays
+ * correct if team mode ever puts two Ducks on the field. */
+static int hero_obscured_from(const ArenaHero *viewer, const ArenaHero *target) {
+    if (!viewer || !target) return 0;
+    for (int i = 0; i < ARENA_HEROES_ARRAY_SIZE; i++) {
+        const ArenaHero *caster = &arena_state.heroes[i];
+        if (!caster->active || caster->duck_smoke_ms <= 0) continue;
+        float tdx = target->x - caster->duck_smoke_x, tdz = target->z - caster->duck_smoke_z;
+        if (tdx * tdx + tdz * tdz > ARENA_DUCK_W_RADIUS * ARENA_DUCK_W_RADIUS) continue; /* target not in this cloud */
+        float vdx = viewer->x - caster->duck_smoke_x, vdz = viewer->z - caster->duck_smoke_z;
+        if (vdx * vdx + vdz * vdz > ARENA_DUCK_W_RADIUS * ARENA_DUCK_W_RADIUS) return 1; /* viewer outside, target inside */
+    }
+    return 0;
+}
+
 ArenaHero *arena_nearest_enemy(int owner) {
     if (owner < 0 || owner >= ARENA_HEROES_ARRAY_SIZE) return NULL;
     ArenaHero *self = &arena_state.heroes[owner];
@@ -1741,6 +1765,7 @@ ArenaHero *arena_nearest_enemy(int owner) {
         ArenaHero *cand = &arena_state.heroes[i];
         if (!cand->active || !cand->alive) continue;
         if (cand->team == self->team) continue;
+        if (hero_obscured_from(self, cand)) continue; /* Smoke Bomb: can't target into a cloud from outside it */
         float dx = cand->x - self->x, dz = cand->z - self->z;
         float dist = sqrtf(dx * dx + dz * dz);
         if (!best || dist < best_dist) { best = cand; best_dist = dist; }
@@ -3322,6 +3347,16 @@ void redgarden_host_tree_passive_strike(int hero_index, int obstacle_index) {
     if (h->hp > h->max_hp) h->hp = h->max_hp;
 }
 
+/* redgarden_host_duck_smoke_bomb_cast: see header declaration's own doc comment. */
+void redgarden_host_duck_smoke_bomb_cast(int hero_index) {
+    if (hero_index < 0 || hero_index >= ARENA_HEROES_ARRAY_SIZE) return;
+    ArenaHero *h = &arena_state.heroes[hero_index];
+    if (!h->active) return;
+    h->duck_smoke_ms = ARENA_DUCK_W_DURATION_MS;
+    h->duck_smoke_x = h->x;
+    h->duck_smoke_z = h->z;
+}
+
 /* arena_hero_tree_passive: see header declaration's own doc comment. */
 void arena_hero_tree_passive(unsigned int dt_ms) {
     (void)dt_ms; /* same "only spends the cooldown, doesn't tick it" idiom as arena_hero_attack_camp_minions */
@@ -4872,6 +4907,19 @@ void arena_toggle_w(int owner) {
         h->w_cooldown_ms = cast_cooldown(h, ARENA_DAGDA_W_COOLDOWN_MS);
         h->mp -= ARENA_MP_COST_W;
         break;
+    case ARENA_HERO_DUCK:
+        /* Smoke Bomb (S202-10): self-centered, always lands -- no
+           click-to-place targeting exists in this input model, same
+           reasoning Flamel/Dagda's own W already use. Routes through the
+           PARENA-compiled on_duck_smoke_bomb_cast (not
+           redgarden_host_duck_smoke_bomb_cast directly) -- the mod call IS
+           the trigger, per the founder's explicit "as a parena mod" /
+           "mod first dev." */
+        if (h->w_cooldown_ms > 0 || h->mp < ARENA_MP_COST_W) return;
+        on_duck_smoke_bomb_cast(owner);
+        h->w_cooldown_ms = cast_cooldown(h, ARENA_DUCK_W_COOLDOWN_MS);
+        h->mp -= ARENA_MP_COST_W;
+        break;
     case ARENA_HERO_COURIER:
         /* Between Eagle and Serpent: always lands, jumps to whichever
            of the ARENA_NODE_COUNT nodes is farthest right now. */
@@ -5607,6 +5655,16 @@ static void tick_hero_kit(ArenaHero *h, ArenaHero *foe, ArenaHero *ally, unsigne
     if (h->intangible_ms > 0) {
         h->intangible_ms -= (int)dt_ms;
         if (h->intangible_ms < 0) h->intangible_ms = 0;
+    }
+    /* Duck's Smoke Bomb (S202-10): decremented here, in the one shared
+     * per-hero tick both arena_update (1v1) and arena_update_teams (team
+     * mode) already call -- not duplicated into each top-level tick
+     * function separately, the exact mistake S202-23 found and fixed for
+     * Tree's passive (wired into team-mode's own tick only, silently never
+     * fired in 1v1 matches for a full session before being caught). */
+    if (h->duck_smoke_ms > 0) {
+        h->duck_smoke_ms -= (int)dt_ms;
+        if (h->duck_smoke_ms < 0) h->duck_smoke_ms = 0;
     }
     /* rooted_ms/survive_floor_ms (S170-46): generic status effects, any
        kit's ability can apply them, same reasoning as silence/intangible

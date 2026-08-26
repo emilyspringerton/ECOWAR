@@ -38,12 +38,14 @@ gcc -std=c99 -D_DEFAULT_SOURCE -O2 -Wall -Wextra -fPIC -shared \
   -include "${ROOT_DIR}/packages/simulation/tree_passive_mod_host.h" \
   -include "${ROOT_DIR}/packages/simulation/build_template_mod_host.h" \
   -include "${ROOT_DIR}/packages/simulation/item_curriculum_mod_host.h" \
+  -include "${ROOT_DIR}/packages/simulation/duck_smoke_bomb_mod_host.h" \
   "${ROOT_DIR}/apps/arena_training/src/headless.c" \
   "${ROOT_DIR}/packages/simulation/arena_game.c" \
   "${ROOT_DIR}/packages/simulation/bloodflower_mod.c" \
   "${ROOT_DIR}/packages/simulation/tree_passive_mod.c" \
   "${ROOT_DIR}/packages/simulation/build_template_mod.c" \
   "${ROOT_DIR}/packages/simulation/item_curriculum_mod.c" \
+  "${ROOT_DIR}/packages/simulation/duck_smoke_bomb_mod.c" \
   "${ROOT_DIR}/packages/common/mlp_infer.c" \
   -lm
 

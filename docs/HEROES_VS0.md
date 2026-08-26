@@ -61,6 +61,13 @@ real, current, shipped item stats live in `README.md`'s own item table, sourced 
   damage on impact.
 - **W — Government Clearance**: Passive — the Duck takes reduced damage from towers/objective
   structures ("technically authorized to be here"), and objectives take bonus damage from it.
+  *Not implemented in `apps/arena`'s 1v1/team code — this arena has no towers/objective
+  structures for it to apply to (see arena_game.h's own doc comment on the Duck kit). The W
+  slot in that code is instead a different, new ability, Smoke Bomb (S202-10, 2026-08-25): an
+  AoE cloud that blocks a hero standing inside it from being targeted by anyone casting from
+  outside. This doc entry is the real lore/original-design W and is left as-is, not
+  retconned — Smoke Bomb is arena-specific, not a canon reinterpretation of Government
+  Clearance.*
 - **E — Chosen One**: On landing the killing blow on a hero, briefly gain AD + MS ("of course it
   was me").
 - **R — Total Telekinesis**: Channel, then violently yank every nearby enemy unit into a cluster

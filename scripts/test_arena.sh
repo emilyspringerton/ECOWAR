@@ -19,12 +19,14 @@ gcc -std=c99 -O2 -Wall -Wextra -I"${ROOT_DIR}/packages" \
   -include "${ROOT_DIR}/packages/simulation/tree_passive_mod_host.h" \
   -include "${ROOT_DIR}/packages/simulation/build_template_mod_host.h" \
   -include "${ROOT_DIR}/packages/simulation/item_curriculum_mod_host.h" \
+  -include "${ROOT_DIR}/packages/simulation/duck_smoke_bomb_mod_host.h" \
   "${ROOT_DIR}/tests/test_arena_game.c" \
   "${ROOT_DIR}/packages/simulation/arena_game.c" \
   "${ROOT_DIR}/packages/simulation/bloodflower_mod.c" \
   "${ROOT_DIR}/packages/simulation/tree_passive_mod.c" \
   "${ROOT_DIR}/packages/simulation/build_template_mod.c" \
   "${ROOT_DIR}/packages/simulation/item_curriculum_mod.c" \
+  "${ROOT_DIR}/packages/simulation/duck_smoke_bomb_mod.c" \
   "${ROOT_DIR}/packages/common/mlp_infer.c" \
   -lm
 
@@ -41,6 +43,7 @@ gcc -std=c99 -O2 -Wall -Wextra -I"${ROOT_DIR}/packages" \
   -include "${ROOT_DIR}/packages/simulation/tree_passive_mod_host.h" \
   -include "${ROOT_DIR}/packages/simulation/build_template_mod_host.h" \
   -include "${ROOT_DIR}/packages/simulation/item_curriculum_mod_host.h" \
+  -include "${ROOT_DIR}/packages/simulation/duck_smoke_bomb_mod_host.h" \
   "${ROOT_DIR}/tests/test_arena_replay.c" \
   "${ROOT_DIR}/packages/simulation/arena_game.c" \
   "${ROOT_DIR}/packages/simulation/arena_replay.c" \
@@ -48,6 +51,7 @@ gcc -std=c99 -O2 -Wall -Wextra -I"${ROOT_DIR}/packages" \
   "${ROOT_DIR}/packages/simulation/tree_passive_mod.c" \
   "${ROOT_DIR}/packages/simulation/build_template_mod.c" \
   "${ROOT_DIR}/packages/simulation/item_curriculum_mod.c" \
+  "${ROOT_DIR}/packages/simulation/duck_smoke_bomb_mod.c" \
   "${ROOT_DIR}/packages/common/mlp_infer.c" \
   -lm
 
@@ -59,6 +63,7 @@ gcc -std=c99 -O2 -Wall -Wextra -I"${ROOT_DIR}/packages" \
   -include "${ROOT_DIR}/packages/simulation/tree_passive_mod_host.h" \
   -include "${ROOT_DIR}/packages/simulation/build_template_mod_host.h" \
   -include "${ROOT_DIR}/packages/simulation/item_curriculum_mod_host.h" \
+  -include "${ROOT_DIR}/packages/simulation/duck_smoke_bomb_mod_host.h" \
   "${ROOT_DIR}/tests/test_arena_ai_bridge.c" \
   "${ROOT_DIR}/packages/simulation/arena_game.c" \
   "${ROOT_DIR}/packages/simulation/arena_ai_bridge.c" \
@@ -66,6 +71,7 @@ gcc -std=c99 -O2 -Wall -Wextra -I"${ROOT_DIR}/packages" \
   "${ROOT_DIR}/packages/simulation/tree_passive_mod.c" \
   "${ROOT_DIR}/packages/simulation/build_template_mod.c" \
   "${ROOT_DIR}/packages/simulation/item_curriculum_mod.c" \
+  "${ROOT_DIR}/packages/simulation/duck_smoke_bomb_mod.c" \
   "${ROOT_DIR}/packages/common/mlp_infer.c" \
   -lm
 
@@ -86,6 +92,7 @@ gcc -std=c99 -D_DEFAULT_SOURCE -O2 -Wall -Wextra -I"${ROOT_DIR}/packages" \
   -include "${ROOT_DIR}/packages/simulation/tree_passive_mod_host.h" \
   -include "${ROOT_DIR}/packages/simulation/build_template_mod_host.h" \
   -include "${ROOT_DIR}/packages/simulation/item_curriculum_mod_host.h" \
+  -include "${ROOT_DIR}/packages/simulation/duck_smoke_bomb_mod_host.h" \
   "${ROOT_DIR}/tests/test_arena_training.c" \
   "${ROOT_DIR}/apps/arena_training/src/headless.c" \
   "${ROOT_DIR}/packages/simulation/arena_game.c" \
@@ -93,6 +100,7 @@ gcc -std=c99 -D_DEFAULT_SOURCE -O2 -Wall -Wextra -I"${ROOT_DIR}/packages" \
   "${ROOT_DIR}/packages/simulation/tree_passive_mod.c" \
   "${ROOT_DIR}/packages/simulation/build_template_mod.c" \
   "${ROOT_DIR}/packages/simulation/item_curriculum_mod.c" \
+  "${ROOT_DIR}/packages/simulation/duck_smoke_bomb_mod.c" \
   "${ROOT_DIR}/packages/common/mlp_infer.c" \
   -lm
 
@@ -113,12 +121,14 @@ gcc -std=c99 -O2 -Wall -Wextra -I"${ROOT_DIR}/packages" \
   -include "${ROOT_DIR}/packages/simulation/tree_passive_mod_host.h" \
   -include "${ROOT_DIR}/packages/simulation/build_template_mod_host.h" \
   -include "${ROOT_DIR}/packages/simulation/item_curriculum_mod_host.h" \
+  -include "${ROOT_DIR}/packages/simulation/duck_smoke_bomb_mod_host.h" \
   "${ROOT_DIR}/tests/test_bloodflower.c" \
   "${ROOT_DIR}/packages/simulation/arena_game.c" \
   "${ROOT_DIR}/packages/simulation/bloodflower_mod.c" \
   "${ROOT_DIR}/packages/simulation/tree_passive_mod.c" \
   "${ROOT_DIR}/packages/simulation/build_template_mod.c" \
   "${ROOT_DIR}/packages/simulation/item_curriculum_mod.c" \
+  "${ROOT_DIR}/packages/simulation/duck_smoke_bomb_mod.c" \
   "${ROOT_DIR}/packages/common/mlp_infer.c" \
   -lm
 
@@ -130,12 +140,14 @@ gcc -std=c99 -O2 -Wall -Wextra -I"${ROOT_DIR}/packages" \
   -include "${ROOT_DIR}/packages/simulation/tree_passive_mod_host.h" \
   -include "${ROOT_DIR}/packages/simulation/build_template_mod_host.h" \
   -include "${ROOT_DIR}/packages/simulation/item_curriculum_mod_host.h" \
+  -include "${ROOT_DIR}/packages/simulation/duck_smoke_bomb_mod_host.h" \
   "${ROOT_DIR}/tests/test_damage_log.c" \
   "${ROOT_DIR}/packages/simulation/arena_game.c" \
   "${ROOT_DIR}/packages/simulation/bloodflower_mod.c" \
   "${ROOT_DIR}/packages/simulation/tree_passive_mod.c" \
   "${ROOT_DIR}/packages/simulation/build_template_mod.c" \
   "${ROOT_DIR}/packages/simulation/item_curriculum_mod.c" \
+  "${ROOT_DIR}/packages/simulation/duck_smoke_bomb_mod.c" \
   "${ROOT_DIR}/packages/common/mlp_infer.c" \
   -lm
 
@@ -147,12 +159,14 @@ gcc -std=c99 -O2 -Wall -Wextra -I"${ROOT_DIR}/packages" \
   -include "${ROOT_DIR}/packages/simulation/tree_passive_mod_host.h" \
   -include "${ROOT_DIR}/packages/simulation/build_template_mod_host.h" \
   -include "${ROOT_DIR}/packages/simulation/item_curriculum_mod_host.h" \
+  -include "${ROOT_DIR}/packages/simulation/duck_smoke_bomb_mod_host.h" \
   "${ROOT_DIR}/tests/test_tree_passive.c" \
   "${ROOT_DIR}/packages/simulation/arena_game.c" \
   "${ROOT_DIR}/packages/simulation/bloodflower_mod.c" \
   "${ROOT_DIR}/packages/simulation/tree_passive_mod.c" \
   "${ROOT_DIR}/packages/simulation/build_template_mod.c" \
   "${ROOT_DIR}/packages/simulation/item_curriculum_mod.c" \
+  "${ROOT_DIR}/packages/simulation/duck_smoke_bomb_mod.c" \
   "${ROOT_DIR}/packages/common/mlp_infer.c" \
   -lm
 
@@ -165,12 +179,14 @@ gcc -std=c99 -O2 -Wall -Wextra -I"${ROOT_DIR}/packages" \
   -include "${ROOT_DIR}/packages/simulation/tree_passive_mod_host.h" \
   -include "${ROOT_DIR}/packages/simulation/build_template_mod_host.h" \
   -include "${ROOT_DIR}/packages/simulation/item_curriculum_mod_host.h" \
+  -include "${ROOT_DIR}/packages/simulation/duck_smoke_bomb_mod_host.h" \
   "${ROOT_DIR}/tests/test_build_templates.c" \
   "${ROOT_DIR}/packages/simulation/arena_game.c" \
   "${ROOT_DIR}/packages/simulation/bloodflower_mod.c" \
   "${ROOT_DIR}/packages/simulation/tree_passive_mod.c" \
   "${ROOT_DIR}/packages/simulation/build_template_mod.c" \
   "${ROOT_DIR}/packages/simulation/item_curriculum_mod.c" \
+  "${ROOT_DIR}/packages/simulation/duck_smoke_bomb_mod.c" \
   "${ROOT_DIR}/packages/common/mlp_infer.c" \
   -lm
 
@@ -183,12 +199,34 @@ gcc -std=c99 -O2 -Wall -Wextra -I"${ROOT_DIR}/packages" \
   -include "${ROOT_DIR}/packages/simulation/tree_passive_mod_host.h" \
   -include "${ROOT_DIR}/packages/simulation/build_template_mod_host.h" \
   -include "${ROOT_DIR}/packages/simulation/item_curriculum_mod_host.h" \
+  -include "${ROOT_DIR}/packages/simulation/duck_smoke_bomb_mod_host.h" \
   "${ROOT_DIR}/tests/test_item_curriculum.c" \
   "${ROOT_DIR}/packages/simulation/arena_game.c" \
   "${ROOT_DIR}/packages/simulation/bloodflower_mod.c" \
   "${ROOT_DIR}/packages/simulation/tree_passive_mod.c" \
   "${ROOT_DIR}/packages/simulation/build_template_mod.c" \
   "${ROOT_DIR}/packages/simulation/item_curriculum_mod.c" \
+  "${ROOT_DIR}/packages/simulation/duck_smoke_bomb_mod.c" \
+  "${ROOT_DIR}/packages/common/mlp_infer.c" \
+  -lm
+
+# Duck Smoke Bomb (S202-10, 2026-08-25): real live round-trip through the compiled PARENA mod
+# (stdlib/redgarden/duck_smoke_bomb_mod.prn), same headless-testable reasoning as Bloodflower/
+# Tree passive/Build templates/Item curriculum above.
+gcc -std=c99 -O2 -Wall -Wextra -I"${ROOT_DIR}/packages" \
+  -o "${BUILD_DIR}/test_duck_smoke_bomb" \
+  -include "${ROOT_DIR}/packages/simulation/bloodflower_mod_host.h" \
+  -include "${ROOT_DIR}/packages/simulation/tree_passive_mod_host.h" \
+  -include "${ROOT_DIR}/packages/simulation/build_template_mod_host.h" \
+  -include "${ROOT_DIR}/packages/simulation/item_curriculum_mod_host.h" \
+  -include "${ROOT_DIR}/packages/simulation/duck_smoke_bomb_mod_host.h" \
+  "${ROOT_DIR}/tests/test_duck_smoke_bomb.c" \
+  "${ROOT_DIR}/packages/simulation/arena_game.c" \
+  "${ROOT_DIR}/packages/simulation/bloodflower_mod.c" \
+  "${ROOT_DIR}/packages/simulation/tree_passive_mod.c" \
+  "${ROOT_DIR}/packages/simulation/build_template_mod.c" \
+  "${ROOT_DIR}/packages/simulation/item_curriculum_mod.c" \
+  "${ROOT_DIR}/packages/simulation/duck_smoke_bomb_mod.c" \
   "${ROOT_DIR}/packages/common/mlp_infer.c" \
   -lm
 
@@ -197,6 +235,7 @@ gcc -std=c99 -O2 -Wall -Wextra -I"${ROOT_DIR}/packages" \
 "${BUILD_DIR}/test_tree_passive"
 "${BUILD_DIR}/test_build_templates"
 "${BUILD_DIR}/test_item_curriculum"
+"${BUILD_DIR}/test_duck_smoke_bomb"
 "${BUILD_DIR}/test_damage_log"
 "${BUILD_DIR}/test_mat4"
 "${BUILD_DIR}/test_arena_replay"

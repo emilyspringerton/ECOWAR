@@ -334,11 +334,13 @@ typedef enum {
 #define ARENA_UNICORN_R_COOLDOWN_MS 15000
 #define ARENA_UNICORN_R_DURATION_MS 3000 /* Full Disclosure: armor doubled */
 
-/* The Duck — second hero kit (S170-31). Q/R only: W (Government Clearance)
- * needs towers/objective structures that don't exist in this 1v1 arena, and
- * E (Chosen One) triggers on a killing blow, but arena's win condition ends
- * the match on that same kill -- the buff window and match-end coincide, so
- * it would have zero observable effect here. Both skipped, not faked. */
+/* The Duck — second hero kit (S170-31). Originally Q/R only: W (Government
+ * Clearance, needs towers/objective structures that don't exist in this 1v1
+ * arena) and E (Chosen One, triggers on a killing blow that also ends the
+ * match, so the buff window would have zero observable effect) were both
+ * skipped, not faked. W's own empty slot is filled for real by S202-10
+ * below -- a different, new ability, not a late implementation of
+ * Government Clearance (that gap is still real and still unaddressed). */
 #define ARENA_DUCK_Q_PULL_DIST      5.0f /* Telekinetic Yank: how far the foe gets pulled */
 #define ARENA_DUCK_Q_DAMAGE         10
 #define ARENA_DUCK_Q_RANGE          6.0f /* max distance the yank can reach */
@@ -347,6 +349,24 @@ typedef enum {
 #define ARENA_DUCK_R_DAMAGE         20
 #define ARENA_DUCK_R_RANGE          9.0f
 #define ARENA_DUCK_R_COOLDOWN_MS    18000
+
+/* Duck W -- Smoke Bomb (S202-10). Founder real-time: "ok do fog of war as an
+ * ability" -> "add to the duck" -> "there is no natural fog of war just duck
+ * smoke bomb" -> "server authorittive" -> "as a parena mod" -> "mod first
+ * dev." This engine has no vision/fog-of-war/line-of-sight system anywhere
+ * (the King All-Seeing buff's own doc comment already names that as a real,
+ * out-of-scope gap) -- Smoke Bomb doesn't invent one. It implements the one
+ * concrete, honest analog that's actually buildable on top of this engine's
+ * real targeting primitive (arena_nearest_enemy): a hero standing inside an
+ * active cloud can't be selected as a target by anyone casting from OUTSIDE
+ * that same cloud (hero_obscured_from, arena_game.c). Always-lands AoE,
+ * self-centered at cast time (no click-to-place targeting exists in this
+ * input model, same "here is the only honest landing spot" reasoning
+ * arena's other zone abilities already use), same instant-cast-on-cooldown
+ * shape as Flamel/Dagda's own W. */
+#define ARENA_DUCK_W_RADIUS         4.5f  /* Smoke Bomb: cloud radius */
+#define ARENA_DUCK_W_DURATION_MS    6000  /* Smoke Bomb: how long the cloud lingers */
+#define ARENA_DUCK_W_COOLDOWN_MS    16000
 
 /* The Ghost — third hero kit (S170-32). First kit needing real status-effect
  * state (silence, intangibility) rather than just cooldowns/toggles. R's
@@ -1864,6 +1884,11 @@ typedef struct {
     int r_zone_tick_ms; /* Ghost's Recital: counts up to 1000ms, then ticks one DPS-worth of damage --
                           * a fixed-interval tick rather than fractional-per-tick accumulation, so it
                           * behaves correctly at any real frame rate, not just in a single big test step. */
+    int duck_smoke_ms;   /* Duck W, Smoke Bomb (S202-10): remaining cloud duration, >0 while active.
+                           * Hero-specific rather than reusing r_zone_x/r_active_ms above -- this is a
+                           * W ability, and Duck's own R (Total Telekinesis) is an instant pull with no
+                           * zone of its own, so there's no real R-zone slot to share here. */
+    float duck_smoke_x, duck_smoke_z; /* Duck W: fixed cloud position at cast time */
     /* zone_radius (NORTHSTAR §24 Milestone 2, 2026-07-31): every zone-ability hero before the
      * Cart has exactly ONE zone-shaped ability, so its radius was always just a fixed constant
      * read directly in tick_hero_kit -- no need to store it on the hero. The Cart's W and R are
@@ -2999,6 +3024,21 @@ void arena_tick_obstacles(unsigned int dt_ms);
  * "server is authoritative for state, client owns purely cosmetic reaction" split fountains'
  * heal-flash already uses. */
 void redgarden_host_tree_passive_strike(int hero_index, int obstacle_index);
+
+/* ---------------- Duck W: Smoke Bomb (S202-10, 2026-08-25) ----------------
+ * Same "PARENA mod is the trigger, host C does the real work" split as
+ * Bloodflower/Tree-passive/build-templates/item-curriculum above -- see
+ * ARENA_DUCK_W_RADIUS's own doc comment (arena_game.h) for the full
+ * founder-quote chain and design reasoning, and hero_obscured_from
+ * (arena_game.c, static) for the actual targeting-denial mechanic. */
+
+/* redgarden_host_duck_smoke_bomb_cast: the real host-side implementation the
+ * PARENA-compiled on_duck_smoke_bomb_cast calls back into (see
+ * duck_smoke_bomb_mod_host.h). Sets duck_smoke_ms/x/z on the casting hero --
+ * the actual world-state mutation; on_duck_smoke_bomb_cast itself has no
+ * logic beyond this one call, matching vterm_mod.prn's own "one function, no
+ * dispatch table" minimalism every other real mod in this repo already uses. */
+void redgarden_host_duck_smoke_bomb_cast(int hero_index);
 
 /* arena_hero_attack_kings: mirrors arena_hero_attack_camp_minions -- each active, alive hero
  * without a closer enemy hero or camp minion already occupying its attack this tick instead

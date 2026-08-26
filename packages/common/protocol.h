@@ -371,6 +371,16 @@ typedef struct {
     // (Bloodroar visibly stacking), not just an on/off state.
     uint8_t king_buff_flags;
     uint8_t king_growth_stacks;
+    // duck_smoke_x/duck_smoke_z/duck_smoke_ms (S202-10, Duck's Smoke Bomb): same
+    // "every zone-ability hero's ground effect needs to be on the wire or a
+    // networked client can't render it" reasoning r_zone_x/r_zone_z/r_active_ms's
+    // own doc comment above already established -- this is a W-slot zone, not an
+    // R-slot one (Duck's own R, Total Telekinesis, is an instant pull with no
+    // zone), so it gets its own fields rather than overloading r_zone_*. Synced
+    // for every hero, not just the local player's own, same "the whole
+    // battlefield should read clearly" convention as every other field here.
+    float duck_smoke_x, duck_smoke_z;
+    uint16_t duck_smoke_ms;
 } ArenaHeroSnapshot;
 
 // ARENA_SNAPSHOT_MAX_HEROES must match packages/simulation/arena_game.h's

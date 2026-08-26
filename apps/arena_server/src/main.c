@@ -538,6 +538,9 @@ static void fill_hero_snapshot(ArenaHeroSnapshot *hs, const ArenaHero *h) {
     if (h->king_wealth_ms > 0) hs->king_buff_flags |= 0x04;
     if (h->team >= 0 && h->team < 2 && arena_state.king_allseeing_team_ms[h->team] > 0) hs->king_buff_flags |= 0x08;
     hs->king_growth_stacks = (uint8_t)(h->king_growth_stacks > 0 ? h->king_growth_stacks : 0);
+    hs->duck_smoke_x = h->duck_smoke_x; /* S202-10 */
+    hs->duck_smoke_z = h->duck_smoke_z;
+    hs->duck_smoke_ms = (uint16_t)(h->duck_smoke_ms > 0 ? h->duck_smoke_ms : 0);
 }
 
 static void server_broadcast(void) {
