@@ -1407,10 +1407,19 @@ typedef struct {
      * own doc comment already established -- no existing item's initializer row needs touching. */
     int bonus_true_dmg;
     int bonus_lifesteal_pct;
+    /* bonus_attack_range_pct (S202-34, Kite String trinket, founder: "add an item that
+     * increases auto attack range by 4% 3333 flow 'Kite String' trinket"): a %-increase to
+     * basic-auto-attack range specifically (arena_hero_attack_range()), not ability ranges --
+     * the founder's own ask names "auto attack range" specifically, same narrow scope
+     * bonus_cdr_pct's own Haste Trinket precedent holds itself to (ability cooldowns AND
+     * auto-attack cooldown, but nothing wider than what was actually asked for). Zero-fills for
+     * every existing item via the same positional-initializer convention every other trailing
+     * stat on this struct already relies on. */
+    int bonus_attack_range_pct;
 } ArenaItemDef;
 
 extern const ArenaItemDef ARENA_ITEMS[];
-#define ARENA_ITEM_COUNT 33 /* 2026-08-11: was 27 -- +6 for the "expand the play space" first pass (Gae Bolg, Masamune, Muramasa, Balance Ring, Empress Hairpin, Ninja Tekko), pushing the shop UI's own SHOP_PAGE_COUNT (apps/arena/src/main.c, ceil(ARENA_ITEM_COUNT/SHOP_ITEMS_PER_PAGE)) from 3 to a real 4th page -- founder: "add page 4 to the shop." No client-side paging code needed for this: SHOP_PAGE_COUNT is entirely derived from this one constant already. */
+#define ARENA_ITEM_COUNT 34 /* 2026-08-26: was 33 -- +1 for Kite String (S202-34, founder: "add an item that increases auto attack range by 4% 3333 flow 'Kite String' trinket"), appended at the end of the catalog, same "indices stay stable" convention every prior append already used. 2026-08-11: was 27 -- +6 for the "expand the play space" first pass (Gae Bolg, Masamune, Muramasa, Balance Ring, Empress Hairpin, Ninja Tekko), pushing the shop UI's own SHOP_PAGE_COUNT (apps/arena/src/main.c, ceil(ARENA_ITEM_COUNT/SHOP_ITEMS_PER_PAGE)) from 3 to a real 4th page -- founder: "add page 4 to the shop." No client-side paging code needed for this: SHOP_PAGE_COUNT is entirely derived from this one constant already. */
 /* ARENA_BALANCE_RING_ITEM_ID (2026-08-11, "expand the play space" pass): a named index, same
  * reasoning ARENA_BLINK_DAGGER_ITEM_ID's own doc comment gives -- Balance Ring's comeback armor
  * bonus scales LIVE with the wearer's own missing-HP fraction (computed inside
@@ -2295,6 +2304,10 @@ typedef struct {
      * bonus_true_dmg/bonus_lifesteal_pct for the full design. */
     int item_bonus_true_dmg;
     int item_bonus_lifesteal_pct;
+    /* item_bonus_attack_range_pct (S202-34, Kite String trinket, founder: "add an item that
+     * increases auto attack range by 4% 3333 flow"): same recomputed-cache shape as the fields
+     * above, consumed by arena_hero_attack_range(). */
+    int item_bonus_attack_range_pct;
 } ArenaHero;
 
 typedef struct {

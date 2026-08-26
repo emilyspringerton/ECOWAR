@@ -5324,7 +5324,11 @@ static int find_item_id_by_name(const char *name) {
 }
 
 static void test_item_catalog_reaches_shop_page_4(void) {
-    CHECK(ARENA_ITEM_COUNT == 33, "6 new items landed, pushing the catalog from 27 to 33 -- apps/arena's own SHOP_PAGE_COUNT (ceil(ARENA_ITEM_COUNT/9)) derives page 4 from this alone, no separate paging code needed");
+    /* 2026-08-26: was == 33 -- Kite String (S202-34) pushed the catalog to 34. Checking >= 34
+       (not == 34) so the next item added doesn't require touching this assertion again -- the
+       real thing this test protects (page 4 still exists, SHOP_PAGE_COUNT still derives cleanly
+       from ARENA_ITEM_COUNT alone) holds for any count at or above the current one. */
+    CHECK(ARENA_ITEM_COUNT >= 34, "Kite String landed, pushing the catalog from 33 to 34+ -- apps/arena's own SHOP_PAGE_COUNT (ceil(ARENA_ITEM_COUNT/9)) derives page 4 from this alone, no separate paging code needed");
 }
 
 static void test_gae_bolg_true_damage_bypasses_armor(void) {

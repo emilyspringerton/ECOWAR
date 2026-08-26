@@ -244,6 +244,12 @@ const ArenaItemDef ARENA_ITEMS[ARENA_ITEM_COUNT] = {
        a real alternative build path, not strictly better/worse. */
     /* Cost tripled 2026-08-13 (see Gae Bolg's comment above): 500 -> 1500. */
     { "Ninja Tekko",        ARENA_ITEM_SLOT_HANDS,   ARENA_ITEM_TIER_GENERIC, 1500, 20,   0,   0,  0, 1.0f, 0,  0, 0 },
+    /* Kite String (S202-34, founder: "add an item that increases auto attack range by 4% 3333
+       flow 'Kite String' trinket") -- no flat stats at all, same "this IS the item, not a bonus
+       on top of one" shape Haste Trinket's own cdr_pct-only entry already established. Shares
+       the Trinket slot with Haste Trinket/Empress Hairpin/Balance Ring -- a real build choice
+       between them, not a strict upgrade. */
+    { "Kite String",        ARENA_ITEM_SLOT_TRINKET, ARENA_ITEM_TIER_GENERIC, 3333,  0,   0,   0,  0, 0.0f, 0,  0, 0, 4 },
 };
 
 /* Item curriculum: see arena_game.h's own "Item curriculum" section doc comment for the full
@@ -817,10 +823,15 @@ void arena_init(void) {
  * instead of the same three-way ternary getting hand-copied a sixth time (it was already
  * duplicated identically at 5 call sites before Abraham's own basic attack needed the same
  * check) -- any hero added to this list only has to be added here, not at every call site. */
-static float arena_hero_attack_range(ArenaHeroID hero_id) {
-    if (hero_id == ARENA_HERO_GARY) return ARENA_GARY_ATTACK_RANGE;
-    if (hero_id == ARENA_HERO_ABRAHAM) return ARENA_ABRAHAM_ATTACK_RANGE;
-    return ARENA_ATTACK_RANGE;
+/* Takes the whole hero (not just hero_id) as of S202-34's own Kite String trinket
+ * (item_bonus_attack_range_pct) -- same "%-bonus stat read off the whole hero struct" shape
+ * apply_cdr's own item_bonus_cdr_pct handling already established, applied on top of whichever
+ * base range the hero's own kit gives them. */
+static float arena_hero_attack_range(const ArenaHero *h) {
+    float base = ARENA_ATTACK_RANGE;
+    if (h->hero_id == ARENA_HERO_GARY) base = ARENA_GARY_ATTACK_RANGE;
+    else if (h->hero_id == ARENA_HERO_ABRAHAM) base = ARENA_ABRAHAM_ATTACK_RANGE;
+    return base * (1.0f + (float)h->item_bonus_attack_range_pct / 100.0f);
 }
 
 void arena_set_move_target(int owner, float x, float z) {
@@ -849,7 +860,7 @@ void arena_set_move_target(int owner, float x, float z) {
        both still exceed this radius and correctly cancel. */
     if (mh->attack_windup_ms_remaining > 0) {
         float wdx = x - mh->x, wdz = z - mh->z;
-        float range = arena_hero_attack_range(mh->hero_id);
+        float range = arena_hero_attack_range(mh);
         if (wdx * wdx + wdz * wdz > range * range) {
             mh->attack_windup_ms_remaining = 0;
         }
@@ -914,7 +925,7 @@ void arena_set_attack_move_target(int owner, float x, float z) {
     ArenaHero *mh = &arena_state.heroes[owner];
     if (mh->attack_windup_ms_remaining > 0) {
         float wdx = x - mh->x, wdz = z - mh->z;
-        float range = arena_hero_attack_range(mh->hero_id);
+        float range = arena_hero_attack_range(mh);
         if (wdx * wdx + wdz * wdz > range * range) {
             mh->attack_windup_ms_remaining = 0;
         }
@@ -961,7 +972,7 @@ void arena_set_patrol_target(int owner, float x, float z) {
     ArenaHero *mh = &arena_state.heroes[owner];
     if (mh->attack_windup_ms_remaining > 0) {
         float wdx = x - mh->x, wdz = z - mh->z;
-        float range = arena_hero_attack_range(mh->hero_id);
+        float range = arena_hero_attack_range(mh);
         if (wdx * wdx + wdz * wdz > range * range) {
             mh->attack_windup_ms_remaining = 0;
         }
@@ -992,7 +1003,7 @@ static int hero_is_hittable(const ArenaHero *h);
  * rather than a third copy of the loop. */
 static int arena_find_opportunistic_target(int i) {
     ArenaHero *h = &arena_state.heroes[i];
-    float range = arena_hero_attack_range(h->hero_id);
+    float range = arena_hero_attack_range(h);
     int nearest = -1;
     float nearest_dist_sq = range * range;
     for (int j = 0; j < ARENA_MAX_HEROES; j++) {
@@ -2112,7 +2123,7 @@ void arena_shop_position(int team, float *x, float *z) {
  * comment. */
 void arena_recompute_item_stats(ArenaHero *h) {
     int bonus_hp = 0, bonus_mp = 0, bonus_armor = 0, bonus_ad = 0, bonus_cdr = 0;
-    int bonus_true_dmg = 0, bonus_lifesteal = 0;
+    int bonus_true_dmg = 0, bonus_lifesteal = 0, bonus_range_pct = 0;
     float bonus_speed = 0.0f;
     for (int s = 0; s < ARENA_ITEM_SLOT_COUNT; s++) {
         int item_id = h->equipped_item[s];
@@ -2126,6 +2137,7 @@ void arena_recompute_item_stats(ArenaHero *h) {
         bonus_cdr += def->bonus_cdr_pct; /* S170-207 */
         bonus_true_dmg += def->bonus_true_dmg; /* 2026-08-11 */
         bonus_lifesteal += def->bonus_lifesteal_pct; /* 2026-08-11 */
+        bonus_range_pct += def->bonus_attack_range_pct; /* S202-34, Kite String */
     }
 
     int old_max_hp = h->max_hp;
@@ -2146,6 +2158,7 @@ void arena_recompute_item_stats(ArenaHero *h) {
     h->item_bonus_cdr_pct = bonus_cdr; /* S170-207 */
     h->item_bonus_true_dmg = bonus_true_dmg; /* 2026-08-11 */
     h->item_bonus_lifesteal_pct = bonus_lifesteal; /* 2026-08-11 */
+    h->item_bonus_attack_range_pct = bonus_range_pct; /* S202-34, Kite String */
 }
 
 /* arena_shop_buy (S170-175): see header declaration's doc comment. */
@@ -2441,7 +2454,7 @@ void arena_tick_attack_targets(unsigned int dt_ms) {
             continue;
         }
 
-        float range = arena_hero_attack_range(h->hero_id);
+        float range = arena_hero_attack_range(h);
         float dx = foe->x - h->x, dz = foe->z - h->z;
         float dist = sqrtf(dx * dx + dz * dz);
 
@@ -2476,9 +2489,17 @@ void arena_tick_attack_targets(unsigned int dt_ms) {
            arena_tick_attack_windups (called after this function) fires the
            actual homing shot once it completes, same S170-204 shape the
            flat melee loop now uses. */
-        if (h->hero_id == ARENA_HERO_GARY) {
+        /* Real, live bug found and fixed 2026-08-26 (founder: "also his auto attack is broken"
+           -> "abraham"): S202-34 excluded Abraham from the old flat melee loop everywhere
+           (arena_hero_attack_creeps/lane_creeps/towers/kings/camp_minions, the team-mode melee
+           loop -- every one of those already has its own "same as Gary" comment), but this,
+           the actual windup-START trigger for the NEW ranged path, stayed hardcoded to
+           `ARENA_HERO_GARY` alone -- Abraham fell into neither loop and simply never began an
+           auto-attack windup at all, ever. */
+        if (h->hero_id == ARENA_HERO_GARY || h->hero_id == ARENA_HERO_ABRAHAM) {
             if (h->attack_cooldown_ms <= 0 && h->stunned_ms <= 0 && h->attack_windup_ms_remaining <= 0) { /* S170-184/S170-204 */
-                h->attack_windup_ms_remaining = ARENA_GARY_ATTACK_WINDUP_MS;
+                h->attack_windup_ms_remaining = (h->hero_id == ARENA_HERO_GARY)
+                    ? ARENA_GARY_ATTACK_WINDUP_MS : ARENA_ABRAHAM_ATTACK_WINDUP_MS;
             }
         }
     }
@@ -6454,10 +6475,22 @@ void bot_cast_kit_if_ready(ArenaHero *bot, ArenaHero *foe) {
         }
         break;
     case ARENA_HERO_ABRAHAM:
-        /* Toggle W on early for the channeled Q damage, poke with Q
-           whenever in range and off cooldown, cleanse+heal with R when hurt
-           or carrying a debuff. */
-        if (!bot->w_active) {
+        /* Real bug found and fixed 2026-08-26 (founder, live: "theres some issue with fireball
+           its not casting" -> "also his auto attack is broken" -> "abraham"): this comment
+           and the branch below both described Abraham's OLD kit ("channeled Q damage... toggle
+           W") -- stale leftovers from before the S202-34 W rework (961d500) landed. A Line of
+           Fire is a one-shot GROUND-TARGETED cast now, not a toggle: calling arena_toggle_w
+           unconditionally here (like the old code did) never sets arena_state.has_ground_target
+           first, so the new W code's own real guard (`if
+           (!arena_state.has_ground_target[owner]) return;`) silently no-ops it every time --
+           bot-controlled Abrahams have never actually cast a fireball since the rework landed.
+           Fixed to set a real ground target (the current foe's position) before casting, same
+           "aim at the current foe" heuristic every other ground-targeted bot cast in this
+           switch already uses. Poke with Q whenever in range and off cooldown, cleanse+heal
+           with R when hurt or carrying a debuff, unchanged from before. */
+        if (bot->w_cooldown_ms <= 0 && bot->mp >= ARENA_MP_COST_W && foe && hero_is_hittable(foe) &&
+            dist <= ARENA_ABRAHAM_FIREBALL_MAX_RANGE) {
+            arena_set_ground_target(bot->owner, 1, foe->x, foe->z);
             arena_toggle_w(bot->owner);
         } else if (bot->q_cooldown_ms <= 0 && dist <= ARENA_ABRAHAM_Q_RANGE) {
             arena_cast_q(bot->owner);
