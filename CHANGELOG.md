@@ -2,7 +2,7 @@
 
 ## 2026-08-26
 
-- Duck W -- Smoke Bomb shipped (S202-10, real AoE target-denial: hero_obscured_from blocks arena_nearest_enemy from outside an active cloud). PARENA mod (on_duck_smoke_bomb_cast), wire-synced, client-rendered, 13 new tests. Found + flagged (not fixed) a pre-existing test_arena_replay segfault, confirmed via git-stash bisect to predate this change. Apple #16044. (sess-20260825-1938-f6bd411e)
+- Duck W -- Smoke Bomb shipped (S202-10, real AoE target-denial: hero_obscured_from blocks arena_nearest_enemy from outside an active cloud). PARENA mod (on_duck_smoke_bomb_cast), wire-synced, client-rendered, 13 new tests. Live-verified fully green in real CI (run 32913376214, commit 7d55fe0). Correction: a test_arena_replay segfault seen locally during this work turned out to be specific to this session's own sandboxed environment, not a real CI/production bug -- real CI's headless test step (which runs it) passed clean; an earlier note here overstated it as a pre-existing CI gap. Apple #16044. (sess-20260825-1938-f6bd411e)
 
 
 ## 2026-08-25
