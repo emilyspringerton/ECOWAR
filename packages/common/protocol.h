@@ -119,9 +119,24 @@ typedef struct {
 // existing nearest-ally targeting when nothing's hovered -- the "macro"
 // itself is client-side (only WHICH target rides the packet), matching the
 // real WoW mouseover-macro pattern of "cast on unit=mouseover, or default."
+//
+// has_ground_target/target_x/target_z (Abraham's Fireball, S202-34):
+// generic support for a ground-targeted (skillshot) ability, not
+// Abraham-specific -- has_ground_target is 0 for every existing
+// unit-targeted/self-targeted cast (hover_target alone still covers those,
+// unchanged), 1 when the client is in ground-targeting mode (green
+// reticle, founder: "the targeter is green when you are ready to cast")
+// and the player has clicked a world point. The server is the sole judge
+// of whether a given hero/slot combination is actually a ground-targeted
+// ability -- a client setting this for a non-ground-targeted slot is
+// simply ignored server-side, same trust boundary every other command
+// payload already holds itself to.
 typedef struct {
     uint8_t slot;
     int8_t hover_target;
+    uint8_t has_ground_target;
+    float target_x;
+    float target_z;
 } ArenaCastCmd;
 
 // PACKET_ARENA_PICK payload: which hero (ArenaHeroID) the sending client

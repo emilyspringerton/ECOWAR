@@ -811,6 +811,18 @@ void arena_init(void) {
     arena_init_with_heroes(ARENA_HERO_UNICORN, ARENA_HERO_DUCK);
 }
 
+/* arena_hero_attack_range (S202-34): which basic-auto-attack range applies to `hero_id` --
+ * ranged/homing heroes (Gary, and now Abraham) get their own real ranged constant, every other
+ * hero falls through to the flat melee ARENA_ATTACK_RANGE. Pulled out into a real function
+ * instead of the same three-way ternary getting hand-copied a sixth time (it was already
+ * duplicated identically at 5 call sites before Abraham's own basic attack needed the same
+ * check) -- any hero added to this list only has to be added here, not at every call site. */
+static float arena_hero_attack_range(ArenaHeroID hero_id) {
+    if (hero_id == ARENA_HERO_GARY) return ARENA_GARY_ATTACK_RANGE;
+    if (hero_id == ARENA_HERO_ABRAHAM) return ARENA_ABRAHAM_ATTACK_RANGE;
+    return ARENA_ATTACK_RANGE;
+}
+
 void arena_set_move_target(int owner, float x, float z) {
     /* 2026-07-30, Tyler clone-control rework: widened from ARENA_MAX_HEROES to
        ARENA_HEROES_ARRAY_SIZE so a puppet clone slot can receive its own independent move
@@ -837,7 +849,7 @@ void arena_set_move_target(int owner, float x, float z) {
        both still exceed this radius and correctly cancel. */
     if (mh->attack_windup_ms_remaining > 0) {
         float wdx = x - mh->x, wdz = z - mh->z;
-        float range = (mh->hero_id == ARENA_HERO_GARY) ? ARENA_GARY_ATTACK_RANGE : ARENA_ATTACK_RANGE;
+        float range = arena_hero_attack_range(mh->hero_id);
         if (wdx * wdx + wdz * wdz > range * range) {
             mh->attack_windup_ms_remaining = 0;
         }
@@ -902,7 +914,7 @@ void arena_set_attack_move_target(int owner, float x, float z) {
     ArenaHero *mh = &arena_state.heroes[owner];
     if (mh->attack_windup_ms_remaining > 0) {
         float wdx = x - mh->x, wdz = z - mh->z;
-        float range = (mh->hero_id == ARENA_HERO_GARY) ? ARENA_GARY_ATTACK_RANGE : ARENA_ATTACK_RANGE;
+        float range = arena_hero_attack_range(mh->hero_id);
         if (wdx * wdx + wdz * wdz > range * range) {
             mh->attack_windup_ms_remaining = 0;
         }
@@ -949,7 +961,7 @@ void arena_set_patrol_target(int owner, float x, float z) {
     ArenaHero *mh = &arena_state.heroes[owner];
     if (mh->attack_windup_ms_remaining > 0) {
         float wdx = x - mh->x, wdz = z - mh->z;
-        float range = (mh->hero_id == ARENA_HERO_GARY) ? ARENA_GARY_ATTACK_RANGE : ARENA_ATTACK_RANGE;
+        float range = arena_hero_attack_range(mh->hero_id);
         if (wdx * wdx + wdz * wdz > range * range) {
             mh->attack_windup_ms_remaining = 0;
         }
@@ -980,7 +992,7 @@ static int hero_is_hittable(const ArenaHero *h);
  * rather than a third copy of the loop. */
 static int arena_find_opportunistic_target(int i) {
     ArenaHero *h = &arena_state.heroes[i];
-    float range = (h->hero_id == ARENA_HERO_GARY) ? ARENA_GARY_ATTACK_RANGE : ARENA_ATTACK_RANGE;
+    float range = arena_hero_attack_range(h->hero_id);
     int nearest = -1;
     float nearest_dist_sq = range * range;
     for (int j = 0; j < ARENA_MAX_HEROES; j++) {
@@ -1839,6 +1851,14 @@ void arena_set_hover_target(int owner, int target) {
     arena_state.hover_target[owner] = target;
 }
 
+/* arena_set_ground_target (S202-34): see header doc comment. */
+void arena_set_ground_target(int owner, int has_target, float x, float z) {
+    if (owner < 0 || owner >= ARENA_MAX_HEROES) return;
+    arena_state.has_ground_target[owner] = has_target;
+    arena_state.ground_target_x[owner] = x;
+    arena_state.ground_target_z[owner] = z;
+}
+
 /* arena_hover_ally_or_nearest (S170-143): see header doc comment. */
 ArenaHero *arena_hover_ally_or_nearest(int owner) {
     if (owner < 0 || owner >= ARENA_MAX_HEROES) return arena_nearest_ally(owner);
@@ -2421,7 +2441,7 @@ void arena_tick_attack_targets(unsigned int dt_ms) {
             continue;
         }
 
-        float range = (h->hero_id == ARENA_HERO_GARY) ? ARENA_GARY_ATTACK_RANGE : ARENA_ATTACK_RANGE;
+        float range = arena_hero_attack_range(h->hero_id);
         float dx = foe->x - h->x, dz = foe->z - h->z;
         float dist = sqrtf(dx * dx + dz * dz);
 
@@ -2491,21 +2511,32 @@ static void arena_tick_attack_windups(unsigned int dt_ms) {
         if (h->attack_windup_ms_remaining > 0) continue;
         h->attack_windup_ms_remaining = 0;
 
-        if (h->hero_id == ARENA_HERO_GARY) {
+        if (h->hero_id == ARENA_HERO_GARY || h->hero_id == ARENA_HERO_ABRAHAM) {
+            /* S202-34: Abraham's basic auto-attack is now ranged/homing too, same mechanic
+               Gary's own established (ArenaProjectile.homing_target) -- own named constants
+               (currently aliased to Gary's own values, see arena_game.h) rather than hardcoding
+               Gary's macros for both, so either hero's numbers can diverge later without
+               touching this shared branch again. hero_id passed through as h->hero_id (not a
+               hardcoded ARENA_HERO_GARY) so the client's existing per-hero_id color convention
+               picks the right shot color for whichever of the two actually fired. */
             int target = h->attack_target;
+            float atk_range = (h->hero_id == ARENA_HERO_GARY) ? ARENA_GARY_ATTACK_RANGE : ARENA_ABRAHAM_ATTACK_RANGE;
+            float atk_speed = (h->hero_id == ARENA_HERO_GARY) ? ARENA_GARY_ATTACK_SPEED : ARENA_ABRAHAM_ATTACK_SPEED;
+            int atk_damage = (h->hero_id == ARENA_HERO_GARY) ? ARENA_GARY_ATTACK_DAMAGE : ARENA_ABRAHAM_ATTACK_DAMAGE;
+            int atk_cooldown_ms = (h->hero_id == ARENA_HERO_GARY) ? ARENA_GARY_ATTACK_COOLDOWN_MS : ARENA_ABRAHAM_ATTACK_COOLDOWN_MS;
             if (target >= 0 && target < ARENA_MAX_HEROES) {
                 ArenaHero *foe = &arena_state.heroes[target];
                 if (hero_is_hittable(foe)) {
                     float dx = foe->x - h->x, dz = foe->z - h->z;
-                    if (sqrtf(dx * dx + dz * dz) <= ARENA_GARY_ATTACK_RANGE) {
-                        ArenaProjectile *shot = arena_spawn_projectile(i, h->team, ARENA_HERO_GARY,
-                            h->x, h->z, foe->x, foe->z, ARENA_GARY_ATTACK_SPEED, 0.6f,
-                            ARENA_GARY_ATTACK_DAMAGE + arena_hero_bonus_ad(h), ARENA_GARY_ATTACK_RANGE * 3.0f); /* S170-190 */
+                    if (sqrtf(dx * dx + dz * dz) <= atk_range) {
+                        ArenaProjectile *shot = arena_spawn_projectile(i, h->team, h->hero_id,
+                            h->x, h->z, foe->x, foe->z, atk_speed, 0.6f,
+                            atk_damage + arena_hero_bonus_ad(h), atk_range * 3.0f); /* S170-190 */
                         if (shot) shot->homing_target = target;
                     }
                 }
             }
-            h->attack_cooldown_ms = apply_cdr(h, ARENA_GARY_ATTACK_COOLDOWN_MS); /* S170-207 */
+            h->attack_cooldown_ms = apply_cdr(h, atk_cooldown_ms); /* S170-207 */
         } else {
             ArenaHero *foe = arena_nearest_enemy(i);
             if (foe && hero_is_hittable(foe)) {
@@ -2572,6 +2603,8 @@ ArenaProjectile *arena_spawn_projectile(int owner, int team, ArenaHeroID hero_id
     p->on_hit_burn_ms = 0;
     p->on_hit_burn_dps = 0;
     p->homing_target = -1; /* S170-163: a stale homing lock from a previous shot recycled into this slot must never leak onto a fresh skill-shot */
+    p->pierce = 0; /* S202-34: a stale pierce flag from a previous shot (Abraham's Fireball) must never leak onto a fresh single-hit shot recycled into this slot */
+    p->pierced_mask = 0;
     return p;
 }
 
@@ -2635,6 +2668,11 @@ void arena_tick_projectiles(unsigned int dt_ms) {
             ArenaHero *foe = &arena_state.heroes[h];
             if (!foe->active || foe->team == p->team) continue;
             if (!hero_is_hittable(foe)) continue;
+            /* S202-34: a piercing shot (Abraham's Fireball) skips anyone it's
+               already damaged, so a slow shot that's still geometrically
+               overlapping a foe it just hit doesn't re-tick them every
+               subsequent frame while they're both still in range. */
+            if (p->pierce && (p->pierced_mask & (1u << h))) continue;
 
             float t = 0.0f;
             if (seg_len_sq > 0.0001f) {
@@ -2660,6 +2698,15 @@ void arena_tick_projectiles(unsigned int dt_ms) {
             if (p->on_hit_burn_ms > 0) {
                 foe->burning_ms = p->on_hit_burn_ms;
                 foe->burn_dps = p->on_hit_burn_dps;
+            }
+            if (p->pierce) {
+                /* Keeps travelling -- mark this foe hit and check the
+                   remaining heroes this same tick instead of stopping at
+                   the first one, so a shot passing through a cluster of
+                   enemies in one tick damages all of them, not just
+                   whichever happened to be checked first. */
+                p->pierced_mask |= (1u << h);
+                continue;
             }
             p->active = 0;
             break;
@@ -2854,7 +2901,7 @@ void arena_hero_attack_creeps(unsigned int dt_ms) {
            scoped gap: Gary can't auto-attack node-guardian creeps at all until a
            future pass extends the homing system to creep targets too --
            flagged, not faked. */
-        if (h->hero_id == ARENA_HERO_GARY) continue;
+        if (h->hero_id == ARENA_HERO_GARY || h->hero_id == ARENA_HERO_ABRAHAM) continue; /* S202-34: Abraham's basic attack is homing now too */
 
         ArenaHero *foe = arena_nearest_enemy(i);
         if (foe && hero_is_hittable(foe)) {
@@ -2933,7 +2980,7 @@ void arena_hero_attack_towers(unsigned int dt_ms) {
         ArenaHero *h = &arena_state.heroes[i];
         if (!h->active || !h->alive || h->attack_cooldown_ms > 0 || h->stunned_ms > 0) continue;
         if (h->mnm_burrow_ms > 0) continue;
-        if (h->hero_id == ARENA_HERO_GARY) continue; /* same homing-only-basic-attack exclusion as arena_hero_attack_creeps */
+        if (h->hero_id == ARENA_HERO_GARY || h->hero_id == ARENA_HERO_ABRAHAM) continue; /* same homing-only-basic-attack exclusion as arena_hero_attack_creeps (S202-34: Abraham joined Gary here) */
 
         ArenaHero *foe = arena_nearest_enemy(i);
         if (foe && hero_is_hittable(foe)) {
@@ -3142,7 +3189,7 @@ void arena_hero_attack_lane_creeps(unsigned int dt_ms) {
         if (h->mnm_burrow_ms > 0) continue; /* S170-208: burrowed, not present to swing at anything */
         /* S170-163: same exclusion as arena_hero_attack_creeps above -- see
            that function's own comment. */
-        if (h->hero_id == ARENA_HERO_GARY) continue;
+        if (h->hero_id == ARENA_HERO_GARY || h->hero_id == ARENA_HERO_ABRAHAM) continue; /* S202-34: Abraham's basic attack is homing now too */
 
         ArenaHero *foe = arena_nearest_enemy(i);
         if (foe && hero_is_hittable(foe)) {
@@ -3331,7 +3378,7 @@ void arena_hero_attack_camp_minions(unsigned int dt_ms) {
         ArenaHero *h = &arena_state.heroes[i];
         if (!h->active || !h->alive || h->attack_cooldown_ms > 0 || h->stunned_ms > 0) continue;
         if (h->mnm_burrow_ms > 0) continue;
-        if (h->hero_id == ARENA_HERO_GARY) continue; /* same homing-only-basic-attack exclusion as arena_hero_attack_creeps/lane_creeps */
+        if (h->hero_id == ARENA_HERO_GARY || h->hero_id == ARENA_HERO_ABRAHAM) continue; /* same homing-only-basic-attack exclusion as arena_hero_attack_creeps/lane_creeps (S202-34: Abraham joined Gary here) */
 
         ArenaHero *foe = arena_nearest_enemy(i);
         if (foe && hero_is_hittable(foe)) {
@@ -3393,6 +3440,35 @@ void redgarden_host_duck_smoke_bomb_cast(int hero_index) {
     h->duck_smoke_ms = ARENA_DUCK_W_DURATION_MS;
     h->duck_smoke_x = h->x;
     h->duck_smoke_z = h->z;
+}
+
+/* redgarden_host_abraham_fireball_cast: see header declaration's own doc comment. Called from
+ * tick_hero_kit's ARENA_HERO_ABRAHAM completion branch (the windup already finished, cooldown/
+ * mana already spent at cast start) -- the real work here is exactly one thing, spawn the real
+ * piercing shot in the direction of the click point, "no real range limit" (founder), so
+ * ARENA_ABRAHAM_FIREBALL_MAX_RANGE is a generous map-spanning distance, not the actual clicked
+ * point's own distance -- the shot travels the FULL max_range along that direction regardless of
+ * where the player actually clicked, matching "just have it go whatever direction is the click"
+ * literally (direction only, not a bounded point-to-point shot the way Gary's homing attack is). */
+void redgarden_host_abraham_fireball_cast(int hero_index, int target_x, int target_z) {
+    if (hero_index < 0 || hero_index >= ARENA_MAX_HEROES) return;
+    ArenaHero *h = &arena_state.heroes[hero_index];
+    if (!h->active || !h->alive) return;
+
+    float dx = (float)target_x - h->x, dz = (float)target_z - h->z;
+    float dist = sqrtf(dx * dx + dz * dz);
+    if (dist < 0.0001f) { dx = 1.0f; dz = 0.0f; dist = 1.0f; } /* degenerate same-position click: pick an arbitrary direction rather than a NaN velocity */
+    /* arena_spawn_projectile takes a target POINT, not a direction -- extend the click
+       direction out to the real max range so the shot travels the full distance regardless of
+       how far the player actually clicked (see doc comment above). */
+    float far_x = h->x + (dx / dist) * ARENA_ABRAHAM_FIREBALL_MAX_RANGE;
+    float far_z = h->z + (dz / dist) * ARENA_ABRAHAM_FIREBALL_MAX_RANGE;
+
+    ArenaProjectile *shot = arena_spawn_projectile(hero_index, h->team, ARENA_HERO_ABRAHAM,
+        h->x, h->z, far_x, far_z,
+        ARENA_ABRAHAM_FIREBALL_SPEED, ARENA_ABRAHAM_FIREBALL_RADIUS, ARENA_ABRAHAM_FIREBALL_DAMAGE,
+        ARENA_ABRAHAM_FIREBALL_MAX_RANGE);
+    if (shot) shot->pierce = 1;
 }
 
 /* arena_hero_tree_passive: see header declaration's own doc comment. */
@@ -3555,7 +3631,7 @@ void arena_hero_attack_kings(unsigned int dt_ms) {
         ArenaHero *h = &arena_state.heroes[i];
         if (!h->active || !h->alive || h->attack_cooldown_ms > 0 || h->stunned_ms > 0) continue;
         if (h->mnm_burrow_ms > 0) continue;
-        if (h->hero_id == ARENA_HERO_GARY) continue;
+        if (h->hero_id == ARENA_HERO_GARY || h->hero_id == ARENA_HERO_ABRAHAM) continue; /* S202-34: Abraham's basic attack is homing now too */
 
         ArenaHero *foe = arena_nearest_enemy(i);
         if (foe && hero_is_hittable(foe)) {
@@ -4201,14 +4277,18 @@ static int bacon_puck_cast_r(ArenaHero *bp, ArenaHero *foe) {
     return 1;
 }
 
-/* abraham_cast_q: The Sacred Magic -- a real ranged magic bolt, stronger while W (channeling
- * the book) is toggled on. Returns 1 if it landed. */
+/* abraham_cast_q: The Sacred Magic -- a real ranged magic bolt. Used to be
+ * stronger while W (channeling the book) was toggled on; W's own toggle is
+ * gone as of S202-34 (replaced by A Line of Fire, see that ability's own
+ * doc comment on ARENA_ABRAHAM_FIREBALL_DAMAGE), so Q now always deals the
+ * old "channeling" damage value -- a deliberate net-buff rather than
+ * silently leaving Q worse off with no way to ever reach its old ceiling.
+ * Returns 1 if it landed. */
 static int abraham_cast_q(ArenaHero *abraham, ArenaHero *foe) {
     if (!hero_is_hittable(foe)) return 0;
     float dx = foe->x - abraham->x, dz = foe->z - abraham->z;
     if (sqrtf(dx * dx + dz * dz) > ARENA_ABRAHAM_Q_RANGE) return 0;
-    int dmg = abraham->w_active ? ARENA_ABRAHAM_Q_DAMAGE_CHANNELING : ARENA_ABRAHAM_Q_DAMAGE;
-    apply_damage(foe, apply_armor(dmg, arena_hero_armor(foe)));
+    apply_damage(foe, apply_armor(ARENA_ABRAHAM_Q_DAMAGE, arena_hero_armor(foe)));
     return 1;
 }
 
@@ -5008,12 +5088,28 @@ void arena_toggle_w(int owner) {
         if (!h->w_active && h->mp <= 0) return; /* S170-181: activating no longer charges a flat cost, just requires some mana to sustain -- see ARENA_MP_DRAIN_W_PER_SEC; toggling off is always free */
         h->w_active = !h->w_active;
         break;
-    case ARENA_HERO_ABRAHAM:
-        /* The Book, Unattested: free toggle, no cooldown -- abraham_cast_q()
-           reads w_active directly for Q's boosted damage while channeling. */
-        if (!h->w_active && h->mp <= 0) return; /* S170-181: activating no longer charges a flat cost, just requires some mana to sustain -- see ARENA_MP_DRAIN_W_PER_SEC; toggling off is always free */
-        h->w_active = !h->w_active;
+    case ARENA_HERO_ABRAHAM: {
+        /* A Line of Fire (S202-34): begins a cast, doesn't fire anything itself -- same
+           windup/completion split as Gary's Aimed Shot just above, except ground-targeted
+           instead of unit-targeted. Requires a real ground-target point on this exact cast
+           packet (arena_state.has_ground_target, set by arena_set_ground_target right before
+           dispatch) -- no point means the client hasn't actually clicked a target yet (still
+           in the green-reticle aiming state, or W got pressed with no target at all), so this
+           is a no-op, same "real commitment" convention as Gary's own no-target no-op above. */
+        if (h->w_cooldown_ms > 0 || h->mp < ARENA_MP_COST_W) return;
+        if (!arena_state.has_ground_target[owner]) return;
+        h->casting_slot = 2;
+        h->cast_time_remaining_ms = ARENA_ABRAHAM_FIREBALL_WINDUP_MS;
+        h->cast_total_ms = ARENA_ABRAHAM_FIREBALL_WINDUP_MS;
+        h->cast_anchor_x = h->x;
+        h->cast_anchor_z = h->z;
+        h->cast_target = -1;
+        h->cast_target_x = arena_state.ground_target_x[owner];
+        h->cast_target_z = arena_state.ground_target_z[owner];
+        h->w_cooldown_ms = cast_cooldown(h, ARENA_ABRAHAM_FIREBALL_COOLDOWN_MS);
+        h->mp -= ARENA_MP_COST_W;
         break;
+    }
     case ARENA_HERO_ADA:
         /* The frame's own plating: free toggle, no cooldown --
            arena_hero_armor() reads w_active directly for the bonus. */
@@ -5667,6 +5763,7 @@ static void tick_hero_kit(ArenaHero *h, ArenaHero *foe, ArenaHero *ally, unsigne
                 if (h->cast_time_remaining_ms <= 0) {
                     int finished_slot = h->casting_slot;
                     int target_idx = h->cast_target;
+                    float finished_target_x = h->cast_target_x, finished_target_z = h->cast_target_z;
                     h->casting_slot = 0;
                     h->cast_time_remaining_ms = 0;
                     h->cast_total_ms = 0;
@@ -5685,6 +5782,19 @@ static void tick_hero_kit(ArenaHero *h, ArenaHero *foe, ArenaHero *ally, unsigne
                                 h->cast_flash_slot = 2; /* the shot actually fires now, not at cast start */
                             }
                         }
+                    } else if (h->hero_id == ARENA_HERO_ABRAHAM && finished_slot == 2) {
+                        /* A Line of Fire (S202-34): the windup itself never re-validates
+                           anything (a ground point can't "dodge" the way a unit target can,
+                           so there's nothing to re-check here the way Gary's branch above
+                           re-checks range/hittability) -- it always fires on completion.
+                           Routes through the PARENA-compiled on_abraham_fireball_cast (not
+                           redgarden_host_abraham_fireball_cast directly), same "the mod call
+                           IS the trigger" convention duck_smoke_bomb_mod's own W case already
+                           established. Target coords rounded to int -- see
+                           abraham_fireball_mod.prn's own doc comment on why (VS0 has no F32
+                           mod-parameter support yet). */
+                        on_abraham_fireball_cast(h->owner, (int)finished_target_x, (int)finished_target_z);
+                        h->cast_flash_slot = 2; /* the fireball actually fires now, not at cast start */
                     }
                 }
             }
@@ -6942,7 +7052,7 @@ void arena_update_teams(unsigned int dt_ms) {
            decrement above still applies to him uniformly (same field,
            same idiom), just the damage-dealing half of this loop skips
            him. */
-        if (h->hero_id == ARENA_HERO_GARY) continue;
+        if (h->hero_id == ARENA_HERO_GARY || h->hero_id == ARENA_HERO_ABRAHAM) continue; /* S202-34: Abraham's basic attack is homing now too */
         if (h->stunned_ms > 0) continue; /* S170-184 */
         if (h->attack_windup_ms_remaining > 0) continue; /* already mid-windup -- arena_tick_attack_windups below owns it from here */
         if (h->mnm_burrow_ms > 0) continue; /* S170-208: literally not on the battlefield surface while burrowed */

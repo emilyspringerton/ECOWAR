@@ -837,6 +837,9 @@ static void server_handle_packet(struct sockaddr_in *sender, char *buffer, int s
            cast function decides whether it actually cares (only Doc
            Wheel's Q does today, via arena_hover_ally_or_nearest). */
         arena_set_hover_target(client_id, cmd->hover_target);
+        /* S202-34: same "record right before dispatch, individual cast function decides
+           whether it cares" shape as hover_target just above -- only Abraham's W does today. */
+        arena_set_ground_target(client_id, cmd->has_ground_target, cmd->target_x, cmd->target_z);
         if (cmd->slot == 0) arena_cast_q(client_id);
         else if (cmd->slot == 1) arena_toggle_w(client_id);
         else if (cmd->slot == 2) arena_cast_r(client_id);

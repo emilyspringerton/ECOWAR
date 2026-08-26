@@ -100,7 +100,7 @@ static void test_serialize_includes_hero_tags(void) {
     arena_serialize_state(0, 0, buf, sizeof(buf));
 
     CHECK(strstr(buf, "self hero:gary tags:ranged has_homing_attack") != NULL,
-          "Gary's own tags (ranged, the one hero with a homing basic attack) appear in the self section");
+          "Gary's own tags (ranged, a homing basic attack) appear in the self section");
     CHECK(strstr(buf, "foe hero:frog tags:melee has_stealth") != NULL,
           "Frog's tags (melee, has R vanish stealth) appear in the foe section");
 }
@@ -108,7 +108,7 @@ static void test_serialize_includes_hero_tags(void) {
 static void test_hero_tags_string_covers_a_few_real_kits(void) {
     char buf[96];
     arena_hero_tags_string(ARENA_HERO_GARY, buf, sizeof(buf));
-    CHECK(strcmp(buf, "ranged has_homing_attack") == 0, "Gary: ranged + the one homing-attack tag in the roster");
+    CHECK(strcmp(buf, "ranged has_homing_attack") == 0, "Gary: ranged + a homing-attack tag (S202-34: Abraham also carries this now)");
 
     arena_hero_tags_string(ARENA_HERO_MNM, buf, sizeof(buf));
     CHECK(strcmp(buf, "melee has_stealth") == 0, "MnM: melee (Q explicitly \"melee root+damage\" per docs/HEROES_VS0.md) + has_stealth (S170-208: W Burrow grants untargetability)");

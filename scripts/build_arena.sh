@@ -36,6 +36,7 @@ gcc -std=c99 -D_DEFAULT_SOURCE -O2 -Wall -Wextra -I"${ROOT_DIR}/packages" \
   -include "${ROOT_DIR}/packages/simulation/build_template_mod_host.h" \
   -include "${ROOT_DIR}/packages/simulation/item_curriculum_mod_host.h" \
   -include "${ROOT_DIR}/packages/simulation/duck_smoke_bomb_mod_host.h" \
+  -include "${ROOT_DIR}/packages/simulation/abraham_fireball_mod_host.h" \
   -o "${BUILD_DIR}/red_garden_arena" \
   "${ROOT_DIR}/apps/arena/src/main.c" \
   "${ROOT_DIR}/packages/simulation/arena_game.c" \
@@ -46,6 +47,7 @@ gcc -std=c99 -D_DEFAULT_SOURCE -O2 -Wall -Wextra -I"${ROOT_DIR}/packages" \
   "${ROOT_DIR}/packages/simulation/build_template_mod.c" \
   "${ROOT_DIR}/packages/simulation/item_curriculum_mod.c" \
   "${ROOT_DIR}/packages/simulation/duck_smoke_bomb_mod.c" \
+  "${ROOT_DIR}/packages/simulation/abraham_fireball_mod.c" \
   "${ROOT_DIR}/packages/common/mlp_infer.c" \
   "${ROOT_DIR}/packages/goldenband/gband.c" \
   "${ROOT_DIR}/packages/goldenband/gband_rig.c" \

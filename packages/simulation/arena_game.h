@@ -763,17 +763,53 @@ typedef enum {
 
 /* Abraham of Worms, the Mage (S170-103, TYLER multiverse_heroes.md #113) -- a caster whose
  * whole real-world hook is a book whose ritual made a real man (Crowley) organize a life
- * around it. Q is a real ranged magic bolt, stronger while W (channeling the book) is
- * toggled on -- the first toggle in this roster that boosts a Q's damage rather than its
- * range/duration or granting armor/regen. R is "the Guardian Angel, contacted": a full
+ * around it. Q is a real ranged magic bolt. R is "the Guardian Angel, contacted": a full
  * self-cleanse (every debuff field this roster tracks) plus a real heal, the ritual's
- * actual real-world promised payoff. */
-#define ARENA_ABRAHAM_Q_DAMAGE            9
-#define ARENA_ABRAHAM_Q_DAMAGE_CHANNELING 15 /* Q's damage while W is toggled on */
+ * actual real-world promised payoff.
+ *
+ * W rework (S202-34/S202-30, founder real-time: "xehingu [He Xiangu, unrelated] ... give
+ * abraham a real targetable slow moving projectile fireball that moves a long distance and
+ * damages enemies it passes through, replace his dumbest ability" -> "usually w"): the old
+ * W was a free toggle whose only job was boosting Q's damage (ARENA_ABRAHAM_Q_DAMAGE_CHANNELING)
+ * -- judged the weaker/more redundant half of the kit vs. Q's own always-useful poke, so W is
+ * what got replaced, not Q. Q now always deals the old "channeling" damage value (there's no
+ * more toggle to gate it on) -- a deliberate, stated choice to net-buff Q rather than silently
+ * leave it worse off after W's removal. New W ("A Line of Fire," a ground-targeted skill-shot):
+ * click-to-aim (client shows a green reticle after pressing W, per founder: "the targeter is
+ * green when you are ready to cast"), no real range limit ("just have it go whatever direction
+ * is the click"), pierces every enemy it touches rather than stopping on the first hit ("damages
+ * enemies it passes through"), and is intentionally slow (ARENA_HERO_SPEED-relative) so landing
+ * it is a real read on the target's movement, not a guaranteed poke. A 400ms pre-cast windup
+ * plays a GOLDENBAND-driven ease-in/out hero-facing rotation (assets/anim/rotation_ease.gband,
+ * PARENA's abraham_fireball_mod -- see arena_toggle_w's ARENA_HERO_ABRAHAM case and
+ * tick_hero_kit's completion branch) plus a client-side squish/flick animation (founder:
+ * "squish way down... to about 20 percent... windup animation go medium fast and then snap up
+ * quite quick as a flick... take .4 seconds") -- see apps/arena/src/main.c's own
+ * ABRAHAM_FIREBALL_SQUISH_DOWN_MS/UP_MS split using the same golden-ratio constant
+ * (1.618034f) ARENA_HALF_EXTENT above already establishes as this repo's own convention for
+ * "explicit, visible golden-ratio scaling" rather than an ad-hoc split. */
+#define ARENA_ABRAHAM_Q_DAMAGE            15 /* was 9 base / 15 "channeling" -- always the higher value now, see doc comment above */
 #define ARENA_ABRAHAM_Q_RANGE             5.5f
 #define ARENA_ABRAHAM_Q_COOLDOWN_MS       3200
 #define ARENA_ABRAHAM_R_HEAL              20
 #define ARENA_ABRAHAM_R_COOLDOWN_MS       17000
+#define ARENA_ABRAHAM_FIREBALL_DAMAGE      14
+#define ARENA_ABRAHAM_FIREBALL_SPEED       3.0f    /* units/sec -- slower than ARENA_HERO_SPEED (4.0), a real dodgeable read, not a guaranteed poke */
+#define ARENA_ABRAHAM_FIREBALL_RADIUS      0.9f
+#define ARENA_ABRAHAM_FIREBALL_COOLDOWN_MS 9000
+#define ARENA_ABRAHAM_FIREBALL_WINDUP_MS   400     /* matches assets/anim/rotation_ease.gband's real baked duration (16 ticks @ 40Hz) exactly */
+#define ARENA_ABRAHAM_FIREBALL_MAX_RANGE   (ARENA_HALF_EXTENT * 4.0f) /* "no real range limit" -- comfortably longer than any real line of sight across the whole map (ARENA_HALF_EXTENT corners to corner) rather than a literal infinite/unbounded travel distance, which arena_spawn_projectile's own max_range field isn't designed to represent */
+/* Abraham's ranged basic auto-attack (S202-34, founder: "make his auto attack ranged like
+ * garys with a different color projectile"): reuses Gary's exact homing-auto-attack mechanic
+ * (ArenaProjectile.homing_target, see that field's own doc comment) rather than inventing a
+ * second one -- only the range/speed/damage/color differ. Client picks the projectile's visual
+ * color from hero_id already carried on ArenaProjectile, so "different color" needs no new
+ * wire field, just a new client-side color branch. */
+#define ARENA_ABRAHAM_ATTACK_RANGE ARENA_GARY_ATTACK_RANGE
+#define ARENA_ABRAHAM_ATTACK_SPEED ARENA_GARY_ATTACK_SPEED
+#define ARENA_ABRAHAM_ATTACK_DAMAGE ARENA_ATTACK_DAMAGE
+#define ARENA_ABRAHAM_ATTACK_COOLDOWN_MS ARENA_ATTACK_COOLDOWN_MS
+#define ARENA_ABRAHAM_ATTACK_WINDUP_MS (ARENA_ABRAHAM_ATTACK_COOLDOWN_MS / 4)
 
 /* Ada Lovelace, Pilot (S170-103, TYLER multiverse_heroes.md #112) -- "wrote the operating
  * logic for a frame before the frame existed." A heavy, deliberate tank/controller: Q
@@ -1919,6 +1955,12 @@ typedef struct {
     int cast_total_ms;
     float cast_anchor_x, cast_anchor_z;
     int cast_target;
+    /* cast_target_x/z (S202-34, Abraham's Fireball): the ground point
+     * locked in at cast start, for a ground-targeted (skillshot) ability --
+     * generic, same reasoning as cast_target just above, just for a point
+     * instead of a hittable-enemy index. Unused (0) by every cast that has
+     * no ground-target component. */
+    float cast_target_x, cast_target_z;
     /* Status effects -- generic, any hero's kit can apply these to any
      * other hero, not just Ghost's own state (S170-32 is the first kit to
      * apply them, but the fields aren't Ghost-specific). */
@@ -2346,6 +2388,18 @@ typedef struct {
      * doesn't exist yet; homing only ever changes whether a shot connects
      * via POSITIONING, never whether it connects via chance. */
     int homing_target;
+    /* pierce/pierced_mask (S202-34, Abraham's Fireball): 0 = the existing
+     * behavior above (deactivates on first hit, one target only). 1 = a
+     * real piercing skill-shot -- keeps travelling and can hit MULTIPLE
+     * enemies, one bit per hero slot in pierced_mask tracking who this
+     * exact shot has already damaged so a slow-moving pierce can't double-
+     * or triple-tick the same target while it's still overlapping them.
+     * Still despawns at max_range like any other shot; still real armor/
+     * on-hit-status application per hit, just without the early return.
+     * ARENA_MAX_HEROES <= 32 (checked at the one real call site) so a
+     * plain uint32_t bitmask is enough, no array needed. */
+    int pierce;
+    unsigned int pierced_mask;
 } ArenaProjectile;
 
 /* ArenaObstacle: static jungle terrain, see the ARENA_OBSTACLE_COUNT
@@ -2439,6 +2493,19 @@ typedef struct {
      * same sentinel-after-memset idiom as ArenaCreep's
      * last_attacked_by_owner). */
     int hover_target[ARENA_MAX_HEROES];
+    /* ground_target (S202-34, Abraham's Fireball): same per-owner,
+     * set-right-before-dispatch shape as hover_target above, for
+     * ground-targeted (skillshot) abilities instead of unit-targeted ones.
+     * has_ground_target[i] is 0 unless the owner's most recent cast packet
+     * carried a real click point (ArenaCastCmd.has_ground_target); the
+     * individual cast function decides whether it actually cares (only
+     * Abraham's W does today), same "generic, not hero-specific" idiom as
+     * hover_target. Set by arena_set_ground_target(), called from both the
+     * networked path (apps/arena_server's PACKET_ARENA_CAST handler) and
+     * the local 1v1 demo's own direct keybind handler. */
+    int has_ground_target[ARENA_MAX_HEROES];
+    float ground_target_x[ARENA_MAX_HEROES];
+    float ground_target_z[ARENA_MAX_HEROES];
     float time_of_day_sec; /* day/night cycle accumulator (seconds, not ms -- matches SHANKPIT retro_sky.c's own time_sec convention directly, no unit conversion at the call site), ticked from the same arena_update_teams path arena_tick_kings already uses */
     float prev_moon_height; /* moon_dir_y from the previous tick -- local-maximum (zenith) detection compares consecutive samples instead of computing an exact analytical crossing, robust to the accumulator running indefinitely with no explicit wrap logic needed */
     int moon_was_rising; /* 1 if moon_height was still increasing as of the previous tick -- "was rising, now falling" is the zenith-just-passed condition */
@@ -2511,6 +2578,14 @@ ArenaHero *arena_nearest_ally(int owner);
  * the status-effect fields on ArenaHero. No-op if owner is out of the real
  * per-player range. */
 void arena_set_hover_target(int owner, int target);
+
+/* arena_set_ground_target (S202-34): records the ground point `owner`'s
+ * most recent cast packet carried, for ground-targeted (skillshot)
+ * abilities -- see arena_state.has_ground_target's own doc comment.
+ * has_target 0 means "no ground point on this cast" (ordinary unit-
+ * targeted/self-targeted cast), in which case x/z are ignored. No-op if
+ * owner is out of the real per-player range. */
+void arena_set_ground_target(int owner, int has_target, float x, float z);
 
 /* arena_set_attack_target (S170-162): PACKET_ARENA_ATTACK's server-side
  * entry point -- locks `owner` onto `target` (a real, in-range-of-the-real-

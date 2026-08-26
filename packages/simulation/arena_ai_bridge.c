@@ -57,7 +57,6 @@ int arena_hero_w_is_toggle(ArenaHeroID hero_id) {
     case ARENA_HERO_LOKI:
     case ARENA_HERO_FLUTE_DEBT:
     case ARENA_HERO_BACON_PUCK:
-    case ARENA_HERO_ABRAHAM:
     case ARENA_HERO_ADA:
     case ARENA_HERO_HE_XIANGU:
         return 1;
@@ -66,7 +65,11 @@ int arena_hero_w_is_toggle(ArenaHeroID hero_id) {
        model Ghost/Frog/Doc Wheel already use) -- see arena_toggle_w's own MnM case.
        ARENA_HERO_GUNNR removed (2026-07-30): W stopped being a free toggle self-regen and became
        Consecration, a real cast-time ground zone on its own cooldown -- same reasoning as MnM's
-       own removal just above. */
+       own removal just above.
+       ARENA_HERO_ABRAHAM removed (S202-34): W stopped being a free toggle that boosted Q's
+       damage and became A Line of Fire, a real ground-targeted cast-time ability on its own
+       cooldown (flat ARENA_MP_COST_W charge) -- same reasoning as Gary/MnM/Gunnr's own removal
+       above. */
     default:
         return 0;
     }
@@ -92,7 +95,7 @@ const char *arena_ability_name(ArenaHeroID hero_id, int slot) {
         [ARENA_HERO_GARY]       = {"THE PROPERTY", "AIMED SHOT", "SLOW DOWN, TRACK MEET"},
         [ARENA_HERO_FLUTE_DEBT] = {"THE WRONG NOTE", "RECOUPING INTEREST", "EVENTUALLY COLLECTS"},
         [ARENA_HERO_BACON_PUCK] = {"ASK AGAIN LATER", "WHICH ONE IS REAL", "THE TRICK WAS ALWAYS THE SAME"},
-        [ARENA_HERO_ABRAHAM]    = {"THE SACRED MAGIC", "THE BOOK, UNATTESTED", "THE GUARDIAN ANGEL, CONTACTED"},
+        [ARENA_HERO_ABRAHAM]    = {"THE SACRED MAGIC", "A LINE OF FIRE", "THE GUARDIAN ANGEL, CONTACTED"},
         [ARENA_HERO_ADA]        = {"THE ANALYTICAL ENGINE", "POETICAL SCIENCE", "FIRST PROGRAM, RUN LATE"},
         [ARENA_HERO_TYLER]      = {"EARTHBIND", "POOF", "DIVIDED WE STAND"},
         [ARENA_HERO_PAIMON]     = {"TEACHES ALL ARTS", "SPEAKS WITH TOTAL AUTHORITY", "TWO HUNDRED LEGIONS"},
@@ -135,7 +138,7 @@ const char *arena_ability_description(ArenaHeroID hero_id, int slot) {
         [ARENA_HERO_GARY]       = {"PROJECTILE SNIPER SHOT, DODGEABLE", "CAST-TIME BIG DAMAGE, INTERRUPTIBLE", "ROOT NEAREST FOE"},
         [ARENA_HERO_FLUTE_DEBT] = {"PROJECTILE: DAMAGE + BURN DOT", "TOGGLE: SELF HP REGEN", "BONUS DAMAGE IF FOE'S DEBT STILL ACTIVE"},
         [ARENA_HERO_BACON_PUCK] = {"SELF UNTARGETABLE FOR A WINDOW", "TOGGLE: EXTENDS Q'S DURATION", "DAMAGE + SELF-HEAL OFF IT"},
-        [ARENA_HERO_ABRAHAM]    = {"MAGIC BOLT, STRONGER WHILE W IS ON", "TOGGLE: BOOSTS Q'S DAMAGE", "CLEANSE ALL DEBUFFS + SELF-HEAL"},
+        [ARENA_HERO_ABRAHAM]    = {"RANGED MAGIC BOLT", "GROUND-TARGET PROJECTILE, PIERCES, LONG RANGE", "CLEANSE ALL DEBUFFS + SELF-HEAL"},
         [ARENA_HERO_ADA]        = {"ROOT NEAREST FOE, NO DAMAGE", "TOGGLE: FLAT ARMOR BONUS", "BURST DAMAGE + SHORT ROOT"},
         [ARENA_HERO_TYLER]      = {"PROJECTILE NET: ROOT + BURN DOT", "BLINK-STRIKE TO NEAREST FOE", "HIT HARD, OWN ARMOR GOES NEGATIVE"},
         [ARENA_HERO_PAIMON]     = {"DAMAGE + ROOT NEAREST FOE", "DAMAGE + SILENCE NEAREST FOE", "ZONE: DAMAGE FOES, HEAL ALLIES"},
@@ -194,7 +197,7 @@ static const ArenaHeroTags ARENA_HERO_TAGS[ARENA_HERO_COUNT] = {
     [ARENA_HERO_GARY]       = { 1, 1, 0, 0, 0, 0 }, /* the one hero whose basic auto-attack itself homes, S170-163 */
     [ARENA_HERO_FLUTE_DEBT] = { 1, 0, 0, 1, 0, 0 }, /* Q projectile, W self-regen toggle */
     [ARENA_HERO_BACON_PUCK] = { 0, 0, 0, 1, 0, 1 }, /* Q untargetable, R self-heal */
-    [ARENA_HERO_ABRAHAM]    = { 1, 0, 0, 1, 0, 0 }, /* Q magic bolt, R self-heal */
+    [ARENA_HERO_ABRAHAM]    = { 1, 1, 0, 1, 0, 0 }, /* Q magic bolt, W ground-targeted piercing fireball, R self-heal; S202-34: basic auto-attack is now a real homing shot too, matching Gary's own has_homing_attack */
     [ARENA_HERO_ADA]        = { 0, 0, 0, 0, 0, 0 }, /* Q root reads melee-range per docs, no ranged/heal/dash/stealth tool */
     [ARENA_HERO_TYLER]      = { 1, 0, 0, 0, 1, 0 }, /* Q projectile net, W blink-strike */
     [ARENA_HERO_PAIMON]     = { 1, 0, 0, 1, 0, 0 }, /* Q "ranged bolt" per docs, R heals allies */

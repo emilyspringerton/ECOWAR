@@ -38,6 +38,7 @@
 #include "../../../packages/simulation/arena_game.h"
 #include "../../../packages/simulation/arena_ai_bridge.h"
 #include "../../../packages/simulation/arena_replay.h"
+#include "../../../packages/goldenband/gband.h"
 #include "../../../packages/goldenband/gband_rig.h"
 #include "../../../packages/goldenband/gband_mesh_rig.h"
 
@@ -557,6 +558,19 @@ static void net_send_active_item(void) {
  * value in this file. */
 static int g_hover_target = -1;
 
+/* g_ground_target_pending_slot (S202-34, Abraham's Fireball): 0 = not
+ * aiming anything right now. 1/2/3 (Q/W/R) = the local player pressed a
+ * ground-targeted ability's key and the client is waiting for the
+ * confirming click, same two-phase "press ability, then click a point"
+ * flow the founder described ("the targeter is green when you are ready
+ * to cast"). Set on keydown for a ground-targeted slot (only Abraham's W
+ * today) instead of casting immediately; the next ordinary left-click is
+ * intercepted (spawns the real cast with that click's world point instead
+ * of issuing a move/attack command) and clears this back to 0. Right-click
+ * cancels without casting. Local-player-only, same scope every other
+ * client-only input-mode flag in this file already has. */
+static int g_ground_target_pending_slot = 0;
+
 /* g_last_vp (2026-07-30, Tyler clone-control rework): the view-projection matrix from the most
  * recently rendered frame, needed so the drag-select box-test (event-loop code, which runs
  * BEFORE this frame's own `vp` is computed in the render pass further down) can call
@@ -591,7 +605,11 @@ static int selected_or_self(int *out) {
     return selected_unit_count;
 }
 
-static void net_send_cast(int slot, int hover_target) {
+/* net_send_cast (S202-34: gained has_ground_target/target_x/target_z): pass
+ * has_ground_target=0, target_x=target_z=0.0f for every ordinary unit-
+ * targeted/self-targeted cast (Q/E and every hero's W except Abraham's) --
+ * see ArenaCastCmd's own doc comment in protocol.h. */
+static void net_send_cast(int slot, int hover_target, int has_ground_target, float target_x, float target_z) {
     char buf[sizeof(NetHeader) + sizeof(ArenaCastCmd)];
     NetHeader *h = (NetHeader *)buf;
     memset(h, 0, sizeof(NetHeader));
@@ -599,6 +617,9 @@ static void net_send_cast(int slot, int hover_target) {
     ArenaCastCmd *cmd = (ArenaCastCmd *)(buf + sizeof(NetHeader));
     cmd->slot = (uint8_t)slot;
     cmd->hover_target = (int8_t)hover_target;
+    cmd->has_ground_target = (uint8_t)has_ground_target;
+    cmd->target_x = target_x;
+    cmd->target_z = target_z;
     sendto(net_sock, buf, sizeof(buf), 0, (struct sockaddr *)&net_server_addr, sizeof(net_server_addr));
 }
 
@@ -2156,6 +2177,63 @@ static float squish_age_ms[ARENA_MAX_HEROES];
 static int prev_hero_moving[ARENA_MAX_HEROES];
 static int prev_hero_moving_valid[ARENA_MAX_HEROES];
 
+/* Abraham's Fireball windup animation (S202-34, founder: "give a micro rotation animation...
+ * quick and smooth ease in and out use golden band as a parena mod" + "abraham should squish
+ * way down using golden ratio to about 20 percent... windup animation go medium fast and then
+ * snap up quite quick as a flick... take .4 seconds"). Purely client-side visual state, same
+ * "never networked, derived from server-authoritative casting_slot/cast_target_x/z" idiom
+ * hero_facing_rad's own movement-derived interpolation already uses -- the actual fireball
+ * direction/damage is entirely server-authoritative (arena_toggle_w/tick_hero_kit), this is
+ * ONLY what the local screen shows while that real windup is in progress. */
+static float abraham_windup_age_ms[ARENA_MAX_HEROES];
+static int abraham_windup_active[ARENA_MAX_HEROES]; /* edge-detects casting_slot's 0->2 transition per hero */
+static float abraham_windup_start_facing[ARENA_MAX_HEROES];
+static float abraham_windup_target_facing[ARENA_MAX_HEROES];
+/* golden-ratio phase split (same 1.618034f this file's own arena_game.h already uses for
+ * ARENA_HALF_EXTENT, not a new constant invented here): squish-down gets the LONGER share
+ * (1/phi =~ 61.8% of the total windup, "medium fast"), snap-up gets the shorter remainder
+ * (~38.2%, "quite quick as a flick"). */
+#define ABRAHAM_WINDUP_PHI 1.618034f
+#define ABRAHAM_WINDUP_SQUISH_DOWN_MS ((float)ARENA_ABRAHAM_FIREBALL_WINDUP_MS / ABRAHAM_WINDUP_PHI)
+#define ABRAHAM_WINDUP_SQUISH_UP_MS ((float)ARENA_ABRAHAM_FIREBALL_WINDUP_MS - ABRAHAM_WINDUP_SQUISH_DOWN_MS)
+#define ABRAHAM_WINDUP_SQUISH_BOTTOM 0.2f /* "squish way down... to about 20 percent" -- literal founder number, not phi-derived */
+
+static GBClip g_windup_ease_clip;
+static int g_windup_ease_loaded = 0;
+
+/* windup_ease_sample: real GOLDENBAND playback (see gband.h) when the baked
+ * assets/anim/rotation_ease.gband clip loaded successfully; a hand-computed
+ * identical smoothstep as a fail-soft fallback otherwise (same "missing/
+ * corrupt assets fail soft, never a crash" convention gband_rig_init's own
+ * doc comment already establishes for the skinned-mesh pipeline) -- either
+ * way the caller gets a real eased [0,1] progress value back. */
+static float windup_ease_sample(float progress01) {
+    if (progress01 < 0.0f) progress01 = 0.0f;
+    if (progress01 > 1.0f) progress01 = 1.0f;
+    if (g_windup_ease_loaded && g_windup_ease_clip.duration_ticks > 0) {
+        uint32_t tick = (uint32_t)(progress01 * (float)(g_windup_ease_clip.duration_ticks - 1) + 0.5f);
+        const float *sample = gb_sample(&g_windup_ease_clip, tick);
+        return sample[0];
+    }
+    return progress01 * progress01 * (3.0f - 2.0f * progress01);
+}
+
+/* abraham_windup_squish: golden-ratio two-phase envelope described above, both phases sampled
+ * through the same real baked ease curve windup_ease_sample already provides (so both the
+ * rotation and the squish genuinely come from the one GOLDENBAND asset, not two different math
+ * shapes) -- returns 1.0 (neutral, no squish) outside the windup window. */
+static float abraham_windup_squish(float age_ms) {
+    if (age_ms < 0.0f || age_ms > (float)ARENA_ABRAHAM_FIREBALL_WINDUP_MS) return 1.0f;
+    if (age_ms <= ABRAHAM_WINDUP_SQUISH_DOWN_MS) {
+        float t = ABRAHAM_WINDUP_SQUISH_DOWN_MS > 0.0f ? age_ms / ABRAHAM_WINDUP_SQUISH_DOWN_MS : 1.0f;
+        float eased = windup_ease_sample(t);
+        return 1.0f + (ABRAHAM_WINDUP_SQUISH_BOTTOM - 1.0f) * eased; /* 1.0 -> 0.2 */
+    }
+    float t = ABRAHAM_WINDUP_SQUISH_UP_MS > 0.0f ? (age_ms - ABRAHAM_WINDUP_SQUISH_DOWN_MS) / ABRAHAM_WINDUP_SQUISH_UP_MS : 1.0f;
+    float eased = windup_ease_sample(t);
+    return ABRAHAM_WINDUP_SQUISH_BOTTOM + (1.0f - ABRAHAM_WINDUP_SQUISH_BOTTOM) * eased; /* 0.2 -> 1.0, the flick */
+}
+
 /* hero_facing_rad/prev_hero_x/prev_hero_z (S170-171, founder: "heroes and
  * creeps should rotate to show what direction they are facing currently
  * they just float around there is no front of the model"): facing is
@@ -2723,6 +2801,14 @@ int main(int argc, char *argv[]) {
     gband_mesh_rig_init("assets/goldenband", "tyler_body");
     gband_mesh_dynamic_init();
 
+    /* S202-34: Abraham's Fireball windup animation -- a real baked GOLDENBAND scalar ease
+     * curve (assets/anim/rotation_ease.gband, 16 ticks @ 40Hz, tools/gbtool's own bake-ease
+     * subcommand), not a skinned pose. gb_init's own fail-soft return (0 on any failure) is
+     * respected here the same way gband_rig_init's callers already do -- windup_ease_sample
+     * falls back to an identical hand-computed smoothstep if this load fails, so a missing/
+     * corrupt asset degrades the animation's exact source, never crashes the client. */
+    g_windup_ease_loaded = gb_init("assets/anim/rotation_ease.gband", &g_windup_ease_clip);
+
     glEnable(GL_DEPTH_TEST);
 
     arena_init();
@@ -2924,6 +3010,42 @@ int main(int argc, char *argv[]) {
                     }
                 }
             }
+            /* S202-34: right-click cancels ground-target aiming without casting -- checked
+               before camera-drag engages so a cancel-click doesn't also start dragging the
+               camera the same frame (harmless either way, but this reads cleaner). */
+            if (g_ground_target_pending_slot != 0 && e.type == SDL_MOUSEBUTTONDOWN && e.button.button == SDL_BUTTON_RIGHT) {
+                g_ground_target_pending_slot = 0;
+            }
+            /* ground_target_click_consumed (same "consumed this exact click" idiom as
+               shop_click_consumed just above): the confirming click for a pending ground-
+               targeted ability (Abraham's W so far) -- intercepted here, BEFORE the ordinary
+               drag-select/move-click flow below, so this click fires the ability instead of
+               also issuing a move command or starting a box-select. Fires on mouse-DOWN (not
+               up, unlike the ordinary click flow) since there's no drag-vs-click ambiguity to
+               resolve here -- a ground-target confirm is always a single deliberate click. A
+               local flag, not a re-check of g_ground_target_pending_slot (which this same
+               block clears), so the ordinary-click guard below can't be fooled into firing for
+               this same click the instant the global goes back to 0. */
+            int ground_target_click_consumed = 0;
+            if (!observing && g_ground_target_pending_slot != 0 && e.type == SDL_MOUSEBUTTONDOWN &&
+                e.button.button == SDL_BUTTON_LEFT && arena_state.winner == 0 &&
+                my_owner >= 0 && my_owner < ARENA_MAX_HEROES) {
+                ground_target_click_consumed = 1;
+                float gx, gz;
+                float focus_x = arena_state.heroes[my_owner].x, focus_z = arena_state.heroes[my_owner].z;
+                if (screen_to_ground(e.button.x, e.button.y, win_w, win_h, 60.0f, focus_x, focus_z, &gx, &gz)) {
+                    int slot = g_ground_target_pending_slot;
+                    if (net_mode) {
+                        net_send_cast(slot - 1, g_hover_target, 1, gx, gz);
+                    } else {
+                        arena_set_hover_target(my_owner, g_hover_target);
+                        arena_set_ground_target(my_owner, 1, gx, gz);
+                        if (slot == 1) { arena_toggle_w(my_owner); arena_log_ability("W"); }
+                    }
+                    apm_record_action(now);
+                }
+                g_ground_target_pending_slot = 0;
+            }
             /* Everything below drives a live match (movement clicks, kit
              * casts, restart-into-a-new-match) -- none of it applies while
              * observing a logged one. Camera control above still works, so
@@ -2941,7 +3063,8 @@ int main(int argc, char *argv[]) {
              * the mouseup branch below resolves to exactly one commander (my_owner) and behaves
              * byte-for-byte like the old mousedown-triggered code -- zero behavior change for
              * the other 27 heroes' existing muscle memory. */
-            if (!observing && !shop_click_consumed && e.type == SDL_MOUSEBUTTONDOWN && e.button.button == SDL_BUTTON_LEFT &&
+            if (!observing && !shop_click_consumed && !ground_target_click_consumed &&
+                e.type == SDL_MOUSEBUTTONDOWN && e.button.button == SDL_BUTTON_LEFT &&
                 arena_state.winner == 0) {
                 left_drag_active = 1;
                 left_drag_start_x = e.button.x;
@@ -3119,10 +3242,19 @@ int main(int argc, char *argv[]) {
                 if (e.key.keysym.sym == SDLK_q || e.key.keysym.sym == SDLK_w || e.key.keysym.sym == SDLK_e) {
                     apm_record_action(now);
                 }
-                if (net_mode) {
-                    if (e.key.keysym.sym == SDLK_q) net_send_cast(0, g_hover_target);
-                    if (e.key.keysym.sym == SDLK_w) net_send_cast(1, g_hover_target);
-                    if (e.key.keysym.sym == SDLK_e) net_send_cast(2, g_hover_target);
+                /* S202-34: Abraham's W is ground-targeted -- pressing it enters the
+                   two-phase "green reticle, click to confirm" aiming mode instead of
+                   casting immediately, same as the founder's own WoW-macro-style hover
+                   casting already established a distinct input mode for. Every other
+                   hero's W (and every Q/E) is unaffected -- immediate-cast as before. */
+                int is_abraham = (my_owner >= 0 && my_owner < ARENA_MAX_HEROES &&
+                                   arena_state.heroes[my_owner].hero_id == ARENA_HERO_ABRAHAM);
+                if (is_abraham && e.key.keysym.sym == SDLK_w) {
+                    g_ground_target_pending_slot = 1; /* W */
+                } else if (net_mode) {
+                    if (e.key.keysym.sym == SDLK_q) net_send_cast(0, g_hover_target, 0, 0.0f, 0.0f);
+                    if (e.key.keysym.sym == SDLK_w) net_send_cast(1, g_hover_target, 0, 0.0f, 0.0f);
+                    if (e.key.keysym.sym == SDLK_e) net_send_cast(2, g_hover_target, 0, 0.0f, 0.0f);
                 } else {
                     /* S170-143: local 1v1 demo casts directly (no wire hop), so the
                        hover target has to be set on the sim explicitly here -- the
@@ -3348,6 +3480,45 @@ int main(int argc, char *argv[]) {
         for (int i = 0; i < ARENA_MAX_HEROES; i++) {
             if (squish_age_ms[i] >= 0.0f && squish_age_ms[i] < SQUISH_ANIM_MS) {
                 squish_age_ms[i] += dt;
+            }
+        }
+        /* Abraham's Fireball windup (S202-34): edge-detects casting_slot's transition into
+           slot 2 (W) for an Abraham hero to START the animation (captures the hero's CURRENT
+           on-screen facing as the rotation's start point, and the real server-authoritative
+           cast_target_x/z as its end point, via the same atan2f(dx,dz) convention
+           update_facing_from_motion already uses), then just ticks age_ms by dt every frame
+           it's active -- draw_hero_model's own call site (below) reads the resulting
+           interpolated facing/squish, this loop never touches rendering directly. Cleared the
+           instant casting_slot leaves 2, whether that's real completion OR a real interrupt
+           (silence/movement) -- either way there's no windup left to animate. */
+        for (int i = 0; i < ARENA_MAX_HEROES; i++) {
+            ArenaHero *awh = &arena_state.heroes[i];
+            int is_winding_up = (awh->active && awh->hero_id == ARENA_HERO_ABRAHAM && awh->casting_slot == 2);
+            if (is_winding_up && !abraham_windup_active[i]) {
+                abraham_windup_active[i] = 1;
+                abraham_windup_age_ms[i] = 0.0f;
+                abraham_windup_start_facing[i] = hero_facing_rad[i];
+                float wdx = awh->cast_target_x - awh->x, wdz = awh->cast_target_z - awh->z;
+                abraham_windup_target_facing[i] = (wdx * wdx + wdz * wdz > 0.0001f)
+                    ? atan2f(wdx, wdz) : hero_facing_rad[i];
+            } else if (!is_winding_up) {
+                abraham_windup_active[i] = 0;
+            }
+            if (abraham_windup_active[i]) {
+                abraham_windup_age_ms[i] += (float)dt;
+                /* Overrides whatever update_facing_from_motion computed for this hero earlier
+                   this same frame -- Abraham is typically stationary during the windup (any
+                   real movement interrupts the cast server-side anyway, see arena_toggle_w's
+                   own doc comment), so the motion-derived system alone would just leave him
+                   facing wherever he already was, never actually turning toward the target.
+                   Shortest-path angle interpolation (wrapped to (-pi, pi]) so a target behind
+                   Abraham turns him the short way, not spinning the long way around. */
+                float progress = abraham_windup_age_ms[i] / (float)ARENA_ABRAHAM_FIREBALL_WINDUP_MS;
+                float eased = windup_ease_sample(progress);
+                float diff = abraham_windup_target_facing[i] - abraham_windup_start_facing[i];
+                while (diff > (float)M_PI) diff -= 2.0f * (float)M_PI;
+                while (diff < -(float)M_PI) diff += 2.0f * (float)M_PI;
+                hero_facing_rad[i] = abraham_windup_start_facing[i] + diff * eased;
             }
         }
         for (int i = 0; i < ARENA_OBSTACLE_COUNT; i++) {
@@ -3587,7 +3758,13 @@ int main(int argc, char *argv[]) {
                 gband_rig_draw(i, h->x, h->z, hero_facing_rad[i], (float)dt, &vp,
                                 gband_cb_set_mvp_model, gband_cb_draw_mesh, &cube_mesh);
             } else {
-                draw_hero_model(h->hero_id, h->x, h->z, hero_facing_rad[i], compute_squish(i), &vp, loc_mvp, loc_model, &cube_mesh);
+                /* S202-34: Abraham's fireball windup overrides the ordinary landing-squish
+                   animation while active -- the two never overlap in practice (the windup
+                   only starts while stationary, landing-squish only starts on landing) but if
+                   they somehow did, the windup wins, since it's tied to a real in-progress
+                   server-authoritative cast rather than a one-off cosmetic bounce. */
+                float squish = abraham_windup_active[i] ? abraham_windup_squish(abraham_windup_age_ms[i]) : compute_squish(i);
+                draw_hero_model(h->hero_id, h->x, h->z, hero_facing_rad[i], squish, &vp, loc_mvp, loc_model, &cube_mesh);
             }
             if (is_intangible) {
                 glDepthMask(GL_TRUE);
@@ -3878,6 +4055,30 @@ int main(int argc, char *argv[]) {
             glUniformMatrix4fv_(loc_model, 1, GL_FALSE, model.m);
             glUniform4f_(loc_color, 0.2f, 1.0f, 0.5f, alpha);
             draw_mesh(&ring_mesh);
+        }
+        /* Ground-target reticle (S202-34, founder: "the targeter is green
+           when you are ready to cast"): a real-time green ring following
+           the live mouse position while g_ground_target_pending_slot is
+           set (Abraham's W aiming mode) -- distinct from the placement
+           rings above (those decay/fade and mark a past click; this one
+           doesn't fade and tracks the CURRENT mouse position every frame,
+           since it's telling the player where the shot will go, not
+           confirming where one already went). */
+        if (g_ground_target_pending_slot != 0 && my_owner >= 0 && my_owner < ARENA_MAX_HEROES) {
+            int rmx, rmy;
+            SDL_GetMouseState(&rmx, &rmy);
+            float rgx, rgz;
+            float rfocus_x = arena_state.heroes[my_owner].x, rfocus_z = arena_state.heroes[my_owner].z;
+            if (screen_to_ground(rmx, rmy, win_w, win_h, 60.0f, rfocus_x, rfocus_z, &rgx, &rgz)) {
+                Mat4 tr = mat4_translate(rgx, 0.03f, rgz);
+                Mat4 sc = mat4_scale(0.6f, 1.0f, 0.6f);
+                Mat4 model = mat4_multiply(&tr, &sc);
+                Mat4 mvp = mat4_multiply(&vp, &model);
+                glUniformMatrix4fv_(loc_mvp, 1, GL_FALSE, mvp.m);
+                glUniformMatrix4fv_(loc_model, 1, GL_FALSE, model.m);
+                glUniform4f_(loc_color, 0.15f, 1.0f, 0.15f, 0.85f); /* bright green, per founder's own spec */
+                draw_mesh(&ring_mesh);
+            }
         }
         /* attack flashes (S170-122): quick, small, orange-white burst right
            on the hit hero -- visually distinct from the slower green
