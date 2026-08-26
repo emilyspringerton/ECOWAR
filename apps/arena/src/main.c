@@ -2895,6 +2895,27 @@ int main(int argc, char *argv[]) {
                     comparing the two live. Repurposed from the pre-real-asset synthetic proof
                     rig toggle, same key. Same "works in any mode" precedent as F11/H/B above. */
             }
+            if (e.type == SDL_KEYDOWN && e.key.keysym.sym == SDLK_F10) {
+                /* Real, client-side debug tool (2026-08-26, founder: "AT ONE POINT I GOT
+                   STUCK SIDEWAYS AND HE WAS LIKE TRYING TO ROTATE TO RUN WHERE I WANTED BUT
+                   KIND ACOULDNT" -> "MAYBE WE MAKE A RESET CHARACER BUTTON THAT RESETTTS THE
+                   ROTATION AND IF YOU PRESS IT IT LOGS IF IT ACTUALLY DID ANYTHING OR NOT" ->
+                   "SO IF WE FEEL LIKE ITS WORKING IIT CAN BE INVVESTIGATED WITH THE DATA").
+                   Forces the local player's own client-side hero_facing_rad (see that array's
+                   own doc comment -- purely visual, movement-derived interpolation, no wire
+                   protocol involved) back to a known value and logs the before/after so a real
+                   session transcript can show whether this ever actually needed to fire (i.e.
+                   whether facing really was stuck at some stale value) the next time the bug
+                   recurs -- same "works in any mode" precedent as F9/F11/C/H/B above. */
+                if (my_owner >= 0 && my_owner < ARENA_MAX_HEROES) {
+                    float before = hero_facing_rad[my_owner];
+                    hero_facing_rad[my_owner] = 0.0f;
+                    prev_hero_facing_valid[my_owner] = 0; /* forces a fresh baseline next frame, not a stale delta against the old position */
+                    printf("[reset-rotation] owner=%d before=%.4f after=%.4f changed=%s\n",
+                           my_owner, before, hero_facing_rad[my_owner],
+                           (before != 0.0f) ? "yes" : "no");
+                }
+            }
             if (e.type == SDL_KEYDOWN && e.key.keysym.sym == SDLK_h) {
                 show_ability_help = !show_ability_help; /* same "works in any mode" precedent as F11 above */
             }
