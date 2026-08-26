@@ -1,0 +1,13 @@
+load("@rules_cc//cc:defs.bzl", "cc_binary")
+
+cc_binary(
+    name = "red_garden_arena_server",
+    srcs = ["src/main.c"],
+    deps = [
+        "//packages/common:common_headers",
+        "//packages/simulation:arena_ai_bridge",
+        "//packages/simulation:arena_game",
+    ],
+    linkopts = ["-lm"],
+    visibility = ["//visibility:public"],
+)

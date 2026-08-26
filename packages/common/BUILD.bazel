@@ -1,0 +1,44 @@
+load("@rules_cc//cc:defs.bzl", "cc_library", "cc_test")
+
+cc_library(
+    name = "mlp_infer",
+    srcs = ["mlp_infer.c"],
+    hdrs = ["mlp_infer.h"],
+    visibility = ["//visibility:public"],
+)
+
+cc_library(
+    name = "gpt2_infer",
+    srcs = ["gpt2_infer.c"],
+    hdrs = ["gpt2_infer.h"],
+    visibility = ["//visibility:public"],
+)
+
+# common_headers -- the real header-only bag every apps/* binary's own
+# relative-path #include ("../../../packages/common/mat4.h" etc.) needs
+# declared as a Bazel input somewhere in its dep graph. rl_policy_weights.h
+# is header-inline but calls mlp_forward() (packages/common/mlp_infer.c),
+# so this depends on :mlp_infer -- any binary pulling in common_headers
+# gets mlp_infer's real object linked in too, same real requirement
+# scripts/build.sh's own comment on this exact gap already documents.
+cc_library(
+    name = "common_headers",
+    hdrs = [
+        "hmac_sha256.h",
+        "http_client.h",
+        "mat4.h",
+        "physics.h",
+        "protocol.h",
+        "rl_policy_weights.h",
+        "rl_policy_weights_team.h",
+    ],
+    deps = [":mlp_infer"],
+    visibility = ["//visibility:public"],
+)
+
+cc_test(
+    name = "hmac_sha256_test",
+    srcs = ["hmac_sha256_test.c"],
+    deps = [":common_headers"],
+    copts = ["-std=c99"],
+)

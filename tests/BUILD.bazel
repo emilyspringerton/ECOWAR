@@ -1,0 +1,106 @@
+load("@rules_cc//cc:defs.bzl", "cc_test")
+
+# Same "-std=c99 -Wall -Wextra" bar every real test in this repo already holds itself to
+# (scripts/test_arena.sh's own gcc invocation) -- global via .bazelrc for the rest, but
+# cc_test's own default copts don't inherit `build --copt=...` the same way a plain
+# `bazel build` target does, so each test below repeats it explicitly, matching PARENA's
+# own tests/BUILD.bazel precedent.
+COMMON_TEST_COPTS = ["-std=c99", "-Wall", "-Wextra"]
+
+cc_test(
+    name = "test_arena_game",
+    srcs = ["test_arena_game.c"],
+    deps = ["//packages/simulation:arena_game"],
+    copts = COMMON_TEST_COPTS,
+)
+
+cc_test(
+    name = "test_mat4",
+    srcs = ["test_mat4.c"],
+    deps = ["//packages/common:common_headers"],
+    copts = COMMON_TEST_COPTS,
+)
+
+cc_test(
+    name = "test_arena_replay",
+    srcs = ["test_arena_replay.c"],
+    deps = ["//packages/simulation:arena_replay"],
+    copts = COMMON_TEST_COPTS,
+)
+
+cc_test(
+    name = "test_arena_ai_bridge",
+    srcs = ["test_arena_ai_bridge.c"],
+    deps = ["//packages/simulation:arena_ai_bridge"],
+    copts = COMMON_TEST_COPTS,
+)
+
+cc_test(
+    name = "test_gpt2_infer",
+    srcs = ["test_gpt2_infer.c"],
+    deps = ["//packages/common:gpt2_infer"],
+    copts = COMMON_TEST_COPTS,
+)
+
+cc_test(
+    name = "test_arena_training",
+    srcs = ["test_arena_training.c"],
+    deps = ["//apps/arena_training:headless"],
+    copts = COMMON_TEST_COPTS,
+)
+
+cc_test(
+    name = "test_mlp_infer",
+    srcs = ["test_mlp_infer.c"],
+    deps = ["//packages/common:mlp_infer"],
+    copts = COMMON_TEST_COPTS,
+)
+
+cc_test(
+    name = "test_bloodflower",
+    srcs = ["test_bloodflower.c"],
+    deps = ["//packages/simulation:arena_game"],
+    copts = COMMON_TEST_COPTS,
+)
+
+cc_test(
+    name = "test_tree_passive",
+    srcs = ["test_tree_passive.c"],
+    deps = ["//packages/simulation:arena_game"],
+    copts = COMMON_TEST_COPTS,
+)
+
+cc_test(
+    name = "test_build_templates",
+    srcs = ["test_build_templates.c"],
+    deps = ["//packages/simulation:arena_game"],
+    copts = COMMON_TEST_COPTS,
+)
+
+cc_test(
+    name = "test_item_curriculum",
+    srcs = ["test_item_curriculum.c"],
+    deps = ["//packages/simulation:arena_game"],
+    copts = COMMON_TEST_COPTS,
+)
+
+cc_test(
+    name = "test_duck_smoke_bomb",
+    srcs = ["test_duck_smoke_bomb.c"],
+    deps = ["//packages/simulation:arena_game"],
+    copts = COMMON_TEST_COPTS,
+)
+
+cc_test(
+    name = "test_abraham_fireball",
+    srcs = ["test_abraham_fireball.c"],
+    deps = ["//packages/simulation:arena_game"],
+    copts = COMMON_TEST_COPTS,
+)
+
+cc_test(
+    name = "test_damage_log",
+    srcs = ["test_damage_log.c"],
+    deps = ["//packages/simulation:arena_game"],
+    copts = COMMON_TEST_COPTS,
+)

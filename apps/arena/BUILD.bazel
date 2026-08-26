@@ -1,0 +1,22 @@
+load("@rules_cc//cc:defs.bzl", "cc_binary")
+
+# No -include flags for the 6 mod host headers here -- unlike the old shell
+# scripts, arena_game.c now #includes all 6 directly (packages/simulation/
+# arena_game.c's own top-of-file include list), so :arena_game's own hdrs
+# already carry them into any binary that depends on it. One real class of
+# bug this migration closes outright: a new mod's own -include flag no
+# longer needs to be added to N separate build-path scripts by hand -- it's
+# a real #include in the one file that needs it, done.
+cc_binary(
+    name = "red_garden_arena",
+    srcs = ["src/main.c"],
+    deps = [
+        "//packages/common:common_headers",
+        "//packages/goldenband",
+        "//packages/simulation:arena_ai_bridge",
+        "//packages/simulation:arena_game",
+        "//packages/simulation:arena_replay",
+    ],
+    linkopts = ["-lSDL2", "-lGL", "-lm"],
+    visibility = ["//visibility:public"],
+)

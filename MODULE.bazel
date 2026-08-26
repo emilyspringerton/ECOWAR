@@ -1,0 +1,29 @@
+"""RED GARDEN — the arena MOBA (apps/arena) and its server/matchmaker/bot binaries, under Bazel.
+
+Founder real-time: "i want the bazel migration done now" (S202-36). Replaces
+scripts/build.sh, scripts/build_arena.sh, scripts/test_arena.sh, and
+scripts/build_training.sh as the primary build entry point, following the
+same real precedent PARENA's own MODULE.bazel/BUILD.bazel setup already
+established in this monorepo -- not a new pattern invented here.
+
+Real motivation beyond "the founder asked": build_arena.sh was a second,
+fully redundant copy of build.sh's own apps/arena target -- REDGARDEN hit
+the exact same "a new PARENA mod lands, gets wired into most build paths,
+gets missed in one" bug class at least three separate times this session
+alone (bloodflower_mod, tree_passive_mod, abraham_fireball_mod each missing
+from one shell script or ci.yml's own Windows step at some point). A real
+dependency graph, where a binary depends on a library and that library's
+own srcs list is the single source of truth, makes that whole bug class
+structurally impossible -- not "remember to check five files," one file.
+
+No external dependencies beyond rules_cc -- this repo's own C code has no
+third-party library deps of its own (SDL2/OpenGL are system libraries,
+linked via linkopts, not fetched by Bazel).
+"""
+
+module(
+    name = "redgarden",
+    version = "0.0.0",
+)
+
+bazel_dep(name = "rules_cc", version = "0.2.17")

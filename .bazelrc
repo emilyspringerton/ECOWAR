@@ -1,0 +1,9 @@
+# RED GARDEN's Bazel config. Same global-flags-not-per-target shape PARENA's
+# own .bazelrc already established -- every cc_library/cc_binary/cc_test
+# gets the same discipline scripts/build.sh's own COMMON_FLAGS array held
+# every binary to, without repeating it in every BUILD.bazel file.
+build --conlyopt=-std=c99
+build --copt=-D_DEFAULT_SOURCE
+build --copt=-O2
+build --copt=-Wall
+build --copt=-Wextra

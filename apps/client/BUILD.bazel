@@ -1,0 +1,9 @@
+load("@rules_cc//cc:defs.bzl", "cc_binary")
+
+cc_binary(
+    name = "red_garden_bot",
+    srcs = ["bot_main.c"],
+    deps = ["//packages/common:common_headers"],
+    linkopts = ["-lm"],
+    visibility = ["//visibility:public"],
+)
