@@ -1,6 +1,7 @@
 # Changelog
 
 ## 2026-08-26
+- real [move-debug] server-side trace on every move command + F10 client-side reset-rotation debug tool, for the live intermittent 'stuck sideways, can't rotate' movement bug report -- diagnostics only, root cause not found yet (sess-20260825-1938-f6bd411e)
 - deployed the 2026-08-25/26 autocurriculum RL policy (35.0% vs fixed heuristic) as the live 3v3 weights, replacing the 2026-08-11 noisy-gestalt checkpoint; launched the next training generation (rl_team_checkpoints_autocurriculum_20260826) (sess-20260825-1938-f6bd411e)
 - Autocurriculum RL training run complete (team_size=3, 503808/500000 timesteps): 35% win rate vs heuristic bot AI (worse than baseline, reported honestly). Weights exported (rl_policy_weights_team.h) but not wired into any live consumer. Apple #16125 (sess-20260825-1938-f6bd411e)
 - Bacon+Puck's W replaced with Shadow Step: click an enemy hero to blink behind them, reading their real server-tracked facing_rad (new ArenaHero field, first real facing concept, not just client-visual). Revived the ground-target reticle system for hero-click targeting instead of ground points. Real range/cooldown/mana, no-op on miss. Apple #16113, commit 14e37e1 (sess-20260825-1938-f6bd411e)
