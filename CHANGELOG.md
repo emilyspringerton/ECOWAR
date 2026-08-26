@@ -1,6 +1,7 @@
 # Changelog
 
 ## 2026-08-26
+- Body blocking shipped (S202-27): real hero-hero collision via resolve_hero_hero_collision, same shape as the existing obstacle collision. Applies to allies too (real MOBA convention), skipped during Paper Glide. 4 new tests, full suite green. Apple #16057. (sess-20260825-1938-f6bd411e)
 
 - Duck W -- Smoke Bomb shipped (S202-10, real AoE target-denial: hero_obscured_from blocks arena_nearest_enemy from outside an active cloud). PARENA mod (on_duck_smoke_bomb_cast), wire-synced, client-rendered, 13 new tests. Live-verified fully green in real CI (run 32913376214, commit 7d55fe0). Correction: a test_arena_replay segfault seen locally during this work turned out to be specific to this session's own sandboxed environment, not a real CI/production bug -- real CI's headless test step (which runs it) passed clean; an earlier note here overstated it as a pre-existing CI gap. Apple #16044. (sess-20260825-1938-f6bd411e)
 
