@@ -1,0 +1,44 @@
+# REDGARDEN arena matchmaker — STABLE deployment for GoblinFoxDragon's Battlegrounds (:8778,
+# 10v10). User-level systemd unit (no sudo required).
+#
+# 2026-08-10, founder: "REDGARDEN is now dedicated to R and D" / "i want HFD [GFD] battlegrounds
+# stable" / "we need full duplicate backend surfaces including matchmaking and bot pools" /
+# "redgarden needs a separate one working totally separate from HFD" / "previously FGD used the
+# same matchmaking and bot pool [as REDGARDEN's own :7778 R&D pool]".
+#
+# This is a genuinely SEPARATE deployment from REDGARDEN's own :7778/:7779 R&D pair
+# (redgarden-matchmaker-bots.service / redgarden-matchmaker-players.service) -- own checkout
+# (/home/fatbaby/redgarden-stable, a pinned clone, not the actively-iterated-on
+# /home/fatbaby/REDGARDEN dev checkout), own binaries, own port, own systemd unit name.
+# Deliberately NOT touched by scripts/auto_deploy.sh (that script only ever restarts
+# redgarden-matchmaker-bots.service/redgarden-matchmaker-players.service/redgarden-bot-pool.service
+# against /home/fatbaby/REDGARDEN/build/ -- this unit and its checkout are outside that blast
+# radius entirely). Promoting a new build here is a deliberate, manual action (re-clone/pull +
+# rebuild + restart), not automatic -- that's the whole point: REDGARDEN's own fast R&D iteration
+# (MARL/autocurriculum experiments, frequent commits, CI churn) never touches this.
+#
+# GoblinFoxDragon's apps2/mud/main.go's redgardenMatchmakerPort constant points here (8778), not
+# at REDGARDEN's own R&D :7778.
+
+[Unit]
+Description=REDGARDEN arena matchmaker — STABLE (GFD Battlegrounds) (:8778, 10v10)
+After=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/fatbaby/redgarden-stable
+Environment=REDGARDEN_TICKET_SECRET=test-secret-for-vs0-vs1-validation
+EnvironmentFile=/home/fatbaby/redgarden-stable/var/redgarden-iduna-agent.env
+ExecStart=/home/fatbaby/redgarden-stable/build/red_garden_matchmaker \
+    --listen-port 8778 \
+    --lobby-size 20 \
+    --server-bin /home/fatbaby/redgarden-stable/build/red_garden_arena_server \
+    --first-game-port 8300
+Restart=on-failure
+RestartSec=5s
+StandardOutput=append:/home/fatbaby/redgarden-stable/var/logs/matchmaker-bots.log
+StandardError=append:/home/fatbaby/redgarden-stable/var/logs/matchmaker-bots.log
+MemoryMax=256M
+
+[Install]
+WantedBy=default.target

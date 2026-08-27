@@ -1,0 +1,7 @@
+build/
+var/
+scripts/__pycache__/
+rl_team_checkpoints/
+rl_team_checkpoints_*/
+bazel-*
+MODULE.bazel.lock

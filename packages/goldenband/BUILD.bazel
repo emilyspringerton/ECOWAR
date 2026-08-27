@@ -1,0 +1,28 @@
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+# Bundled into one cc_library, same "always compiled/linked together, never
+# separately, in every real build path this repo has" reasoning
+# packages/simulation:arena_game's own BUILD.bazel comment gives -- avoids
+# hand-mapping each file's own real internal include graph into a matching
+# fine-grained Bazel dep graph for a bag of 5 files apps/arena's own build.sh
+# target always treats as one unit anyway.
+cc_library(
+    name = "goldenband",
+    srcs = [
+        "gband.c",
+        "gband_mesh_rig.c",
+        "gband_rig.c",
+        "gmesh.c",
+        "gskel.c",
+    ],
+    hdrs = [
+        "gband.h",
+        "gband_mesh_rig.h",
+        "gband_rig.h",
+        "gmesh.h",
+        "gskel.h",
+        "sha256.h",
+    ],
+    deps = ["//packages/common:common_headers"],
+    visibility = ["//visibility:public"],
+)

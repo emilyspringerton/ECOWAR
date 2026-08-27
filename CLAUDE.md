@@ -1,30 +1,109 @@
-# ECOWAR
+# REDGARDEN — CLAUDE.md
 
 ## What this is
 
-A hard fork of `GoblinFoxDragon/apps2/battlegrounds_gui`'s interface, carrying forward mainline
-REDGARDEN's newer features (improved bot AI, item catalog, WASD movement) — see `README.md` for
-the full founder-quote provenance, ECOWAR's earlier (superseded) in-REDGARDEN mode scoping, and
-the real, unresolved design questions about the fork itself.
+A deck-based real-time strategy game: Clash Royale's card-hand/mana-economy model over a living
+cellular-automata board (Neutral/Player/Enemy/Corrupted cells that spread and react on their own
+2-second tick, independent of direct player action). Prototype proving-ground for FIELDOFFICE/
+TrapX's territory-custody mechanic (`SHANKPIT/docs2/TRAPX_NORTHSTAR.md`) — build it here first,
+port proven mechanics later. See `NORTHSTAR.md` for the full, current direction; this file is
+commands/layout only.
 
-**Status: scaffolding only.** `CLAUDE.md` (this file) and `README.md` are the first two files in
-the repo. No code has been forked or written here yet — that's real, unstarted follow-up work.
-Read `README.md` before assuming anything about scope; don't start forking `battlegrounds_gui`
-code here without first resolving the open design questions it lists (what forks vs. rebuilds,
-one-time copy vs. ongoing sync with REDGARDEN, matchmaking-port model, source vendoring).
+**2026-08-10: REDGARDEN is now dedicated to R&D** (founder: "REDGARDEN is now dedicated to R and
+D"). The arena bot AI research program (`NORTHSTAR.md` §25-28 — multi-agent RL, role discovery,
+noisy gestalt, synergy decay, autocurriculum, cross-game transfer) lives and iterates here, fast,
+including things that break the live `:7778` R&D matchmaker/bot-pool deployment. The actual live
+product built on REDGARDEN's tech — GoblinFoxDragon's Battlegrounds — no longer depends on this
+deployment at all; see "Deployments" below.
 
-## Stack
+## Deployments (R&D vs. stable — hard separation, 2026-08-10)
 
-Not yet decided at the tooling level, but the fork source is known: C (`battlegrounds_gui`'s
-`src/main.c` + `packages/simulation`/`packages/common`, SDL2/OpenGL, same server-authoritative
-UDP model as REDGARDEN/SHANKPIT). Whether this repo vendors its own copy of the shared packages
-or imports them some other way is one of `README.md`'s open questions.
+Two full, independent deployments of the same source, never sharing a process or a port:
+
+| | R&D (this repo's fast-iteration target) | Stable (serves GFD's Battlegrounds) |
+|---|---|---|
+| Checkout | `/home/fatbaby/REDGARDEN` (active dev) | `/home/fatbaby/redgarden-stable` (separate clone, manually promoted) |
+| Matchmaker (bot pool, 10v10) | `:7778` — `redgarden-matchmaker-bots.service` | `:8778` — `redgarden-stable-matchmaker-bots.service` |
+| Matchmaker (player-only, 1v1) | `:7779` — `redgarden-matchmaker-players.service` | none yet |
+| Bot pool | `redgarden-bot-pool.service` | `redgarden-stable-bot-pool.service` |
+| Auto-deploy | `redgarden-auto-deploy.timer` (polls CI, restarts R&D units only) | none — promoted manually: `cd /home/fatbaby/redgarden-stable && git pull && bash scripts/build.sh && systemctl --user restart redgarden-stable-matchmaker-bots.service redgarden-stable-bot-pool.service` |
+| Consumed by | REDGARDEN's own dev/test loop | `GoblinFoxDragon/apps2/mud/main.go`'s `redgardenMatchmakerPort` (Battlegrounds) |
+
+`apps/arena_bot`'s matchmaker port is a runtime flag now (`--matchmaker-port`, default 7778) —
+this is what makes the same unmodified source safely serve both deployments; never hardcode a
+port assumption back into that binary. `scripts/run_bot_pool.sh` takes the matchmaker port as its
+second argument for the same reason, and scopes its own orphan-guard `pkill` to its checkout's
+absolute path specifically — a bare relative-path pkill pattern would kill both deployments' bots
+at once (a real bug, found and fixed the same session this split was built).
+
+## Current status
+
+See `README.md`'s "Current Status" section and `NORTHSTAR.md` for what's actually built vs.
+aspirational. Short version: VS0 (bot-vs-bot matches) and VS1 (online play, matchmaking,
+connect-ticket accounts) are both validated; hero/item/cooking content is written but not wired
+into code; no packaged/distributable client exists yet.
+
+## Build & test
+
+```bash
+bash scripts/build.sh              # builds red_garden_server, _bot, _lobby, _matchmaker into build/
+bash scripts/test_10_bots.sh        # VS0/VS1 validation: matchmaker + 10 headless bots
+bash scripts/test_arena.sh          # headless smoke tests for apps/arena's sim logic
+```
+
+## Repo map
+
+| Path | What it is |
+|---|---|
+| `apps/server` | Card-RTS game server — one match per process (single global `ServerState`) |
+| `apps/client` | Headless test bot (`bot_main.c`) |
+| `apps/matchmaker` | Pairs queued clients, spawns a dedicated server per match |
+| `apps/lobby` | SDL2/OpenGL rendered client — not yet wired into the matchmaker/ticket flow |
+| `apps/arena` | Separate, additive single-hero click-to-move demo — doesn't touch the above |
+| `packages/common` | Wire protocol (`protocol.h`), `hmac_sha256.h` (connect-ticket auth) |
+| `packages/simulation` | `local_game.c` — grid, cards, entities, tech tree, win condition |
+| `docs/HEROES_VS0.md` | Hero ability kits (content only, not wired into code yet) |
+| `docs/CONSUMABLES_AND_COOKING.md` | Item names + cooking/crafting direction |
+
+## Accounts
+
+Connect-ticket auth, same HMAC-SHA256 scheme as sibling repo shankpit-460 (`packages/common/
+hmac_sha256.h`, ported verbatim, RFC 4231 test vectors re-verified here). `apps/server` verifies
+tickets on `PACKET_CONNECT`, fails closed without `REDGARDEN_TICKET_SECRET` set. Test bots
+self-mint tickets (mirrors shankpit-460's `emily-bot` pattern) — no real IDUNA account needed for
+headless QA.
+
+## UI constraint (cross-cutting, see NORTHSTAR §2)
+
+All shop/menu surfaces (item shop, cooking, crafting) need high-APM affordances — both keybind
+and click paths must resolve instantly, no menu-diving, designed for pro-level play speed while
+staying legible to a casual player standing next to them.
+
+## CHANGELOG Protocol
+
+Append a dated bullet to `CHANGELOG.md` for any meaningful change.
+
+## Apple Filing Protocol
+
+```bash
+emily apples post -t completion -repo REDGARDEN "<title>" "<body with commit hash>"
+```
+Then mark the item done in `EMILY/BACKLOG.md` and commit.
+
+## Golden Doc Registration
+
+If you create a new NORTHSTAR.md, architecture spec, or mission-critical design doc in this repo,
+append a row to `EMILY/context/golden-docs-index.md` so Emily Prime picks it up on the next cycle.
+Then commit and push EMILY.
 
 ## Related Repos
 
-- `GoblinFoxDragon` — `apps2/battlegrounds_gui` is the fork source for this repo's interface.
-- `REDGARDEN` — source of the newer features (AI, items, WASD movement) to pull in.
-- `EMILY` — RSI loop / backlog coordination for cross-repo work (`BACKLOG.md` SECTION 188).
+- `SHANKPIT` — sibling C/SDL2/OpenGL + Go engine; shares the server-authoritative UDP model
+- `shankpit-460` — source of the connect-ticket auth pattern this repo reuses
+- `TYLER` — `multiverse_heroes.md` is the lore compendium the hero queue draws from
+- `GoblinFoxDragon` — mob/NM/loot systems the jungle-ecology direction (NORTHSTAR §8) grafts onto
+- `EMILY` — RSI loop / backlog coordination for cross-repo work
+- `OKEMILY` — `redgarden.html` early-access waitlist page
 
 ## Founder Real-Time Direction
 
@@ -33,22 +112,6 @@ route it through `emily observe -s info "Founder real-time: <summary>"` first, e
 this repo's usual domain, then sprint-plan it into `EMILY/BACKLOG.md` (`emily backlog curate`,
 scoped into a real SECTION/sub-item, not just a one-line log), and only then implement. See
 `EMILY/docs/THE_EMILY_WAY.md` Principle 18 ("Pave the Cow Paths").
-
-## Apple Filing Protocol
-
-After any meaningful change, file an Apple:
-```bash
-emily apples post -t completion -repo ECOWAR "<title>" "<body with commit hash>"
-```
-Then mark the item done in `EMILY/BACKLOG.md` and commit.
-
-## CHANGELOG Protocol
-
-After any meaningful change, update CHANGELOG.md:
-```bash
-emily changelog add ECOWAR "<what changed>"
-# or manually: append a dated bullet under ## YYYY-MM-DD in ECOWAR/CHANGELOG.md
-```
 
 ## Frame-Break Reframing
 

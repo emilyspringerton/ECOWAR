@@ -1,0 +1,74 @@
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+# local_game -- apps/server and apps/lobby's own older, standalone card-RTS sim.
+# Entirely independent of arena_game below (NORTHSTAR §13's own "apps/arena
+# is the product now, additive, doesn't replace this" framing) -- no shared
+# code between the two.
+cc_library(
+    name = "local_game",
+    srcs = ["local_game.c"],
+    hdrs = ["local_game.h"],
+    deps = ["//packages/common:common_headers"],
+    visibility = ["//visibility:public"],
+)
+
+# arena_game -- the real MOBA simulation (apps/arena's own server-authoritative
+# core) bundled together with all 6 of its real PARENA-compiled mods in ONE
+# cc_library, not six separate libraries with a :deps edge between them.
+# Real, deliberate reason, not laziness: arena_game.c calls INTO each mod's
+# own on_*() entry point (e.g. on_tree_passive_strike), and each mod's own
+# generated .c calls BACK OUT into a host function arena_game.c itself
+# defines (e.g. redgarden_host_tree_passive_strike) -- a genuine circular
+# reference between arena_game.c and each mod .c file. C handles that fine
+# within ONE linked unit; splitting them into separate cc_library targets
+# with a real deps=[] edge would need Bazel to resolve a dependency cycle
+# that doesn't actually exist at the SOURCE level (both directions are real,
+# needed calls) -- bundling them here is the honest match for how these
+# files have always actually been compiled (every real build path in this
+# repo -- build.sh, build_arena.sh, test_arena.sh, ci.yml -- already
+# compiles/links all 7 files together as one unit, never separately).
+cc_library(
+    name = "arena_game",
+    srcs = [
+        "abraham_fireball_mod.c",
+        "arena_game.c",
+        "bloodflower_mod.c",
+        "build_template_mod.c",
+        "duck_smoke_bomb_mod.c",
+        "item_curriculum_mod.c",
+        "tree_passive_mod.c",
+    ],
+    hdrs = [
+        "abraham_fireball_mod_host.h",
+        "arena_game.h",
+        "bloodflower_mod_host.h",
+        "build_template_mod_host.h",
+        "duck_smoke_bomb_mod_host.h",
+        "item_curriculum_mod_host.h",
+        "parena_runtime.h",
+        "tree_passive_mod_host.h",
+    ],
+    deps = [
+        "//packages/common:common_headers",
+        "//packages/common:mlp_infer",
+    ],
+    linkopts = ["-lm"],
+    visibility = ["//visibility:public"],
+)
+
+cc_library(
+    name = "arena_replay",
+    srcs = ["arena_replay.c"],
+    hdrs = ["arena_replay.h"],
+    deps = [":arena_game"],
+    visibility = ["//visibility:public"],
+)
+
+cc_library(
+    name = "arena_ai_bridge",
+    srcs = ["arena_ai_bridge.c"],
+    hdrs = ["arena_ai_bridge.h"],
+    deps = [":arena_game"],
+    linkopts = ["-lm"],
+    visibility = ["//visibility:public"],
+)

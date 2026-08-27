@@ -1,0 +1,49 @@
+HIERARCHY
+ROOT Hips
+{
+	OFFSET 0.0 0.0 0.0
+	CHANNELS 6 Xposition Yposition Zposition Xrotation Yrotation Zrotation
+	JOINT Spine
+	{
+		OFFSET 0.0 0.35 0.0
+		CHANNELS 3 Xrotation Yrotation Zrotation
+		JOINT Head
+		{
+			OFFSET 0.0 0.30 0.0
+			CHANNELS 3 Xrotation Yrotation Zrotation
+			End Site
+			{
+				OFFSET 0.0 0.20 0.0
+			}
+		}
+		JOINT L_Arm
+		{
+			OFFSET -0.45 0.0 0.0
+			CHANNELS 3 Xrotation Yrotation Zrotation
+			End Site
+			{
+				OFFSET 0.0 -0.5 0.0
+			}
+		}
+		JOINT R_Arm
+		{
+			OFFSET 0.45 0.0 0.0
+			CHANNELS 3 Xrotation Yrotation Zrotation
+			End Site
+			{
+				OFFSET 0.0 -0.5 0.0
+			}
+		}
+	}
+}
+MOTION
+Frames: 8
+Frame Time: 0.1
+0 0.65 0 0 0 0 0 0 0.0 0 0 0 0.0 0 0 0.0 0 0
+0 0.665 0 0 0 0 0 0 -2.8 0 0 0 24.7 0 0 -24.7 0 0
+0 0.68 0 0 0 0 0 0 -4.0 0 0 0 35.0 0 0 -35.0 0 0
+0 0.665 0 0 0 0 0 0 -2.8 0 0 0 24.7 0 0 -24.7 0 0
+0 0.65 0 0 0 0 0 0 0.0 0 0 0 0.0 0 0 0.0 0 0
+0 0.635 0 0 0 0 0 0 2.8 0 0 0 -24.7 0 0 24.7 0 0
+0 0.62 0 0 0 0 0 0 4.0 0 0 0 -35.0 0 0 35.0 0 0
+0 0.635 0 0 0 0 0 0 2.8 0 0 0 -24.7 0 0 24.7 0 0

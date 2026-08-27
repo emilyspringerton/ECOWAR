@@ -1,0 +1,22 @@
+# REDGARDEN auto-deploy — keeps the live arena systemd units running the latest green CI build
+# on main. User-level systemd unit (no sudo required). Triggered by
+# redgarden-auto-deploy.timer, not run continuously itself (Type=oneshot).
+#
+# Deploy:
+#   mkdir -p ~/.config/systemd/user
+#   cp ops/systemd/redgarden-auto-deploy.service ops/systemd/redgarden-auto-deploy.timer ~/.config/systemd/user/
+#   systemctl --user daemon-reload
+#   systemctl --user enable --now redgarden-auto-deploy.timer
+#
+# S170-100 (2026-07-25), founder: "ensure the server version always stays current with the
+# currently latest passing build." See scripts/auto_deploy.sh for the full design rationale
+# (separate deploy checkout, CI-hang guard, local re-verification before touching anything live).
+
+[Unit]
+Description=REDGARDEN arena auto-deploy (poll GitHub Actions for the latest green build on main)
+After=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/home/fatbaby/REDGARDEN
+ExecStart=/home/fatbaby/REDGARDEN/scripts/auto_deploy.sh

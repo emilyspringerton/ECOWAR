@@ -1,0 +1,279 @@
+#!/usr/bin/env python3
+"""
+scripts/rl_train.py (S170-226, NORTHSTAR §21) -- trains the REDGARDEN arena bot AI via PPO
+(Stable-Baselines3) against scripts/rl_env.py's ArenaTrainingEnv, reward-driven, in place of
+S170-194/195/220's own corpus-based next-token-prediction pretraining (founder: "i want
+unsupervised learning with rewards like in the unity ml-agents plugin").
+
+Same delivery pattern S170-220's own scripts/colab_train.py already established: config from
+CLI args (with env-var defaults so a notebook bootstrap cell can drive it), runs equally well
+locally (this whole sim has no display dependency -- confirmed by this repo's own headless test
+suite) or on Colab. Requires build/libarena_training.so to already exist (`bash
+scripts/build_training.sh`) -- this script does not build it itself, since building is a fast,
+deterministic, environment-independent step that doesn't belong gated behind a slow pip install
+the way scripts/colab_train.py's own deferred-import pattern gates torch/transformers.
+
+Trains a small policy network (SB3's own default `net_arch=[64, 64]` MLP for both actor and
+critic -- NORTHSTAR §21.3 explicitly leaves this as a default, not confirmed final tuning) --
+after training, hands off to scripts/export_rl_policy_to_c.py (S170-227) to extract just the
+POLICY (actor) network's weights into the embedded-C format packages/common's own small MLP
+inference module expects.
+
+NOT independently verified end to end in the environment this was written in: `gymnasium`/
+`stable_baselines3` are not installable here (no venv module, externally-managed system Python,
+no sudo) -- see scripts/rl_env.py's own doc comment for the same gap and what WAS verified there
+(the environment's own ctypes/observation/reward logic, directly). This script's own PPO
+configuration is written to Stable-Baselines3's documented API but has not been run. Whoever
+next has a normal Python environment should `pip install gymnasium stable-baselines3` and run
+this file to close that gap -- flagged here, not claimed.
+"""
+
+import argparse
+import os
+import sys
+
+
+def parse_args():
+    p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    p.add_argument("--lib-path", default=os.environ.get("ARENA_TRAINING_LIB", None),
+                   help="default: <repo-root>/build/libarena_training.so (scripts/rl_env.py's "
+                        "own default)")
+    p.add_argument("--total-timesteps", type=int,
+                   default=int(os.environ.get("RL_TOTAL_TIMESTEPS", 200_000)))
+    p.add_argument("--n-envs", type=int, default=int(os.environ.get("RL_N_ENVS", 4)),
+                   help="parallel environment copies PPO collects rollouts from -- each is an "
+                        "independent in-process libarena_training.so instance (ctypes.CDLL "
+                        "loads its own copy of the sim's global ArenaState per process when run "
+                        "under SB3's own SubprocVecEnv, so parallelism is real, not simulated)")
+    p.add_argument("--learning-rate", type=float, default=float(os.environ.get("RL_LEARNING_RATE", 3e-4)))
+    p.add_argument("--n-steps", type=int, default=int(os.environ.get("RL_N_STEPS", 2048)),
+                   help="PPO rollout length per env before each policy update -- SB3's own default")
+    p.add_argument("--batch-size", type=int, default=int(os.environ.get("RL_BATCH_SIZE", 64)))
+    p.add_argument("--net-arch", type=int, nargs="+",
+                   default=[int(x) for x in os.environ.get("RL_NET_ARCH", "64,64").split(",")],
+                   help="hidden layer sizes for BOTH the policy (actor) and value (critic) "
+                        "networks -- NORTHSTAR §21.3: SB3's own default, not confirmed final "
+                        "tuning. Only the policy half gets exported to C (S170-227) -- the "
+                        "value network is training-only scaffolding, a real game never needs it.")
+    p.add_argument("--hero0-id", type=int, default=int(os.environ.get("RL_HERO0_ID", 0)),
+                   help="which hero ID the Agent plays -- default 0 (Unicorn), matching "
+                        "scripts/rl_env.py's own default")
+    p.add_argument("--hero1-id", type=int, default=int(os.environ.get("RL_HERO1_ID", 1)),
+                   help="which hero ID the heuristic-AI opponent plays -- default 1 (Duck). "
+                        "Ignored during training if --randomize-heroes is set (still used for "
+                        "the final eval pass, which stays on a fixed pairing for a stable, "
+                        "comparable-across-runs metric)")
+    p.add_argument("--randomize-heroes", action="store_true",
+                   help="2026-07-29, founder: 'not just 2 heroes' -- pick a fresh random hero "
+                        "for both sides every training episode instead of always "
+                        "--hero0-id/--hero1-id. Needs the one-hot hero-id observation fields "
+                        "(always present now, see scripts/rl_env.py) to actually learn anything "
+                        "hero-specific from this")
+    p.add_argument("--self-play-opponent", default=os.environ.get("RL_SELF_PLAY_OPPONENT", None),
+                   help="2026-07-29, founder: 'i need the bots to be training on the full game "
+                        "rl' -- path to a frozen past PPO checkpoint (.zip) whose own "
+                        "predictions drive hero 1 during training, instead of the stable "
+                        "heuristic. Real self-play: train gen N+1 against a frozen gen N, then "
+                        "point a LATER run's --self-play-opponent at gen N+1's own checkpoint to "
+                        "keep climbing. Omit to keep training against the heuristic (unchanged "
+                        "default behavior)")
+    p.add_argument("--output-dir", default=os.environ.get("RL_OUTPUT_DIR", "rl_checkpoints"))
+    p.add_argument("--save-freq", type=int, default=int(os.environ.get("RL_SAVE_FREQ", 20_000)),
+                   help="save a checkpoint every N timesteps, in addition to the final save")
+    p.add_argument("--eval-episodes", type=int, default=int(os.environ.get("RL_EVAL_EPISODES", 20)),
+                   help="episodes to run for the final win-rate report against the same "
+                        "heuristic opponent it trained against")
+    p.add_argument("--skip-export", action="store_true",
+                   help="skip converting the trained policy to the embedded-C header format "
+                        "(S170-227's own scripts/export_rl_policy_to_c.py)")
+    p.add_argument("--export-output", default=os.environ.get(
+        "RL_EXPORT_OUTPUT", "packages/common/rl_policy_weights.h"),
+        help="where the exported C header goes, relative to --repo-dir")
+    p.add_argument("--skip-git-sync", action="store_true",
+                   help="skip committing/pushing the exported header back to origin/main -- "
+                        "same convention scripts/colab_train.py's own flag already uses")
+    p.add_argument("--ssh-key-path", default=os.environ.get(
+        "REDGARDEN_DRIVE_SSH_KEY", "/content/drive/MyDrive/.ssh/id_ed25519"),
+        help="same founder-chosen path scripts/colab_train.py's own git-sync already uses")
+    p.add_argument("--repo-dir", default=os.environ.get("REPO_DIR", "/content/REDGARDEN"),
+                   help="same default scripts/colab_train.py's own git-sync already uses")
+    return p.parse_args()
+
+
+def make_env(lib_path, hero0_id, hero1_id, randomize_heroes=False, opponent_model_path=None):
+    """Factory closure for SB3's VecEnv constructors (each parallel env needs its own callable,
+    not a shared instance -- SB3's own documented pattern)."""
+    def _init():
+        # Imported here, not at module level, so --help and argument parsing work even without
+        # gymnasium installed (same deferred-import reasoning scripts/colab_train.py's own
+        # pip_install()-gated imports already use for torch/transformers).
+        sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+        from rl_env import ArenaTrainingEnv
+        return ArenaTrainingEnv(lib_path=lib_path, hero0_id=hero0_id, hero1_id=hero1_id,
+                                 randomize_heroes=randomize_heroes,
+                                 opponent_model_path=opponent_model_path)
+    return _init
+
+
+def main():
+    args = parse_args()
+
+    from stable_baselines3 import PPO
+    from stable_baselines3.common.vec_env import SubprocVecEnv, DummyVecEnv
+
+    env_fns = [
+        make_env(args.lib_path, args.hero0_id, args.hero1_id,
+                 randomize_heroes=args.randomize_heroes,
+                 opponent_model_path=args.self_play_opponent)
+        for _ in range(args.n_envs)
+    ]
+    # DummyVecEnv (single process) when n_envs==1 -- SubprocVecEnv's own process-pool overhead
+    # isn't worth it for a single env, same reasoning SB3's own docs give.
+    vec_env = DummyVecEnv(env_fns) if args.n_envs == 1 else SubprocVecEnv(env_fns)
+
+    os.makedirs(args.output_dir, exist_ok=True)
+
+    # A flat net_arch list (same hidden sizes for both actor and critic) rather than the
+    # separate-pi/vf dict form -- SB3's dict-based net_arch syntax has changed shape across
+    # major versions (a version-sensitivity risk this script can't pin down without a real SB3
+    # install to test against, see this file's own doc comment), while the flat-list form has
+    # stayed stable and is exactly what NORTHSTAR §21.3 itself describes ("SB3's own default
+    # net_arch=[64, 64]").
+    policy_kwargs = dict(net_arch=args.net_arch)
+    model = PPO(
+        "MlpPolicy",
+        vec_env,
+        learning_rate=args.learning_rate,
+        n_steps=args.n_steps,
+        batch_size=args.batch_size,
+        policy_kwargs=policy_kwargs,
+        verbose=1,
+    )
+
+    print(f"Training PPO: total_timesteps={args.total_timesteps} n_envs={args.n_envs} "
+          f"net_arch={args.net_arch} hero0={args.hero0_id} hero1={args.hero1_id} "
+          f"randomize_heroes={args.randomize_heroes} self_play_opponent={args.self_play_opponent}")
+    print("Reward function: NORTHSTAR §21.2 / scripts/rl_env.py's own compute_reward() -- "
+          "damage dealt/taken, kill/death, Flow/XP, alive bonus, terminal win/loss.")
+
+    checkpoint_path_template = os.path.join(args.output_dir, "ppo_arena_step_{}")
+    timesteps_done = 0
+    while timesteps_done < args.total_timesteps:
+        chunk = min(args.save_freq, args.total_timesteps - timesteps_done)
+        model.learn(total_timesteps=chunk, reset_num_timesteps=False)
+        # 2026-07-29, real bug found live: `model.learn(total_timesteps=chunk, ...)` can only
+        # stop at a rollout boundary (n_envs * n_steps, e.g. 4*2048=8192), so it always runs
+        # AT LEAST `chunk` steps and usually somewhat more -- crediting only the requested
+        # `chunk` here (as this line used to: `timesteps_done += chunk`) silently undercounts
+        # every single checkpoint. With a `save_freq` much smaller than one rollout's worth
+        # (this run used the default 20,000 against an 8,192-step rollout), that undercount is
+        # a meaningful fraction of the chunk every time, and it compounds across every
+        # iteration -- over one real run, this script's own `timesteps_done` ended up more than
+        # 1,000,000 steps behind `model.num_timesteps` (the model's real internal progress),
+        # meaning the loop kept training for ~20% longer than `--total-timesteps` actually
+        # asked for before its own (wrong) counter finally caught up. Reading the model's own
+        # authoritative counter instead of re-deriving one from the requested chunk size fixes
+        # this by construction -- it can never drift, because it's not a second copy of the
+        # same number. Long enough that the run has to be intervened on manually to catch, but
+        # not the first "which of these two things does 'total_timesteps' actually mean"
+        # inconsistency this exact command surfaced, either.
+        timesteps_done = model.num_timesteps
+        ckpt_path = checkpoint_path_template.format(timesteps_done)
+        model.save(ckpt_path)
+        print(f"Checkpoint saved: {ckpt_path}.zip ({timesteps_done}/{args.total_timesteps} timesteps)")
+
+    final_path = os.path.join(args.output_dir, "ppo_arena_final")
+    model.save(final_path)
+    print(f"Final model saved: {final_path}.zip")
+
+    # Evaluation: real episodes against the same heuristic-AI opponent (arena_bot_enabled's own
+    # existing bot_cast_kit_if_ready), not a synthetic metric -- win rate is the actual objective
+    # the terminal +-10.0 reward term is shaped around.
+    print(f"\nEvaluating over {args.eval_episodes} episodes...")
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    from rl_env import ArenaTrainingEnv
+    eval_env = ArenaTrainingEnv(lib_path=args.lib_path, hero0_id=args.hero0_id, hero1_id=args.hero1_id)
+    wins = losses = draws = 0
+    for ep in range(args.eval_episodes):
+        obs, _ = eval_env.reset()
+        terminated = truncated = False
+        while not (terminated or truncated):
+            action, _ = model.predict(obs, deterministic=True)
+            obs, reward, terminated, truncated, info = eval_env.step(action)
+        winner = info.get("winner", 0)
+        if winner == 1:
+            wins += 1
+        elif winner == 2:
+            losses += 1
+        else:
+            draws += 1
+    print(f"Eval results: {wins}W {losses}L {draws}D over {args.eval_episodes} episodes "
+          f"({100.0 * wins / args.eval_episodes:.1f}% win rate vs. the heuristic bot AI)")
+
+    # Second eval pass, only when self-play was actually used: "did the new generation actually
+    # beat the frozen opponent it just trained against" is a real, different question from "does
+    # it still beat the original heuristic" above -- the heuristic eval alone can't answer it
+    # (a policy could get worse against a strong self-play opponent while still comfortably
+    # beating the much weaker fixed heuristic, and this would silently miss that regression).
+    if args.self_play_opponent:
+        print(f"\nEvaluating over {args.eval_episodes} episodes against the self-play opponent "
+              f"({args.self_play_opponent})...")
+        opponent_eval_env = ArenaTrainingEnv(
+            lib_path=args.lib_path, hero0_id=args.hero0_id, hero1_id=args.hero1_id,
+            opponent_model_path=args.self_play_opponent,
+        )
+        sp_wins = sp_losses = sp_draws = 0
+        for ep in range(args.eval_episodes):
+            obs, _ = opponent_eval_env.reset()
+            terminated = truncated = False
+            while not (terminated or truncated):
+                action, _ = model.predict(obs, deterministic=True)
+                obs, reward, terminated, truncated, info = opponent_eval_env.step(action)
+            winner = info.get("winner", 0)
+            if winner == 1:
+                sp_wins += 1
+            elif winner == 2:
+                sp_losses += 1
+            else:
+                sp_draws += 1
+        print(f"Eval results vs self-play opponent: {sp_wins}W {sp_losses}L {sp_draws}D over "
+              f"{args.eval_episodes} episodes ({100.0 * sp_wins / args.eval_episodes:.1f}% win rate)")
+
+    header_path = None
+    if not args.skip_export:
+        from export_rl_policy_to_c import extract_layers_from_sb3_policy, write_c_header_from_layers
+        layers = extract_layers_from_sb3_policy(model)
+        header_path = os.path.join(args.output_dir, "rl_policy_weights.h")
+        write_c_header_from_layers(layers, header_path)
+
+    if header_path and not args.skip_git_sync:
+        from git_sync_utils import git_sync_file_to_repo
+        commit_message = "feat(arena): update trained RL policy weights from a PPO run\n\nbacklog: S170-227"
+        git_sync_file_to_repo(header_path, args.export_output, args.repo_dir,
+                               args.ssh_key_path, commit_message)
+
+    print("=" * 60)
+    print(f"DONE. Final policy: {final_path}.zip")
+    if header_path:
+        print(f"C inference header: {header_path} (packages/common/mlp_infer.h's own MlpModel "
+              f"format -- see that header's own doc comment, and rl_policy_forward() inside the "
+              f"generated file, for how to call it)")
+    if args.self_play_opponent:
+        print(f"Trained via self-play against {args.self_play_opponent}"
+              + (", with hero pairings randomized every episode." if args.randomize_heroes else "."))
+        print("For a further generation: point a later run's --self-play-opponent at THIS run's")
+        print(f"own {final_path}.zip to keep climbing.")
+    else:
+        print("Trained against the existing heuristic bot AI only"
+              + (", with hero pairings randomized every episode." if args.randomize_heroes else "."))
+        print("For real self-play instead: --self-play-opponent <a past run's ppo_arena_*.zip>.")
+    print("rl_policy_forward() is already wired into apps/arena_bot's real networked match bots")
+    print("(REDGARDEN Apple #11301) and arena_game.c's solo-practice bot (S170-228) -- promoting")
+    print("this run's exported header (above) into packages/common/rl_policy_weights.h is enough")
+    print("for both to pick it up, no further live-integration work needed.")
+    print("File a completion Apple and mark the relevant EMILY/BACKLOG.md item done.")
+    print("=" * 60)
+
+
+if __name__ == "__main__":
+    main()

@@ -1,0 +1,40 @@
+{
+  "gband_version": 1,
+  "skeleton_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+  "content_hash": "75a6eb8824fc94d7eafd80cfa67b490397c10ca130283ae1e095d521a0cd907c",
+  "tick_rate": 10,
+  "duration_ticks": 8,
+  "channels": [
+    "Hips.Xposition",
+    "Hips.Yposition",
+    "Hips.Zposition",
+    "Hips.Xrotation",
+    "Hips.Yrotation",
+    "Hips.Zrotation",
+    "Hips/Spine.Xrotation",
+    "Hips/Spine.Yrotation",
+    "Hips/Spine.Zrotation",
+    "Hips/Spine/Head.Xrotation",
+    "Hips/Spine/Head.Yrotation",
+    "Hips/Spine/Head.Zrotation",
+    "Hips/Spine/L_Arm.Xrotation",
+    "Hips/Spine/L_Arm.Yrotation",
+    "Hips/Spine/L_Arm.Zrotation",
+    "Hips/Spine/R_Arm.Xrotation",
+    "Hips/Spine/R_Arm.Yrotation",
+    "Hips/Spine/R_Arm.Zrotation"
+  ],
+  "authorship": {
+    "kind": "human",
+    "who": "hand-authored test clip, S144-06"
+  },
+  "intent_tags": [],
+  "loop_points": {
+    "start_tick": 0,
+    "end_tick": 8
+  },
+  "safety": {
+    "max_joint_velocity": null,
+    "max_joint_torque": null
+  }
+}

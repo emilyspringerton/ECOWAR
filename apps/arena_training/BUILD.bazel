@@ -1,0 +1,15 @@
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+# headless -- the ctypes-callable RL environment API (S170-224, NORTHSTAR §21)
+# scripts/build_training.sh's own libarena_training.so is built from this
+# plus :arena_game. Exposed as a real Bazel cc_library here so
+# tests/test_arena_training.c can depend on it the same way every other
+# real test in this repo depends on a real library, not by hand-listing
+# srcs in the test target itself.
+cc_library(
+    name = "headless",
+    srcs = ["src/headless.c"],
+    deps = ["//packages/simulation:arena_game"],
+    linkopts = ["-lm"],
+    visibility = ["//visibility:public"],
+)

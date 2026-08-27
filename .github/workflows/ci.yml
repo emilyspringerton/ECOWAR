@@ -1,0 +1,274 @@
+name: build
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+    branches: ["**"]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    # Default job ceiling is 6 hours -- 2026-07-24's hang on the mingw/SDL2 step would have sat
+    # "in_progress" that whole time with nobody able to cancel it (no gh CLI/token in this repo's
+    # usual working environment). The full pipeline normally finishes in a few minutes.
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Linux dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libsdl2-dev libgl1-mesa-dev libglu1-mesa-dev
+
+      - name: Headless tests (arena sim, replay, AI bridge, mat4)
+        run: |
+          bash scripts/test_arena.sh
+
+      - name: Networked bot-pool smoke test (VS0/VS1)
+        run: |
+          bash scripts/test_10_bots.sh
+
+      - name: Build Linux server-side binaries (server, arena_server, arena_bot, matchmaker, lobby, client bot)
+        run: |
+          bash scripts/build.sh
+
+      - name: Build Linux arena client (sanity check only -- the distributable client is Windows, below)
+        run: |
+          bash scripts/build_arena.sh
+
+      # Windows client cross-compile + SDL2 bundle, mirroring SHANKPIT's
+      # proven release.yml pattern (EMILY/BACKLOG.md S170-54 -- "the github
+      # artifact for REDGARDEN is unsuitable... no executable... SDL dll not
+      # bundled... check shankpit for the protopattern"). apps/arena is the
+      # product since the MOBA pivot (NORTHSTAR §13); a bare Linux ELF with
+      # no SDL2 runtime bundled isn't something a founder can just download
+      # and run. No -lglu32 here, unlike SHANKPIT's client -- apps/arena is
+      # a shader-based (modern GL) renderer that never needed GLU at all
+      # (see scripts/build_arena.sh's own comment).
+      # timeout-minutes here is a hard safety net: this step normally finishes in well under a
+      # minute, but 2026-07-24 saw a run hang indefinitely on it (stuck ~18+ min with no error,
+      # no completion, no gh CLI/token available to cancel it remotely) with byte-identical YAML
+      # to four immediately-prior runs that all passed in seconds -- a transient runner/mirror
+      # stall, not a real bug, but nothing here would have ever timed out it out on its own:
+      # apt-get install has no DEBIAN_FRONTEND guard against an interactive prompt, and wget only
+      # retries on connection-refused, not a connection that succeeds and then just stalls.
+      - name: Install mingw-w64 + SDL2 mingw devel package
+        timeout-minutes: 10
+        env:
+          DEBIAN_FRONTEND: noninteractive
+        run: |
+          set -euo pipefail
+          sudo apt-get install -y mingw-w64 zip
+          rm -rf sdl2_mingw SDL2-2.30.10 SDL2-devel-2.30.10-mingw.tar.gz || true
+          wget -q --timeout=30 --tries=3 --retry-connrefused \
+            https://github.com/libsdl-org/SDL/releases/download/release-2.30.10/SDL2-devel-2.30.10-mingw.tar.gz
+          tar xzf SDL2-devel-2.30.10-mingw.tar.gz
+          mv SDL2-2.30.10/x86_64-w64-mingw32 ./sdl2_mingw
+
+      # packages/simulation/bloodflower_mod.c (S194-01/S194-04): arena_game.c's own
+      # arena_tick_daynight calls on_moon_zenith(), defined in the PARENA-compiled
+      # bloodflower mod -- this Windows cross-compile is a third, separate build path
+      # from scripts/build.sh and scripts/build_arena.sh (both already fixed) and was
+      # missed too, breaking this step the same way build_arena.sh broke (undefined
+      # reference at link time). Verified locally via a real mingw cross-compile
+      # against the exact SDL2-devel-2.30.10-mingw package this step downloads, not
+      # just assumed to match the Linux fix.
+      # packages/simulation/tree_passive_mod.c (2026-08-25): same exact gap, same fix, this
+      # time for arena_hero_tree_passive's on_tree_passive_strike call (Tree hero passive) --
+      # this step was missed again when THAT mod landed, for the identical "third, separate
+      # build path" reason bloodflower_mod.c's own comment above already names. Found live via
+      # CI failure on commit c0e3ee6.
+      - name: Cross-compile Windows arena client
+        run: |
+          set -euo pipefail
+          x86_64-w64-mingw32-gcc -std=c99 -D_DEFAULT_SOURCE -O2 \
+            -include packages/simulation/bloodflower_mod_host.h \
+            -include packages/simulation/tree_passive_mod_host.h \
+            -include packages/simulation/build_template_mod_host.h \
+            -include packages/simulation/item_curriculum_mod_host.h \
+            -include packages/simulation/duck_smoke_bomb_mod_host.h \
+            -include packages/simulation/abraham_fireball_mod_host.h \
+            -o RedGarden.exe \
+            apps/arena/src/main.c \
+            packages/simulation/arena_game.c \
+            packages/simulation/arena_replay.c \
+            packages/simulation/arena_ai_bridge.c \
+            packages/simulation/bloodflower_mod.c \
+            packages/simulation/tree_passive_mod.c \
+            packages/simulation/build_template_mod.c \
+            packages/simulation/item_curriculum_mod.c \
+            packages/simulation/duck_smoke_bomb_mod.c \
+            packages/simulation/abraham_fireball_mod.c \
+            packages/common/mlp_infer.c \
+            packages/goldenband/gband.c \
+            packages/goldenband/gband_rig.c \
+            packages/goldenband/gskel.c \
+            packages/goldenband/gmesh.c \
+            packages/goldenband/gband_mesh_rig.c \
+            -I./sdl2_mingw/include \
+            -Ipackages \
+            -L./sdl2_mingw/lib \
+            -lmingw32 -lSDL2main -lSDL2 \
+            -lopengl32 -lws2_32 -lwinmm -lgdi32 -lm
+
+      - name: Bundle artifacts
+        run: |
+          set -euo pipefail
+          BUILD="build_${{ github.run_number }}_${GITHUB_SHA::7}"
+
+          mkdir -p RedGarden_Client
+          cp RedGarden.exe RedGarden_Client/
+          cp sdl2_mingw/bin/SDL2.dll RedGarden_Client/
+          # S144-06/07 (real bug found live, 2026-08-05, founder: "it seemed
+          # like the tyler model was not updated"): gband_rig_init/
+          # gband_mesh_rig_init("assets/goldenband") load relative to CWD,
+          # same as GFD's client -- this packaging step never bundled that
+          # directory at all, so every downloaded build silently fell back
+          # to Tyler's original plain box. No error, no crash, just an
+          # unremarkable box where a real skeleton/mesh should be.
+          mkdir -p RedGarden_Client/assets/goldenband
+          cp assets/goldenband/*.gband assets/goldenband/*.gband.json assets/goldenband/*.gskel assets/goldenband/*.gmesh RedGarden_Client/assets/goldenband/
+          # 127.0.0.1 (loopback) was the original default here, which only
+          # ever makes sense if the matchmaker is running on this same
+          # Windows machine -- wrong for the actual distributed client,
+          # which connects to the persistent bot pool on the real box
+          # (S170-59, found live: a real download hung on "queuing" because
+          # of exactly this). Update this IP if the box's address changes.
+          #
+          # S170-63, also found live: there's no human login flow yet, so
+          # the client falls back to self-minting a connect ticket via
+          # REDGARDEN_TICKET_SECRET -- which has to be set client-side too,
+          # or it fails at the ticket step with no visible error (no
+          # `pause`, the window just closed). This is a shared *test*
+          # secret for exactly this kind of validation, not a real production
+          # credential -- matches what the live bot pool's matchmaker/
+          # arena_server processes are run with.
+          printf '%s\r\n' "@echo off" "set REDGARDEN_TICKET_SECRET=test-secret-for-vs0-vs1-validation" "echo Connecting to the persistent bot pool at 198.58.107.85 ..." "RedGarden.exe --queue 198.58.107.85" "pause" > RedGarden_Client/PLAY.bat
+          zip -r "RedGarden_Client_${BUILD}.zip" RedGarden_Client
+
+          mkdir -p RedGarden_Server
+          cp build/red_garden_server RedGarden_Server/ 2>/dev/null || true
+          cp build/red_garden_arena_server RedGarden_Server/ 2>/dev/null || true
+          cp build/red_garden_arena_bot RedGarden_Server/ 2>/dev/null || true
+          cp build/red_garden_matchmaker RedGarden_Server/ 2>/dev/null || true
+          cp build/red_garden_lobby RedGarden_Server/ 2>/dev/null || true
+          printf '%s\n' "./red_garden_matchmaker --listen-port 7778 --lobby-size 20 --server-bin ./red_garden_arena_server --first-game-port 7300" > RedGarden_Server/START_ARENA_POOL.sh
+          chmod +x RedGarden_Server/START_ARENA_POOL.sh
+          zip -r "RedGarden_Server_${BUILD}.zip" RedGarden_Server
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: red-garden-build
+          path: |
+            RedGarden_Client_*.zip
+            RedGarden_Server_*.zip
+
+      # Real gap closed 2026-08-25 (S202-19): every other active repo with real CI
+      # already had a *_CONSTRUCT.txt build artifact (a full concatenation of its
+      # own source, matching emily.cli's own ci.yml "Generate Construct Bundle"
+      # step) -- REDGARDEN was one of 9 confirmed missing it (S202-18's audit).
+      - name: Generate Construct Bundle
+        shell: bash
+        run: |
+          set -euo pipefail
+          OUT="REDGARDEN_CONSTRUCT.txt"
+          {
+            echo "REDGARDEN CONSTRUCT ${{ github.run_number }}"
+            echo "commit: $GITHUB_SHA"
+            echo "generated_utc: $(date -u +"%Y-%m-%dT%H:%M:%SZ")"
+            echo
+          } > "$OUT"
+
+          ROOTS=""
+          for d in packages apps docs docs2 scripts; do
+            if [ -d "$d" ]; then ROOTS="$ROOTS $d"; fi
+          done
+
+          while IFS= read -r relpath; do
+            {
+              echo "--- FILE START: ${relpath} ---"
+              cat "${relpath}"
+              echo
+              echo "--- FILE END: ${relpath} ---"
+              echo
+            } >> "$OUT"
+          done < <(
+            find $ROOTS \
+              \( -name "*.c" -o -name "*.h" -o -name "*.py" -o -name "*.prn" -o \
+                 -name "*.md" -o -name "Makefile" -o -name "*.yml" -o -name "*.yaml" -o \
+                 -name "*.sh" \) \
+              ! -path "*/rl_team_checkpoints*" \
+              -print | LC_ALL=C sort
+          )
+
+          test -s "$OUT"
+
+      - name: Upload Construct Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: REDGARDEN_Construct_${{ github.run_number }}_${{ github.sha }}
+          path: REDGARDEN_CONSTRUCT.txt
+          if-no-files-found: error
+
+  # Founder real-time: "ensure all our core repos have auto release non pre release" -- same
+  # exact pattern PITVIPER's own ci.yml established (2026-08-21), also just applied to SHANKPIT/
+  # shankpit-460 this same session: auto-bumps MINOR version only on every real push to main
+  # (never PRs, never other branches -- this workflow's own top-level `on:` trigger runs on every
+  # branch, so this job's own `if:` is what scopes releases to main specifically -- and never the
+  # tag-push this job's own release step triggers), major stays a human call. A REAL release (no
+  # --prerelease flag). Reuses the same build already produced by the job above rather than
+  # rebuilding.
+  release:
+    name: 🚀 Tag & Release
+    runs-on: ubuntu-latest
+    needs: [build]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    permissions:
+      contents: write
+
+    steps:
+      # fetch-depth: 0 -- need the full tag history to find the current version;
+      # actions/checkout's own default shallow clone doesn't reliably include tags.
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: red-garden-build
+          path: dist
+
+      - name: Compute next minor version
+        id: version
+        run: |
+          set -euo pipefail
+          latest="$(git tag -l 'v[0-9]*.[0-9]*.[0-9]*' --sort=-v:refname | head -n1)"
+          if [ -z "$latest" ]; then
+            major=0
+            minor=0
+          else
+            ver="${latest#v}"
+            major="$(echo "$ver" | cut -d. -f1)"
+            minor="$(echo "$ver" | cut -d. -f2)"
+          fi
+          next_minor=$((minor + 1))
+          next="v${major}.${next_minor}.0"
+          echo "next=$next" >> "$GITHUB_OUTPUT"
+
+      - name: Tag and release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NEXT_VERSION: ${{ steps.version.outputs.next }}
+        run: |
+          set -euo pipefail
+          git tag "$NEXT_VERSION"
+          git push origin "$NEXT_VERSION"
+          gh release create "$NEXT_VERSION" \
+            dist/RedGarden_Client_*.zip \
+            dist/RedGarden_Server_*.zip \
+            --title "$NEXT_VERSION" \
+            --generate-notes
