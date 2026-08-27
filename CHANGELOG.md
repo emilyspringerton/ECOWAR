@@ -1,6 +1,7 @@
 # Changelog
 
 ## 2026-08-27 (post-fork: matchmaking + card system)
+- Real rebrand of the whole CI/artifact pipeline (README/CLAUDE.md-only before this) -- ECOWAR.exe, ECOWAR_Client/Server zips, ECOWAR_CONSTRUCT.txt. Fixed the client silently connecting to REDGARDEN's own live 10v10 pool instead of ECOWAR's own real 1v1 pool (PLAY.bat/START_ARENA_POOL.sh now pass --matchmaker-port 9779 / --lobby-size 2). Started ECOWAR's own matchmaker+bot-pool live for real testing, confirmed a bot queued and waiting. Also curated 2 more live bugs to BACKLOG (card interface has zero real callers anywhere; a real cart mana-regen lockup traced to the Wanecall Grimoire weapon), not fixed this pass. ECOWAR commit da0dc4b, Apple #16419. session: sess-20260825-1938-f6bd411e (sess-20260825-1938-f6bd411e)
 - Fixed a real, live Windows CI failure on the 16-card system commit: the Windows cross-compile step's own link command was missing card_effect_mod_host.h/card_effect_mod.c, the same recurring 'third separate build path missed' bug class already hit twice before (bloodflower_mod, tree_passive_mod). Verified with a real local mingw cross-compile against the exact SDL2 mingw package CI downloads. ECOWAR commit ed369bb, Apple #16405. session: sess-20260825-1938-f6bd411e (sess-20260825-1938-f6bd411e)
 
 - ECOWAR's own 1v1 matchmaker + bot pool staged (`ops/systemd/ecowar-matchmaker.service`/
