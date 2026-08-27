@@ -7350,3 +7350,69 @@ void arena_update_teams(unsigned int dt_ms) {
         }
     }
 }
+
+/* ---------------------------------------------------------------------------------------------
+ * ECOWAR card system (S202-ECOWAR-01, 2026-08-27): see arena_game.h's own doc comment for the
+ * full founder-quote provenance and design reasoning. New code appended after the inherited
+ * REDGARDEN engine, kept in the shared arena_game.c/.h files (not a separate ecowar_cards.c/.h
+ * pair) so it can reuse apply_damage/arena_apply_slow and the rest of this file's own static
+ * helpers directly, same reasoning Cart's own delivery system (S202-42) already established. */
+
+/* ECOWAR_CARDS: 16 real cards, each grounded in a real TYLER/multiverse_heroes.md entry's own
+ * stated flavor -- not invented names. base_magnitude is the UNSCALED value; real, tier-scaled
+ * magnitude comes from the real PARENA mod (on_ecowar_resolve_card_magnitude), never used
+ * directly. Order matches card_effect_mod.prn's own is-mythic-card? id list exactly -- if this
+ * array's order ever changes, that PARENA function's id list must be updated to match, or the
+ * MUNDANE/MYTHIC tier scaling silently applies to the wrong cards. */
+const EcowarCardDef ECOWAR_CARDS[ECOWAR_CARD_COUNT] = {
+    { "Duration Is Data",       "Senior Archivist \"Seven Votes\"",           ECOWAR_CARD_EFFECT_SILENCE, 1500 },
+    { "The Dissent",            "ARCHIVIST-7",                                ECOWAR_CARD_EFFECT_SILENCE, 1200 },
+    { "One Question",           "The Stillness Council Clerk",                ECOWAR_CARD_EFFECT_DAMAGE,    12 },
+    { "He Sees You",            "Attempt Two's Doctrine, Given a Name",       ECOWAR_CARD_EFFECT_DAMAGE,    10 },
+    { "Three Coordinates",      "The Deep Archive Cataloguer",                ECOWAR_CARD_EFFECT_FLOW,      40 },
+    { "The Seal",               "MOOR-8",                                     ECOWAR_CARD_EFFECT_HEAL,      15 },
+    { "Four Centuries",         "Wren-3",                                     ECOWAR_CARD_EFFECT_HEAL,      12 },
+    { "Deep Time Sees Itself",  "Stolas, the Owl-Prince",                     ECOWAR_CARD_EFFECT_FLOW,      30 },
+    { "Reconciliation",         "Amon, Reconciler of Opposites",              ECOWAR_CARD_EFFECT_HEAL,      10 },
+    { "Fold the Circle",        "Andrealphus, the Fold",                      ECOWAR_CARD_EFFECT_SLOW,    2000 },
+    { "Crown of Dissolution",   "Bael, Crown of Dissolution",                 ECOWAR_CARD_EFFECT_SILENCE, 1500 },
+    { "The Truth Requires a Triangle", "Furfur, the Storm Oath",              ECOWAR_CARD_EFFECT_DAMAGE,    14 },
+    { "Unlicensed Ledger",      "Astaroth, the Ledger-Keeper",                ECOWAR_CARD_EFFECT_FLOW,      60 },
+    { "The Express Arrives Late On Purpose", "Agares, the First Undo",       ECOWAR_CARD_EFFECT_SLOW,    2500 },
+    { "Twelve Hundred Years",   "Marchosias, the Wolf Before the Fall",       ECOWAR_CARD_EFFECT_HEAL,       8 },
+    { "The Root Remembers Longer Than the Tree", "Nidhogg, Root-Gnawer",     ECOWAR_CARD_EFFECT_SLOW,    3000 },
+};
+
+/* ecowar_resolve_card_effect: see header doc comment. */
+int ecowar_resolve_card_effect(int caster_owner, int card_id, ArenaHero *target) {
+    if (card_id < 0 || card_id >= ECOWAR_CARD_COUNT) return 0;
+    if (!target || !target->active || !hero_is_hittable(target)) return 0;
+
+    const EcowarCardDef *card = &ECOWAR_CARDS[card_id];
+    /* The real PARENA mod call -- on_ecowar_resolve_card_magnitude does the actual tier-scaling
+       decision (MYTHIC-tier cards get +50%), not this C function; see card_effect_mod.prn's own
+       doc comment for why that logic lives in PARENA instead of here. */
+    int magnitude = on_ecowar_resolve_card_magnitude(card_id, card->base_magnitude);
+
+    switch (card->effect) {
+    case ECOWAR_CARD_EFFECT_DAMAGE:
+        apply_damage(target, apply_armor(magnitude, arena_hero_armor(target)));
+        break;
+    case ECOWAR_CARD_EFFECT_HEAL:
+        target->hp += magnitude;
+        if (target->hp > target->max_hp) target->hp = target->max_hp;
+        break;
+    case ECOWAR_CARD_EFFECT_SLOW:
+        arena_apply_slow(target->owner, magnitude, ARENA_CART_DELIVERY_SLOW_PCT); /* reuses the same real slow-pct constant Cart's own delivery already established, not a new invented value */
+        break;
+    case ECOWAR_CARD_EFFECT_SILENCE:
+        if (magnitude > target->silenced_ms) target->silenced_ms = magnitude;
+        break;
+    case ECOWAR_CARD_EFFECT_FLOW:
+        target->flow += magnitude;
+        target->flow_earned += magnitude;
+        break;
+    }
+    (void)caster_owner; /* not yet used -- no caster-relative effects (e.g. "heal self for X% of damage dealt") exist among these 16 cards, kept as a real parameter for the effect types that will need it once real mechanic direction arrives */
+    return 1;
+}

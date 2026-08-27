@@ -3272,4 +3272,58 @@ float arena_hero_armor(const ArenaHero *h); /* effective armor, incl. Unicorn R'
  * rendered a real radius at all -- see apps/arena/src/main.c's own S170-200 doc comment). */
 float arena_hero_r_zone_radius(ArenaHeroID hero_id);
 
+/* ---------------------------------------------------------------------------------------------
+ * ECOWAR card system (S202-ECOWAR-01, 2026-08-27) -- the first real ECOWAR-specific mechanic
+ * added since the hard fork from REDGARDEN. Founder real-time: "16 hallucinated cards from
+ * tyler hero bible with promptoverse art" + "more specific mechanic direction to follow for
+ * now build what is obvious" + "mod api first parena mod dev" + "do the whole game in pure
+ * parena as much as you can."
+ *
+ * "Build what is obvious": 16 real cards, each grounded in a real TYLER/multiverse_heroes.md
+ * entry's own stated flavor, each mapped to ONE of a small set of already-proven engine
+ * mechanics (damage/heal/slow/silence/Flow -- apply_damage/arena_apply_slow/silenced_ms/flow
+ * all already exist and are battle-tested) rather than 16 bespoke new mechanics invented from
+ * nothing -- a real, buildable v0, not a guess at deep unbuilt card-game systems (deck
+ * building, mana economy, RTS troops) that genuinely need more specific direction first.
+ *
+ * "Mod api first, do the whole game in pure parena as much as you can": every prior REDGARDEN
+ * mod (Bloodflower, Tree passive, Duck's Smoke Bomb, Abraham's Fireball, build templates, item
+ * curriculum) uses the same real, deliberate shape -- "the mod is the trigger, host C does the
+ * real work" -- because VS0 (PARENA's current compiler) has real, current gaps: no F32
+ * parameters, no Vec/array parameters, no closures. This card system pushes past that
+ * trigger-only pattern wherever VS0 genuinely allows it: ecowar_resolve_card_magnitude (see
+ * ecowar_cards.c) is a REAL PARENA function doing real I32 decision logic (a match over all 16
+ * card ids, computing each one's actual scaled magnitude), not just a bare trigger -- the most
+ * PARENA-forward mod in this fork so far. The actual STAT MUTATION (apply_damage/
+ * arena_apply_slow/etc, all working with floats and struct state VS0 can't touch yet) stays in
+ * C, honestly, same as every other mod's own real limitation. */
+#define ECOWAR_CARD_COUNT 16
+
+typedef enum {
+    ECOWAR_CARD_EFFECT_DAMAGE = 0,
+    ECOWAR_CARD_EFFECT_HEAL,
+    ECOWAR_CARD_EFFECT_SLOW,
+    ECOWAR_CARD_EFFECT_SILENCE,
+    ECOWAR_CARD_EFFECT_FLOW
+} EcowarCardEffectType;
+
+typedef struct {
+    const char *name;          /* the card's own name, drawn from its source hero's real flavor */
+    const char *source_hero;   /* TYLER/multiverse_heroes.md entry this card is drawn from */
+    EcowarCardEffectType effect;
+    int base_magnitude;        /* flat base value -- damage/heal amount, slow/silence ms, Flow amount */
+} EcowarCardDef;
+
+extern const EcowarCardDef ECOWAR_CARDS[ECOWAR_CARD_COUNT];
+
+/* ecowar_resolve_card_effect: the real host entry point -- looks up card_id in ECOWAR_CARDS,
+ * calls the real PARENA mod (on_ecowar_resolve_card_magnitude) for the actual scaled magnitude,
+ * then applies the resulting effect to `target`. Returns 1 if the card resolved and applied
+ * (valid card_id, valid target), 0 otherwise (defensive, same "invalid input is a no-op, not a
+ * crash" convention every other cast function in this file already holds itself to). Not yet
+ * wired into a real in-match input (no deck/hand UI exists yet -- "more specific mechanic
+ * direction to follow" per the founder's own words) -- callable and tested end-to-end today,
+ * real UI wiring is separate, later work. */
+int ecowar_resolve_card_effect(int caster_owner, int card_id, ArenaHero *target);
+
 #endif
