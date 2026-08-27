@@ -98,6 +98,7 @@ jobs:
             -include packages/simulation/duck_smoke_bomb_mod_host.h \
             -include packages/simulation/abraham_fireball_mod_host.h \
             -include packages/simulation/card_effect_mod_host.h \
+            -include packages/simulation/bacon_puck_intangible_speed_mod_host.h \
             -o ECOWAR.exe \
             apps/arena/src/main.c \
             packages/simulation/arena_game.c \
@@ -110,6 +111,7 @@ jobs:
             packages/simulation/duck_smoke_bomb_mod.c \
             packages/simulation/abraham_fireball_mod.c \
             packages/simulation/card_effect_mod.c \
+            packages/simulation/bacon_puck_intangible_speed_mod.c \
             packages/common/mlp_infer.c \
             packages/goldenband/gband.c \
             packages/goldenband/gband_rig.c \
