@@ -98,7 +98,7 @@ jobs:
             -include packages/simulation/duck_smoke_bomb_mod_host.h \
             -include packages/simulation/abraham_fireball_mod_host.h \
             -include packages/simulation/card_effect_mod_host.h \
-            -o RedGarden.exe \
+            -o ECOWAR.exe \
             apps/arena/src/main.c \
             packages/simulation/arena_game.c \
             packages/simulation/arena_replay.c \
@@ -127,9 +127,9 @@ jobs:
           set -euo pipefail
           BUILD="build_${{ github.run_number }}_${GITHUB_SHA::7}"
 
-          mkdir -p RedGarden_Client
-          cp RedGarden.exe RedGarden_Client/
-          cp sdl2_mingw/bin/SDL2.dll RedGarden_Client/
+          mkdir -p ECOWAR_Client
+          cp ECOWAR.exe ECOWAR_Client/
+          cp sdl2_mingw/bin/SDL2.dll ECOWAR_Client/
           # S144-06/07 (real bug found live, 2026-08-05, founder: "it seemed
           # like the tyler model was not updated"): gband_rig_init/
           # gband_mesh_rig_init("assets/goldenband") load relative to CWD,
@@ -137,8 +137,8 @@ jobs:
           # directory at all, so every downloaded build silently fell back
           # to Tyler's original plain box. No error, no crash, just an
           # unremarkable box where a real skeleton/mesh should be.
-          mkdir -p RedGarden_Client/assets/goldenband
-          cp assets/goldenband/*.gband assets/goldenband/*.gband.json assets/goldenband/*.gskel assets/goldenband/*.gmesh RedGarden_Client/assets/goldenband/
+          mkdir -p ECOWAR_Client/assets/goldenband
+          cp assets/goldenband/*.gband assets/goldenband/*.gband.json assets/goldenband/*.gskel assets/goldenband/*.gmesh ECOWAR_Client/assets/goldenband/
           # 127.0.0.1 (loopback) was the original default here, which only
           # ever makes sense if the matchmaker is running on this same
           # Windows machine -- wrong for the actual distributed client,
@@ -154,26 +154,44 @@ jobs:
           # secret for exactly this kind of validation, not a real production
           # credential -- matches what the live bot pool's matchmaker/
           # arena_server processes are run with.
-          printf '%s\r\n' "@echo off" "set REDGARDEN_TICKET_SECRET=test-secret-for-vs0-vs1-validation" "echo Connecting to the persistent bot pool at 198.58.107.85 ..." "RedGarden.exe --queue 198.58.107.85" "pause" > RedGarden_Client/PLAY.bat
-          zip -r "RedGarden_Client_${BUILD}.zip" RedGarden_Client
+          #
+          # Real, live bug found 2026-08-27 (founder actually playing:
+          # "it launches 10 v 10 instead of 1 v 1"): this PLAY.bat never
+          # passed --matchmaker-port, so the client's own default
+          # (queue_port = 7778, apps/arena/src/main.c) silently connected
+          # to REDGARDEN's OWN live 10v10 (lobby-size 20) pool at that
+          # same IP, not ECOWAR's own real, separate 1v1 pool
+          # (ops/systemd/ecowar-matchmaker.service, :9779, lobby-size 2)
+          # staged specifically to avoid this exact collision. Fixed by
+          # passing --matchmaker-port 9779 explicitly.
+          printf '%s\r\n' "@echo off" "set REDGARDEN_TICKET_SECRET=test-secret-for-vs0-vs1-validation" "echo Connecting to the ECOWAR 1v1 pool at 198.58.107.85:9779 ..." "ECOWAR.exe --queue 198.58.107.85 --matchmaker-port 9779" "pause" > ECOWAR_Client/PLAY.bat
+          zip -r "ECOWAR_Client_${BUILD}.zip" ECOWAR_Client
 
-          mkdir -p RedGarden_Server
-          cp build/red_garden_server RedGarden_Server/ 2>/dev/null || true
-          cp build/red_garden_arena_server RedGarden_Server/ 2>/dev/null || true
-          cp build/red_garden_arena_bot RedGarden_Server/ 2>/dev/null || true
-          cp build/red_garden_matchmaker RedGarden_Server/ 2>/dev/null || true
-          cp build/red_garden_lobby RedGarden_Server/ 2>/dev/null || true
-          printf '%s\n' "./red_garden_matchmaker --listen-port 7778 --lobby-size 20 --server-bin ./red_garden_arena_server --first-game-port 7300" > RedGarden_Server/START_ARENA_POOL.sh
-          chmod +x RedGarden_Server/START_ARENA_POOL.sh
-          zip -r "RedGarden_Server_${BUILD}.zip" RedGarden_Server
+          mkdir -p ECOWAR_Server
+          cp build/red_garden_server ECOWAR_Server/ 2>/dev/null || true
+          cp build/red_garden_arena_server ECOWAR_Server/ 2>/dev/null || true
+          cp build/red_garden_arena_bot ECOWAR_Server/ 2>/dev/null || true
+          cp build/red_garden_matchmaker ECOWAR_Server/ 2>/dev/null || true
+          cp build/red_garden_lobby ECOWAR_Server/ 2>/dev/null || true
+          # lobby-size 2 (a real 1v1), listen-port 9779 -- ECOWAR's own
+          # real pool, matching ops/systemd/ecowar-matchmaker.service
+          # exactly (same real fix as PLAY.bat's own --matchmaker-port
+          # above; this script had the identical 10v10/wrong-port bug).
+          # red_garden_matchmaker/red_garden_arena_server themselves stay
+          # the same real, already-generic shared binaries (not renamed)
+          # -- see ecowar-matchmaker.service's own header comment on why
+          # pool separation is a port/process split, not a binary fork.
+          printf '%s\n' "./red_garden_matchmaker --listen-port 9779 --lobby-size 2 --server-bin ./red_garden_arena_server --first-game-port 9600" > ECOWAR_Server/START_ARENA_POOL.sh
+          chmod +x ECOWAR_Server/START_ARENA_POOL.sh
+          zip -r "ECOWAR_Server_${BUILD}.zip" ECOWAR_Server
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: red-garden-build
+          name: ecowar-build
           path: |
-            RedGarden_Client_*.zip
-            RedGarden_Server_*.zip
+            ECOWAR_Client_*.zip
+            ECOWAR_Server_*.zip
 
       # Real gap closed 2026-08-25 (S202-19): every other active repo with real CI
       # already had a *_CONSTRUCT.txt build artifact (a full concatenation of its
@@ -183,9 +201,9 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          OUT="REDGARDEN_CONSTRUCT.txt"
+          OUT="ECOWAR_CONSTRUCT.txt"
           {
-            echo "REDGARDEN CONSTRUCT ${{ github.run_number }}"
+            echo "ECOWAR CONSTRUCT ${{ github.run_number }}"
             echo "commit: $GITHUB_SHA"
             echo "generated_utc: $(date -u +"%Y-%m-%dT%H:%M:%SZ")"
             echo
@@ -218,8 +236,8 @@ jobs:
       - name: Upload Construct Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: REDGARDEN_Construct_${{ github.run_number }}_${{ github.sha }}
-          path: REDGARDEN_CONSTRUCT.txt
+          name: ECOWAR_Construct_${{ github.run_number }}_${{ github.sha }}
+          path: ECOWAR_CONSTRUCT.txt
           if-no-files-found: error
 
   # Founder real-time: "ensure all our core repos have auto release non pre release" -- same
@@ -248,7 +266,7 @@ jobs:
       - name: Download build artifacts
         uses: actions/download-artifact@v4
         with:
-          name: red-garden-build
+          name: ecowar-build
           path: dist
 
       - name: Compute next minor version
@@ -277,7 +295,7 @@ jobs:
           git tag "$NEXT_VERSION"
           git push origin "$NEXT_VERSION"
           gh release create "$NEXT_VERSION" \
-            dist/RedGarden_Client_*.zip \
-            dist/RedGarden_Server_*.zip \
+            dist/ECOWAR_Client_*.zip \
+            dist/ECOWAR_Server_*.zip \
             --title "$NEXT_VERSION" \
             --generate-notes
