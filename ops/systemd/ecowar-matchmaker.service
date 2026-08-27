@@ -1,0 +1,50 @@
+# ECOWAR arena matchmaker — 1v1 queue with bots (:9779) — user-level systemd unit (no sudo
+# required)
+#
+# Founder real-time, 2026-08-27: "we need separate bot pool 1v1 separate matchmaking separate
+# client and server separate artifacts everything we need." Reuses the existing, already-generic
+# `red_garden_matchmaker` binary (same "a third invocation of the existing matchmaker" pattern
+# REDGARDEN/NORTHSTAR.md §29's own ECOWAR addendum already recommended) rather than new
+# matchmaker code -- pool separation here is a genuinely separate PORT and PROCESS (own systemd
+# unit, own log file), not a code fork of the matchmaker itself.
+#
+# Port chosen in the 9700s specifically to stay clear of REDGARDEN's own real, live 777x/877x
+# range (:7778/:7779/:7780/:8778) -- ECOWAR is a separate repo/deploy that may run on the same
+# box as REDGARDEN, and this range guarantees no collision.
+#
+# Deploy:
+#   mkdir -p ~/.config/systemd/user
+#   cp ops/systemd/ecowar-matchmaker.service ~/.config/systemd/user/
+#   bash scripts/build.sh
+#   systemctl --user daemon-reload
+#   systemctl --user enable --now ecowar-matchmaker.service
+#
+# EnvironmentFile: same real bug/fix REDGARDEN's own matchmaker units already documented -- the
+# matchmaker spawns arena_server as a child, which needs IDUNA_AGENT_NAME/IDUNA_AGENT_SECRET to
+# report match/hero results for any real match played here. Not yet provisioned for ECOWAR
+# specifically (a real, separate WOTAN identity question -- does ECOWAR report under its own
+# agent identity or REDGARDEN's? -- flagged, not decided here); this unit references the same
+# env file path REDGARDEN's own units use as a starting point, update if/when that's resolved.
+
+[Unit]
+Description=ECOWAR arena matchmaker — 1v1 queue with bots (:9779)
+After=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/fatbaby/ECOWAR
+Environment=REDGARDEN_TICKET_SECRET=test-secret-for-vs0-vs1-validation
+EnvironmentFile=/home/fatbaby/ECOWAR/var/redgarden-iduna-agent.env
+ExecStart=/home/fatbaby/ECOWAR/build/red_garden_matchmaker \
+    --listen-port 9779 \
+    --lobby-size 2 \
+    --server-bin /home/fatbaby/ECOWAR/build/red_garden_arena_server \
+    --first-game-port 9600
+Restart=on-failure
+RestartSec=5s
+StandardOutput=append:/home/fatbaby/ECOWAR/var/logs/matchmaker.log
+StandardError=append:/home/fatbaby/ECOWAR/var/logs/matchmaker.log
+MemoryMax=256M
+
+[Install]
+WantedBy=default.target

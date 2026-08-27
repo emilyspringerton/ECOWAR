@@ -1,0 +1,36 @@
+# ECOWAR arena bot pool — 1v1 queue-fill (:9779) — user-level systemd unit (no sudo required)
+#
+# Founder real-time, 2026-08-27: "we need separate bot pool 1v1 separate matchmaking..." — 1
+# bot only: this is a 1v1 (`--lobby-size 2`) queue, and REDGARDEN's own established convention
+# (redgarden-bot-pool*.service) always leaves at least one slot open for a real human to queue
+# into rather than a permanently-full lobby, which at lobby-size 2 means exactly 1 bot.
+#
+# Deploy:
+#   mkdir -p ~/.config/systemd/user
+#   cp ops/systemd/ecowar-bot-pool.service ~/.config/systemd/user/
+#   bash scripts/build.sh
+#   systemctl --user daemon-reload
+#   systemctl --user enable --now ecowar-bot-pool.service
+#
+# Must start after ecowar-matchmaker.service -- same ordering pattern REDGARDEN's own bot-pool
+# units already use.
+
+[Unit]
+Description=ECOWAR arena bot pool (1 bot, 1 human slot open -> :9779)
+After=network-online.target ecowar-matchmaker.service
+Wants=ecowar-matchmaker.service
+
+[Service]
+Type=simple
+WorkingDirectory=/home/fatbaby/ECOWAR
+Environment=REDGARDEN_TICKET_SECRET=test-secret-for-vs0-vs1-validation
+ExecStartPre=/bin/sleep 2
+ExecStart=/home/fatbaby/ECOWAR/scripts/run_bot_pool.sh 1 9779
+Restart=on-failure
+RestartSec=5s
+StandardOutput=append:/home/fatbaby/ECOWAR/var/logs/bot-pool.log
+StandardError=append:/home/fatbaby/ECOWAR/var/logs/bot-pool.log
+MemoryMax=128M
+
+[Install]
+WantedBy=default.target
