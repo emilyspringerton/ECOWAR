@@ -80,6 +80,13 @@ jobs:
       # this step was missed again when THAT mod landed, for the identical "third, separate
       # build path" reason bloodflower_mod.c's own comment above already names. Found live via
       # CI failure on commit c0e3ee6.
+      # packages/simulation/card_effect_mod.c (2026-08-27): same exact gap, same fix, a third
+      # time -- ECOWAR's own 16-card system's arena_game.c call to
+      # on_ecowar_resolve_card_magnitude was already wired into scripts/build.sh and
+      # scripts/build_arena.sh (both fixed when the card system landed) but this Windows step
+      # was missed again, for the identical "third, separate build path" reason. Found live via
+      # real CI failure on commit fc257c4 (linker: "undefined reference to
+      # on_ecowar_resolve_card_magnitude").
       - name: Cross-compile Windows arena client
         run: |
           set -euo pipefail
@@ -90,6 +97,7 @@ jobs:
             -include packages/simulation/item_curriculum_mod_host.h \
             -include packages/simulation/duck_smoke_bomb_mod_host.h \
             -include packages/simulation/abraham_fireball_mod_host.h \
+            -include packages/simulation/card_effect_mod_host.h \
             -o RedGarden.exe \
             apps/arena/src/main.c \
             packages/simulation/arena_game.c \
@@ -101,6 +109,7 @@ jobs:
             packages/simulation/item_curriculum_mod.c \
             packages/simulation/duck_smoke_bomb_mod.c \
             packages/simulation/abraham_fireball_mod.c \
+            packages/simulation/card_effect_mod.c \
             packages/common/mlp_infer.c \
             packages/goldenband/gband.c \
             packages/goldenband/gband_rig.c \
