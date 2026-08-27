@@ -1,6 +1,7 @@
 # Changelog
 
 ## 2026-08-27 (post-fork: matchmaking + card system)
+- Fixed a real, live Windows CI failure on the 16-card system commit: the Windows cross-compile step's own link command was missing card_effect_mod_host.h/card_effect_mod.c, the same recurring 'third separate build path missed' bug class already hit twice before (bloodflower_mod, tree_passive_mod). Verified with a real local mingw cross-compile against the exact SDL2 mingw package CI downloads. ECOWAR commit ed369bb, Apple #16405. session: sess-20260825-1938-f6bd411e (sess-20260825-1938-f6bd411e)
 
 - ECOWAR's own 1v1 matchmaker + bot pool staged (`ops/systemd/ecowar-matchmaker.service`/
   `ecowar-bot-pool.service`, `:9779`), verified live end-to-end locally (real matchmaker, 2 real
