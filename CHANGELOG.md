@@ -1,5 +1,16 @@
 # Changelog
 
+## 2026-08-27 (ECOWAR fork point)
+
+- Hard forked from REDGARDEN at commit `1515caf`, full REDGARDEN git history preserved (446+
+  commits, everything below this entry). Founder real-time: "start working on ecowar in the
+  redgarden repo" -> "actually lets do a hard fork from redgarden repo wise" -> "ECOWAR repo."
+  Build + test verified in the new checkout (`bash scripts/build.sh` + `bash scripts/
+  test_arena.sh`, same real result REDGARDEN itself gets). README.md/CLAUDE.md rewritten for
+  ECOWAR's own identity, preserving the real founder-quote provenance and the honest pivot from
+  the original 2026-08-20 GFD-battlegrounds_gui-based scoping. Gameplay unchanged from REDGARDEN
+  for now -- real ECOWAR-specific mechanics are the next work, not attempted in this pass.
+
 ## 2026-08-27
 
 - Cart hero: AOE zone indicators (real gap fixed, zone_radius_x10 wire field), marble-bag+Fibonacci pity RNG (first real implementation of NORTHSTAR's own pull algorithm), R finally better-weighted than W, King's Growth buff outcome added. 21 new tests. Apple #16395, commit 1515caf (sess-20260825-1938-f6bd411e)
