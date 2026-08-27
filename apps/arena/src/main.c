@@ -770,6 +770,7 @@ static void net_poll_snapshots(uint32_t now_ms) {
                     dst->r_zone_x = chunk->heroes[j].r_zone_x; /* S170-200 */
                     dst->r_zone_z = chunk->heroes[j].r_zone_z;
                     dst->r_active_ms = chunk->heroes[j].r_active_ms;
+                    dst->zone_radius = (float)chunk->heroes[j].zone_radius_x10 / 10.0f; /* S202-42 -- Cart only, 0 for every other hero */
                     dst->casting_slot = chunk->heroes[j].casting_slot; /* S170-203 */
                     dst->cast_time_remaining_ms = chunk->heroes[j].cast_time_remaining_ms;
                     dst->cast_total_ms = chunk->heroes[j].cast_total_ms;
@@ -4153,7 +4154,16 @@ int main(int argc, char *argv[]) {
         for (int i = 0; i < ARENA_MAX_HEROES; i++) {
             ArenaHero *zh = &arena_state.heroes[i];
             if (!zh->active || !zh->alive || zh->r_active_ms <= 0) continue;
-            float zone_r = arena_hero_r_zone_radius(zh->hero_id);
+            /* S202-42: Cart is a real gap in arena_hero_r_zone_radius -- his W (delivery,
+               ARENA_CART_W_RADIUS) and R (ARENA_CART_R_RADIUS) share the same r_active_ms/
+               zone_radius fields (see ArenaHero.zone_radius's own doc comment on why: "which
+               radius applies is genuinely ambiguous without this -- set by whichever of W/R
+               most recently activated the zone"), so a fixed per-hero-id constant can't be
+               right for him -- arena_hero_r_zone_radius() correctly has no CART case at all
+               (returns 0.0, silently never drawing Cart's own already-active zone). zh->zone_
+               radius is the real answer here, already set correctly at cast time -- read it
+               directly for Cart instead of routing through the per-hero-constant function. */
+            float zone_r = (zh->hero_id == ARENA_HERO_CART) ? zh->zone_radius : arena_hero_r_zone_radius(zh->hero_id);
             if (zone_r <= 0.0f) continue;
             float pulse = 0.7f + 0.3f * sinf((float)now * 0.005f);
             float zr, zg, zb;
@@ -4237,6 +4247,40 @@ int main(int argc, char *argv[]) {
                 glUniformMatrix4fv_(loc_model, 1, GL_FALSE, pmodel.m);
                 glUniform4f_(loc_color, 0.8f, 0.8f, 0.82f, 0.35f);
                 draw_mesh(&ring_mesh);
+            }
+        }
+        /* Cart cast-radius previews (S202-42): same reasoning as the R-zone/Duck-W previews
+           just above, but Cart is the one hero with TWO different real zone radii sharing the
+           generic r_active_ms/zone_radius state (W = delivery, R = the other zone) -- see
+           arena_hero_r_zone_radius's own doc comment on why a single per-hero-id constant can't
+           cover him. Shows up to both rings at once (independently gated on each slot's own
+           cooldown/mana), using the fixed ARENA_CART_W_RADIUS/R_RADIUS constants directly --
+           correct here since these are "what WOULD this cast at" previews, before any real cast
+           (and its own zone_radius) exists yet. */
+        if (!observing) {
+            ArenaHero *me_cart = &arena_state.heroes[my_owner];
+            if (me_cart->hero_id == ARENA_HERO_CART && me_cart->alive &&
+                me_cart->silenced_ms <= 0 && me_cart->stunned_ms <= 0) {
+                if (me_cart->w_cooldown_ms <= 0 && me_cart->mp >= ARENA_MP_COST_W) {
+                    Mat4 ptr = mat4_translate(me_cart->x, 0.04f, me_cart->z);
+                    Mat4 psc = mat4_scale(ARENA_CART_W_RADIUS, 1.0f, ARENA_CART_W_RADIUS);
+                    Mat4 pmodel = mat4_multiply(&ptr, &psc);
+                    Mat4 pmvp = mat4_multiply(&vp, &pmodel);
+                    glUniformMatrix4fv_(loc_mvp, 1, GL_FALSE, pmvp.m);
+                    glUniformMatrix4fv_(loc_model, 1, GL_FALSE, pmodel.m);
+                    glUniform4f_(loc_color, 0.9f, 0.9f, 0.95f, 0.35f);
+                    draw_mesh(&ring_mesh);
+                }
+                if (me_cart->r_cooldown_ms <= 0 && me_cart->mp >= ARENA_MP_COST_R) {
+                    Mat4 ptr = mat4_translate(me_cart->x, 0.04f, me_cart->z);
+                    Mat4 psc = mat4_scale(ARENA_CART_R_RADIUS, 1.0f, ARENA_CART_R_RADIUS);
+                    Mat4 pmodel = mat4_multiply(&ptr, &psc);
+                    Mat4 pmvp = mat4_multiply(&vp, &pmodel);
+                    glUniformMatrix4fv_(loc_mvp, 1, GL_FALSE, pmvp.m);
+                    glUniformMatrix4fv_(loc_model, 1, GL_FALSE, pmodel.m);
+                    glUniform4f_(loc_color, 0.95f, 0.85f, 0.6f, 0.35f); /* distinct warm tint from W's cool one so the two rings read as different abilities when both show at once */
+                    draw_mesh(&ring_mesh);
+                }
             }
         }
         /* heal flashes (S170-143): quick, warm-green burst on whoever's HP

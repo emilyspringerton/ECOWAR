@@ -350,6 +350,16 @@ typedef struct {
     // convention as attack_target/w_active above.
     float r_zone_x, r_zone_z;
     uint16_t r_active_ms;
+    // zone_radius_x10 (S202-42, Cart's own zone-circle gap): arena_hero_r_zone_radius(hero_id)
+    // supplies the radius for every OTHER zone hero (a fixed per-hero-id constant, so it never
+    // needed a wire field of its own) -- but Cart's W (delivery, ARENA_CART_W_RADIUS) and R
+    // (ARENA_CART_R_RADIUS) share these same r_active_ms/r_zone_x/z fields with two DIFFERENT
+    // real radii (see ArenaHero.zone_radius's own doc comment), so a fixed constant can't be
+    // right for him and a networked client had no way to know which one applied. Quantized
+    // radius*10 in a uint8_t, same "lossy is fine" precedent slow_pct_x100 already uses --
+    // comfortably covers both of Cart's real values (3.0/5.0) with room to spare. 0 for every
+    // other hero (arena_hero_r_zone_radius's own constant still supplies their radius).
+    uint8_t zone_radius_x10;
     // casting_slot/cast_time_remaining_ms/cast_total_ms (S170-203, founder: "switch gary w to
     // aimed shot just like wow hunter cast time big damage" -> "ensure cast bar affordance
     // shown to user"): generic cast-time-ability state (ArenaHero's own doc comment in

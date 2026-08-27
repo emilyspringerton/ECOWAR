@@ -4644,36 +4644,109 @@ static void cart_cast_q(ArenaHero *cart) {
     if (cart->hp > cart->max_hp) cart->hp = cart->max_hp;
 }
 
-/* cart_trigger_delivery (NORTHSTAR §24 Milestone 2): the Cart's real signature mechanic --
- * "a requested document turns out to already be waiting on the cart, with no requester logged,"
- * and "nobody, including its own controller, gets to request what." Rolls one of 4 equally-
- * weighted, real outcomes onto `target` (which may be an ally, the Cart's own controller, or an
- * enemy -- whoever steps into the zone first, no team check, matching the lore's own
- * unpredictability). Not always good: two heals/buffs, one debuff, one Flow grant that could
- * just as easily land on the wrong team. Called once per zone, from tick_hero_kit -- the caller
- * is responsible for deactivating the zone afterward so it only fires once. */
-static void cart_trigger_delivery(ArenaHero *target) {
-    switch (rand() % 4) {
-    case 0: {
+/* arena_fibonacci / arena_marble_bag_pick: see header doc comments. First real implementation
+ * of NORTHSTAR's own long-documented weighted-marble-bag-plus-Fibonacci-pity pull algorithm
+ * anywhere in this repo (S202-09/S202-42) -- generic, not Cart-specific, per that doc's own
+ * "worth building once as a shared utility" note. */
+int arena_fibonacci(int n) {
+    if (n <= 1) return 1; /* fib(0)=fib(1)=1, not the textbook fib(0)=0 -- a fresh/reset pity
+                              counter still carries its real base weight, never zeroed out */
+    int a = 1, b = 1;
+    for (int i = 2; i <= n; i++) {
+        int c = a + b;
+        a = b;
+        b = c;
+    }
+    return b;
+}
+
+int arena_marble_bag_pick(const int *weights, int *pity, int n) {
+    if (n <= 0) return -1;
+    long total = 0;
+    for (int i = 0; i < n; i++) {
+        int tier = pity[i] > ARENA_MARBLE_BAG_MAX_PITY_TIER ? ARENA_MARBLE_BAG_MAX_PITY_TIER : pity[i];
+        total += (long)weights[i] * arena_fibonacci(tier);
+    }
+    if (total <= 0) return -1; /* every effective weight is 0 -- caller error, not a real pick */
+    long roll = (long)(rand() % total);
+    long cum = 0;
+    int picked = n - 1; /* fallback for the very top of the range */
+    for (int i = 0; i < n; i++) {
+        int tier = pity[i] > ARENA_MARBLE_BAG_MAX_PITY_TIER ? ARENA_MARBLE_BAG_MAX_PITY_TIER : pity[i];
+        cum += (long)weights[i] * arena_fibonacci(tier);
+        if (roll < cum) {
+            picked = i;
+            break;
+        }
+    }
+    for (int i = 0; i < n; i++) pity[i] = (i == picked) ? 0 : pity[i] + 1;
+    return picked;
+}
+
+/* cart_apply_delivery_outcome: applies exactly one real delivery outcome
+ * (ARENA_CART_DELIVERY_OUTCOME_*) to `target` -- split out from cart_trigger_delivery so each
+ * outcome is directly, deterministically testable (forcing an index) rather than only reachable
+ * through many rand()-driven rolls, same "test the real mechanic, not just hope RNG cooperates"
+ * discipline this file already holds itself to elsewhere. */
+static void cart_apply_delivery_outcome(ArenaHero *target, int outcome) {
+    switch (outcome) {
+    case ARENA_CART_DELIVERY_OUTCOME_HEAL: {
         int heal = (int)(target->max_hp * ARENA_CART_DELIVERY_HEAL_PCT);
         target->hp += heal;
         if (target->hp > target->max_hp) target->hp = target->max_hp;
         break;
     }
-    case 1: {
+    case ARENA_CART_DELIVERY_OUTCOME_MANA: {
         int mana = (int)(target->max_mp * ARENA_CART_DELIVERY_MANA_PCT);
         target->mp += mana;
         if (target->mp > target->max_mp) target->mp = target->max_mp;
         break;
     }
-    case 2:
+    case ARENA_CART_DELIVERY_OUTCOME_SLOW:
         arena_apply_slow(target->owner, ARENA_CART_DELIVERY_SLOW_MS, ARENA_CART_DELIVERY_SLOW_PCT);
         break;
-    case 3:
+    case ARENA_CART_DELIVERY_OUTCOME_FLOW:
         target->flow += ARENA_CART_DELIVERY_FLOW;
         target->flow_earned += ARENA_CART_DELIVERY_FLOW;
         break;
+    case ARENA_CART_DELIVERY_OUTCOME_KING_BUFF:
+        /* Growth (flat AD stack, ARENA_KING_GROWTH_AD_PER_STACK) -- the simplest, most
+           self-contained King buff to grant outside its own real kill-a-King flow (no aura/
+           team-wide complexity like Wealth/All-Seeing) -- founder's own literal example for
+           the "general random-buff system... a random hero occasionally gets a King buff" ask.
+           Stacks with a real king-earned Growth if the target already has one (same "just
+           extend the duration" idiom the real King-kill path already uses), rather than a
+           separate parallel buff slot. */
+        if (target->king_growth_stacks < 1) target->king_growth_stacks = 1;
+        target->king_growth_ms = ARENA_KING_GROWTH_DURATION_MS;
+        break;
     }
+}
+
+/* W: the frequent, mundane roll. R: "bigger... BETTER-WEIGHTED" per ARENA_CART_Q_HEAL's own
+ * doc comment block, a real intent stated but never actually built until now -- slow halved,
+ * the King-buff outcome tripled relative to W. */
+static const int ARENA_CART_DELIVERY_W_WEIGHTS[ARENA_CART_DELIVERY_OUTCOME_COUNT] = { 3, 3, 2, 3, 1 };
+static const int ARENA_CART_DELIVERY_R_WEIGHTS[ARENA_CART_DELIVERY_OUTCOME_COUNT] = { 3, 3, 1, 3, 3 };
+
+/* cart_trigger_delivery (NORTHSTAR §24 Milestone 2): the Cart's real signature mechanic --
+ * "a requested document turns out to already be waiting on the cart, with no requester logged,"
+ * and "nobody, including its own controller, gets to request what." Picks one real outcome via
+ * arena_marble_bag_pick (S202-42) onto `target` (which may be an ally, the Cart's own
+ * controller, or an enemy -- whoever steps into the zone first, no team check, matching the
+ * lore's own unpredictability) -- W and R now genuinely weight differently (see the tables
+ * above), and pity is tracked per-caster (`caster->cart_delivery_pity`) so a Cart player's own
+ * bad-outcome streak gets rarer for THEM specifically. Which weight table applies is read off
+ * `caster->zone_radius` (ARENA_CART_R_RADIUS vs. the W default) rather than adding a new
+ * separate "which slot" field -- the two constants are already distinct and this is the same
+ * value tick_hero_kit's own CART case already uses to size the zone. Called once per zone, from
+ * tick_hero_kit -- the caller is responsible for deactivating the zone afterward so it only
+ * fires once. */
+static void cart_trigger_delivery(ArenaHero *caster, ArenaHero *target) {
+    const int *weights = (caster->zone_radius == ARENA_CART_R_RADIUS) ? ARENA_CART_DELIVERY_R_WEIGHTS : ARENA_CART_DELIVERY_W_WEIGHTS;
+    int outcome = arena_marble_bag_pick(weights, caster->cart_delivery_pity, ARENA_CART_DELIVERY_OUTCOME_COUNT);
+    if (outcome < 0) return; /* defensive -- every real weight above is positive, should never happen */
+    cart_apply_delivery_outcome(target, outcome);
 }
 
 /* vassago_cast_q: Reveal the Gentle Maybe -- a ranged bolt, damage + silence, same shape as
@@ -6403,7 +6476,7 @@ static void tick_hero_kit(ArenaHero *h, ArenaHero *foe, ArenaHero *ally, unsigne
                 if (!cand->active || !hero_is_hittable(cand)) continue;
                 float dx = cand->x - h->r_zone_x, dz = cand->z - h->r_zone_z;
                 if (dx * dx + dz * dz > h->zone_radius * h->zone_radius) continue;
-                cart_trigger_delivery(cand);
+                cart_trigger_delivery(h, cand);
                 h->r_active_ms = 0;
                 break;
             }

@@ -1027,11 +1027,31 @@ typedef enum {
 #define ARENA_CART_R_RADIUS                  5.0f
 #define ARENA_CART_R_DURATION_MS         15000
 #define ARENA_CART_R_COOLDOWN_MS         45000
-#define ARENA_CART_DELIVERY_HEAL_PCT         0.25f /* one of 4 equally-weighted random outcomes -- see cart_trigger_delivery */
-#define ARENA_CART_DELIVERY_MANA_PCT         0.25f
+/* Delivery outcomes (S202-42, "more impactful/powered-up abilities" + this doc's own
+ * long-stated-but-never-built "R has bigger radius/BETTER-WEIGHTED outcomes" intent just above
+ * -- W and R used to call the exact same rand()%4 with no distinction at all). Magnitudes
+ * bumped up from the original flat pass (heal/mana 25%->35%, Flow 50->90), and a real 5th
+ * outcome added: a King's Growth buff grant, the founder's own literal example for the
+ * "general random-buff system... a random hero occasionally gets a King buff" ask -- Cart's
+ * existing delivery mechanic ("whoever steps into the zone first" is already the "occasionally,
+ * to a random hero" trigger this ask wanted, not a new separate global timer system). Picked via
+ * arena_marble_bag_pick (real weighted marble-bag + Fibonacci pity, NORTHSTAR's own
+ * long-documented-but-never-implemented pull algorithm, first real build anywhere in this repo)
+ * instead of a flat rand()%N -- see ARENA_CART_DELIVERY_W_WEIGHTS/R_WEIGHTS below for the actual
+ * per-slot weighting that finally realizes "R is better-weighted." */
+#define ARENA_CART_DELIVERY_HEAL_PCT         0.35f
+#define ARENA_CART_DELIVERY_MANA_PCT         0.35f
 #define ARENA_CART_DELIVERY_SLOW_MS       3000
 #define ARENA_CART_DELIVERY_SLOW_PCT         0.30f
-#define ARENA_CART_DELIVERY_FLOW            50
+#define ARENA_CART_DELIVERY_FLOW            90
+#define ARENA_CART_DELIVERY_OUTCOME_COUNT       5   /* heal, mana, slow, flow, king-growth-buff */
+#define ARENA_CART_DELIVERY_OUTCOME_HEAL        0
+#define ARENA_CART_DELIVERY_OUTCOME_MANA        1
+#define ARENA_CART_DELIVERY_OUTCOME_SLOW        2
+#define ARENA_CART_DELIVERY_OUTCOME_FLOW        3
+#define ARENA_CART_DELIVERY_OUTCOME_KING_BUFF   4
+/* Per-slot outcome weights (ARENA_CART_DELIVERY_W_WEIGHTS/R_WEIGHTS) live in arena_game.c, next
+ * to cart_trigger_delivery -- the one real consumer, not header-wide state. */
 
 /* Vassago (S170-93): passive small HP regen, always on, same shape as Dagda's Undry -- ambient
  * restorative foresight, sensing and softening harm before it fully lands. Q a ranged bolt,
@@ -1991,6 +2011,14 @@ typedef struct {
      * radius applies is genuinely ambiguous without this -- set by whichever of W/R most recently
      * activated the zone, read by tick_hero_kit's own CART case. Unused (0) by every other hero. */
     float zone_radius;
+    /* cart_delivery_pity (S202-42): per-outcome Fibonacci-pity counters for
+     * arena_marble_bag_pick, one entry per ARENA_CART_DELIVERY_OUTCOME_* index. Hero-specific
+     * storage (not match-wide) since pity is a per-Cart-player streak, matching the founder's
+     * own "occasionally" framing -- a Cart player who keeps rolling Slow should see it get
+     * genuinely rarer for THEM specifically, not have their luck shared with the enemy team's
+     * own Cart. Zero-initializes correctly with the rest of ArenaHero (fib(0)=1, a real nonzero
+     * base weight, not a locked-out one -- see arena_fibonacci's own doc comment). */
+    int cart_delivery_pity[ARENA_CART_DELIVERY_OUTCOME_COUNT];
     /* Cast-time ability state (S170-203, founder: "switch gary w to aimed shot just like wow
      * hunter cast time big damage for now movement interrupts cast damage does not interrupt
      * cast silence does"). Generic across any slot/hero, same "shared field names across kits"
@@ -2657,6 +2685,27 @@ void arena_set_hover_target(int owner, int target);
  * targeted/self-targeted cast), in which case x/z are ignored. No-op if
  * owner is out of the real per-player range. */
 void arena_set_ground_target(int owner, int has_target, float x, float z);
+
+/* arena_fibonacci (S202-09/S202-42): fib(0)=fib(1)=1 (a real "never fully locked out" floor for
+ * a fresh/reset pity counter -- the textbook fib(0)=0 would zero out an outcome's weight
+ * entirely), grows the standard way after that. Real, generic, not Cart-specific -- exposed for
+ * arena_marble_bag_pick's own use and any future caller. */
+int arena_fibonacci(int n);
+
+/* arena_marble_bag_pick (S202-09, NORTHSTAR's own long-documented "weighted marble-bag +
+ * Fibonacci-pity pull algorithm," first real implementation anywhere in this repo -- flagged in
+ * that doc as "worth building once as a shared utility rather than twice as unrelated bespoke
+ * code" for exactly this reason, so this is a real, generic, non-Cart-specific primitive, not
+ * buried as a static helper): weighted-random pick among `n` outcomes. `pity[i]` is how many
+ * consecutive picks outcome i has been passed over; effective weight = weights[i] *
+ * arena_fibonacci(min(pity[i], ARENA_MARBLE_BAG_MAX_PITY_TIER)) -- an outcome that keeps losing
+ * gets progressively more likely, uncapped in principle but tier-capped in practice so the
+ * multiplier doesn't run away. Updates `pity` in place: the winner resets to 0, every other
+ * outcome's pity increments by 1. Caller owns `pity`'s storage (per-hero, per-match, wherever a
+ * given use case wants pity scoped to) and passes it in fresh each call -- no hidden global
+ * state. Returns -1 if n<=0 or every effective weight is 0 (caller error, not a real pick). */
+#define ARENA_MARBLE_BAG_MAX_PITY_TIER 10 /* fib(10)=55 -- a real but bounded ceiling, not runaway growth */
+int arena_marble_bag_pick(const int *weights, int *pity, int n);
 
 /* arena_set_attack_target (S170-162): PACKET_ARENA_ATTACK's server-side
  * entry point -- locks `owner` onto `target` (a real, in-range-of-the-real-

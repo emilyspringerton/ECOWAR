@@ -295,6 +295,29 @@ gcc -std=c99 -O2 -Wall -Wextra -I"${ROOT_DIR}/packages" \
   "${ROOT_DIR}/packages/common/mlp_infer.c" \
   -lm
 
+# Cart delivery + the marble-bag/Fibonacci-pity utility (S202-09/S202-42, 2026-08-27): real
+# live round-trip through arena_toggle_w/arena_cast_r's own ARENA_HERO_CART case -- plain host
+# C, no PARENA mod for this one, but still linked against the full arena_game bag for the same
+# reasoning every other test here already is.
+gcc -std=c99 -O2 -Wall -Wextra -I"${ROOT_DIR}/packages" \
+  -o "${BUILD_DIR}/test_cart_delivery" \
+  -include "${ROOT_DIR}/packages/simulation/bloodflower_mod_host.h" \
+  -include "${ROOT_DIR}/packages/simulation/tree_passive_mod_host.h" \
+  -include "${ROOT_DIR}/packages/simulation/build_template_mod_host.h" \
+  -include "${ROOT_DIR}/packages/simulation/item_curriculum_mod_host.h" \
+  -include "${ROOT_DIR}/packages/simulation/duck_smoke_bomb_mod_host.h" \
+  -include "${ROOT_DIR}/packages/simulation/abraham_fireball_mod_host.h" \
+  "${ROOT_DIR}/tests/test_cart_delivery.c" \
+  "${ROOT_DIR}/packages/simulation/arena_game.c" \
+  "${ROOT_DIR}/packages/simulation/bloodflower_mod.c" \
+  "${ROOT_DIR}/packages/simulation/tree_passive_mod.c" \
+  "${ROOT_DIR}/packages/simulation/build_template_mod.c" \
+  "${ROOT_DIR}/packages/simulation/item_curriculum_mod.c" \
+  "${ROOT_DIR}/packages/simulation/duck_smoke_bomb_mod.c" \
+  "${ROOT_DIR}/packages/simulation/abraham_fireball_mod.c" \
+  "${ROOT_DIR}/packages/common/mlp_infer.c" \
+  -lm
+
 "${BUILD_DIR}/test_arena_game"
 "${BUILD_DIR}/test_bloodflower"
 "${BUILD_DIR}/test_tree_passive"
@@ -303,6 +326,7 @@ gcc -std=c99 -O2 -Wall -Wextra -I"${ROOT_DIR}/packages" \
 "${BUILD_DIR}/test_duck_smoke_bomb"
 "${BUILD_DIR}/test_abraham_fireball"
 "${BUILD_DIR}/test_shadow_step"
+"${BUILD_DIR}/test_cart_delivery"
 "${BUILD_DIR}/test_damage_log"
 "${BUILD_DIR}/test_mat4"
 "${BUILD_DIR}/test_arena_replay"
