@@ -1,5 +1,20 @@
 # Changelog
 
+## 2026-08-27 (post-fork: matchmaking + card system)
+
+- ECOWAR's own 1v1 matchmaker + bot pool staged (`ops/systemd/ecowar-matchmaker.service`/
+  `ecowar-bot-pool.service`, `:9779`), verified live end-to-end locally (real matchmaker, 2 real
+  bots, a real match played). Not yet deployed as a running service.
+- ECOWAR's own 16-card system shipped: `ECOWAR_CARDS` catalog + `ecowar_resolve_card_effect`
+  (`packages/simulation/arena_game.c`), 16 cards grounded in real `TYLER/multiverse_heroes.md`
+  entries, magnitude computed by a real PARENA mod doing genuine I32 decision logic
+  (`PARENA/stdlib/ecowar/card_effect_mod.prn`, ECOWAR's own new mod namespace) -- the first mod
+  in this fork's history to do real decision logic rather than just trigger a host call. 9 new
+  tests, all passing. Not yet wired into a real in-match input (no deck/hand UI yet).
+- All 16 real card-art Prompt-o-verse generations queued (one per card); draining blocked on
+  this session's own missing gcloud/Vertex AI credentials -- a real environmental gap, flagged
+  honestly, not a code bug.
+
 ## 2026-08-27 (ECOWAR fork point)
 
 - Hard forked from REDGARDEN at commit `1515caf`, full REDGARDEN git history preserved (446+

@@ -25,13 +25,36 @@ on — not a fresh third `ServerState`"). The GFD-battlegrounds_gui plan is supe
 — see "Origin" below for the full original reasoning, still real history.
 
 **Status**: hard-forked from REDGARDEN at commit `1515caf` (full REDGARDEN git history now part of
-this repo — 446+ commits), build verified (`bash scripts/build.sh`, all binaries compile clean)
-and tests verified (`bash scripts/test_arena.sh`, same real-world result REDGARDEN itself gets:
-every check passes except the already-documented, sandbox-only `test_arena_replay` segfault).
-Gameplay is currently byte-identical to REDGARDEN's `apps/arena`/`apps/arena_server` — the fork
-gives ECOWAR its own repo, history, and deploy identity; real ECOWAR-specific mechanics (cards,
-RTS systems) are genuinely not started yet, per the founder's own "more specific mechanic
-direction to follow for now build what is obvious" sequencing.
+this repo — 446+ commits), build verified (`bash scripts/build.sh` + `bazel build //...`) and
+tests verified (`bash scripts/test_arena.sh` + `bazel test //tests/...`, same real-world result
+REDGARDEN itself gets: every check passes except the already-documented, sandbox-only
+`test_arena_replay` segfault). A dedicated 1v1 matchmaker + bot pool (`ops/systemd/ecowar-
+matchmaker.service` / `ecowar-bot-pool.service`, port `:9779`, distinct from REDGARDEN's own
+`777x`/`877x` range) is staged and verified live end-to-end locally (real matchmaker, 2 real
+bots, a real match played) — not yet deployed as a running service.
+
+**Real card system shipped** (`packages/simulation/arena_game.c`'s own `ECOWAR_CARDS` catalog +
+`ecowar_resolve_card_effect`): 16 cards, each grounded in a real `TYLER/multiverse_heroes.md`
+entry, mapped to 5 already-proven engine mechanics (damage/heal/slow/silence/Flow). The actual
+magnitude for each card is computed by a real PARENA mod (`PARENA/stdlib/ecowar/
+card_effect_mod.prn`, ECOWAR's own new mod namespace) doing genuine I32 decision logic — a real
+branch over all 16 card ids, not just a bare trigger like every REDGARDEN mod before it — per the
+founder's own "do the whole game in pure parena as much as you can." 9 new tests
+(`tests/test_ecowar_cards.c`), all passing. **Not yet wired into a real in-match input** — no
+deck/hand UI exists yet, since "more specific mechanic direction to follow" per the founder's own
+words; the system is callable and tested end-to-end today, real UI wiring is separate, later work.
+
+**Card art: queued, not yet generated.** All 16 real Prompt-o-verse generation requests (one per
+card, matching its real source hero) are queued in the shared, durable `emily promptoverse` queue
+— but draining them (`emily promptoverse work`) needs real `gcloud`/Vertex AI credentials this
+session's own user (`treeiii`) doesn't have (`gcloud auth list` → "No credentialed accounts"),
+unlike `fatbaby`'s own sessions. A real, honest environmental gap, not a code bug — whoever runs
+`emily promptoverse work` next with working credentials drains these 16 already-queued requests.
+
+Gameplay otherwise remains identical to REDGARDEN's `apps/arena`/`apps/arena_server` for now —
+the fork gives ECOWAR its own repo, history, and deploy identity, plus its first real gameplay
+mechanic (cards); deeper RTS/deck-building systems are genuinely not started yet, per the same
+"build what is obvious" sequencing.
 
 ### Direction for what comes next (real, not yet built)
 
