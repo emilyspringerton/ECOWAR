@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026-08-27
+
+- Cart hero: AOE zone indicators (real gap fixed, zone_radius_x10 wire field), marble-bag+Fibonacci pity RNG (first real implementation of NORTHSTAR's own pull algorithm), R finally better-weighted than W, King's Growth buff outcome added. 21 new tests. Apple #16395, commit 1515caf (sess-20260825-1938-f6bd411e)
+
+
 ## 2026-08-26
 - real [move-debug] server-side trace on every move command + F10 client-side reset-rotation debug tool, for the live intermittent 'stuck sideways, can't rotate' movement bug report -- diagnostics only, root cause not found yet (sess-20260825-1938-f6bd411e)
 - deployed the 2026-08-25/26 autocurriculum RL policy (35.0% vs fixed heuristic) as the live 3v3 weights, replacing the 2026-08-11 noisy-gestalt checkpoint; launched the next training generation (rl_team_checkpoints_autocurriculum_20260826) (sess-20260825-1938-f6bd411e)
