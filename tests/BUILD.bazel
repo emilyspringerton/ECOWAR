@@ -125,3 +125,10 @@ cc_test(
     deps = ["//packages/simulation:arena_game"],
     copts = COMMON_TEST_COPTS,
 )
+
+cc_test(
+    name = "test_combat_log",
+    srcs = ["test_combat_log.c"],
+    deps = ["//packages/simulation:arena_game"],
+    copts = COMMON_TEST_COPTS,
+)

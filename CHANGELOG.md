@@ -1,5 +1,28 @@
 # Changelog
 
+## 2026-08-28 (combat log wired; 1v1 kill-attribution bugfix)
+- Closed `docs/ARENA_API.md`'s own "NOT YET WIRED" gap: `PARENA/stdlib/redgarden/combat_log_mod.prn`
+  (real, complete PARENA source, zero host-side companions) now has a real host half --
+  `ArenaCombatLogEntry` ring buffer (`arena_game.h`/`.c`), five `redgarden_host_log_*` functions,
+  wired at their five real call sites (`apply_damage_ex`'s kill branch, `arena_shop_buy`,
+  `arena_tick_nodes` x2 for capture+uncapture, `arena_tick_kings`). `combat_log_mod.c` generated
+  via the real `parena build` CLI and committed; added to every build path (`scripts/build.sh`,
+  `build_arena.sh`, `build_training.sh`, `test_arena.sh`, `packages/simulation/BUILD.bazel`) --
+  same "every real build path, not just the first one" discipline this repo keeps re-learning.
+- Real bugfix found while wiring the above: `resolve_combat` -- the actual 1v1 duel resolver
+  (`arena_update`'s primary combat path) -- passed a real attacker to `apply_damage_ex`'s own
+  `source_hero_id` parameter (correctly used by the damage log) but never set the SEPARATE
+  `last_attacked_by_owner` struct field the kill-bounty/combat-log-kill logic actually reads,
+  unlike every other real melee/homing-shot site. Meant 1v1 kills got neither Flow/XP kill-bounty
+  nor (now) a combat-log HERO_KILL event, even with a real, known killer in scope the whole time.
+  Fixed: both halves of `resolve_combat` now set it (a plain owner-slot index, 0/1 -- no
+  `arena_reward_owner()` clone resolution needed, 1v1 has no puppet clones).
+- `tests/test_combat_log.c`, 5 new tests, each driving its event through the real call site (not
+  a synthetic direct push): kill, purchase, node capture, node uncapture, King spawn. Registered
+  in `test_arena.sh` and `tests/BUILD.bazel`. Full suite green (`bazel test //tests/...`: 17/18,
+  the 1 failure is the pre-existing, unrelated `test_arena_replay` segfault); `bazel build //...`
+  clean.
+
 ## 2026-08-27 (post-fork: matchmaking + card system)
 - Phase 1 of the Map Editor epic: ARENA_API.md documents the real mod-hook surface. Shipped Bacon+Puck movement-speed-while-intangible as a real PARENA mod (redgarden/bacon_puck_intangible_speed_mod.prn), CI green. commits 52dc22f/b44e72b/766beff. (sess-20260825-1938-f6bd411e)
 - NORTHSTAR scoping doc for the Map Editor + Arena API + ECOWAR CLI epic (docs/NORTHSTAR_MAP_EDITOR.md). No implementation yet — scoping and phasing only. commit 52dc22f. (sess-20260825-1938-f6bd411e)

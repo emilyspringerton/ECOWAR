@@ -1549,6 +1549,17 @@ extern ArenaItemDef ARENA_ITEM_CURRICULUM_SLOTS[ARENA_ITEM_CURRICULUM_SLOT_COUNT
 int redgarden_host_item_curriculum_generate_counter_item(int base_item_a, int base_item_b, int slot_index);
 const ArenaItemDef *redgarden_host_item_curriculum_get(int slot_index);
 
+/* redgarden_host_log_*: the five real call sites PARENA/stdlib/redgarden/combat_log_mod.prn's
+ * own header comment already names (on-hero-kill -> redgarden_host_log_kill, etc, hyphen->
+ * underscore mangling same as every other mod). Each is a thin wrapper pushing one
+ * ArenaCombatLogEntry -- see that struct's own doc comment for the real call sites and the a/b/c
+ * field meanings per event type. */
+void redgarden_host_log_kill(int victim, int killer);
+void redgarden_host_log_purchase(int buyer, int item_id, int cost);
+void redgarden_host_log_node_capture(int node_id, int team);
+void redgarden_host_log_node_uncapture(int node_id, int team);
+void redgarden_host_log_king_spawn(int camp_id);
+
 #define ARENA_ITEM_SELL_REFUND_PCT 50 /* founder: "sell it back for less" */
 #define ARENA_SHOP_RADIUS 3.0f /* same "stand near it" convention as ARENA_FOUNTAIN_RADIUS */
 
@@ -2560,6 +2571,40 @@ typedef struct {
     int amount;
 } ArenaDamageLogEntry;
 
+/* ArenaCombatLogEntry (docs/ARENA_API.md's own "NOT YET WIRED" gap, closed): the host-side ring
+ * buffer `PARENA/stdlib/redgarden/combat_log_mod.prn` already names as its real destination in
+ * its own header comment -- that file was real, complete PARENA source with zero host-side C
+ * companions and zero call sites; this struct plus the five redgarden_host_log_* functions below
+ * are that missing host half. Five distinct real event shapes (kill/purchase/capture/uncapture/
+ * king-spawn), one generic entry rather than five separate ring buffers -- same rolling
+ * last-N feed idiom as ArenaDamageLogEntry above, and the mod source's own comment already
+ * settled the "why not a tagged-union payload" question (VS0 still can't express one across the
+ * #target FFI boundary cleanly). a/b/c's meaning depends on `type`; unused slots are 0:
+ *   ARENA_LOG_EVENT_HERO_KILL:       a=victim hero_id,  b=killer hero_id,  c=unused
+ *   ARENA_LOG_EVENT_ITEM_PURCHASE:   a=buyer owner idx, b=item_id,         c=cost
+ *   ARENA_LOG_EVENT_NODE_CAPTURE:    a=node_id,         b=capturing team,  c=unused
+ *   ARENA_LOG_EVENT_NODE_UNCAPTURE:  a=node_id,         b=team that lost it, c=unused
+ *   ARENA_LOG_EVENT_KING_SPAWN:      a=camp_id,         b=unused,          c=unused
+ * Kill attribution shares ArenaDamageLogEntry's own honest limitation: only kills with a real
+ * last_attacked_by_owner get logged (see apply_damage_ex's kill branch) -- an ability-finished
+ * kill with no melee/homing-shot attacker on record logs no kill event, same "not every damage
+ * source needs full reward wiring" scope narrowing that field's doc comment already accepts. */
+typedef enum {
+    ARENA_LOG_EVENT_HERO_KILL = 0,
+    ARENA_LOG_EVENT_ITEM_PURCHASE,
+    ARENA_LOG_EVENT_NODE_CAPTURE,
+    ARENA_LOG_EVENT_NODE_UNCAPTURE,
+    ARENA_LOG_EVENT_KING_SPAWN,
+} ArenaCombatLogEventType;
+
+#define ARENA_COMBAT_LOG_CAPACITY 24 /* wider than ARENA_DAMAGE_LOG_CAPACITY -- five event types
+                                         sharing one ring buffer would starve each other faster at
+                                         the same capacity a single-type log gets away with */
+typedef struct {
+    ArenaCombatLogEventType type;
+    int a, b, c; /* meaning depends on type -- see this struct's own doc comment above */
+} ArenaCombatLogEntry;
+
 typedef struct {
     ArenaHero heroes[ARENA_HEROES_ARRAY_SIZE]; /* S170-141: real per-player range 0..ARENA_MAX_HEROES-1, puppet-clone range after it -- see ARENA_HEROES_ARRAY_SIZE's own doc comment */
     ArenaNode nodes[ARENA_NODE_COUNT];
@@ -2626,6 +2671,9 @@ typedef struct {
     ArenaDamageLogEntry damage_log[ARENA_DAMAGE_LOG_CAPACITY]; /* S189-01: real combat damage log, ring buffer -- see ArenaDamageLogEntry's own doc comment */
     int damage_log_head; /* next write index, wraps -- 0 (memset default) is correct at match start */
     int damage_log_count; /* how many entries are actually valid so far, caps at ARENA_DAMAGE_LOG_CAPACITY -- distinct from head so the UI doesn't render stale zeroed slots before the buffer's first lap */
+    ArenaCombatLogEntry combat_log[ARENA_COMBAT_LOG_CAPACITY]; /* kills/purchases/node captures+uncaptures/king spawns -- see ArenaCombatLogEntry's own doc comment */
+    int combat_log_head; /* same head/count ring-buffer idiom as damage_log_head above */
+    int combat_log_count;
     int winner; /* 0 = none yet, 1 = player/team 0, 2 = bot/team 1 */
 } ArenaState;
 

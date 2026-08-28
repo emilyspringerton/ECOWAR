@@ -45,6 +45,7 @@ gcc "${COMMON_FLAGS[@]}" \
   -include "${ROOT_DIR}/packages/simulation/abraham_fireball_mod_host.h" \
   -include "${ROOT_DIR}/packages/simulation/bacon_puck_intangible_speed_mod_host.h" \
   -include "${ROOT_DIR}/packages/simulation/card_effect_mod_host.h" \
+  -include "${ROOT_DIR}/packages/simulation/combat_log_mod_host.h" \
   "${ROOT_DIR}/apps/arena_server/src/main.c" \
   "${ROOT_DIR}/packages/simulation/arena_game.c" \
   "${ROOT_DIR}/packages/simulation/arena_ai_bridge.c" \
@@ -56,6 +57,7 @@ gcc "${COMMON_FLAGS[@]}" \
   "${ROOT_DIR}/packages/simulation/abraham_fireball_mod.c" \
   "${ROOT_DIR}/packages/simulation/bacon_puck_intangible_speed_mod.c" \
   "${ROOT_DIR}/packages/simulation/card_effect_mod.c" \
+  "${ROOT_DIR}/packages/simulation/combat_log_mod.c" \
   "${ROOT_DIR}/packages/common/mlp_infer.c" \
   -lm
 
@@ -90,6 +92,7 @@ gcc -std=c99 -D_DEFAULT_SOURCE -O2 -Wall -Wextra -I"${ROOT_DIR}/packages" \
   -include "${ROOT_DIR}/packages/simulation/abraham_fireball_mod_host.h" \
   -include "${ROOT_DIR}/packages/simulation/bacon_puck_intangible_speed_mod_host.h" \
   -include "${ROOT_DIR}/packages/simulation/card_effect_mod_host.h" \
+  -include "${ROOT_DIR}/packages/simulation/combat_log_mod_host.h" \
   "${ROOT_DIR}/apps/arena/src/main.c" \
   "${ROOT_DIR}/packages/simulation/arena_game.c" \
   "${ROOT_DIR}/packages/simulation/arena_replay.c" \
@@ -102,6 +105,7 @@ gcc -std=c99 -D_DEFAULT_SOURCE -O2 -Wall -Wextra -I"${ROOT_DIR}/packages" \
   "${ROOT_DIR}/packages/simulation/abraham_fireball_mod.c" \
   "${ROOT_DIR}/packages/simulation/bacon_puck_intangible_speed_mod.c" \
   "${ROOT_DIR}/packages/simulation/card_effect_mod.c" \
+  "${ROOT_DIR}/packages/simulation/combat_log_mod.c" \
   "${ROOT_DIR}/packages/common/mlp_infer.c" \
   "${ROOT_DIR}/packages/goldenband/gband.c" \
   "${ROOT_DIR}/packages/goldenband/gband_rig.c" \

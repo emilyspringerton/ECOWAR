@@ -11,6 +11,7 @@
 #include "duck_smoke_bomb_mod_host.h"
 #include "abraham_fireball_mod_host.h"
 #include "bacon_puck_intangible_speed_mod_host.h"
+#include "combat_log_mod_host.h"
 
 ArenaState arena_state;
 int arena_bot_enabled = 1;
@@ -1526,6 +1527,42 @@ static void arena_log_damage(ArenaHeroID target_hero_id, ArenaHeroID source_hero
     if (arena_state.damage_log_count < ARENA_DAMAGE_LOG_CAPACITY) arena_state.damage_log_count++;
 }
 
+/* arena_log_combat_event: the generic push helper every redgarden_host_log_* wrapper below
+ * shares -- same always-succeeds rolling-overwrite idiom as arena_log_damage above. Kept as one
+ * shared helper (not five copy-pasted push bodies) since the only real difference between the
+ * five event types is which of a/b/c gets used, already handled by the caller. */
+static void arena_log_combat_event(ArenaCombatLogEventType type, int a, int b, int c) {
+    ArenaCombatLogEntry *e = &arena_state.combat_log[arena_state.combat_log_head];
+    e->type = type;
+    e->a = a;
+    e->b = b;
+    e->c = c;
+    arena_state.combat_log_head = (arena_state.combat_log_head + 1) % ARENA_COMBAT_LOG_CAPACITY;
+    if (arena_state.combat_log_count < ARENA_COMBAT_LOG_CAPACITY) arena_state.combat_log_count++;
+}
+
+/* redgarden_host_log_*: see arena_game.h's own doc comments (ArenaCombatLogEntry, and each
+ * function's forward declaration) for the real call sites and a/b/c field meanings. These are
+ * the host half of PARENA/stdlib/redgarden/combat_log_mod.prn -- called by the PARENA-emitted
+ * on-hero-kill/on-item-purchase/on-node-capture/on-node-uncapture/on-king-spawn functions,
+ * same "mod is the trigger point, host does the real work" split docs/ARENA_API.md documents,
+ * closing that doc's own "NOT YET WIRED" gap. */
+void redgarden_host_log_kill(int victim, int killer) {
+    arena_log_combat_event(ARENA_LOG_EVENT_HERO_KILL, victim, killer, 0);
+}
+void redgarden_host_log_purchase(int buyer, int item_id, int cost) {
+    arena_log_combat_event(ARENA_LOG_EVENT_ITEM_PURCHASE, buyer, item_id, cost);
+}
+void redgarden_host_log_node_capture(int node_id, int team) {
+    arena_log_combat_event(ARENA_LOG_EVENT_NODE_CAPTURE, node_id, team, 0);
+}
+void redgarden_host_log_node_uncapture(int node_id, int team) {
+    arena_log_combat_event(ARENA_LOG_EVENT_NODE_UNCAPTURE, node_id, team, 0);
+}
+void redgarden_host_log_king_spawn(int camp_id) {
+    arena_log_combat_event(ARENA_LOG_EVENT_KING_SPAWN, camp_id, 0, 0);
+}
+
 /* resonance_combo (REDGARDEN_GUI_NORTHSTAR.md Milestone 2): a straight port of
  * GoblinFoxDragon/server/skillchain.go's own `combinationTable` -- same real (ws1, ws2) pairs,
  * same real tier, same real damage multiplier. Bidirectional pairs are listed explicitly, same
@@ -1762,6 +1799,7 @@ static void apply_damage_ex(ArenaHero *target, int amount, ArenaHeroID source_he
                     killer->flow_earned += ARENA_HERO_KILL_FLOW * multikill_mult;
                     killer->xp += ARENA_HERO_KILL_XP * multikill_mult;
                     killer->kills++;
+                    on_hero_kill(target->hero_id, killer->hero_id); /* combat_log_mod -- only reached with a real attributed killer, same honest limitation this whole branch already has */
                     /* South/Growth's Bloodroar (Jungle Camps Milestone 2): "each takedown while
                        holding it adds a stack and refreshes the buff's duration" -- a hero kill
                        is exactly a real-MOBA "takedown," same word the northstar itself uses. */
@@ -2027,6 +2065,9 @@ void arena_tick_nodes(unsigned int dt_ms) {
                immediately, the "neutral period... as you wait for it to
                finish capturing" the channel spends open and uncaptured,
                not just at the moment it completes. */
+            if (node->owner != 0) {
+                on_node_uncapture(n, node->owner - 1); /* combat_log_mod -- real loss of an actually-owned node, not the "was already neutral" no-op case */
+            }
             node->capturing_team = exclusive_team;
             node->capture_progress_ms = 0;
             node->owner = 0;
@@ -2061,6 +2102,7 @@ void arena_tick_nodes(unsigned int dt_ms) {
             node->owner = exclusive_team + 1; /* encode team index -> owner (1=team0, 2=team1) */
             node->capturing_team = -1;
             node->capture_progress_ms = 0;
+            on_node_capture(n, exclusive_team); /* combat_log_mod */
         }
     }
 
@@ -2220,6 +2262,7 @@ int arena_shop_buy(int owner, int item_id) {
     h->flow_earned += 0; /* spending never reduces flow_earned -- see that field's own doc comment; explicit no-op line so this isn't silently forgotten by a future editor */
     h->equipped_item[def->slot] = item_id;
     arena_recompute_item_stats(h);
+    on_item_purchase(owner, item_id, cost); /* combat_log_mod */
     return 1;
 }
 
@@ -3615,6 +3658,7 @@ void arena_tick_kings(unsigned int dt_ms) {
         k->x = kx;
         k->z = kz;
         k->attack_cooldown_ms = 0;
+        on_king_spawn(c); /* combat_log_mod -- fires on first spawn AND every respawn, both real "a King is now up" events */
     }
 
     for (int c = 0; c < ARENA_CAMP_COUNT; c++) {
@@ -3869,12 +3913,29 @@ static void resolve_combat(unsigned int dt_ms) {
     if (a->attack_cooldown_ms <= 0 && a->mnm_burrow_ms <= 0) {
         /* S189-01: real attacker attribution -- both hero pointers already in scope here,
            zero risk, the one call site upgraded to apply_damage_ex (see its own doc comment
-           in arena_game.h for why the other ~50 apply_damage sites aren't). */
-        if (hero_is_hittable(b)) apply_damage_ex(b, apply_armor(ARENA_ATTACK_DAMAGE, arena_hero_armor(b)), a->hero_id);
+           in arena_game.h for why the other ~50 apply_damage sites aren't). apply_damage_ex's own
+           source_hero_id PARAMETER (a->hero_id, used above) is a real hero id and correct for the
+           damage log -- but the SEPARATE kill-bounty/combat-log-kill logic inside apply_damage_ex
+           reads the STRUCT FIELD last_attacked_by_owner instead (an owner SLOT INDEX, 0/1 here,
+           not a hero_id -- see that field's own doc comment), which this 1v1 resolver never set,
+           unlike every other real melee/homing-shot site (tick_hero_kit's nearest-enemy loop,
+           arena_tick_attack_targets's Gary branch). Real gap: 1v1 -- the actual primary game
+           mode -- got neither Flow/XP kill-bounty nor a combat_log_mod HERO_KILL event for its
+           own duels, found while wiring the latter this pass. b is owner slot 1's target here; a
+           is owner slot 0 -- resolve_combat is hardcoded to heroes[0]/heroes[1], so the slot
+           index is just the literal 0/1, no arena_reward_owner() clone-resolution needed (1v1 has
+           no puppet clones). */
+        if (hero_is_hittable(b)) {
+            b->last_attacked_by_owner = 0;
+            apply_damage_ex(b, apply_armor(ARENA_ATTACK_DAMAGE, arena_hero_armor(b)), a->hero_id);
+        }
         a->attack_cooldown_ms = ARENA_ATTACK_COOLDOWN_MS;
     }
     if (b->attack_cooldown_ms <= 0 && b->mnm_burrow_ms <= 0) {
-        if (hero_is_hittable(a)) apply_damage_ex(a, apply_armor(ARENA_ATTACK_DAMAGE, arena_hero_armor(a)), b->hero_id);
+        if (hero_is_hittable(a)) {
+            a->last_attacked_by_owner = 1; /* same fix, mirrored -- see the block above's own doc comment */
+            apply_damage_ex(a, apply_armor(ARENA_ATTACK_DAMAGE, arena_hero_armor(a)), b->hero_id);
+        }
         b->attack_cooldown_ms = ARENA_ATTACK_COOLDOWN_MS;
     }
 }
