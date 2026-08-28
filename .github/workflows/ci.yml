@@ -87,6 +87,15 @@ jobs:
       # was missed again, for the identical "third, separate build path" reason. Found live via
       # real CI failure on commit fc257c4 (linker: "undefined reference to
       # on_ecowar_resolve_card_magnitude").
+      # packages/simulation/combat_log_mod.c (2026-08-28): same exact gap, a FOURTH time --
+      # on_hero_kill/on_node_capture/on_node_uncapture/on_item_purchase/on_king_spawn were
+      # already wired into scripts/build.sh when combat_log_mod landed, this step was missed
+      # again. Found live via real CI failure on commit 84d0f10 (linker: "undefined reference
+      # to on_hero_kill" etc). Four real instances of the identical class of gap is a real
+      # signal this hardcoded list itself is the wrong shape long-term (a glob over
+      # packages/simulation/*_mod.c would close the whole class at once) -- not restructured
+      # here to keep this fix minimal and low-risk, logged to EMILY/BACKLOG.md as real,
+      # separate follow-up instead.
       - name: Cross-compile Windows arena client
         run: |
           set -euo pipefail
@@ -99,6 +108,7 @@ jobs:
             -include packages/simulation/abraham_fireball_mod_host.h \
             -include packages/simulation/card_effect_mod_host.h \
             -include packages/simulation/bacon_puck_intangible_speed_mod_host.h \
+            -include packages/simulation/combat_log_mod_host.h \
             -o ECOWAR.exe \
             apps/arena/src/main.c \
             packages/simulation/arena_game.c \
@@ -112,6 +122,7 @@ jobs:
             packages/simulation/abraham_fireball_mod.c \
             packages/simulation/card_effect_mod.c \
             packages/simulation/bacon_puck_intangible_speed_mod.c \
+            packages/simulation/combat_log_mod.c \
             packages/common/mlp_infer.c \
             packages/goldenband/gband.c \
             packages/goldenband/gband_rig.c \
