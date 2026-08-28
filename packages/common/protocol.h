@@ -427,6 +427,12 @@ typedef struct {
     // battlefield should read clearly" convention as every other field here.
     float duck_smoke_x, duck_smoke_z;
     uint16_t duck_smoke_ms;
+    // ecowar_card_cooldown_ms (Phase 2 follow-up, 2026-08-28): same reasoning blink_cooldown_ms's
+    // own doc comment already established -- net_mode never calls arena_update() locally, so
+    // this would just sit at zero forever without a real wire field, leaving the new card
+    // cooldown tile permanently "ready." Local player's own hero only really needs this, synced
+    // for every hero same as every other per-hero field on this struct, for consistency.
+    uint16_t ecowar_card_cooldown_ms;
 } ArenaHeroSnapshot;
 
 // ARENA_SNAPSHOT_MAX_HEROES must match packages/simulation/arena_game.h's

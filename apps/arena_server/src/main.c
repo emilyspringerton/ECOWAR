@@ -542,6 +542,7 @@ static void fill_hero_snapshot(ArenaHeroSnapshot *hs, const ArenaHero *h) {
     hs->duck_smoke_x = h->duck_smoke_x; /* S202-10 */
     hs->duck_smoke_z = h->duck_smoke_z;
     hs->duck_smoke_ms = (uint16_t)(h->duck_smoke_ms > 0 ? h->duck_smoke_ms : 0);
+    hs->ecowar_card_cooldown_ms = (uint16_t)(h->ecowar_card_cooldown_ms > 0 ? h->ecowar_card_cooldown_ms : 0); /* Phase 2 follow-up */
 }
 
 static void server_broadcast(void) {

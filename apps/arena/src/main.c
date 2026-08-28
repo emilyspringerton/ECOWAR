@@ -814,6 +814,7 @@ static void net_poll_snapshots(uint32_t now_ms) {
                     dst->duck_smoke_x = chunk->heroes[j].duck_smoke_x; /* S202-10 */
                     dst->duck_smoke_z = chunk->heroes[j].duck_smoke_z;
                     dst->duck_smoke_ms = chunk->heroes[j].duck_smoke_ms;
+                    dst->ecowar_card_cooldown_ms = chunk->heroes[j].ecowar_card_cooldown_ms; /* Phase 2 follow-up */
                     if (chunk->heroes[j].cast_flash_slot > 0) {
                         spawn_spell_flash(dst->x, dst->z, chunk->heroes[j].cast_flash_slot, dst->hero_id);
                         trigger_squish(i);
@@ -2426,6 +2427,7 @@ static float w_cooldown_peak_ms = 0.0f;
 static float r_cooldown_peak_ms = 0.0f;
 static float blink_cooldown_peak_ms = 0.0f; /* S170-205 */
 static float donkey_glide_cooldown_peak_ms = 0.0f; /* S170-206 */
+static float ecowar_card_cooldown_peak_ms = 0.0f; /* Phase 2 card-cooldown HUD tile, 2026-08-28 */
 
 /* draw_ability_tile: one Overwatch-style square ability icon -- bordered
  * tile, a radial dark wedge (GL_TRIANGLE_FAN from the tile's center)
@@ -4961,6 +4963,17 @@ int main(int argc, char *argv[]) {
                 draw_ability_tile(tiles_x0 + tile_pitch * 4.0f, tiles_y, tile_size, h->donkey_glide_cooldown_ms, &donkey_glide_cooldown_peak_ms,
                                    0, 0, "~", "PAPER GLIDE", 0.75f, 0.85f, 0.95f);
             }
+            /* ECOWAR card tile (Phase 2 follow-up, 2026-08-28): tile_pitch * 5.0f, one slot past
+               Donkey's own -- always shown (unlike Blink Dagger/Donkey, which only appear once
+               equipped), since the 16-card system applies to every hero, not one item purchase.
+               Shows the currently-ARMED card's real name (g_ecowar_armed_card, cycled with V),
+               not a fixed "CARDS" label, so the tile always reflects what G will actually cast --
+               same "the affordance you're looking at is the one the key acts on" precedent this
+               file already holds itself to. Never mana-blocked (cards cost no mana, only the
+               shared cooldown itself gates them). */
+            draw_ability_tile(tiles_x0 + tile_pitch * 5.0f, tiles_y, tile_size, h->ecowar_card_cooldown_ms,
+                               &ecowar_card_cooldown_peak_ms, 0, 0, "G", ECOWAR_CARDS[g_ecowar_armed_card].name,
+                               0.85f, 0.75f, 0.3f);
 
             /* Ability-help overlay (S170-151, "H should show an overlay with
                character ability descriptions"): a real quick-reference panel,
