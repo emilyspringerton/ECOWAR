@@ -86,9 +86,18 @@ prerequisite lands, not necessarily only after every earlier phase is 100% "done
    `stdlib/ecowar/*.prn` namespace, and name any real, missing hooks a card/RTS mod would need
    that don't exist yet. Foundational — Phase 2 depends on this being real and named, not
    reverse-engineered per-mod.
-2. **ECOWAR card/RTS mods** — the "cards and all that" ask. Real, existing card data already has
-   a real gap (no in-match trigger path) — closing that is real, obvious next content work once
-   Phase 1 names the hook it needs.
+2. **ECOWAR card/RTS mods (done for the card half — see below)** — the "cards and all that" ask.
+   Real, existing card data already has a real gap (no in-match trigger path) — closing that is
+   real, obvious next content work once Phase 1 names the hook it needs.
+   **Done, 2026-08-27**: real in-match input path shipped — `PACKET_ARENA_CARD_PLAY` (client V
+   cycles the armed card, G casts it at the hovered target) → `arena_ecowar_play_card` →
+   `ecowar_resolve_card_effect`. 11 real tests total (`tests/test_ecowar_cards.c`), gcc + bazel
+   build/test both clean. Also fixed a real, separate gap found while verifying: `BUILD.bazel`
+   was missing `bacon_puck_intangible_speed_mod.c/_host.h` entirely (present on disk, wired into
+   every bash/CI path, never added to Bazel). ECOWAR `882ad47`. **Still genuinely open**: the RTS
+   half of "cards and all that" (deck building, mana economy, card-summoned troops) — real
+   content/mechanic decisions the founder hasn't made yet, not attempted here; the SDL keypress →
+   packet send path itself isn't covered by an automated test (needs a real display/Xvfb).
 3. **Map data format** — extract the currently-hardcoded terrain/spawn-point layout out of
    `arena_game.c` into a real, separate, loadable/saveable format (PARENA struct + real
    read/write, or JSON via the already-real `stdlib/json.prn` — a real, small, separate design
