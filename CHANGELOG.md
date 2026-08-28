@@ -1,6 +1,7 @@
 # Changelog
 
 ## 2026-08-28 (combat log wired; 1v1 kill-attribution bugfix)
+- Structural fix: Windows cross-compile now globs packages/simulation/*_mod.c instead of a hand-maintained list that drifted out of sync 4 times. commit 0bc8fd7. (sess-20260825-1938-f6bd411e)
 - CI fix: Windows cross-compile was missing combat_log_mod (4th time this exact gap class has hit this hardcoded mod list). commit 5252a6e. (sess-20260825-1938-f6bd411e)
 - Closed `docs/ARENA_API.md`'s own "NOT YET WIRED" gap: `PARENA/stdlib/redgarden/combat_log_mod.prn`
   (real, complete PARENA source, zero host-side companions) now has a real host half --
