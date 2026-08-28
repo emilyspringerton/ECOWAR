@@ -67,62 +67,36 @@ jobs:
           tar xzf SDL2-devel-2.30.10-mingw.tar.gz
           mv SDL2-2.30.10/x86_64-w64-mingw32 ./sdl2_mingw
 
-      # packages/simulation/bloodflower_mod.c (S194-01/S194-04): arena_game.c's own
-      # arena_tick_daynight calls on_moon_zenith(), defined in the PARENA-compiled
-      # bloodflower mod -- this Windows cross-compile is a third, separate build path
-      # from scripts/build.sh and scripts/build_arena.sh (both already fixed) and was
-      # missed too, breaking this step the same way build_arena.sh broke (undefined
-      # reference at link time). Verified locally via a real mingw cross-compile
-      # against the exact SDL2-devel-2.30.10-mingw package this step downloads, not
-      # just assumed to match the Linux fix.
-      # packages/simulation/tree_passive_mod.c (2026-08-25): same exact gap, same fix, this
-      # time for arena_hero_tree_passive's on_tree_passive_strike call (Tree hero passive) --
-      # this step was missed again when THAT mod landed, for the identical "third, separate
-      # build path" reason bloodflower_mod.c's own comment above already names. Found live via
-      # CI failure on commit c0e3ee6.
-      # packages/simulation/card_effect_mod.c (2026-08-27): same exact gap, same fix, a third
-      # time -- ECOWAR's own 16-card system's arena_game.c call to
-      # on_ecowar_resolve_card_magnitude was already wired into scripts/build.sh and
-      # scripts/build_arena.sh (both fixed when the card system landed) but this Windows step
-      # was missed again, for the identical "third, separate build path" reason. Found live via
-      # real CI failure on commit fc257c4 (linker: "undefined reference to
-      # on_ecowar_resolve_card_magnitude").
-      # packages/simulation/combat_log_mod.c (2026-08-28): same exact gap, a FOURTH time --
-      # on_hero_kill/on_node_capture/on_node_uncapture/on_item_purchase/on_king_spawn were
-      # already wired into scripts/build.sh when combat_log_mod landed, this step was missed
-      # again. Found live via real CI failure on commit 84d0f10 (linker: "undefined reference
-      # to on_hero_kill" etc). Four real instances of the identical class of gap is a real
-      # signal this hardcoded list itself is the wrong shape long-term (a glob over
-      # packages/simulation/*_mod.c would close the whole class at once) -- not restructured
-      # here to keep this fix minimal and low-risk, logged to EMILY/BACKLOG.md as real,
-      # separate follow-up instead.
+      # Real structural fix (2026-08-28): this step used to hardcode every real PARENA mod's
+      # own -include/.c pair by hand, a real, separate list from scripts/build.sh's own
+      # (equally hand-maintained) list -- confirmed to have caused FOUR real CI breaks in a
+      # row (bloodflower_mod: CI failure on an early commit; tree_passive_mod: commit c0e3ee6;
+      # card_effect_mod: commit fc257c4; combat_log_mod: commit 84d0f10 -- each time a new mod
+      # landed, scripts/build.sh got updated correctly and this hardcoded list didn't). Four
+      # real recurrences of the identical gap is a real signal the LIST itself was the wrong
+      # shape, not that anyone kept forgetting -- replaced with a real glob over
+      # packages/simulation/*_mod_host.h / *_mod.c, so a new mod's own generated files are
+      # picked up automatically the moment they're committed, closing this whole bug class at
+      # once rather than patching a fifth recurrence later.
       - name: Cross-compile Windows arena client
         run: |
           set -euo pipefail
+          mod_includes=()
+          for h in packages/simulation/*_mod_host.h; do
+            mod_includes+=(-include "$h")
+          done
+          mod_sources=()
+          for c in packages/simulation/*_mod.c; do
+            mod_sources+=("$c")
+          done
           x86_64-w64-mingw32-gcc -std=c99 -D_DEFAULT_SOURCE -O2 \
-            -include packages/simulation/bloodflower_mod_host.h \
-            -include packages/simulation/tree_passive_mod_host.h \
-            -include packages/simulation/build_template_mod_host.h \
-            -include packages/simulation/item_curriculum_mod_host.h \
-            -include packages/simulation/duck_smoke_bomb_mod_host.h \
-            -include packages/simulation/abraham_fireball_mod_host.h \
-            -include packages/simulation/card_effect_mod_host.h \
-            -include packages/simulation/bacon_puck_intangible_speed_mod_host.h \
-            -include packages/simulation/combat_log_mod_host.h \
+            "${mod_includes[@]}" \
             -o ECOWAR.exe \
             apps/arena/src/main.c \
             packages/simulation/arena_game.c \
             packages/simulation/arena_replay.c \
             packages/simulation/arena_ai_bridge.c \
-            packages/simulation/bloodflower_mod.c \
-            packages/simulation/tree_passive_mod.c \
-            packages/simulation/build_template_mod.c \
-            packages/simulation/item_curriculum_mod.c \
-            packages/simulation/duck_smoke_bomb_mod.c \
-            packages/simulation/abraham_fireball_mod.c \
-            packages/simulation/card_effect_mod.c \
-            packages/simulation/bacon_puck_intangible_speed_mod.c \
-            packages/simulation/combat_log_mod.c \
+            "${mod_sources[@]}" \
             packages/common/mlp_infer.c \
             packages/goldenband/gband.c \
             packages/goldenband/gband_rig.c \
