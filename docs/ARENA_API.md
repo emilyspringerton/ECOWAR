@@ -55,8 +55,8 @@ sites in `arena_game.c`, not guessed at.
 | `redgarden/item_curriculum_mod.prn` | `on-generate-counter-item` | counter-item generation | **LIVE** |
 | `redgarden/duck_smoke_bomb_mod.prn` | `on-duck-smoke-bomb-cast` | Duck's W ability | **LIVE** |
 | `redgarden/abraham_fireball_mod.prn` | `on-abraham-fireball-cast` | Abraham's ground-target ability | **LIVE** |
-| `ecowar/card_effect_mod.prn` | `on-ecowar-resolve-card-magnitude` | `ecowar_resolve_card_effect` | **DEFINED, NOT YET CALLED** — `ecowar_resolve_card_effect` itself has zero real callers anywhere in the codebase (confirmed by grep), the same "cards exist, nothing triggers them in a live match" gap this session's own live playtest already found. Closing this — a real input path (client UI + network packet + server dispatch calling `ecowar_resolve_card_effect`) — is Phase 2's own first real task. |
-| `redgarden/combat_log_mod.prn` | `on-hero-kill`/`on-item-purchase`/`on-node-capture`/`on-node-uncapture`/`on-king-spawn` | *(none yet)* | **NOT YET WIRED** — real, complete PARENA source (recovered and committed this session, PARENA commit `4709fdd`), but its own host-side C companions (`redgarden_host_log_kill` etc.) don't exist in `arena_game.c` yet, no generated `.c` has been committed into ECOWAR, and nothing calls it. Real, separate follow-up, not attempted here. |
+| `ecowar/card_effect_mod.prn` | `on-ecowar-resolve-card-magnitude` | `ecowar_resolve_card_effect` | **LIVE** — closed 2026-08-27: `PACKET_ARENA_CARD_PLAY` (client V/G keybinds → network → server dispatch) → `arena_ecowar_play_card` → `ecowar_resolve_card_effect`, real shared cooldown gating it, networked HUD tile. ECOWAR `882ad47`/`d470555`/`e044f80`. |
+| `redgarden/combat_log_mod.prn` | `on-hero-kill`/`on-item-purchase`/`on-node-capture`/`on-node-uncapture`/`on-king-spawn` | `apply_damage_ex`'s kill branch / `arena_shop_buy` / `arena_tick_nodes` (x2) / `arena_tick_kings` | **LIVE** — closed 2026-08-28: `ArenaCombatLogEntry` ring buffer + the five `redgarden_host_log_*` functions, `combat_log_mod.c` generated via the real `parena build` CLI and committed, wired into every build path. Found and fixed a real, separate bug while closing this: `resolve_combat` (the actual 1v1 duel resolver) never set `last_attacked_by_owner`, so 1v1 kills got neither Flow/XP bounty nor this event despite a real known killer being in scope — fixed both directions. ECOWAR `ec3951c`. |
 
 ## Real VS0 limits that shape every mod above (why the ABI looks like this)
 
@@ -76,8 +76,11 @@ sites in `arena_game.c`, not guessed at.
 - The real ABI pattern above — a new card/RTS mod should follow the exact same "module in
   `stdlib/ecowar/`, `on-<event>` export, generate + commit the `.c`, add to `scripts/build.sh`,
   call by name from `arena_game.c`" shape, not invent a new mechanism.
-- The one real, confirmed gap to close first: wire a real input path to
-  `ecowar_resolve_card_effect` so a player can actually trigger a card in a live match.
+- Both real gaps this doc originally flagged are now closed (card input path 2026-08-27, combat
+  log 2026-08-28 — see the mod inventory table above) — every mod in this repo's real inventory
+  is **LIVE**. Still genuinely open, per the founder's own "more specific mechanic direction to
+  follow": the RTS half of "cards and all that" (deck building, mana/Flow economy, card-summoned
+  troops) — a real, unscoped design decision, not a wiring gap this doc's own pattern covers.
 
 ## Related
 
