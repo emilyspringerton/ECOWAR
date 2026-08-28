@@ -3320,10 +3320,12 @@ extern const EcowarCardDef ECOWAR_CARDS[ECOWAR_CARD_COUNT];
  * calls the real PARENA mod (on_ecowar_resolve_card_magnitude) for the actual scaled magnitude,
  * then applies the resulting effect to `target`. Returns 1 if the card resolved and applied
  * (valid card_id, valid target), 0 otherwise (defensive, same "invalid input is a no-op, not a
- * crash" convention every other cast function in this file already holds itself to). Not yet
- * wired into a real in-match input (no deck/hand UI exists yet -- "more specific mechanic
- * direction to follow" per the founder's own words) -- callable and tested end-to-end today,
- * real UI wiring is separate, later work. */
+ * crash" convention every other cast function in this file already holds itself to). */
 int ecowar_resolve_card_effect(int caster_owner, int card_id, ArenaHero *target);
+
+/* arena_ecowar_play_card (Phase 2, 2026-08-27): the real in-match input path -- resolves
+ * hover_target the same way bacon_puck_cast_w already does and calls ecowar_resolve_card_effect.
+ * See its own doc comment in arena_game.c for the full reasoning. */
+void arena_ecowar_play_card(int owner, int card_id, int hover_target);
 
 #endif

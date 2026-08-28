@@ -28,6 +28,13 @@
 #define PACKET_ARENA_HOLD 17 /* client -> arena_server: real WC3 "Hold Position", NORTHSTAR.md §24 Milestone 2 (2026-07-31) -- see ArenaHoldCmd's own doc comment */
 #define PACKET_ARENA_PATROL 18 /* client -> arena_server: real WC3 "Patrol", NORTHSTAR.md §24 Milestone 2 (2026-07-31) -- see ArenaPatrolCmd's own doc comment */
 #define PACKET_ARENA_APPLY_BUILD_TEMPLATE 19 /* client -> arena_server: auto-buy a named build template's items in order, 2026-08-25 -- see ArenaApplyBuildTemplateCmd's own doc comment */
+#define PACKET_ARENA_CARD_PLAY 20 /* client -> arena_server: play one of the 16 real ECOWAR cards
+    on the currently-hovered hero, 2026-08-27 (Phase 2 of ECOWAR-MAPEDIT-NORTH: "arena apis
+    first... build ecowar ontop of them" -> the confirmed "cards exist, zero real in-match
+    callers" gap ARENA_API.md's own inventory named). Distinct from the older PACKET_CARD_PLAY
+    (id 1) above -- that one belongs to apps/server's own separate cellular-automata card-RTS
+    game (local_game.c); this one is the hero-arena engine's own real ECOWAR_CARDS catalog
+    (arena_game.h/.c, ecowar_resolve_card_effect). See ArenaCardPlayCmd's own doc comment. */
 
 #define ARENA_PHASE_WAITING 0 /* fewer than 2 real players connected yet */
 #define ARENA_PHASE_DRAFT   1 /* both connected, waiting on hero picks */
@@ -138,6 +145,20 @@ typedef struct {
     float target_x;
     float target_z;
 } ArenaCastCmd;
+
+// PACKET_ARENA_CARD_PLAY payload (2026-08-27, Phase 2 of ECOWAR-MAPEDIT-NORTH): which of the 16
+// real ECOWAR_CARDS (card_id) to play, on whichever hero the caster's mouse was hovering at cast
+// time. hover_target uses the exact same real "-1 if nothing hovered, int8_t so it round-trips"
+// convention ArenaCastCmd's own hover_target already establishes above -- ally or enemy both
+// work unmodified (a HEAL-type card hovering yourself, a DAMAGE-type card hovering the enemy),
+// no special-casing needed since ecowar_resolve_card_effect itself doesn't care whose team the
+// target is on. -1 (nothing hovered) is a real, honest no-op server-side, same defensive
+// contract ecowar_resolve_card_effect's own header comment already documents for a NULL/inactive
+// target -- no auto-self-target fallback invented here.
+typedef struct {
+    uint8_t card_id;
+    int8_t hover_target;
+} ArenaCardPlayCmd;
 
 // PACKET_ARENA_PICK payload: which hero (ArenaHeroID) the sending client
 // wants to play, sent during ARENA_PHASE_DRAFT.

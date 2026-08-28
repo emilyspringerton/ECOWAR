@@ -67,6 +67,14 @@ Two real, related deliverables:
   ECOWAR CLI's own "find a real shell to run build steps in" need — founder's own "it can find
   bash i guess like it does with gitbash" already names this as fine to reuse, not something to
   avoid.
+- **Arena API / mod surface (Phase 1, done — see `docs/ARENA_API.md`)**: `PARENA/stdlib/ecowar/`
+  already exists and already has a real mod in it (`card_effect_mod.prn`) — the "where does
+  `stdlib/ecowar/*.prn` live" open question this doc originally posed is answered by real,
+  existing precedent, not a new decision. `ARENA_API.md` documents the real ABI (trigger-only vs.
+  real-decision-logic mods, the generate-commit-wire build process, the full current mod
+  inventory) and confirms the earlier-flagged card gap precisely: `ecowar_resolve_card_effect`
+  is defined and correctly calls the real PARENA mod, but has zero real callers anywhere in the
+  codebase — Phase 2's own first concrete task.
 
 ## Real, honest phased order (founder delegated this: "order it where you think")
 

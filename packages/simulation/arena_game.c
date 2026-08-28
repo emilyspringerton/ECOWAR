@@ -7428,3 +7428,26 @@ int ecowar_resolve_card_effect(int caster_owner, int card_id, ArenaHero *target)
     (void)caster_owner; /* not yet used -- no caster-relative effects (e.g. "heal self for X% of damage dealt") exist among these 16 cards, kept as a real parameter for the effect types that will need it once real mechanic direction arrives */
     return 1;
 }
+
+/* arena_ecowar_play_card: the real in-match input path ecowar_resolve_card_effect's own header
+ * comment said was "separate, later work" -- Phase 2 of ECOWAR-MAPEDIT-NORTH (2026-08-27,
+ * founder real-time direction: "arena apis first... build ecowar ontop of them", closing the
+ * confirmed "cards exist, zero real in-match callers" gap ARENA_API.md's own inventory named).
+ * Called from both apps/arena_server (PACKET_ARENA_CARD_PLAY) and apps/arena's own local 1v1
+ * demo path -- same real "networked path calls the shared function, local demo calls it
+ * directly" split every other cast dispatch in this file already uses (arena_cast_q/
+ * arena_toggle_w/arena_cast_r).
+ *
+ * hover_target resolution mirrors bacon_puck_cast_w's own real target-lookup exactly (arena_set_
+ * hover_target records it, then this reads it straight back as a real hero SLOT INDEX into
+ * arena_state.heroes) -- deliberately NOT auto-defaulting to self when nothing's hovered (-1):
+ * ecowar_resolve_card_effect's own real, honest defensive contract already treats a NULL/
+ * inactive target as a no-op, and inventing a self-target fallback here would be a real, new
+ * design decision ("what should Silence-ing yourself even mean") the founder hasn't made, not
+ * this function's call to make. */
+void arena_ecowar_play_card(int owner, int card_id, int hover_target) {
+    arena_set_hover_target(owner, hover_target);
+    int target_idx = arena_state.hover_target[owner];
+    ArenaHero *target = (target_idx >= 0 && target_idx < ARENA_MAX_HEROES) ? &arena_state.heroes[target_idx] : NULL;
+    ecowar_resolve_card_effect(owner, card_id, target);
+}

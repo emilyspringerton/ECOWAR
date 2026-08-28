@@ -865,6 +865,15 @@ static void server_handle_packet(struct sockaddr_in *sender, char *buffer, int s
         if (cmd->slot == 0) arena_cast_q(client_id);
         else if (cmd->slot == 1) arena_toggle_w(client_id);
         else if (cmd->slot == 2) arena_cast_r(client_id);
+    } else if (head->type == PACKET_ARENA_CARD_PLAY) {
+        if (size < (int)(sizeof(NetHeader) + sizeof(ArenaCardPlayCmd))) return;
+        ArenaCardPlayCmd *cmd = (ArenaCardPlayCmd *)(buffer + sizeof(NetHeader));
+        /* Phase 2 of ECOWAR-MAPEDIT-NORTH (2026-08-27): the real in-match trigger for the
+           16-card ECOWAR_CARDS catalog -- see arena_ecowar_play_card's own doc comment
+           (arena_game.c) for the full reasoning. client_id IS the caster (a client can only
+           ever play a card as its own connection), same trust model PACKET_ARENA_CAST already
+           uses for Q/W/R just above -- no separate authorization check needed. */
+        arena_ecowar_play_card(client_id, cmd->card_id, cmd->hover_target);
     } else if (head->type == PACKET_ARENA_ATTACK) {
         if (size < (int)(sizeof(NetHeader) + sizeof(ArenaAttackCmd))) return;
         ArenaAttackCmd *cmd = (ArenaAttackCmd *)(buffer + sizeof(NetHeader));

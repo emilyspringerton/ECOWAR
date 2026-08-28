@@ -126,6 +126,36 @@ static void test_flow_card_grants_real_flow(void) {
     CHECK(target->flow == flow_before + 90, "a FLOW-type card grants its real, MYTHIC-scaled Flow amount (60 -> 90)");
 }
 
+/* arena_ecowar_play_card: Phase 2 of ECOWAR-MAPEDIT-NORTH's own real, confirmed gap ("cards
+ * exist, zero real in-match callers") -- the real in-match entry point apps/arena_server's
+ * PACKET_ARENA_CARD_PLAY handler and apps/arena's own local demo path both call. Exercises the
+ * real hover-target resolution (arena_set_hover_target -> arena_state.hover_target[owner]),
+ * not a hand-picked ArenaHero* the way the lower-level ecowar_resolve_card_effect tests above
+ * do -- proving the FULL real path, not just the mechanic underneath it. */
+static void test_play_card_resolves_via_real_hover_target(void) {
+    arena_init_teams();
+    for (int i = 2; i < ARENA_MAX_HEROES; i++) arena_state.heroes[i].active = 0;
+    ArenaHero *caster = &arena_state.heroes[0];
+    ArenaHero *target = &arena_state.heroes[1];
+    target->team = 1;
+    target->hp = target->max_hp / 2;
+
+    arena_ecowar_play_card(caster->owner, 5, target->owner); /* card 5: "The Seal," HEAL, base 15 */
+
+    CHECK(target->hp == target->max_hp / 2 + 15, "arena_ecowar_play_card resolves the real card onto the real hovered target");
+}
+
+static void test_play_card_with_no_hover_target_is_a_real_noop(void) {
+    arena_init_with_heroes(ARENA_HERO_UNICORN, ARENA_HERO_DUCK);
+    ArenaHero *caster = &arena_state.heroes[0];
+    ArenaHero *other = &arena_state.heroes[1];
+    int hp_before = other->hp;
+
+    arena_ecowar_play_card(caster->owner, 5, -1); /* -1 = nothing hovered */
+
+    CHECK(other->hp == hp_before, "no hover target (-1) is a real no-op, not an invented self-target fallback");
+}
+
 int main(void) {
     test_card_catalog_has_16_real_entries();
     test_resolve_rejects_bad_card_id();
@@ -136,6 +166,8 @@ int main(void) {
     test_slow_card_applies_real_slow();
     test_silence_card_applies_real_silence();
     test_flow_card_grants_real_flow();
+    test_play_card_resolves_via_real_hover_target();
+    test_play_card_with_no_hover_target_is_a_real_noop();
     printf("\n%s\n", failures == 0 ? "ALL PASS" : "SOME FAILED");
     return failures == 0 ? 0 : 1;
 }

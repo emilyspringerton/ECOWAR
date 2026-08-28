@@ -571,6 +571,16 @@ static int g_hover_target = -1;
  * client-only input-mode flag in this file already has. */
 static int g_ground_target_pending_slot = 0;
 
+/* g_ecowar_armed_card (Phase 2 of ECOWAR-MAPEDIT-NORTH, 2026-08-27, "arena apis first we wil
+ * build ecowar ontop of themn"): which of the 16 real ECOWAR_CARDS (arena_game.h) is currently
+ * armed, cycled with V and cast at the hovered target with G. A real, honest v0 input, not a
+ * polished deck/hand UI -- "more specific mechanic direction to follow" per the founder's own
+ * earlier words, and docs/NORTHSTAR_MAP_EDITOR.md's own real, confirmed gap was simply "zero
+ * real callers anywhere," not a request for a specific UX. Two keys instead of 16 individual
+ * bindings since every real single-letter/digit key this client already binds (Q/W/E/R/S/D/C/
+ * H/B, 1-9) is taken -- see that grep's own result before this was written, not guessed at. */
+static int g_ecowar_armed_card = 0;
+
 /* g_last_vp (2026-07-30, Tyler clone-control rework): the view-projection matrix from the most
  * recently rendered frame, needed so the drag-select box-test (event-loop code, which runs
  * BEFORE this frame's own `vp` is computed in the render pass further down) can call
@@ -620,6 +630,20 @@ static void net_send_cast(int slot, int hover_target, int has_ground_target, flo
     cmd->has_ground_target = (uint8_t)has_ground_target;
     cmd->target_x = target_x;
     cmd->target_z = target_z;
+    sendto(net_sock, buf, sizeof(buf), 0, (struct sockaddr *)&net_server_addr, sizeof(net_server_addr));
+}
+
+/* net_send_card_play (Phase 2 of ECOWAR-MAPEDIT-NORTH, 2026-08-27): the real client-side send
+ * half of the new PACKET_ARENA_CARD_PLAY path -- same real shape net_send_cast just above
+ * already establishes. See ArenaCardPlayCmd's own doc comment (protocol.h) for the wire format. */
+static void net_send_card_play(int card_id, int hover_target) {
+    char buf[sizeof(NetHeader) + sizeof(ArenaCardPlayCmd)];
+    NetHeader *h = (NetHeader *)buf;
+    memset(h, 0, sizeof(NetHeader));
+    h->type = PACKET_ARENA_CARD_PLAY;
+    ArenaCardPlayCmd *cmd = (ArenaCardPlayCmd *)(buf + sizeof(NetHeader));
+    cmd->card_id = (uint8_t)card_id;
+    cmd->hover_target = (int8_t)hover_target;
     sendto(net_sock, buf, sizeof(buf), 0, (struct sockaddr *)&net_server_addr, sizeof(net_server_addr));
 }
 
@@ -3302,6 +3326,23 @@ int main(int argc, char *argv[]) {
                     if (e.key.keysym.sym == SDLK_q) { arena_cast_q(my_owner); arena_log_ability("Q"); }
                     if (e.key.keysym.sym == SDLK_w) { arena_toggle_w(my_owner); arena_log_ability("W"); }
                     if (e.key.keysym.sym == SDLK_e) { arena_cast_r(my_owner); arena_log_ability("R"); }
+                }
+                /* ECOWAR cards (Phase 2, 2026-08-27): V cycles the armed card, G casts it at
+                   the hovered target -- see g_ecowar_armed_card's own doc comment above. Same
+                   real "networked path sends a packet, local demo calls the shared function
+                   directly" split every other cast dispatch in this block already uses. */
+                if (e.key.keysym.sym == SDLK_v) {
+                    g_ecowar_armed_card = (g_ecowar_armed_card + 1) % ECOWAR_CARD_COUNT;
+                    printf("[card] armed: %s (%s)\n", ECOWAR_CARDS[g_ecowar_armed_card].name,
+                           ECOWAR_CARDS[g_ecowar_armed_card].source_hero);
+                }
+                if (e.key.keysym.sym == SDLK_g) {
+                    if (net_mode) {
+                        net_send_card_play(g_ecowar_armed_card, g_hover_target);
+                    } else {
+                        arena_ecowar_play_card(my_owner, g_ecowar_armed_card, g_hover_target);
+                    }
+                    apm_record_action(now);
                 }
                 /* Active item (S170-205/S170-206, founder: "add blink dagger 1400 flow it gives
                    a new keybind on screen for tilda" -> "tilda should make the hero do the
