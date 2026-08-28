@@ -156,6 +156,53 @@ static void test_play_card_with_no_hover_target_is_a_real_noop(void) {
     CHECK(other->hp == hp_before, "no hover target (-1) is a real no-op, not an invented self-target fallback");
 }
 
+/* ecowar_card_cooldown_ms (2026-08-28 follow-up): the one obvious gap left once the input path
+ * itself shipped -- these prove it's a real, working gate, not just a field that exists. */
+static void test_play_card_starts_a_real_cooldown(void) {
+    arena_init_with_heroes(ARENA_HERO_UNICORN, ARENA_HERO_DUCK);
+    ArenaHero *caster = &arena_state.heroes[0];
+    CHECK(caster->ecowar_card_cooldown_ms == 0, "setup: no cooldown before the first play");
+
+    arena_ecowar_play_card(caster->owner, 5, 1);
+
+    CHECK(caster->ecowar_card_cooldown_ms == ECOWAR_CARD_COOLDOWN_MS, "a real successful card play starts the real, full shared cooldown");
+}
+
+static void test_play_card_blocked_by_cooldown_is_a_real_noop(void) {
+    arena_init_with_heroes(ARENA_HERO_UNICORN, ARENA_HERO_DUCK);
+    ArenaHero *caster = &arena_state.heroes[0];
+    ArenaHero *target = &arena_state.heroes[1];
+    target->hp = target->max_hp / 2;
+
+    arena_ecowar_play_card(caster->owner, 5, 1); /* first play -- starts the cooldown, heals target */
+    int hp_after_first = target->hp;
+    arena_ecowar_play_card(caster->owner, 5, 1); /* immediate second attempt -- should be blocked */
+
+    CHECK(target->hp == hp_after_first, "a card play attempted while on cooldown is a real no-op -- no second heal landed");
+}
+
+static void test_whiffed_card_play_spends_no_cooldown(void) {
+    arena_init_with_heroes(ARENA_HERO_UNICORN, ARENA_HERO_DUCK);
+    ArenaHero *caster = &arena_state.heroes[0];
+
+    arena_ecowar_play_card(caster->owner, 5, -1); /* whiff: no hover target */
+
+    CHECK(caster->ecowar_card_cooldown_ms == 0,
+          "a whiffed cast (bad card id or no/invalid target) spends no cooldown -- same 'no free swing, but no wasted resource either' convention every other ability in this file already holds itself to");
+}
+
+static void test_card_cooldown_ticks_down_through_the_real_team_mode_tick(void) {
+    arena_init_teams();
+    for (int i = 1; i < ARENA_MAX_HEROES; i++) arena_state.heroes[i].active = 0;
+    ArenaHero *caster = &arena_state.heroes[0];
+    caster->ecowar_card_cooldown_ms = 100;
+
+    arena_update_teams(150); /* real team-mode tick, not a direct field write */
+
+    CHECK(caster->ecowar_card_cooldown_ms == 0,
+          "arena_update_teams() decrements ecowar_card_cooldown_ms toward 0, same shared-tick placement as duck_smoke_ms -- the exact S202-23 bug class (wired into only one of the two top-level ticks) this test exists to catch");
+}
+
 int main(void) {
     test_card_catalog_has_16_real_entries();
     test_resolve_rejects_bad_card_id();
@@ -168,6 +215,10 @@ int main(void) {
     test_flow_card_grants_real_flow();
     test_play_card_resolves_via_real_hover_target();
     test_play_card_with_no_hover_target_is_a_real_noop();
+    test_play_card_starts_a_real_cooldown();
+    test_play_card_blocked_by_cooldown_is_a_real_noop();
+    test_whiffed_card_play_spends_no_cooldown();
+    test_card_cooldown_ticks_down_through_the_real_team_mode_tick();
     printf("\n%s\n", failures == 0 ? "ALL PASS" : "SOME FAILED");
     return failures == 0 ? 0 : 1;
 }

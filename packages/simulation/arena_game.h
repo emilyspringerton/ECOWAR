@@ -2019,6 +2019,17 @@ typedef struct {
      * own Cart. Zero-initializes correctly with the rest of ArenaHero (fib(0)=1, a real nonzero
      * base weight, not a locked-out one -- see arena_fibonacci's own doc comment). */
     int cart_delivery_pity[ARENA_CART_DELIVERY_OUTCOME_COUNT];
+    /* ecowar_card_cooldown_ms (Phase 2 follow-up, 2026-08-28): a real, shared cooldown across
+     * all 16 ECOWAR_CARDS, gating arena_ecowar_play_card the same "can't spam it" way every
+     * real Q/W/R ability in this file already gates itself -- the one obvious gap left once the
+     * in-match input path shipped (V/G had no cooldown at all, letting a player replay the same
+     * or a different card every single tick with zero cost). One SHARED cooldown across every
+     * card, not 16 independent per-card ones -- a real per-card cooldown table (or a mana/Flow
+     * cost economy) is exactly the "deck building, mana economy" territory the founder's own
+     * "more specific mechanic direction to follow" note already flagged as not decided yet; a
+     * single shared cooldown is the honest, obvious v0 that still makes the mechanic real
+     * without guessing at that larger, undecided design. */
+    int ecowar_card_cooldown_ms;
     /* Cast-time ability state (S170-203, founder: "switch gary w to aimed shot just like wow
      * hunter cast time big damage for now movement interrupts cast damage does not interrupt
      * cast silence does"). Generic across any slot/hero, same "shared field names across kits"
@@ -3298,6 +3309,13 @@ float arena_hero_r_zone_radius(ArenaHeroID hero_id);
  * arena_apply_slow/etc, all working with floats and struct state VS0 can't touch yet) stays in
  * C, honestly, same as every other mod's own real limitation. */
 #define ECOWAR_CARD_COUNT 16
+/* ECOWAR_CARD_COOLDOWN_MS (Phase 2 follow-up, 2026-08-28): one shared cooldown across all 16
+ * cards -- see ArenaHero.ecowar_card_cooldown_ms's own doc comment for why shared, not per-card.
+ * 4000ms picked as a real, deliberate mid-point: longer than a Q (typically ~3000-4200ms in this
+ * roster) since a card is a genuinely bigger, more varied effect than a single ability, shorter
+ * than an R (typically 17000-45000ms) since 16 cards rotating through one shared cooldown should
+ * still feel like a real, frequently-usable resource, not an ultimate. */
+#define ECOWAR_CARD_COOLDOWN_MS 4000
 
 typedef enum {
     ECOWAR_CARD_EFFECT_DAMAGE = 0,

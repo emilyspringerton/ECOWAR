@@ -6016,6 +6016,15 @@ static void tick_hero_kit(ArenaHero *h, ArenaHero *foe, ArenaHero *ally, unsigne
         h->duck_smoke_ms -= (int)dt_ms;
         if (h->duck_smoke_ms < 0) h->duck_smoke_ms = 0;
     }
+    /* ECOWAR card cooldown (2026-08-28 follow-up to Phase 2): same shared-tick placement as
+     * Duck's Smoke Bomb just above, same reasoning -- decremented here, once, so both
+     * arena_update (1v1) and arena_update_teams (team mode) get it correctly, not the S202-23
+     * mistake class of wiring a new mechanic into only one of the two top-level tick
+     * functions. */
+    if (h->ecowar_card_cooldown_ms > 0) {
+        h->ecowar_card_cooldown_ms -= (int)dt_ms;
+        if (h->ecowar_card_cooldown_ms < 0) h->ecowar_card_cooldown_ms = 0;
+    }
     /* rooted_ms/survive_floor_ms (S170-46): generic status effects, any
        kit's ability can apply them, same reasoning as silence/intangible
        above. */
@@ -7444,10 +7453,26 @@ int ecowar_resolve_card_effect(int caster_owner, int card_id, ArenaHero *target)
  * ecowar_resolve_card_effect's own real, honest defensive contract already treats a NULL/
  * inactive target as a no-op, and inventing a self-target fallback here would be a real, new
  * design decision ("what should Silence-ing yourself even mean") the founder hasn't made, not
- * this function's call to make. */
+ * this function's call to make.
+ *
+ * ecowar_card_cooldown_ms gating (2026-08-28 follow-up): the one obvious gap left once the
+ * input path itself shipped -- V/G had no cooldown at all, so a player could replay the same or
+ * a different card every single tick for free. Gated the same "check first, only spend the
+ * resource on a real successful cast" shape every Q/W/R cast function in this file already
+ * uses -- caster must be alive and off cooldown, and ecowar_resolve_card_effect itself must
+ * actually return 1 (a real, valid card id + a real, hittable target) before the cooldown is
+ * spent, so a whiffed cast (bad card id, no/invalid hover target) costs nothing, same "real
+ * commitment, not a guaranteed poke, but no free swing at nothing either" convention this file
+ * already holds itself to for every other ability. */
 void arena_ecowar_play_card(int owner, int card_id, int hover_target) {
+    if (owner < 0 || owner >= ARENA_MAX_HEROES) return;
+    ArenaHero *caster = &arena_state.heroes[owner];
+    if (!caster->active || !caster->alive || caster->ecowar_card_cooldown_ms > 0) return;
+
     arena_set_hover_target(owner, hover_target);
     int target_idx = arena_state.hover_target[owner];
     ArenaHero *target = (target_idx >= 0 && target_idx < ARENA_MAX_HEROES) ? &arena_state.heroes[target_idx] : NULL;
-    ecowar_resolve_card_effect(owner, card_id, target);
+    if (ecowar_resolve_card_effect(owner, card_id, target)) {
+        caster->ecowar_card_cooldown_ms = ECOWAR_CARD_COOLDOWN_MS;
+    }
 }
