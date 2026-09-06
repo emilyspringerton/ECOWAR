@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026-09-06
+
+- King spawn/respawn telegraph shipped (NORTHSTAR §22.5 gap #1); confirmed camp buffs already done via the King system; new gap found in spec-2 re-read: GridCell.population tracked but never wired into tick_automata. (sess-20260905-0720-ec33e7c5)
+
+
 ## 2026-08-28 (combat log wired; 1v1 kill-attribution bugfix)
 - Structural fix: Windows cross-compile now globs packages/simulation/*_mod.c instead of a hand-maintained list that drifted out of sync 4 times. commit 0bc8fd7. (sess-20260825-1938-f6bd411e)
 - CI fix: Windows cross-compile was missing combat_log_mod (4th time this exact gap class has hit this hardcoded mod list). commit 5252a6e. (sess-20260825-1938-f6bd411e)
