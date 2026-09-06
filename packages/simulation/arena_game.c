@@ -3366,7 +3366,10 @@ static void camp_minion_spawn_wave(int camp_index) {
         if (m->active) continue;
         m->active = 1;
         m->alive = 1;
-        m->hp = m->max_hp = ARENA_CAMP_MINION_HP;
+        /* Alternates base minion / Swarmling within a wave (see ARENA_SWARMLING_HP's own doc
+           comment) so a camp reads as two distinct creatures, not two copies of the same one. */
+        m->is_swarmling = (spawned % 2 == 1);
+        m->hp = m->max_hp = m->is_swarmling ? ARENA_SWARMLING_HP : ARENA_CAMP_MINION_HP;
         m->x = cx + (spawned - (ARENA_CAMP_MINIONS_PER_WAVE - 1) / 2.0f) * 1.0f;
         m->z = cz;
         m->attack_cooldown_ms = 0;
@@ -3431,15 +3434,24 @@ void arena_tick_camp_minions(unsigned int dt_ms) {
         if (!m->active || !m->alive) continue;
         if (m->attack_cooldown_ms > 0) m->attack_cooldown_ms -= (int)dt_ms;
 
+        /* Targeting: a Swarmling picks the WEAKEST (lowest current hp) hittable hero in range
+           instead of nearest -- see ARENA_SWARMLING_HP's own doc comment. Every other neutral in
+           this engine (base camp minions, Kings, node-guardians) always picks nearest, so this
+           is a real, visible difference in how a fight against one plays out, not cosmetic. */
         ArenaHero *target = NULL;
         float best_dist = 0.0f;
+        int best_hp = 0;
         for (int h = 0; h < ARENA_MAX_HEROES; h++) {
             ArenaHero *cand = &arena_state.heroes[h];
             if (!cand->active || !hero_is_hittable(cand)) continue;
             float dx = cand->x - m->x, dz = cand->z - m->z;
             float dist = sqrtf(dx * dx + dz * dz);
             if (dist > ARENA_CAMP_MINION_AGGRO_RADIUS) continue;
-            if (!target || dist < best_dist) { target = cand; best_dist = dist; }
+            if (m->is_swarmling) {
+                if (!target || cand->hp < best_hp) { target = cand; best_hp = cand->hp; }
+            } else {
+                if (!target || dist < best_dist) { target = cand; best_dist = dist; }
+            }
         }
         if (target) {
             /* Same "stops to fight instead of marching past" idiom lane creeps already use --
@@ -3460,7 +3472,7 @@ void arena_tick_camp_minions(unsigned int dt_ms) {
         float dx = nx - m->x, dz = nz - m->z;
         float dist = sqrtf(dx * dx + dz * dz);
         if (dist < ARENA_CAMP_MINION_WAYPOINT_EPSILON) continue; /* arrived -- stands and holds the node, real board presence */
-        float step = ARENA_CAMP_MINION_MARCH_SPEED * dt_sec;
+        float step = (m->is_swarmling ? ARENA_SWARMLING_MARCH_SPEED : ARENA_CAMP_MINION_MARCH_SPEED) * dt_sec;
         if (step >= dist) { m->x = nx; m->z = nz; }
         else { m->x += dx / dist * step; m->z += dz / dist * step; }
     }

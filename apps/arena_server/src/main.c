@@ -671,6 +671,7 @@ static void server_broadcast(void) {
         msg.camp_minions[slot].hp = (uint16_t)(cm->hp > 0 ? cm->hp : 0);
         msg.camp_minions[slot].max_hp = (uint16_t)cm->max_hp;
         msg.camp_minions[slot].camp_index = (uint8_t)cm->camp_index;
+        msg.camp_minions[slot].is_swarmling = (uint8_t)cm->is_swarmling;
     }
     /* Kings are always fully populated (one per camp), same "not sparse-packed" convention as
        node towers/creeps above -- a not-yet-spawned or dead King just sits at alive=0. */

@@ -1724,6 +1724,30 @@ void redgarden_host_log_king_spawn(int camp_id);
 #define ARENA_CAMP_MINION_MARCH_SPEED 2.0f /* slower than a lane creep's own 2.5 -- a camp minion escalating is a secondary, slower threat, not a second full wave */
 #define ARENA_CAMP_MINION_WAYPOINT_EPSILON 0.15f /* matches ARENA_LANE_CREEP_WAYPOINT_EPSILON's own arrival tolerance */
 
+/* Swarmling (2026-09-06, ECOWAR-KING-TELEGRAPH-2's own follow-up -- founder real-time: "redgarden
+ * was more about heroes this is more about the ecosystem... we need like a ton of shit happening
+ * on the board"). First real step toward EMILY.wiki ECOWAR-game-spec-1's six-personality creep
+ * roster (Bruiser/Skirmisher/Swarmling/Ravager/Hexbound/Behemoth) instead of every camp minion
+ * being one uniform stat block -- a real, visible SECOND AI behavior sharing the existing camp-
+ * minion substrate, not a new system. Spec-1's own description: "fast, low health, attacks
+ * weakest targets, ignores structures." What transfers to this engine as written today:
+ *   - low health: real, below (ARENA_SWARMLING_HP vs. ARENA_CAMP_MINION_HP).
+ *   - attacks weakest targets: real, new targeting rule in arena_tick_camp_minions (lowest
+ *     CURRENT hp hittable hero in range, not nearest -- every other neutral in this engine picks
+ *     nearest, so this is a genuinely different, noticeable behavior on the board).
+ *   - fast: only observable once a camp escalates and its minions start marching (§3.4) --
+ *     non-escalated minions of ANY type are stationary guards, this engine has no other "fast"
+ *     axis to hang the trait on yet. ARENA_SWARMLING_MARCH_SPEED is faster than the base
+ *     minion's own ARENA_CAMP_MINION_MARCH_SPEED for exactly that reason.
+ *   - ignores structures: already true for every camp minion today (none of them can attack a
+ *     structure at all -- arena_hero_attack_camp_minions is hero-initiated, camp minions never
+ *     initiate against a structure) -- named honestly as "already true," not a new behavior.
+ * Alternates within each wave (camp_minion_spawn_wave) so a camp's two minions are visibly
+ * different creatures side by side, not two copies of the same one -- the actual "ecosystem"
+ * ask, not just a stat variant hidden behind identical silhouettes. */
+#define ARENA_SWARMLING_HP            25   /* just over half of ARENA_CAMP_MINION_HP (45) -- fragile, matching spec-1's "low health" */
+#define ARENA_SWARMLING_MARCH_SPEED  3.0f  /* faster than ARENA_CAMP_MINION_MARCH_SPEED (2.0) -- only observable once escalated, see this section's own doc comment */
+
 typedef struct {
     int active;
     int alive;
@@ -1731,6 +1755,7 @@ typedef struct {
     int hp, max_hp;
     int attack_cooldown_ms;
     int camp_index; /* which of the ARENA_CAMP_COUNT camps spawned this minion -- needed for §3.4's per-camp escalation state and to pick a stable march target */
+    int is_swarmling; /* see ARENA_SWARMLING_HP's own doc comment -- 0 = the original base minion, 1 = Swarmling (weakest-target aggro, faster march when escalated) */
 } ArenaCampMinion;
 
 /* Jungle Camps Milestone 2 -- The Four Heavenly Kings (2026-08-10). docs2/

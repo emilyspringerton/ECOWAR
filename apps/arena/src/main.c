@@ -958,6 +958,7 @@ static void net_poll_snapshots(uint32_t now_ms) {
                         dst->hp = msg->camp_minions[i].hp;
                         dst->max_hp = msg->camp_minions[i].max_hp;
                         dst->camp_index = msg->camp_minions[i].camp_index;
+                        dst->is_swarmling = msg->camp_minions[i].is_swarmling;
                     }
                     for (int i = ccount; i < ARENA_MAX_CAMP_MINIONS; i++) {
                         arena_state.camp_minions[i].active = 0;
@@ -4042,9 +4043,20 @@ int main(int argc, char *argv[]) {
         for (int i = 0; i < ARENA_MAX_CAMP_MINIONS; i++) {
             ArenaCampMinion *cm = &arena_state.camp_minions[i];
             if (!cm->active || !cm->alive) continue;
-            glUniform4f_(loc_color, 0.55f, 0.5f, 0.2f, 1.0f); /* olive: neutral, neither team */
-            draw_hero_box(cm->x, cm->z, 0.0f, 0.35f, 0.0f, 0.5f, 0.5f, 0.5f, 1.0f,
-                           &vp, loc_mvp, loc_model, &cube_mesh);
+            if (cm->is_swarmling) {
+                /* Swarmling (2026-09-06, ARENA_SWARMLING_HP's own doc comment): bright acid
+                   yellow-green -- visually distinct from the base minion's olive at a glance,
+                   same "different creature, not a stat variant hidden behind an identical
+                   silhouette" reasoning the King per-camp colors already use -- and a smaller
+                   box, matching its real low-HP fragility. */
+                glUniform4f_(loc_color, 0.75f, 0.95f, 0.15f, 1.0f);
+                draw_hero_box(cm->x, cm->z, 0.0f, 0.28f, 0.0f, 0.35f, 0.35f, 0.35f, 1.0f,
+                               &vp, loc_mvp, loc_model, &cube_mesh);
+            } else {
+                glUniform4f_(loc_color, 0.55f, 0.5f, 0.2f, 1.0f); /* olive: neutral, neither team */
+                draw_hero_box(cm->x, cm->z, 0.0f, 0.35f, 0.0f, 0.5f, 0.5f, 0.5f, 1.0f,
+                               &vp, loc_mvp, loc_model, &cube_mesh);
+            }
         }
         {
             static const float king_color[ARENA_CAMP_COUNT][3] = {
