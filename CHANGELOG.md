@@ -1,6 +1,7 @@
 # Changelog
 
 ## 2026-09-06
+- Swarmling: second camp-minion archetype (weakest-target aggro, faster escalated march, visually distinct) -- first real step toward spec-1's six-personality creep roster instead of uniform minion stat blocks. (sess-20260905-0720-ec33e7c5)
 
 - King spawn/respawn telegraph shipped (NORTHSTAR §22.5 gap #1); confirmed camp buffs already done via the King system; new gap found in spec-2 re-read: GridCell.population tracked but never wired into tick_automata. (sess-20260905-0720-ec33e7c5)
 
