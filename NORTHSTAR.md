@@ -2410,6 +2410,51 @@ both ECOWAR-sourced documents beyond SPEC-4 have now been read, what transfers h
 design pattern), and what doesn't (the Card-RTS material already covered via SPEC-4, and the
 multi-biome map idea) has been named just as explicitly. No code changes accompany this section.
 
+### 22.6 §22.5 follow-up (2026-09-06): telegraph shipped, buffs found already done, spec-2 re-read
+
+Founder, real-time: "iterate on ecowar" + the EMILY.wiki `ECOWAR-game-spec-1` link, then
+`ECOWAR-game-spec-2`. Closing the loop on §22.5's three named gaps, plus a fresh read of spec-2
+(this session hadn't read it before):
+
+1. **Camp spawn telegraph -- built.** `ARENA_KING_TELEGRAPH_WINDOW_MS` (5s), a new
+   `ArenaKingSnapshot.telegraph` wire field, and a pulsing disc+ring at the camp's position
+   (same convention as the R-zone-circle previews) for the last 5s before a King spawns or
+   respawns. Also fixed a real, latent bug found while wiring this: a not-yet-spawned King's
+   x/z were always 0,0 (never set until first spawn) -- would have rendered the telegraph glow
+   at the map origin instead of the actual camp. `bash scripts/build.sh` +
+   `scripts/test_arena.sh` both clean (1188 PASS, no regressions). Commit `de1504a`.
+2. **Camp buffs -- already done, not by this session.** §22.5 named this as a real missing
+   mechanic on 2026-07-30; checking the actual code found the Four Heavenly Kings system
+   (2026-08-10, ARENA_KING_* in `arena_game.h`) already ships exactly this -- Music (team-viral
+   attack/move speed), Growth (stacking AD, wiped on death), All-Seeing (team-wide bonus jungle
+   Flow), Wealth (proximity aura). Built after §22.5 was written, closing that gap without this
+   session's help -- named here so the open-question list doesn't keep listing it as open.
+3. **Boss-death-as-match-event -- still genuinely open**, not attempted this pass. No new
+   infrastructure exists for "a kill changes match state beyond a buff/econ reward."
+
+**Spec-2 re-read**: confirms §22.5's original finding that its unit/structure roster and tech-
+tree naming add nothing beyond spec-4's material already covered in §22.1-22.4. **One genuinely
+new, previously unflagged gap found this time**, though: spec-2's grid-automata section gives
+concrete population/pressure numbers (3+ neighbors + pressure >50 to convert, population >200
+splits to a neighbor, population <20 for 5 ticks reverts to neutral) that don't exist in the
+actual code. Checked `packages/simulation/local_game.c`'s real `tick_automata`: it already does
+neighbor-majority conversion (`counts[state] >= 3`, corruption at `>= 4`) matching this doc's
+broad shape, but `GridCell.population` (real field, initialized to 50 in `init_grid`) is never
+read or written by `tick_automata` at all -- a genuinely dead field, not a stub. Not implemented
+here: which neighbor absorbs an overpopulation split isn't specified anywhere (a real design
+decision, not just numbers to fill in), so this is named as a new open question rather than
+guessed at.
+
+## 22.7 Open questions (updated 2026-09-06)
+
+- Boss-death-as-match-event (§22.6 item 3): no infrastructure for "a kill changes match state
+  beyond a buff/econ reward" -- real, cheap-to-remember pattern, not resolved.
+- Population/pressure-driven automata (§22.6, spec-2): `GridCell.population` is tracked but
+  inert. Needs a real design pass before implementation, at minimum: what triggers population
+  growth per tick (currently nothing does), which neighbor cell absorbs an overpopulation split
+  (nearest neutral? weighted by existing population? random?), and whether "pressure" is a new
+  field or a derived value from existing state.
+
 ## 23. Expanded item roster — more FFXI-DNA items, more effect variety (2026-07-30) -- spec only, no code yet
 
 Founder, real-time: "do a northstar for expanded items we just need more more variety more
