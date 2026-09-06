@@ -974,6 +974,7 @@ static void net_poll_snapshots(uint32_t now_ms) {
                     dst->max_hp = msg->kings[i].max_hp;
                     dst->alive = msg->kings[i].alive;
                     dst->active = msg->kings[i].alive; /* client only needs "is it here to draw" */
+                    dst->telegraph = msg->kings[i].telegraph;
                 }
                 arena_state.resources[0] = msg->resources[0]; /* S170-153 */
                 arena_state.resources[1] = msg->resources[1];
@@ -4058,6 +4059,28 @@ int main(int argc, char *argv[]) {
                 glUniform4f_(loc_color, king_color[i][0], king_color[i][1], king_color[i][2], 1.0f);
                 draw_hero_box(k->x, k->z, 0.0f, 0.8f, 0.0f, 1.1f, 1.6f, 1.1f, 1.0f,
                                &vp, loc_mvp, loc_model, &cube_mesh);
+            }
+            /* Spawn telegraph (2026-09-06, NORTHSTAR §22.5 gap #1, EMILY.wiki's
+               ECOWAR-game-spec-1: "Camps should visibly telegraph before they spawn/respawn,
+               not just pop back into existence on a bare timer"). Same pulsing disc+ring
+               convention as the R-zone-circle previews and Duck's Smoke Bomb footprint above --
+               a King about to spawn/respawn gets a growing sense of "something is about to
+               happen here" instead of silently popping into existence. Faster pulse than those
+               (0.006 vs. 0.004-0.005) so the last few seconds read as urgent, not just present. */
+            for (int i = 0; i < ARENA_CAMP_COUNT; i++) {
+                ArenaKing *k = &arena_state.kings[i];
+                if (k->active || !k->telegraph) continue;
+                float pulse = 0.7f + 0.3f * sinf((float)now * 0.006f);
+                Mat4 ktr = mat4_translate(k->x, 0.04f, k->z);
+                Mat4 ksc = mat4_scale(1.6f, 1.0f, 1.6f); /* slightly larger than the King's own boss-scale footprint */
+                Mat4 kmodel = mat4_multiply(&ktr, &ksc);
+                Mat4 kmvp = mat4_multiply(&vp, &kmodel);
+                glUniformMatrix4fv_(loc_mvp, 1, GL_FALSE, kmvp.m);
+                glUniformMatrix4fv_(loc_model, 1, GL_FALSE, kmodel.m);
+                glUniform4f_(loc_color, king_color[i][0], king_color[i][1], king_color[i][2], 0.16f * pulse);
+                draw_mesh(&disc_mesh);
+                glUniform4f_(loc_color, king_color[i][0], king_color[i][1], king_color[i][2], 0.55f + 0.25f * pulse);
+                draw_mesh(&ring_mesh);
             }
         }
 

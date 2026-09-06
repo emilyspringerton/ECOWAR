@@ -588,6 +588,11 @@ typedef struct {
     uint16_t hp;
     uint16_t max_hp;
     uint8_t alive;
+    // telegraph (2026-09-06, NORTHSTAR §22.5 gap #1): true for the last
+    // ARENA_KING_TELEGRAPH_WINDOW_MS before this King spawns/respawns, so a not-yet-spawned
+    // camp can pulse a visible warning instead of a King just silently popping into existence
+    // on a bare timer -- only meaningful while alive=0.
+    uint8_t telegraph;
 } ArenaKingSnapshot;
 
 // ARENA_SNAPSHOT_MAX_LANE_CREEPS must match packages/simulation/arena_game.h's

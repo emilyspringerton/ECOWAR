@@ -676,11 +676,26 @@ static void server_broadcast(void) {
        node towers/creeps above -- a not-yet-spawned or dead King just sits at alive=0. */
     for (int i = 0; i < ARENA_SNAPSHOT_CAMP_COUNT; i++) {
         ArenaKing *k = &arena_state.kings[i];
-        msg.kings[i].x = k->x;
-        msg.kings[i].z = k->z;
+        if (k->active) {
+            msg.kings[i].x = k->x;
+            msg.kings[i].z = k->z;
+        } else {
+            /* Spawn telegraph (2026-09-06, NORTHSTAR §22.5 gap #1): k->x/z only ever get set at
+               the moment of spawn (0,0 before a King's very first spawn), but a telegraphing,
+               not-yet-spawned King still needs a real position for the client to glow at --
+               arena_camp_position is this camp's fixed, deterministic anchor, exactly where a
+               spawned King sits anyway. */
+            arena_camp_position(i, &msg.kings[i].x, &msg.kings[i].z);
+        }
         msg.kings[i].hp = (uint16_t)(k->hp > 0 ? k->hp : 0);
         msg.kings[i].max_hp = (uint16_t)k->max_hp;
         msg.kings[i].alive = (uint8_t)k->alive;
+        {
+            int threshold = (k->max_hp == 0) ? ARENA_KING_SPAWN_DELAY_MS : ARENA_KING_RESPAWN_MS;
+            int remaining = threshold - arena_state.king_spawn_timer_ms[i];
+            msg.kings[i].telegraph = (uint8_t)((!k->active && remaining > 0 &&
+                remaining <= ARENA_KING_TELEGRAPH_WINDOW_MS) ? 1 : 0);
+        }
     }
 
     /* Tree passive (2026-08-25): obstacles are always fully populated (fixed layout, never

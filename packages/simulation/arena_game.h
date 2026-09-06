@@ -1760,12 +1760,28 @@ typedef struct {
 #define ARENA_KING_KILL_FLOW             300 /* real objective-tier reward, between a lane creep (80) and a hero kill (1000) */
 #define ARENA_KING_KILL_XP                25
 
+/* Spawn telegraph (2026-09-06, closing NORTHSTAR §22.5's real gap #1 from EMILY.wiki's
+ * ECOWAR-game-spec-1: "Camps should visibly telegraph before they spawn/respawn, not just pop
+ * back into existence on a bare timer" -- named there as needing "no new system, just a wire/HUD
+ * detail on top of the existing respawn timer," which is exactly what this is. Window is the
+ * last ARENA_KING_TELEGRAPH_WINDOW_MS of king_spawn_timer_ms before either the first spawn
+ * (ARENA_KING_SPAWN_DELAY_MS) or a respawn (ARENA_KING_RESPAWN_MS) -- same pulsing-disc-plus-
+ * ring rendering convention every other "this is about to matter" affordance in this arena
+ * already uses (R-zone-circle previews, Duck's Smoke Bomb footprint). */
+#define ARENA_KING_TELEGRAPH_WINDOW_MS   5000 /* 5s -- long enough to notice and react to, short enough that it still reads as "imminent" rather than "always on" */
+
 typedef struct {
     int active;
     int alive;
     float x, z;
     int hp, max_hp;
     int attack_cooldown_ms;
+    /* telegraph: server sets this true for the last ARENA_KING_TELEGRAPH_WINDOW_MS before a
+       spawn/respawn (see that constant's own doc comment); only meaningful while !active. The
+       client's own local mirror of this struct reuses the same field, populated straight from
+       ArenaKingSnapshot.telegraph -- same "one struct, server truth and client mirror share it"
+       shape active/alive already have here. */
+    int telegraph;
 } ArenaKing;
 
 /* East/Dhrtarastra, God of Music -- Catchy Song: attack speed + move speed. The one King
