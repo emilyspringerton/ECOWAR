@@ -560,10 +560,10 @@ typedef struct {
     uint16_t hp;
     uint16_t max_hp;
     uint8_t camp_index; /* which camp spawned this minion, 0..ARENA_SNAPSHOT_CAMP_COUNT-1 */
-    // is_swarmling (2026-09-06): which of the two camp-minion archetypes this is (see
-    // ARENA_SWARMLING_HP's own doc comment) -- so the client can render it visibly differently,
-    // not just guess from hp alone.
-    uint8_t is_swarmling;
+    // archetype (2026-09-06): one of ArenaCampMinionArchetype (arena_game.h) -- which of the
+    // camp-minion personalities this is, so the client can render it visibly differently, not
+    // just guess from hp alone.
+    uint8_t archetype;
 } ArenaCampMinionSnapshot;
 
 // ARENA_SNAPSHOT_MAX_CAMP_MINIONS must match packages/simulation/arena_game.h's

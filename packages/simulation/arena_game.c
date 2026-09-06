@@ -3361,15 +3361,22 @@ static void camp_minion_spawn_wave(int camp_index) {
     float cx, cz;
     arena_camp_position(camp_index, &cx, &cz);
     int spawned = 0;
+    int wave = arena_state.camp_wave_count[camp_index]++;
     for (int i = 0; i < ARENA_MAX_CAMP_MINIONS && spawned < ARENA_CAMP_MINIONS_PER_WAVE; i++) {
         ArenaCampMinion *m = &arena_state.camp_minions[i];
         if (m->active) continue;
         m->active = 1;
         m->alive = 1;
-        /* Alternates base minion / Swarmling within a wave (see ARENA_SWARMLING_HP's own doc
-           comment) so a camp reads as two distinct creatures, not two copies of the same one. */
-        m->is_swarmling = (spawned % 2 == 1);
-        m->hp = m->max_hp = m->is_swarmling ? ARENA_SWARMLING_HP : ARENA_CAMP_MINION_HP;
+        /* Cycles through all of ArenaCampMinionArchetype across successive waves (see that
+           enum's own doc comment) -- ARENA_CAMP_MINIONS_PER_WAVE (2) is smaller than
+           ARENA_CAMP_MINION_ARCHETYPE_COUNT (3), so no single wave has all three up, but which
+           two pair together rotates wave to wave instead of always being the same fixed pair. */
+        m->archetype = (wave * ARENA_CAMP_MINIONS_PER_WAVE + spawned) % ARENA_CAMP_MINION_ARCHETYPE_COUNT;
+        switch (m->archetype) {
+            case ARENA_CAMP_MINION_SWARMLING: m->hp = m->max_hp = ARENA_SWARMLING_HP; break;
+            case ARENA_CAMP_MINION_RAVAGER:   m->hp = m->max_hp = ARENA_RAVAGER_HP; break;
+            default:                          m->hp = m->max_hp = ARENA_CAMP_MINION_HP; break;
+        }
         m->x = cx + (spawned - (ARENA_CAMP_MINIONS_PER_WAVE - 1) / 2.0f) * 1.0f;
         m->z = cz;
         m->attack_cooldown_ms = 0;
@@ -3447,7 +3454,7 @@ void arena_tick_camp_minions(unsigned int dt_ms) {
             float dx = cand->x - m->x, dz = cand->z - m->z;
             float dist = sqrtf(dx * dx + dz * dz);
             if (dist > ARENA_CAMP_MINION_AGGRO_RADIUS) continue;
-            if (m->is_swarmling) {
+            if (m->archetype == ARENA_CAMP_MINION_SWARMLING) {
                 if (!target || cand->hp < best_hp) { target = cand; best_hp = cand->hp; }
             } else {
                 if (!target || dist < best_dist) { target = cand; best_dist = dist; }
@@ -3465,14 +3472,16 @@ void arena_tick_camp_minions(unsigned int dt_ms) {
         }
 
         /* §3.4: march toward the nearest node once this minion's own camp has escalated --
-           otherwise stationary, the original Milestone 1 guardian behavior. */
-        if (!arena_state.camp_escalated[m->camp_index]) continue;
+           otherwise stationary, the original Milestone 1 guardian behavior. A Ravager skips
+           this gate entirely (see ARENA_RAVAGER_HP's own doc comment): "tunnel-vision objective
+           focus" means it marches from the moment it spawns, escalated or not. */
+        if (m->archetype != ARENA_CAMP_MINION_RAVAGER && !arena_state.camp_escalated[m->camp_index]) continue;
         float nx, nz;
         camp_minion_nearest_node(m->x, m->z, &nx, &nz);
         float dx = nx - m->x, dz = nz - m->z;
         float dist = sqrtf(dx * dx + dz * dz);
         if (dist < ARENA_CAMP_MINION_WAYPOINT_EPSILON) continue; /* arrived -- stands and holds the node, real board presence */
-        float step = (m->is_swarmling ? ARENA_SWARMLING_MARCH_SPEED : ARENA_CAMP_MINION_MARCH_SPEED) * dt_sec;
+        float step = (m->archetype == ARENA_CAMP_MINION_SWARMLING ? ARENA_SWARMLING_MARCH_SPEED : ARENA_CAMP_MINION_MARCH_SPEED) * dt_sec;
         if (step >= dist) { m->x = nx; m->z = nz; }
         else { m->x += dx / dist * step; m->z += dz / dist * step; }
     }

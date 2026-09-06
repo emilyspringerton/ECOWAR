@@ -958,7 +958,7 @@ static void net_poll_snapshots(uint32_t now_ms) {
                         dst->hp = msg->camp_minions[i].hp;
                         dst->max_hp = msg->camp_minions[i].max_hp;
                         dst->camp_index = msg->camp_minions[i].camp_index;
-                        dst->is_swarmling = msg->camp_minions[i].is_swarmling;
+                        dst->archetype = msg->camp_minions[i].archetype;
                     }
                     for (int i = ccount; i < ARENA_MAX_CAMP_MINIONS; i++) {
                         arena_state.camp_minions[i].active = 0;
@@ -4043,19 +4043,31 @@ int main(int argc, char *argv[]) {
         for (int i = 0; i < ARENA_MAX_CAMP_MINIONS; i++) {
             ArenaCampMinion *cm = &arena_state.camp_minions[i];
             if (!cm->active || !cm->alive) continue;
-            if (cm->is_swarmling) {
-                /* Swarmling (2026-09-06, ARENA_SWARMLING_HP's own doc comment): bright acid
-                   yellow-green -- visually distinct from the base minion's olive at a glance,
-                   same "different creature, not a stat variant hidden behind an identical
-                   silhouette" reasoning the King per-camp colors already use -- and a smaller
-                   box, matching its real low-HP fragility. */
-                glUniform4f_(loc_color, 0.75f, 0.95f, 0.15f, 1.0f);
-                draw_hero_box(cm->x, cm->z, 0.0f, 0.28f, 0.0f, 0.35f, 0.35f, 0.35f, 1.0f,
-                               &vp, loc_mvp, loc_model, &cube_mesh);
-            } else {
-                glUniform4f_(loc_color, 0.55f, 0.5f, 0.2f, 1.0f); /* olive: neutral, neither team */
-                draw_hero_box(cm->x, cm->z, 0.0f, 0.35f, 0.0f, 0.5f, 0.5f, 0.5f, 1.0f,
-                               &vp, loc_mvp, loc_model, &cube_mesh);
+            switch (cm->archetype) {
+                case ARENA_CAMP_MINION_SWARMLING:
+                    /* Swarmling (ARENA_SWARMLING_HP's own doc comment): bright acid yellow-green,
+                       a smaller box matching its real low-HP fragility -- visually distinct from
+                       the base minion at a glance, same reasoning the King per-camp colors
+                       already use ("different creature, not a stat variant behind an identical
+                       silhouette"). */
+                    glUniform4f_(loc_color, 0.75f, 0.95f, 0.15f, 1.0f);
+                    draw_hero_box(cm->x, cm->z, 0.0f, 0.28f, 0.0f, 0.35f, 0.35f, 0.35f, 1.0f,
+                                   &vp, loc_mvp, loc_model, &cube_mesh);
+                    break;
+                case ARENA_CAMP_MINION_RAVAGER:
+                    /* Ravager (ARENA_RAVAGER_HP's own doc comment): dull blood-red, a taller/
+                       wider box than the base minion -- reads as "bulky and dangerous," matching
+                       its real higher HP and its unconditional march-toward-the-nearest-node
+                       behavior every other minion here needs an escalated camp to do. */
+                    glUniform4f_(loc_color, 0.6f, 0.15f, 0.12f, 1.0f);
+                    draw_hero_box(cm->x, cm->z, 0.0f, 0.45f, 0.0f, 0.65f, 0.65f, 0.65f, 1.0f,
+                                   &vp, loc_mvp, loc_model, &cube_mesh);
+                    break;
+                default:
+                    glUniform4f_(loc_color, 0.55f, 0.5f, 0.2f, 1.0f); /* olive: neutral, neither team */
+                    draw_hero_box(cm->x, cm->z, 0.0f, 0.35f, 0.0f, 0.5f, 0.5f, 0.5f, 1.0f,
+                                   &vp, loc_mvp, loc_model, &cube_mesh);
+                    break;
             }
         }
         {

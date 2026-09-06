@@ -1748,6 +1748,32 @@ void redgarden_host_log_king_spawn(int camp_id);
 #define ARENA_SWARMLING_HP            25   /* just over half of ARENA_CAMP_MINION_HP (45) -- fragile, matching spec-1's "low health" */
 #define ARENA_SWARMLING_MARCH_SPEED  3.0f  /* faster than ARENA_CAMP_MINION_MARCH_SPEED (2.0) -- only observable once escalated, see this section's own doc comment */
 
+/* Ravager (2026-09-06, same pass as Swarmling above -- founder: "build ecowar make it good").
+ * Third camp-minion archetype, spec-1's own description: "charges towns, tunnel-vision objective
+ * focus." What transfers: a Ravager marches toward the nearest node from the MOMENT it spawns,
+ * not gated on §3.4's camp-escalation timer the way every other minion archetype is -- "tunnel
+ * vision" is the real, meaningful behavior difference (a lone Ravager is immediate, uncontested
+ * board pressure the instant a camp wave spawns, not something a team can safely ignore for 90s
+ * the way an un-escalated camp normally is). It still stops to trade hits with any hittable hero
+ * in its own aggro radius while marching (same "a fight in range holds you in place" idiom every
+ * other minion here already uses) -- "tunnel vision" is about the OBJECTIVE, not about refusing
+ * to defend itself. Tankier than the base minion (ARENA_RAVAGER_HP), matching "charges towns"
+ * needing to actually survive the trip; normal (unboosted) march speed, since its differentiator
+ * is WHEN it marches, not how fast. */
+#define ARENA_RAVAGER_HP               70   /* well above ARENA_CAMP_MINION_HP (45) -- built to survive the march it makes unconditionally */
+
+/* Which of the three camp-minion archetypes a given ArenaCampMinion is -- see each archetype's
+ * own doc comment above (Swarmling, Ravager) for what makes it behaviorally distinct, not just a
+ * stat variant. camp_minion_spawn_wave cycles a camp's spawns through all three over successive
+ * waves (ARENA_CAMP_MINIONS_PER_WAVE is 2, so a camp never has all three up at once, but every
+ * wave brings a different pairing). */
+typedef enum {
+    ARENA_CAMP_MINION_BASE = 0,
+    ARENA_CAMP_MINION_SWARMLING,
+    ARENA_CAMP_MINION_RAVAGER,
+    ARENA_CAMP_MINION_ARCHETYPE_COUNT
+} ArenaCampMinionArchetype;
+
 typedef struct {
     int active;
     int alive;
@@ -1755,7 +1781,7 @@ typedef struct {
     int hp, max_hp;
     int attack_cooldown_ms;
     int camp_index; /* which of the ARENA_CAMP_COUNT camps spawned this minion -- needed for §3.4's per-camp escalation state and to pick a stable march target */
-    int is_swarmling; /* see ARENA_SWARMLING_HP's own doc comment -- 0 = the original base minion, 1 = Swarmling (weakest-target aggro, faster march when escalated) */
+    int archetype; /* one of ArenaCampMinionArchetype -- see that enum's own doc comment */
 } ArenaCampMinion;
 
 /* Jungle Camps Milestone 2 -- The Four Heavenly Kings (2026-08-10). docs2/
@@ -2658,6 +2684,7 @@ typedef struct {
     int lane_wave_timer_ms[2]; /* S170-139: per-team countdown to next wave; starts at 0 (memset), so both teams' first wave spawns on the first tick, matching a real MOBA's 0:00 wave */
     ArenaCampMinion camp_minions[ARENA_MAX_CAMP_MINIONS]; /* Jungle camps Milestone 1 */
     int camp_wave_timer_ms[ARENA_CAMP_COUNT]; /* per-camp countdown to next wave; starts at 0 (memset) -- camps wave from the opening bell, docs2/JUNGLE_CAMPS_NORTHSTAR.md §3.2 */
+    int camp_wave_count[ARENA_CAMP_COUNT]; /* per-camp count of waves spawned so far (2026-09-06) -- cycles camp_minion_spawn_wave's own archetype assignment through all of ArenaCampMinionArchetype across successive waves; starts at 0 (memset), same as camp_wave_timer_ms above */
     int camp_uncleared_ms[ARENA_CAMP_COUNT]; /* §3.4 anti-stall escalation -- ticks up while a camp has any active minion, resets to 0 the instant it's fully cleared */
     int camp_escalated[ARENA_CAMP_COUNT]; /* 1 once camp_uncleared_ms crosses ARENA_CAMP_ESCALATION_THRESHOLD_MS -- that camp's minions march instead of standing still */
     ArenaKing kings[ARENA_CAMP_COUNT]; /* Jungle camps Milestone 2 -- index-matched to camps (0=N/Wealth, 1=S/Growth, 2=E/Music, 3=W/All-Seeing) */
