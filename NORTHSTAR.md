@@ -2517,6 +2517,93 @@ the real node count, and that all 4 new nodes sit at genuine, distinct, correctl
 positions -- not just that the count changed. `bash scripts/build.sh` + `scripts/test_arena.sh`
 both clean: 1200 PASS, zero regressions (2 pre-existing tests updated for real, intentional
 behavior changes, not silently patched over).
+
+### 22.10 Camp minion aggro range + real chase/leash, Pyromancer caster archetype (2026-09-07)
+
+Founder, real-time: "creeps should have agro range and chase to a certain extent like lol" +
+"also we need caster creeps with attack like garyt [Gary]."
+
+**Real, previously-missing gap closed**: before this pass, NO creep system in this file (node
+guardians, camp minions, lane creeps) ever actually MOVED toward a hero -- every one of them
+just attacked passively whenever a hero happened to stand within a fixed aggro radius, and did
+nothing at all otherwise. "Aggro range" existed; "chase" did not.
+
+**Camp minions now have real LoL-style aggro + chase + leash + reset**, built on a new
+`chase_target_hero` field persisted across ticks (not just a fresh per-tick scan, which is what
+made the old code stateless and unable to "give chase" at all):
+
+1. A hittable hero inside `ARENA_CAMP_MINION_AGGRO_RADIUS` (unchanged, still detection-only) gets
+   acquired as a real, remembered chase target -- not just attacked if already adjacent.
+2. Out of the new `ARENA_CAMP_MINION_ATTACK_RANGE` (1.6, melee default) but still a valid chase
+   target: the minion actually MOVES toward it (real chase, the previously-missing gap-closing
+   step) at its own archetype's march speed.
+3. `ARENA_CAMP_MINION_LEASH_RANGE` (2x the aggro radius, measured from the minion's own HOME/camp
+   position -- deliberately NOT from its current, possibly-already-chased position, so leash
+   range can't silently grow one aggro-radius at a time as a hero kites it further and further):
+   once the chased hero gets this far from home, the minion gives up.
+4. On giving up, a non-Ravager minion marches back to its own camp position and heals to full HP
+   on arrival (or immediately, if it never actually left camp) -- the real LoL "camp resets"
+   precedent, so kiting a camp for free chip damage without a real fight isn't a viable strategy.
+   A Ravager (tunnel-vision objective focus, ARENA_RAVAGER_HP's own doc comment) has no
+   meaningful "home" to return to and falls straight through to its own unconditional
+   march-to-node behavior instead, unchanged from before this pass.
+
+**Pyromancer (4th camp-minion archetype)**: "caster creeps with attack like Gary" -- Gary's own
+real basic attack is homing/ranged, and SPEC-4's own roster (§22.1) already names an "AoE caster"
+role distinct from Hexbound (a pure-support buffer that never attacks at all -- explicitly NOT
+what this ask means). Ported as the same design pattern the existing lane-creep caster role
+already uses (a real range advantage traded for HP, not literal shared code):
+`ARENA_PYROMANCER_ATTACK_RANGE` (3.5, close to the full 4.0 aggro detection radius -- it barely
+needs to chase at all) and `ARENA_PYROMANCER_HP` (20, below even the Swarmling's 25 -- real range
+is the entire tradeoff). `camp_minion_spawn_wave`'s existing archetype-cycling logic picked this
+up for free once `ARENA_CAMP_MINION_ARCHETYPE_COUNT` grew from 3 to 4.
+
+3 new tests: real chase movement toward a fleeing hero (proving actual position change, not just
+a state flag), leash give-up + return-home + HP-reset (both the "had to travel" and "already
+home" cases), and a Pyromancer landing a real hit from range without moving at all. `bash
+scripts/build.sh` + `scripts/test_arena.sh` both clean: 1208 PASS, zero regressions.
+
+### 22.11 North star (scoping only, not started): vector/heuristic hybrid brains + individual personalities
+
+Founder, real-time, same message as §22.10's own ask, explicitly framed as a north star, not
+immediate work -- then self-corrected mid-thread: "each npc unit needs hybrid llm tandem
+heuristic brains" -> "not lm ummm vector brain... whatever thats called - model yadda." Read
+plainly: NOT a literal per-unit LLM call (correctly self-caught -- an LLM inference per NPC per
+tick would be far too slow for a real-time simulation running many ticks per second across
+dozens of units), but a real hybrid architecture combining a small, fast VECTOR/neural-net
+"brain" with the existing heuristic rules, in tandem -- not one replacing the other.
+
+**What already exists that this would build on**: `rl_policy_forward` (the arena bot AI research
+program, §25-28) is already a real, working small-neural-net forward pass used for bot HERO
+decisions today. Nothing analogous exists for NPCs/creeps yet -- every creep system in this file
+(node guardians, camp minions, lane creeps) is 100% hand-written heuristic rules (target
+selection, chase/leash as of §22.10, march timing). The real, concrete shape a "hybrid tandem"
+architecture would likely take, following this file's own existing precedent rather than
+inventing a new one: heuristics stay authoritative for cheap, correctness-critical decisions
+(who's in range, when to attack, leash bounds), while a small vector/embedding-scored model
+handles the fuzzier, more "personality"-flavored judgment calls (which of several valid targets
+actually feels right for THIS unit to prioritize, given its own traits) -- the same
+weighted-target-scoring idea already named as a real, load-bearing upgrade in §22.1
+("SPEC-4's own `find_best_target()`... weighted sum... instead of always picking one fixed
+criterion") but with the WEIGHTS themselves coming from a small learned/vector model per unit
+instead of a fixed per-archetype constant table.
+
+**Individual personalities, "like Dwarf Fortress"**: the real, aspirational end state -- each
+unit (not just each ARCHETYPE) carrying its own distinct traits/quirks that shape its own
+behavior, not just "every Swarmling behaves identically to every other Swarmling." Dwarf
+Fortress's own real precedent is per-individual (not per-species) traits affecting mood, work
+preference, and relationships -- the honest gap between that and today's engine is total: this
+file currently has zero per-INSTANCE state beyond position/HP/cooldowns, only per-ARCHETYPE
+constants. Getting from "4 camp-minion archetypes" to "every individual minion has its own
+personality" is a real, large architecture question (where does per-unit trait state live, how
+much of it, does it persist across a minion's death/respawn or reroll fresh each time, how does
+it interact with the vector-brain idea above) -- named honestly as unscoped, not guessed at.
+
+**Status**: north star only, explicitly not immediate work per the founder's own framing. No
+design doc, no milestone plan, no code -- the real next step (when this becomes active work) is
+the same "settle the open architecture questions via a real founder pass before writing a phased
+plan" discipline §29's own "Status" section already establishes for a different ECOWAR open
+question.
 - Population/pressure-driven automata (§22.6, spec-2): `GridCell.population` is tracked but
   inert. Needs a real design pass before implementation, at minimum: what triggers population
   growth per tick (currently nothing does), which neighbor cell absorbs an overpopulation split

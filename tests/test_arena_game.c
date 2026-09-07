@@ -6663,6 +6663,97 @@ static void test_camp_minion_attacks_nearby_hero(void) {
           "a hero standing in a jungle camp takes real damage from its neutral minions");
 }
 
+/* 2026-09-07, founder: "creeps should have agro range and chase to a certain extent like lol." */
+
+static void test_camp_minion_chases_a_fleeing_hero_instead_of_standing_still(void) {
+    arena_init_teams();
+    for (int i = 1; i < ARENA_MAX_HEROES; i++) arena_state.heroes[i].active = 0;
+    arena_state.heroes[0].hero_id = ARENA_HERO_DUCK;
+    arena_state.heroes[0].hp = arena_state.heroes[0].max_hp = 1000;
+
+    float cx, cz;
+    arena_camp_position(0, &cx, &cz);
+    ArenaCampMinion *m = &arena_state.camp_minions[0];
+    m->active = 1; m->alive = 1; m->archetype = ARENA_CAMP_MINION_BASE;
+    m->hp = m->max_hp = ARENA_CAMP_MINION_HP;
+    m->x = cx; m->z = cz; m->camp_index = 0; m->chase_target_hero = -1;
+
+    /* Hero stands within aggro radius but OUTSIDE attack range -- before this pass a minion
+       would have just sat there doing nothing (no attack, since out of range; no movement,
+       since it never moved at all). */
+    arena_state.heroes[0].x = cx + 3.0f; /* within ARENA_CAMP_MINION_AGGRO_RADIUS (4.0), past ARENA_CAMP_MINION_ATTACK_RANGE (1.6) */
+    arena_state.heroes[0].z = cz;
+
+    arena_tick_camp_minions(16);
+    CHECK(m->chase_target_hero == 0, "the minion acquires the hero as a real, persistent chase target");
+    float dist_after_one_tick = fabsf(m->x - cx);
+    CHECK(dist_after_one_tick > 0.0f, "the minion actually MOVED toward the hero -- the real, previously-missing chase behavior");
+
+    /* Hero holds station just past attack range -- the minion keeps closing over enough real
+       ticks to cover the remaining 1.4-unit gap at ARENA_CAMP_MINION_MARCH_SPEED (2.0 units/sec,
+       0.032 units/16ms tick -- needs ~44 ticks; 300 gives real margin). */
+    for (int t = 0; t < 300; t++) {
+        arena_state.heroes[0].x = cx + 3.0f;
+        arena_tick_camp_minions(16);
+    }
+    float final_dist = sqrtf((m->x - arena_state.heroes[0].x) * (m->x - arena_state.heroes[0].x) + (m->z - arena_state.heroes[0].z) * (m->z - arena_state.heroes[0].z));
+    CHECK(final_dist <= ARENA_CAMP_MINION_ATTACK_RANGE + 0.01f, "sustained chase eventually closes the gap into real attack range");
+}
+
+static void test_camp_minion_gives_up_beyond_leash_range_and_resets_hp_at_home(void) {
+    arena_init_teams();
+    for (int i = 1; i < ARENA_MAX_HEROES; i++) arena_state.heroes[i].active = 0;
+    arena_state.heroes[0].hero_id = ARENA_HERO_DUCK;
+    arena_state.heroes[0].hp = arena_state.heroes[0].max_hp = 1000;
+
+    float cx, cz;
+    arena_camp_position(0, &cx, &cz);
+    ArenaCampMinion *m = &arena_state.camp_minions[0];
+    m->active = 1; m->alive = 1; m->archetype = ARENA_CAMP_MINION_BASE;
+    m->hp = 10; m->max_hp = ARENA_CAMP_MINION_HP; /* real, visible damage already taken */
+    m->x = cx; m->z = cz; m->camp_index = 0;
+    m->chase_target_hero = 0; /* already mid-chase from a previous tick */
+
+    /* The hero has fled well past ARENA_CAMP_MINION_LEASH_RANGE, measured from the minion's own
+       HOME (not its current, already-chased position). */
+    arena_state.heroes[0].x = cx + ARENA_CAMP_MINION_LEASH_RANGE + 5.0f;
+    arena_state.heroes[0].z = cz;
+
+    arena_tick_camp_minions(16);
+    CHECK(m->chase_target_hero == -1, "a hero beyond the leash range (measured from home) is given up on, not chased indefinitely");
+
+    /* March it all the way home (real MOBA "camp resets" precedent), long enough to definitely
+       arrive regardless of exactly how far this particular setup placed it. */
+    for (int t = 0; t < 2000; t++) arena_tick_camp_minions(16);
+    CHECK(m->x == cx && m->z == cz, "the minion returns all the way to its own camp position once it gives up");
+    CHECK(m->hp == m->max_hp, "and heals back to full HP on arrival -- kiting a camp for free chip damage is not a viable strategy");
+}
+
+static void test_pyromancer_attacks_from_range_without_closing_to_melee(void) {
+    arena_init_teams();
+    for (int i = 1; i < ARENA_MAX_HEROES; i++) arena_state.heroes[i].active = 0;
+    arena_state.heroes[0].hero_id = ARENA_HERO_DUCK; /* 0 base armor -- exact hit-damage math */
+    arena_state.heroes[0].hp = arena_state.heroes[0].max_hp = 100;
+
+    float cx, cz;
+    arena_camp_position(0, &cx, &cz);
+    ArenaCampMinion *m = &arena_state.camp_minions[0];
+    m->active = 1; m->alive = 1; m->archetype = ARENA_CAMP_MINION_PYROMANCER;
+    m->hp = m->max_hp = ARENA_PYROMANCER_HP;
+    m->x = cx; m->z = cz; m->camp_index = 0; m->chase_target_hero = -1;
+
+    /* Well past melee ARENA_CAMP_MINION_ATTACK_RANGE (1.6), but inside ARENA_PYROMANCER_ATTACK_RANGE
+       (3.5) -- "attack like Gary," a genuine ranged hit, not a forced march into melee first. */
+    arena_state.heroes[0].x = cx + 3.0f;
+    arena_state.heroes[0].z = cz;
+
+    arena_tick_camp_minions(ARENA_CAMP_MINION_ATTACK_COOLDOWN_MS);
+
+    CHECK(arena_state.heroes[0].hp == 100 - ARENA_CAMP_MINION_DAMAGE,
+          "a Pyromancer lands a real hit from range 3.0, well past melee range");
+    CHECK(m->x == cx && m->z == cz, "...without moving at all -- its own attack range already reached the target");
+}
+
 static void test_hero_kills_camp_minion_and_earns_reward(void) {
     arena_init_teams();
     for (int i = 1; i < ARENA_MAX_HEROES; i++) arena_state.heroes[i].active = 0;
@@ -7309,6 +7400,9 @@ int main(void) {
     test_map_is_9x_bigger_with_more_capturable_nodes();
     test_camp_minions_wave_spawn_from_the_opening_bell();
     test_camp_minion_attacks_nearby_hero();
+    test_camp_minion_chases_a_fleeing_hero_instead_of_standing_still();
+    test_camp_minion_gives_up_beyond_leash_range_and_resets_hp_at_home();
+    test_pyromancer_attacks_from_range_without_closing_to_melee();
     test_hero_kills_camp_minion_and_earns_reward();
     test_camp_does_not_escalate_before_the_threshold();
     test_camp_escalates_and_minions_march_toward_nearest_node();

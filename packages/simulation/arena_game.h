@@ -1785,17 +1785,50 @@ void redgarden_host_log_king_spawn(int camp_id);
  * is WHEN it marches, not how fast. */
 #define ARENA_RAVAGER_HP               70   /* well above ARENA_CAMP_MINION_HP (45) -- built to survive the march it makes unconditionally */
 
-/* Which of the three camp-minion archetypes a given ArenaCampMinion is -- see each archetype's
- * own doc comment above (Swarmling, Ravager) for what makes it behaviorally distinct, not just a
- * stat variant. camp_minion_spawn_wave cycles a camp's spawns through all three over successive
- * waves (ARENA_CAMP_MINIONS_PER_WAVE is 2, so a camp never has all three up at once, but every
- * wave brings a different pairing). */
+/* Pyromancer (2026-09-07, founder: "also we need caster creeps with attack like garyt [Gary]").
+ * Fourth camp-minion archetype, the real "AoE caster" role SPEC-4's own roster already names
+ * (§22.1) -- distinct from Hexbound (a pure-support buffer that never attacks at all, per that
+ * same section's own description -- NOT what a "caster... with attack" ask means). What
+ * transfers: a real ATTACK RANGE advantage over every other archetype's melee
+ * ARENA_CAMP_MINION_ATTACK_RANGE, the same "trades HP for reach" tradeoff the existing lane-
+ * creep caster role already establishes (ARENA_LANE_CREEP_CASTER_RANGE vs. melee) -- ported as
+ * the same design pattern, not literal shared code. Glass-cannon HP, lower than even the
+ * Swarmling, since real range is the entire point of the archetype. */
+#define ARENA_PYROMANCER_HP                 20   /* below even ARENA_SWARMLING_HP (25) -- real range is the entire tradeoff */
+#define ARENA_PYROMANCER_ATTACK_RANGE       3.5f /* comfortably past ARENA_CAMP_MINION_ATTACK_RANGE (1.6), close to the full ARENA_CAMP_MINION_AGGRO_RADIUS (4.0) detection range -- barely needs to chase at all */
+
+/* Which of the camp-minion archetypes a given ArenaCampMinion is -- see each archetype's own
+ * doc comment above (Swarmling, Ravager, Pyromancer) for what makes it behaviorally distinct,
+ * not just a stat variant. camp_minion_spawn_wave cycles a camp's spawns through all of them
+ * over successive waves (ARENA_CAMP_MINIONS_PER_WAVE is 2, smaller than
+ * ARENA_CAMP_MINION_ARCHETYPE_COUNT, so a camp never has all of them up at once, but every wave
+ * brings a different pairing). */
 typedef enum {
     ARENA_CAMP_MINION_BASE = 0,
     ARENA_CAMP_MINION_SWARMLING,
     ARENA_CAMP_MINION_RAVAGER,
+    ARENA_CAMP_MINION_PYROMANCER,
     ARENA_CAMP_MINION_ARCHETYPE_COUNT
 } ArenaCampMinionArchetype;
+
+/* ARENA_CAMP_MINION_ATTACK_RANGE (2026-09-07, founder: "creeps should have agro range and chase
+ * to a certain extent like lol"): a real, previously-missing distinction between DETECTING a
+ * hero (ARENA_CAMP_MINION_AGGRO_RADIUS, unchanged) and actually being close enough to HIT one.
+ * Before this pass a minion never moved at all in response to a hero -- it just attacked
+ * whenever one happened to stand within the full 4.0 aggro radius, no chase, no gap to close.
+ * Matches ARENA_ATTACK_RANGE (melee) by default; Pyromancer overrides it with its own much
+ * wider ARENA_PYROMANCER_ATTACK_RANGE, see that archetype's own doc comment. */
+#define ARENA_CAMP_MINION_ATTACK_RANGE  1.6f
+/* ARENA_CAMP_MINION_LEASH_RANGE: real LoL-jungle-camp precedent -- a camp minion chases a fleeing
+ * hero SOME distance past where it first aggroed, but gives up once the hero gets this far from
+ * the minion's own HOME (its camp position, arena_camp_position(camp_index, ...) -- NOT the
+ * minion's current position, so leash range doesn't silently grow as a minion is kited further
+ * and further from camp one aggro-radius at a time). Double the aggro radius: enough real chase
+ * to matter (you can't just step exactly one radius back and be instantly safe), short enough
+ * that kiting a camp minion across the whole map is never a viable strategy. A minion that gives
+ * up resets to full HP once it returns home, same real "camp resets" MOBA precedent -- kiting a
+ * camp for free chip damage without a real fight is not a viable strategy either. */
+#define ARENA_CAMP_MINION_LEASH_RANGE   (ARENA_CAMP_MINION_AGGRO_RADIUS * 2.0f)
 
 typedef struct {
     int active;
@@ -1805,6 +1838,14 @@ typedef struct {
     int attack_cooldown_ms;
     int camp_index; /* which of the ARENA_CAMP_COUNT camps spawned this minion -- needed for §3.4's per-camp escalation state and to pick a stable march target */
     int archetype; /* one of ArenaCampMinionArchetype -- see that enum's own doc comment */
+    /* chase_target_hero: -1 = no current chase target (LoL-style aggro+leash, 2026-09-07) --
+       see ARENA_CAMP_MINION_LEASH_RANGE's own doc comment for the real leash/reset mechanic
+       this drives. Persisted across ticks (unlike the target search itself, which re-scans
+       every tick) specifically so a minion keeps chasing a hero that steps just outside its own
+       aggro radius mid-fight, rather than instantly forgetting it the moment detection alone
+       would no longer find it -- the actual "chase," not just "attack whoever happens to be
+       standing close enough this exact tick." */
+    int chase_target_hero;
 } ArenaCampMinion;
 
 /* Jungle Camps Milestone 2 -- The Four Heavenly Kings (2026-08-10). docs2/

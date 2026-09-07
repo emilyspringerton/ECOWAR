@@ -3432,18 +3432,20 @@ static void camp_minion_spawn_wave(int camp_index) {
         m->alive = 1;
         /* Cycles through all of ArenaCampMinionArchetype across successive waves (see that
            enum's own doc comment) -- ARENA_CAMP_MINIONS_PER_WAVE (2) is smaller than
-           ARENA_CAMP_MINION_ARCHETYPE_COUNT (3), so no single wave has all three up, but which
-           two pair together rotates wave to wave instead of always being the same fixed pair. */
+           ARENA_CAMP_MINION_ARCHETYPE_COUNT (4), so no single wave has every archetype up at
+           once, but which pairing shows up rotates wave to wave instead of a fixed pair. */
         m->archetype = (wave * ARENA_CAMP_MINIONS_PER_WAVE + spawned) % ARENA_CAMP_MINION_ARCHETYPE_COUNT;
         switch (m->archetype) {
-            case ARENA_CAMP_MINION_SWARMLING: m->hp = m->max_hp = ARENA_SWARMLING_HP; break;
-            case ARENA_CAMP_MINION_RAVAGER:   m->hp = m->max_hp = ARENA_RAVAGER_HP; break;
-            default:                          m->hp = m->max_hp = ARENA_CAMP_MINION_HP; break;
+            case ARENA_CAMP_MINION_SWARMLING:  m->hp = m->max_hp = ARENA_SWARMLING_HP; break;
+            case ARENA_CAMP_MINION_RAVAGER:    m->hp = m->max_hp = ARENA_RAVAGER_HP; break;
+            case ARENA_CAMP_MINION_PYROMANCER: m->hp = m->max_hp = ARENA_PYROMANCER_HP; break;
+            default:                           m->hp = m->max_hp = ARENA_CAMP_MINION_HP; break;
         }
         m->x = cx + (spawned - (ARENA_CAMP_MINIONS_PER_WAVE - 1) / 2.0f) * 1.0f;
         m->z = cz;
         m->attack_cooldown_ms = 0;
         m->camp_index = camp_index; /* §3.4 -- which camp's escalation state governs this minion */
+        m->chase_target_hero = -1; /* 2026-09-07: no aggro yet, fresh spawn */
         spawned++;
     }
 }
@@ -3504,34 +3506,97 @@ void arena_tick_camp_minions(unsigned int dt_ms) {
         if (!m->active || !m->alive) continue;
         if (m->attack_cooldown_ms > 0) m->attack_cooldown_ms -= (int)dt_ms;
 
-        /* Targeting: a Swarmling picks the WEAKEST (lowest current hp) hittable hero in range
-           instead of nearest -- see ARENA_SWARMLING_HP's own doc comment. Every other neutral in
-           this engine (base camp minions, Kings, node-guardians) always picks nearest, so this
-           is a real, visible difference in how a fight against one plays out, not cosmetic. */
-        ArenaHero *target = NULL;
-        float best_dist = 0.0f;
-        int best_hp = 0;
-        for (int h = 0; h < ARENA_MAX_HEROES; h++) {
-            ArenaHero *cand = &arena_state.heroes[h];
-            if (!cand->active || !hero_is_hittable(cand)) continue;
-            float dx = cand->x - m->x, dz = cand->z - m->z;
-            float dist = sqrtf(dx * dx + dz * dz);
-            if (dist > ARENA_CAMP_MINION_AGGRO_RADIUS) continue;
-            if (m->archetype == ARENA_CAMP_MINION_SWARMLING) {
-                if (!target || cand->hp < best_hp) { target = cand; best_hp = cand->hp; }
-            } else {
-                if (!target || dist < best_dist) { target = cand; best_dist = dist; }
+        float homex, homez;
+        arena_camp_position(m->camp_index, &homex, &homez);
+        float attack_range = (m->archetype == ARENA_CAMP_MINION_PYROMANCER)
+            ? ARENA_PYROMANCER_ATTACK_RANGE : ARENA_CAMP_MINION_ATTACK_RANGE;
+
+        /* 2026-09-07, founder: "creeps should have agro range and chase to a certain extent like
+           lol." First: does this minion already have a valid, still-in-leash chase target from a
+           PREVIOUS tick? Checked before any fresh scan so a hero who steps just outside the
+           aggro radius mid-fight is still pursued -- that's the actual "chase," not just
+           "attack whoever happens to be standing close enough this exact tick" the old code did.
+           Leash distance is measured from this minion's own HOME (camp position), never from its
+           current (possibly already-chased-far) position -- see ARENA_CAMP_MINION_LEASH_RANGE's
+           own doc comment for why. */
+        ArenaHero *chasing = NULL;
+        if (m->chase_target_hero >= 0 && m->chase_target_hero < ARENA_MAX_HEROES) {
+            ArenaHero *cand = &arena_state.heroes[m->chase_target_hero];
+            if (cand->active && hero_is_hittable(cand)) {
+                float hdx = cand->x - homex, hdz = cand->z - homez;
+                if (sqrtf(hdx * hdx + hdz * hdz) <= ARENA_CAMP_MINION_LEASH_RANGE) chasing = cand;
             }
         }
-        if (target) {
-            /* Same "stops to fight instead of marching past" idiom lane creeps already use --
-               a hittable hero in range holds an escalated minion in place too, it doesn't just
-               plow through. */
-            if (m->attack_cooldown_ms <= 0) {
-                apply_damage(target, apply_armor(ARENA_CAMP_MINION_DAMAGE, arena_hero_armor(target)));
-                m->attack_cooldown_ms = ARENA_CAMP_MINION_ATTACK_COOLDOWN_MS;
+
+        if (!chasing) {
+            m->chase_target_hero = -1; /* gave up, died, or went unhittable -- clear before rescanning */
+            /* Targeting: a Swarmling picks the WEAKEST (lowest current hp) hittable hero in range
+               instead of nearest -- see ARENA_SWARMLING_HP's own doc comment. Every other neutral
+               in this engine (base camp minions, Kings, node-guardians) always picks nearest, so
+               this is a real, visible difference in how a fight against one plays out, not
+               cosmetic. */
+            ArenaHero *target = NULL;
+            float best_dist = 0.0f;
+            int best_hp = 0;
+            for (int h = 0; h < ARENA_MAX_HEROES; h++) {
+                ArenaHero *cand = &arena_state.heroes[h];
+                if (!cand->active || !hero_is_hittable(cand)) continue;
+                float dx = cand->x - m->x, dz = cand->z - m->z;
+                float dist = sqrtf(dx * dx + dz * dz);
+                if (dist > ARENA_CAMP_MINION_AGGRO_RADIUS) continue;
+                if (m->archetype == ARENA_CAMP_MINION_SWARMLING) {
+                    if (!target || cand->hp < best_hp) { target = cand; best_hp = cand->hp; }
+                } else {
+                    if (!target || dist < best_dist) { target = cand; best_dist = dist; }
+                }
+            }
+            if (target) {
+                chasing = target;
+                m->chase_target_hero = (int)(target - arena_state.heroes);
+            }
+        }
+
+        if (chasing) {
+            float dx = chasing->x - m->x, dz = chasing->z - m->z;
+            float dist = sqrtf(dx * dx + dz * dz);
+            if (dist <= attack_range) {
+                if (m->attack_cooldown_ms <= 0) {
+                    apply_damage(chasing, apply_armor(ARENA_CAMP_MINION_DAMAGE, arena_hero_armor(chasing)));
+                    m->attack_cooldown_ms = ARENA_CAMP_MINION_ATTACK_COOLDOWN_MS;
+                }
+            } else {
+                /* Real chase movement -- the previously-missing gap-closing step. Pyromancer's
+                   own much wider attack_range means it rarely needs to move at all to land a
+                   hit, "attack like Gary" (a real ranged threat, not a melee brawler that
+                   happens to have low HP). */
+                float step = (m->archetype == ARENA_CAMP_MINION_SWARMLING ? ARENA_SWARMLING_MARCH_SPEED : ARENA_CAMP_MINION_MARCH_SPEED) * dt_sec;
+                if (step >= dist) { m->x = chasing->x; m->z = chasing->z; }
+                else { m->x += dx / dist * step; m->z += dz / dist * step; }
             }
             continue;
+        }
+
+        /* No chase target at all. A Ravager has no "home" to return to in any meaningful sense
+           -- "tunnel-vision objective focus" (ARENA_RAVAGER_HP's own doc comment) means it falls
+           straight through to the unconditional march-to-node logic below regardless, same as
+           before this pass. Every other archetype resets: march back to its own camp position
+           and, on arrival, heal to full -- the real LoL "camp resets" precedent
+           (ARENA_CAMP_MINION_LEASH_RANGE's own doc comment) that makes kiting a camp for free
+           chip damage not a viable strategy. */
+        if (m->archetype != ARENA_CAMP_MINION_RAVAGER) {
+            float hdx = homex - m->x, hdz = homez - m->z;
+            float hdist = sqrtf(hdx * hdx + hdz * hdz);
+            if (hdist > ARENA_CAMP_MINION_WAYPOINT_EPSILON) {
+                float step = ARENA_CAMP_MINION_MARCH_SPEED * dt_sec;
+                if (step >= hdist) { m->x = homex; m->z = homez; m->hp = m->max_hp; }
+                else { m->x += hdx / hdist * step; m->z += hdz / hdist * step; }
+                continue;
+            } else if (m->hp < m->max_hp) {
+                /* Already at home the instant it gave up (e.g. it never actually left camp
+                   before leashing off) -- resets immediately rather than only on arrival from
+                   an actual march, same real "camp resets" precedent either way. */
+                m->hp = m->max_hp;
+            }
         }
 
         /* §3.4: march toward the nearest node once this minion's own camp has escalated --
