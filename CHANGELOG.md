@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026-09-07
+
+- King kills spawn a reward wave of lane creeps for the killer's team, advanced to the center node with bonus HP -- a real board-state consequence beyond the existing buff/econ reward (boss-death-as-match-event, closes a gap named twice in NORTHSTAR §22.6/22.7). (sess-20260905-0720-ec33e7c5)
+
+
 ## 2026-09-06
 - Ravager: third camp-minion archetype (unconditional march toward objectives, no escalation gate needed). Also: verified the 16-card system is real and wired end-to-end (V/G in-match input, networked, tested) -- not a stub, all 16 cards available to every user with no gating. (sess-20260905-0720-ec33e7c5)
 - Swarmling: second camp-minion archetype (weakest-target aggro, faster escalated march, visually distinct) -- first real step toward spec-1's six-personality creep roster instead of uniform minion stat blocks. (sess-20260905-0720-ec33e7c5)
