@@ -7,8 +7,23 @@
  * expression, not a pre-computed literal, so the phi relationship to the old 32.0 is visible in
  * the code itself, not just a comment. Everything positioned relative to the map edge
  * (fountains, node layout, jungle obstacles, powerups) was re-derived or re-scaled alongside
- * this -- see each of their own S170-191 doc comments. */
-#define ARENA_HALF_EXTENT (32.0f * 1.618034f) /* ~51.78 */
+ * this -- see each of their own S170-191 doc comments.
+ *
+ * ECOWAR-MAP-9X (2026-09-07, founder: "make the ecowar map like 9x bigger with more nodes to
+ * capture"): a further ARENA_MAP_SCALE_9X (3.0, giving 3x the linear extent = 9x the AREA of
+ * the map as it existed before this pass) on top of the golden-ratio value above -- same "keep
+ * the scale factor visible as a real multiplication, not a baked-in literal" idiom S170-191
+ * already established, applied again rather than replaced. Ability ranges/aggro radii/hero
+ * speed etc. are DELIBERATELY NOT touched by this factor -- only map GEOGRAPHY (this constant,
+ * the node/obstacle/lane layouts, which all key off it) scales; combat pacing is unchanged, so
+ * the real gameplay effect is more travel time and more ground to actually contest, the point
+ * of "dense and robust like an RTS." Every position derived FROM this constant (fountains,
+ * graveyards, shops, camps) inherits the new scale automatically through their own existing
+ * formulas -- see each of their own doc comments. Positions NOT derived from it (node layout,
+ * obstacle layout, lane waypoints, powerup positions) needed this same ARENA_MAP_SCALE_9X factor
+ * applied directly at each of their own literals -- see their own 2026-09-07 doc comments. */
+#define ARENA_MAP_SCALE_9X 3.0f
+#define ARENA_HALF_EXTENT (32.0f * 1.618034f * ARENA_MAP_SCALE_9X) /* ~155.34 */
 #define ARENA_HERO_SPEED 4.0f      /* units/sec */
 #define ARENA_ATTACK_RANGE 1.6f
 #define ARENA_ATTACK_DAMAGE 8
@@ -47,7 +62,13 @@
 #define ARENA_GARY_ATTACK_DAMAGE 7
 #define ARENA_GARY_ATTACK_COOLDOWN_MS 900
 #define ARENA_GARY_ATTACK_WINDUP_MS (ARENA_GARY_ATTACK_COOLDOWN_MS / 4) /* S170-204: same 25% ratio as the flat melee windup */
-#define ARENA_NODE_COUNT 5 /* S170-119: was 2 -- real Arathi Basin has 5 (Stables/Farm/Blacksmith/Lumber Mill/Gold Mine) */
+/* ECOWAR-MAP-9X (2026-09-07, "more nodes to capture"): was 5 (S170-119's real Arathi Basin
+ * count) -- now 9, adding a symmetric inner ring of 4 (Northwest/Northeast/Southwest/Southeast
+ * Outpost) between Blacksmith (true center) and the 4 existing outer stations, so a much bigger
+ * map still has real, contestable ground at every scale of the map, not just 5 points spread
+ * further apart with empty space between them. See arena_nodes_reset_layout's own doc comment
+ * for the exact new positions. */
+#define ARENA_NODE_COUNT 9
 
 /* Static jungle terrain (NORTHSTAR §8, "add rocks and trees so we naturally
  * start to create some lanes"): rock/tree boxes -- same "boxes for now"

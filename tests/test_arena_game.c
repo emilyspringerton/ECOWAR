@@ -2381,12 +2381,16 @@ static void test_lane_creep_marches_toward_center_when_no_target(void) {
     creep->team = 0;
     creep->waypoint_index = 0;
     creep->hp = creep->max_hp = ARENA_LANE_CREEP_HP;
-    creep->x = -8.0f; /* team 0's spawn line, S170-139 */
+    /* team 0's spawn line, S170-139 -- ECOWAR-MAP-9X (2026-09-07) grew this from a bare -8.0f to
+       the same real, scaled value lane_creep_waypoint(0, 0, ...) now returns, matching the
+       "keep the scale factor visible, not a stale literal" idiom the rest of this pass uses. */
+    float spawn_x = -8.0f * 1.618034f * ARENA_MAP_SCALE_9X;
+    creep->x = spawn_x;
     creep->z = 0.0f;
 
     for (int t = 0; t < 50; t++) arena_tick_lane_creeps(16); /* 0.8s of marching, well short of reaching the center waypoint */
 
-    CHECK(creep->x > -8.0f, "a lane creep with no target in range marches toward the enemy spawn line (team 0 marches +x)");
+    CHECK(creep->x > spawn_x, "a lane creep with no target in range marches toward the enemy spawn line (team 0 marches +x)");
 }
 
 static void test_lane_creep_attacks_nearby_enemy_hero_and_does_not_advance(void) {
@@ -2616,7 +2620,9 @@ static void test_lane_creep_despawns_at_final_waypoint_with_no_reward(void) {
     ArenaLaneCreep *creep = &arena_state.lane_creeps[0];
     creep->active = 1; creep->alive = 1; creep->team = 0; creep->waypoint_index = ARENA_LANE_WAYPOINT_COUNT - 1;
     creep->hp = creep->max_hp = ARENA_LANE_CREEP_HP;
-    creep->x = 8.0f; creep->z = 0.0f; /* team 0's final waypoint -- the enemy's spawn line, S170-139 */
+    /* team 0's final waypoint -- the enemy's spawn line, S170-139. ECOWAR-MAP-9X (2026-09-07):
+       same real, scaled value lane_creep_waypoint(0, 2, ...) now returns, not the stale 8.0f. */
+    creep->x = 8.0f * 1.618034f * ARENA_MAP_SCALE_9X; creep->z = 0.0f;
 
     arena_tick_lane_creeps(16);
 
@@ -5113,13 +5119,15 @@ static void test_donkey_glide_moves_away_from_nearest_enemy(void) {
     CHECK(arena_state.heroes[0].moving, "glide sets a real move target and starts moving toward it");
     CHECK(arena_state.heroes[0].target_x < 0.0f, "the destination is AWAY from the foe (west), a real escape, not toward it");
     /* 2026-07-30, founder: "donkey glide needs to be 6 times as far" -- ARENA_DONKEY_GLIDE_RANGE
-       (96.0, post-6x) now exceeds ARENA_HALF_EXTENT (~51.78), so a glide starting from map
-       center (as this test's hero does) hits arena_set_move_target's own map-boundary clamp
-       before ever reaching the full nominal range -- a real, honest consequence of the range
-       now being larger than half the map, not a bug. Asserts the clamped value instead of the
-       raw range, same as this test would need to for ANY move target past the map edge. */
-    CHECK(fabsf(arena_state.heroes[0].target_x - (-ARENA_HALF_EXTENT)) < 0.01f,
-          "glides toward the full range, clamped to the map boundary since 6x range now exceeds ARENA_HALF_EXTENT");
+       (96.0, post-6x) used to exceed the map's own ARENA_HALF_EXTENT (~51.78), so a glide
+       starting from map center hit arena_set_move_target's own map-boundary clamp before ever
+       reaching the full nominal range. ECOWAR-MAP-9X (2026-09-07) grew ARENA_HALF_EXTENT to
+       ~155.34 -- comfortably larger than the (unchanged, ability ranges deliberately don't
+       scale with map geography) 96.0 glide range, so a glide from center now reaches its own
+       full, unclamped range instead of hitting the (now much farther away) map edge. Asserts
+       the real, current, honest behavior instead of the stale clamped-at-old-map-edge value. */
+    CHECK(fabsf(arena_state.heroes[0].target_x - (-ARENA_DONKEY_GLIDE_RANGE)) < 0.01f,
+          "glides the full, unclamped ARENA_DONKEY_GLIDE_RANGE now that the map is far larger than the glide distance");
     CHECK(arena_state.heroes[0].donkey_airborne_ms == ARENA_DONKEY_GLIDE_DURATION_MS, "airborne window starts at its full duration");
     CHECK(arena_state.heroes[0].intangible_ms == ARENA_DONKEY_GLIDE_DURATION_MS, "untargetable for the same window");
     CHECK(arena_state.heroes[0].donkey_glide_cooldown_ms == ARENA_DONKEY_GLIDE_COOLDOWN_MS, "cooldown is spent on a real glide");
@@ -6565,6 +6573,49 @@ static void test_camp_positions_are_the_four_cardinal_edge_midpoints(void) {
     CHECK(x == -edge && z == 0.0f, "camp 3 (W) sits at the west edge midpoint");
 }
 
+/* ECOWAR-MAP-9X (2026-09-07, founder: "make the ecowar map like 9x bigger with more nodes to
+ * capture"): real, direct verification of both halves of the ask -- the map is genuinely bigger
+ * (ARENA_HALF_EXTENT reflects the new ARENA_MAP_SCALE_9X factor) and there are genuinely more
+ * nodes (9, not 5), each sitting at a distinct, real position -- not just a count bump with
+ * nothing actually placed at the new indices. */
+static void test_map_is_9x_bigger_with_more_capturable_nodes(void) {
+    CHECK(ARENA_NODE_COUNT == 9, "the map now has 9 capturable nodes, not the original 5");
+
+    float expected_half_extent = 32.0f * 1.618034f * 3.0f;
+    CHECK(fabsf(ARENA_HALF_EXTENT - expected_half_extent) < 0.01f,
+          "ARENA_HALF_EXTENT reflects the real 3x (9x-area) map scale-up, not just the original golden-ratio value");
+
+    arena_init_teams(); /* real layout, not hand-built -- proves arena_nodes_reset_layout actually populates all 9 */
+
+    /* Blacksmith (index 2, unchanged) still sits at the true center regardless of map scale. */
+    CHECK(arena_state.nodes[2].x == 0.0f && arena_state.nodes[2].z == 0.0f,
+          "Blacksmith stays at the true map center even on the bigger map");
+
+    /* The 4 new Outposts (indices 5-8) are real, distinct positions -- each strictly between the
+       center and its own nearest original outer station, not stacked on Blacksmith, on an outer
+       station, or on each other. */
+    float ox[4], oz[4];
+    for (int i = 0; i < 4; i++) {
+        ox[i] = arena_state.nodes[5 + i].x;
+        oz[i] = arena_state.nodes[5 + i].z;
+        CHECK(!(ox[i] == 0.0f && oz[i] == 0.0f), "a new Outpost node is not stacked on Blacksmith");
+    }
+    int all_distinct = 1;
+    for (int i = 0; i < 4; i++) {
+        for (int j = i + 1; j < 4; j++) {
+            if (ox[i] == ox[j] && oz[i] == oz[j]) all_distinct = 0;
+        }
+    }
+    CHECK(all_distinct, "all 4 new Outpost nodes sit at genuinely distinct positions from each other");
+
+    /* Northwest Outpost (index 5) sits exactly halfway between Blacksmith (0,0) and Stables
+       (node 0) -- the real "fills the empty ground" placement, not an arbitrary point. */
+    float mid_x = arena_state.nodes[0].x / 2.0f;
+    float mid_z = arena_state.nodes[0].z / 2.0f;
+    CHECK(fabsf(arena_state.nodes[5].x - mid_x) < 0.01f && fabsf(arena_state.nodes[5].z - mid_z) < 0.01f,
+          "Northwest Outpost sits at the real midpoint between Blacksmith and Stables");
+}
+
 static void test_camp_minions_wave_spawn_from_the_opening_bell(void) {
     /* Unlike lane creeps (ARENA_LANE_WAVE_INITIAL_DELAY_MS grace period), camps have no initial
        delay -- docs2/JUNGLE_CAMPS_NORTHSTAR.md §3.2: "Live from the opening bell." */
@@ -7255,6 +7306,7 @@ int main(void) {
     test_lane_creep_despawns_at_final_waypoint_with_no_reward();
     test_lane_creep_wave_respawns_after_the_interval();
     test_camp_positions_are_the_four_cardinal_edge_midpoints();
+    test_map_is_9x_bigger_with_more_capturable_nodes();
     test_camp_minions_wave_spawn_from_the_opening_bell();
     test_camp_minion_attacks_nearby_hero();
     test_hero_kills_camp_minion_and_earns_reward();

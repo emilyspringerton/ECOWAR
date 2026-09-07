@@ -628,13 +628,28 @@ static void arena_nodes_reset_layout(void) {
        relative footprint. Written as the original pre-S170-191 coordinate times phi, not a
        pre-computed literal, so the scaling stays visible and traceable, same idiom
        ARENA_HALF_EXTENT's own definition now uses. Blacksmith stays at the true center (0,0)
-       regardless of scale. */
+       regardless of scale.
+
+       ECOWAR-MAP-9X (2026-09-07, founder: "make the ecowar map like 9x bigger with more nodes to
+       capture"): every coordinate below gained the same ARENA_MAP_SCALE_9X factor
+       ARENA_HALF_EXTENT itself now uses, keeping the whole node spread proportional to the
+       bigger map exactly the way the original phi scale-up kept it proportional to the smaller
+       one -- same idiom, applied again. Four NEW nodes fill the real empty ground this made
+       between Blacksmith and each outer station -- Northwest/Northeast/Southwest/Southeast
+       Outpost, each sitting at the midpoint between Blacksmith (0,0) and its own nearest outer
+       station (half that station's own x,z) -- so a much bigger map has real, evenly-spread
+       contestable ground at every scale, not just 5 points pushed further apart with empty
+       space between them. */
     static const float layout[ARENA_NODE_COUNT][2] = {
-        { -18.0f * 1.618034f,  11.0f * 1.618034f }, /* Stables */
-        { -18.0f * 1.618034f, -11.0f * 1.618034f }, /* Farm */
+        { -18.0f * 1.618034f * ARENA_MAP_SCALE_9X,  11.0f * 1.618034f * ARENA_MAP_SCALE_9X }, /* Stables */
+        { -18.0f * 1.618034f * ARENA_MAP_SCALE_9X, -11.0f * 1.618034f * ARENA_MAP_SCALE_9X }, /* Farm */
         {   0.0f,   0.0f }, /* Blacksmith (center, contested) */
-        {  18.0f * 1.618034f,  11.0f * 1.618034f }, /* Lumber Mill */
-        {  18.0f * 1.618034f, -11.0f * 1.618034f }, /* Gold Mine */
+        {  18.0f * 1.618034f * ARENA_MAP_SCALE_9X,  11.0f * 1.618034f * ARENA_MAP_SCALE_9X }, /* Lumber Mill */
+        {  18.0f * 1.618034f * ARENA_MAP_SCALE_9X, -11.0f * 1.618034f * ARENA_MAP_SCALE_9X }, /* Gold Mine */
+        {  -9.0f * 1.618034f * ARENA_MAP_SCALE_9X,   5.5f * 1.618034f * ARENA_MAP_SCALE_9X }, /* Northwest Outpost -- midpoint toward Stables */
+        {   9.0f * 1.618034f * ARENA_MAP_SCALE_9X,   5.5f * 1.618034f * ARENA_MAP_SCALE_9X }, /* Northeast Outpost -- midpoint toward Lumber Mill */
+        {  -9.0f * 1.618034f * ARENA_MAP_SCALE_9X,  -5.5f * 1.618034f * ARENA_MAP_SCALE_9X }, /* Southwest Outpost -- midpoint toward Farm */
+        {   9.0f * 1.618034f * ARENA_MAP_SCALE_9X,  -5.5f * 1.618034f * ARENA_MAP_SCALE_9X }, /* Southeast Outpost -- midpoint toward Gold Mine */
     };
     for (int n = 0; n < ARENA_NODE_COUNT; n++) {
         arena_state.nodes[n].x = layout[n][0];
@@ -686,6 +701,12 @@ void arena_towers_reset(void) {
  * map scale (same distinction this function's own original comment
  * already drew before this pass).
  *
+ * ECOWAR-MAP-9X (2026-09-07): every x/z literal below gained the same
+ * ARENA_MAP_SCALE_9X factor ARENA_HALF_EXTENT/the node layout now use --
+ * same "keep growing what's already there proportionally" idiom as the
+ * S170-191 pass directly above, not a new layout designed from scratch.
+ *
+
  * S170-148 bugfix: made public (was static) so apps/arena's own requeue
  * handler can call it directly. Obstacles are never wire-synced (client
  * computes the same static layout independently, same "no sync needed for
@@ -701,44 +722,44 @@ void arena_towers_reset(void) {
 void arena_obstacles_reset_layout(void) {
     static const struct { float x, z, radius; ArenaObstacleKind kind; } layout[ARENA_OBSTACLE_COUNT] = {
         /* left wall (between team 0's spawn and Stables/Farm) */
-        { -11.5f * 1.618034f,  5.5f * 1.618034f, 1.0f, ARENA_OBSTACLE_TREE },
-        { -13.0f * 1.618034f,  4.0f * 1.618034f, 0.9f, ARENA_OBSTACLE_ROCK },
-        { -10.5f * 1.618034f,  2.5f * 1.618034f, 1.0f, ARENA_OBSTACLE_TREE },
-        { -12.5f * 1.618034f,  1.0f * 1.618034f, 0.9f, ARENA_OBSTACLE_ROCK },
-        { -11.0f * 1.618034f, -1.0f * 1.618034f, 1.0f, ARENA_OBSTACLE_TREE },
-        { -13.5f * 1.618034f, -2.5f * 1.618034f, 0.9f, ARENA_OBSTACLE_ROCK },
-        { -10.5f * 1.618034f, -4.0f * 1.618034f, 1.0f, ARENA_OBSTACLE_TREE },
-        { -12.0f * 1.618034f, -5.5f * 1.618034f, 0.9f, ARENA_OBSTACLE_ROCK },
-        { -17.5f,  11.5f, 1.0f, ARENA_OBSTACLE_TREE }, /* new (S170-191): extends the wall further toward the flank nodes' own new spread */
-        { -19.0f, -11.5f, 0.9f, ARENA_OBSTACLE_ROCK },
+        { -11.5f * 1.618034f * ARENA_MAP_SCALE_9X,  5.5f * 1.618034f * ARENA_MAP_SCALE_9X, 1.0f, ARENA_OBSTACLE_TREE },
+        { -13.0f * 1.618034f * ARENA_MAP_SCALE_9X,  4.0f * 1.618034f * ARENA_MAP_SCALE_9X, 0.9f, ARENA_OBSTACLE_ROCK },
+        { -10.5f * 1.618034f * ARENA_MAP_SCALE_9X,  2.5f * 1.618034f * ARENA_MAP_SCALE_9X, 1.0f, ARENA_OBSTACLE_TREE },
+        { -12.5f * 1.618034f * ARENA_MAP_SCALE_9X,  1.0f * 1.618034f * ARENA_MAP_SCALE_9X, 0.9f, ARENA_OBSTACLE_ROCK },
+        { -11.0f * 1.618034f * ARENA_MAP_SCALE_9X, -1.0f * 1.618034f * ARENA_MAP_SCALE_9X, 1.0f, ARENA_OBSTACLE_TREE },
+        { -13.5f * 1.618034f * ARENA_MAP_SCALE_9X, -2.5f * 1.618034f * ARENA_MAP_SCALE_9X, 0.9f, ARENA_OBSTACLE_ROCK },
+        { -10.5f * 1.618034f * ARENA_MAP_SCALE_9X, -4.0f * 1.618034f * ARENA_MAP_SCALE_9X, 1.0f, ARENA_OBSTACLE_TREE },
+        { -12.0f * 1.618034f * ARENA_MAP_SCALE_9X, -5.5f * 1.618034f * ARENA_MAP_SCALE_9X, 0.9f, ARENA_OBSTACLE_ROCK },
+        { -17.5f * ARENA_MAP_SCALE_9X,  11.5f * ARENA_MAP_SCALE_9X, 1.0f, ARENA_OBSTACLE_TREE }, /* new (S170-191): extends the wall further toward the flank nodes' own new spread */
+        { -19.0f * ARENA_MAP_SCALE_9X, -11.5f * ARENA_MAP_SCALE_9X, 0.9f, ARENA_OBSTACLE_ROCK },
         /* right wall (mirrored, between team 1's spawn and Lumber Mill/Gold Mine) */
-        {  11.5f * 1.618034f,  5.5f * 1.618034f, 1.0f, ARENA_OBSTACLE_TREE },
-        {  13.0f * 1.618034f,  4.0f * 1.618034f, 0.9f, ARENA_OBSTACLE_ROCK },
-        {  10.5f * 1.618034f,  2.5f * 1.618034f, 1.0f, ARENA_OBSTACLE_TREE },
-        {  12.5f * 1.618034f,  1.0f * 1.618034f, 0.9f, ARENA_OBSTACLE_ROCK },
-        {  11.0f * 1.618034f, -1.0f * 1.618034f, 1.0f, ARENA_OBSTACLE_TREE },
-        {  13.5f * 1.618034f, -2.5f * 1.618034f, 0.9f, ARENA_OBSTACLE_ROCK },
-        {  10.5f * 1.618034f, -4.0f * 1.618034f, 1.0f, ARENA_OBSTACLE_TREE },
-        {  12.0f * 1.618034f, -5.5f * 1.618034f, 0.9f, ARENA_OBSTACLE_ROCK },
-        {  17.5f,  11.5f, 1.0f, ARENA_OBSTACLE_TREE }, /* new (S170-191) */
-        {  19.0f, -11.5f, 0.9f, ARENA_OBSTACLE_ROCK },
+        {  11.5f * 1.618034f * ARENA_MAP_SCALE_9X,  5.5f * 1.618034f * ARENA_MAP_SCALE_9X, 1.0f, ARENA_OBSTACLE_TREE },
+        {  13.0f * 1.618034f * ARENA_MAP_SCALE_9X,  4.0f * 1.618034f * ARENA_MAP_SCALE_9X, 0.9f, ARENA_OBSTACLE_ROCK },
+        {  10.5f * 1.618034f * ARENA_MAP_SCALE_9X,  2.5f * 1.618034f * ARENA_MAP_SCALE_9X, 1.0f, ARENA_OBSTACLE_TREE },
+        {  12.5f * 1.618034f * ARENA_MAP_SCALE_9X,  1.0f * 1.618034f * ARENA_MAP_SCALE_9X, 0.9f, ARENA_OBSTACLE_ROCK },
+        {  11.0f * 1.618034f * ARENA_MAP_SCALE_9X, -1.0f * 1.618034f * ARENA_MAP_SCALE_9X, 1.0f, ARENA_OBSTACLE_TREE },
+        {  13.5f * 1.618034f * ARENA_MAP_SCALE_9X, -2.5f * 1.618034f * ARENA_MAP_SCALE_9X, 0.9f, ARENA_OBSTACLE_ROCK },
+        {  10.5f * 1.618034f * ARENA_MAP_SCALE_9X, -4.0f * 1.618034f * ARENA_MAP_SCALE_9X, 1.0f, ARENA_OBSTACLE_TREE },
+        {  12.0f * 1.618034f * ARENA_MAP_SCALE_9X, -5.5f * 1.618034f * ARENA_MAP_SCALE_9X, 0.9f, ARENA_OBSTACLE_ROCK },
+        {  17.5f * ARENA_MAP_SCALE_9X,  11.5f * ARENA_MAP_SCALE_9X, 1.0f, ARENA_OBSTACLE_TREE }, /* new (S170-191) */
+        {  19.0f * ARENA_MAP_SCALE_9X, -11.5f * ARENA_MAP_SCALE_9X, 0.9f, ARENA_OBSTACLE_ROCK },
         /* scattered outer-edge dressing, purely for jungle vibe -- past every
            node and lane, never in the way of anything */
-        { -23.0f * 1.618034f,   6.0f * 1.618034f, 1.1f, ARENA_OBSTACLE_TREE },
-        {  23.0f * 1.618034f,  -6.0f * 1.618034f, 1.1f, ARENA_OBSTACLE_TREE },
-        {  -6.0f * 1.618034f,  17.0f * 1.618034f, 0.9f, ARENA_OBSTACLE_ROCK },
-        {   6.0f * 1.618034f, -17.0f * 1.618034f, 0.9f, ARENA_OBSTACLE_ROCK },
-        { -20.0f * 1.618034f, -15.0f * 1.618034f, 1.0f, ARENA_OBSTACLE_TREE },
-        {  20.0f * 1.618034f,  15.0f * 1.618034f, 1.0f, ARENA_OBSTACLE_TREE },
+        { -23.0f * 1.618034f * ARENA_MAP_SCALE_9X,   6.0f * 1.618034f * ARENA_MAP_SCALE_9X, 1.1f, ARENA_OBSTACLE_TREE },
+        {  23.0f * 1.618034f * ARENA_MAP_SCALE_9X,  -6.0f * 1.618034f * ARENA_MAP_SCALE_9X, 1.1f, ARENA_OBSTACLE_TREE },
+        {  -6.0f * 1.618034f * ARENA_MAP_SCALE_9X,  17.0f * 1.618034f * ARENA_MAP_SCALE_9X, 0.9f, ARENA_OBSTACLE_ROCK },
+        {   6.0f * 1.618034f * ARENA_MAP_SCALE_9X, -17.0f * 1.618034f * ARENA_MAP_SCALE_9X, 0.9f, ARENA_OBSTACLE_ROCK },
+        { -20.0f * 1.618034f * ARENA_MAP_SCALE_9X, -15.0f * 1.618034f * ARENA_MAP_SCALE_9X, 1.0f, ARENA_OBSTACLE_TREE },
+        {  20.0f * 1.618034f * ARENA_MAP_SCALE_9X,  15.0f * 1.618034f * ARENA_MAP_SCALE_9X, 1.0f, ARENA_OBSTACLE_TREE },
         /* new (S170-191): fills the substantial new outer margin the map extent's own growth
            (~32 to ~51.78) opened up -- well clear of fountains/graveyards/shops in every
            corner (all sit at |x|,|z| ~44-48). */
-        { -45.0f,  20.0f, 1.2f, ARENA_OBSTACLE_TREE },
-        {  45.0f, -20.0f, 1.2f, ARENA_OBSTACLE_TREE },
-        { -15.0f,  40.0f, 1.0f, ARENA_OBSTACLE_ROCK },
-        {  15.0f, -40.0f, 1.0f, ARENA_OBSTACLE_ROCK },
-        { -38.0f, -32.0f, 1.1f, ARENA_OBSTACLE_TREE },
-        {  38.0f,  32.0f, 1.1f, ARENA_OBSTACLE_TREE },
+        { -45.0f * ARENA_MAP_SCALE_9X,  20.0f * ARENA_MAP_SCALE_9X, 1.2f, ARENA_OBSTACLE_TREE },
+        {  45.0f * ARENA_MAP_SCALE_9X, -20.0f * ARENA_MAP_SCALE_9X, 1.2f, ARENA_OBSTACLE_TREE },
+        { -15.0f * ARENA_MAP_SCALE_9X,  40.0f * ARENA_MAP_SCALE_9X, 1.0f, ARENA_OBSTACLE_ROCK },
+        {  15.0f * ARENA_MAP_SCALE_9X, -40.0f * ARENA_MAP_SCALE_9X, 1.0f, ARENA_OBSTACLE_ROCK },
+        { -38.0f * ARENA_MAP_SCALE_9X, -32.0f * ARENA_MAP_SCALE_9X, 1.1f, ARENA_OBSTACLE_TREE },
+        {  38.0f * ARENA_MAP_SCALE_9X,  32.0f * ARENA_MAP_SCALE_9X, 1.1f, ARENA_OBSTACLE_TREE },
     };
     for (int i = 0; i < ARENA_OBSTACLE_COUNT; i++) {
         arena_state.obstacles[i].x = layout[i].x;
@@ -2148,11 +2169,12 @@ void arena_powerups_reset_layout(void) {
     /* S170-191: the node layout itself scaled by phi (arena_nodes_reset_layout's own doc
        comment) -- these midpoints scale the same 11.0f * 1.618034f the Stables/Farm/Lumber
        Mill/Gold Mine z-coordinates now use, so the powerups stay genuinely "between the node
-       clusters" rather than drifting toward the center as the nodes spread further out. */
+       clusters" rather than drifting toward the center as the nodes spread further out.
+       ECOWAR-MAP-9X (2026-09-07): same ARENA_MAP_SCALE_9X factor applied again, same idiom. */
     arena_state.powerups[ARENA_POWERUP_BERSERKER].x = 0.0f;
-    arena_state.powerups[ARENA_POWERUP_BERSERKER].z = 11.0f * 1.618034f;
+    arena_state.powerups[ARENA_POWERUP_BERSERKER].z = 11.0f * 1.618034f * ARENA_MAP_SCALE_9X;
     arena_state.powerups[ARENA_POWERUP_REGEN].x = 0.0f;
-    arena_state.powerups[ARENA_POWERUP_REGEN].z = -11.0f * 1.618034f;
+    arena_state.powerups[ARENA_POWERUP_REGEN].z = -11.0f * 1.618034f * ARENA_MAP_SCALE_9X;
     for (int p = 0; p < ARENA_POWERUP_COUNT; p++) {
         arena_state.powerups[p].kind = (ArenaPowerupKind)p;
         arena_state.powerups[p].active = 1;
@@ -3110,8 +3132,14 @@ void arena_hero_attack_towers(unsigned int dt_ms) {
  * opposite order. Clamps out-of-range indices defensively rather than
  * reading past the static array. */
 static void lane_creep_waypoint(int team, int index, float *out_x, float *out_z) {
-    static const float path_team0[ARENA_LANE_WAYPOINT_COUNT][2] = { { -8.0f, 0.0f }, { 0.0f, 0.0f }, { 8.0f, 0.0f } };
-    static const float path_team1[ARENA_LANE_WAYPOINT_COUNT][2] = { { 8.0f, 0.0f }, { 0.0f, 0.0f }, { -8.0f, 0.0f } };
+    /* ECOWAR-MAP-9X (2026-09-07): the mid-lane's own spawn-line/center-node path never got the
+       S170-191 golden-ratio treatment (it stayed a small, disconnected-scale feature near the
+       map's true center even after that pass) -- applying BOTH that original phi factor and the
+       new ARENA_MAP_SCALE_9X here for the first time, so the lane finally grows proportionally
+       with the rest of the map instead of staying an oddly tiny path in the middle of a much
+       bigger battlefield. */
+    static const float path_team0[ARENA_LANE_WAYPOINT_COUNT][2] = { { -8.0f * 1.618034f * ARENA_MAP_SCALE_9X, 0.0f }, { 0.0f, 0.0f }, { 8.0f * 1.618034f * ARENA_MAP_SCALE_9X, 0.0f } };
+    static const float path_team1[ARENA_LANE_WAYPOINT_COUNT][2] = { { 8.0f * 1.618034f * ARENA_MAP_SCALE_9X, 0.0f }, { 0.0f, 0.0f }, { -8.0f * 1.618034f * ARENA_MAP_SCALE_9X, 0.0f } };
     if (index < 0) index = 0;
     if (index >= ARENA_LANE_WAYPOINT_COUNT) index = ARENA_LANE_WAYPOINT_COUNT - 1;
     const float (*path)[2] = (team == 0) ? path_team0 : path_team1;

@@ -2470,6 +2470,53 @@ new checks, zero regressions).
 ## 22.7 Open questions (updated 2026-09-07)
 
 - ~~Boss-death-as-match-event~~ -- built, see §22.8.
+
+### 22.9 Map grown 9x with 4 new capturable nodes (2026-09-07)
+
+Founder, real-time: "make the ecowar map like 9x bigger with more nodes to capture." Same real
+idiom the S170-191 golden-ratio pass already established (a visible multiplication factor at
+every affected literal, not a pre-computed replacement number) -- applied again, not redesigned
+from scratch.
+
+**`ARENA_MAP_SCALE_9X` (3.0)**: a new constant multiplying `ARENA_HALF_EXTENT` on top of the
+existing golden-ratio (phi) value -- 3x the linear extent = 9x the map's own AREA. Everything
+already DERIVED from `ARENA_HALF_EXTENT` (fountains, graveyards, shops, the 4 jungle camps/Kings)
+inherited the new scale automatically through their own existing formulas, no separate edit
+needed. Everything NOT derived from it -- the node layout, the jungle obstacle layout, the
+mid-lane waypoint path, the Berserker/Regen powerup positions -- needed the same
+`ARENA_MAP_SCALE_9X` factor applied directly at each of their own literals. The mid-lane path in
+particular had never received the ORIGINAL phi scale-up either (a real, previously-unnoticed gap
+this pass also closed) -- it now gets both factors, so it finally grows proportionally with the
+rest of the map instead of staying a comically tiny path in the middle of a much bigger
+battlefield.
+
+**Deliberately NOT scaled**: ability ranges, aggro radii, hero movement speed, attack ranges --
+combat pacing is unchanged on purpose. The real gameplay effect of a bigger map is more travel
+time and more ground to actually contest between fights, not weaker/slower combat -- the actual
+point of "dense and robust like an RTS."
+
+**4 new capturable nodes** (`ARENA_NODE_COUNT` 5 -> 9): Northwest/Northeast/Southwest/Southeast
+Outpost, each at the real midpoint between Blacksmith (true center) and its own nearest original
+outer station (Stables/Lumber Mill/Farm/Gold Mine). A symmetric inner ring around the existing
+outer ring plus center -- 9 total capture points -- so the bigger map has real, evenly-spread
+contestable ground at every scale, not just the original 5 pushed further apart with empty space
+between them.
+
+**One genuine test breakage found and fixed, not glossed over**: `ARENA_DONKEY_GLIDE_RANGE`
+(96.0, a fixed ability range, deliberately not scaled) used to EXCEED the old `ARENA_HALF_EXTENT`
+(~51.78), so a test asserted the glide got clamped at the map edge. The new, much larger
+`ARENA_HALF_EXTENT` (~155.34) is now comfortably bigger than that same 96.0 range, so the glide
+reaches its own real, full, unclamped distance instead -- a real, honest behavior change from
+growing the map, not a regression; the test now asserts the correct new behavior. Two more tests
+had stale hand-typed lane-waypoint literals (`8.0f`) predating this pass's own lane-path
+scale-up, fixed the same way -- matching the real scaled value instead of a number that stopped
+being true.
+
+One new test (`test_map_is_9x_bigger_with_more_capturable_nodes`) verifies the real extent value,
+the real node count, and that all 4 new nodes sit at genuine, distinct, correctly-placed
+positions -- not just that the count changed. `bash scripts/build.sh` + `scripts/test_arena.sh`
+both clean: 1200 PASS, zero regressions (2 pre-existing tests updated for real, intentional
+behavior changes, not silently patched over).
 - Population/pressure-driven automata (§22.6, spec-2): `GridCell.population` is tracked but
   inert. Needs a real design pass before implementation, at minimum: what triggers population
   growth per tick (currently nothing does), which neighbor cell absorbs an overpopulation split
