@@ -3556,3 +3556,71 @@ questions above (card-spawned-troop complexity, the dragon/shared-structures obj
 via a founder AskUserQuestion-style pass — before a phased build plan can be written honestly
 (matching this repo's own established discipline: `NORTHSTAR.md`'s other "spec only" sections
 don't invent milestone numbers ahead of a real design decision either).
+
+## 30. True server-authoritative fog of war (2026-09-07) -- scoping only, no code yet
+
+Founder, real-time: "and then we need to build true server authoritative fog of war." The
+founder's own explicit "hold the build" answer when asked how to sequence this against an
+already-large session (this doc's own §22.9-22.11 all landed the same session) -- scoping this
+now, deliberately not touching the netcode this pass.
+
+### Why this is a real, structural change, not a small addition
+
+`apps/arena_server/src/main.c`'s `server_broadcast()` builds ONE shared snapshot buffer per tick
+and sends the identical bytes to every connected client via `sendto`, regardless of which team
+that client is on -- checked directly, not assumed. "Server-authoritative" fog of war means the
+SERVER itself must never put a hidden enemy's true position on the wire to a client who
+shouldn't see it -- client-side-only fog (hide it in the renderer, but the raw packet still has
+the real coordinates) is trivially defeated by reading the packet directly, the exact class of
+cheat "server-authoritative" is named specifically to rule out. That requires restructuring the
+core broadcast loop from "build once, send to everyone" to "build one filtered view per team,
+send each client only its own team's view" -- a real change to the hottest path in this file, not
+additive.
+
+### Real, favorable finding: less client-side rework than it first looks like
+
+- `clients[ARENA_MAX_HEROES]` (the UDP `sockaddr_in` table `server_broadcast` sends to) is
+  already index-matched 1:1 with `arena_state.heroes[]` -- client `i`'s own team is already just
+  `arena_state.heroes[i].team`, no new client-to-team tracking structure needed.
+  `ArenaSnapshotHeroesMsg`'s own `total_count` field already drives a variable-length read on the
+  client side (`apps/arena/src/main.c`'s own hero-snapshot loop iterates up to a count, not a
+  fixed slot layout -- the existing clone-slot handling already depends on this) -- meaning
+  sending FEWER hero entries than the true roster (because some are hidden) is already a shape
+  the client can parse without a wire-format change, just fewer entries than today.
+
+### Real, open design decisions -- not guessed at here
+
+1. **Vision radius**: no such concept exists anywhere in this file today (checked directly --
+   zero hits for `vision`/`VISION_RADIUS` in `arena_game.h`/`protocol.h`). A real number (or
+   per-hero-type table) needs picking, and a real rule for what GRANTS vision -- an ally hero's
+   own position only, or also allied structures (towers, owned nodes, jungle camps a team has
+   pushed into)? Real MOBA precedent (LoL) grants vision from allied wards/structures too, not
+   just hero position -- whether this engine's own fog wants that same richness or a simpler
+   "ally hero position only" v0 is a real, undecided scope call.
+2. **What's under fog vs. always visible**: Phase 1 (per the founder's own accepted framing when
+   this was scoped) is heroes only -- camp minions, lane creeps, node-guardian creeps, Kings, and
+   structures (towers/nodes) stay visible to everyone regardless of vision, a real, common MOBA
+   simplification (LoL itself keeps towers/structures always visible on the minimap) that avoids
+   a much larger Phase 1 needing every entity TYPE in `ArenaSnapshotMsg` to carry its own
+   fog-eligibility rule at once. A real Phase 2 (extending fog to creeps/objectives) is named as
+   a deliberate later step, not folded into Phase 1's own scope.
+3. **Per-team snapshot construction cost**: building 2 filtered snapshots per tick (one per team)
+   instead of 1 shared one is real, additional per-tick CPU work in the hottest loop in this
+   file -- likely negligible at this engine's own real scale (`ARENA_MAX_HEROES`, a handful of
+   clients), but not measured or assumed free here.
+4. **Stealth/vision-denial mechanics**: whether any hero kit (existing or future) should interact
+   with vision directly (a real "invisibility" or "true sight" mechanic) is a separate, much
+   larger design question this scoping pass does not open at all -- v0 fog is purely
+   distance-based, no interaction with any existing hero ability assumed.
+5. **Replay/spectator mode**: a genuinely fogged snapshot removes information a spectator or
+   post-match replay tool might want (the exact tension every real MOBA's own replay system has
+   to solve, usually via an admin/observer-only unfogged feed) -- named as a real, likely-later
+   need, not designed here.
+
+### Status
+
+Scoping only, per the founder's own explicit "hold the build" direction. No milestone plan, no
+code, no protocol changes. The real next step is settling decision 1 (vision radius rule) and
+decision 2 (Phase 1 scope boundary) with the founder directly, then writing a real phased plan
+the same way §29's own "Status" section already establishes as this file's standing discipline
+for a genuinely large, undecided architecture question.
