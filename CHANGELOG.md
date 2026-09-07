@@ -1,6 +1,7 @@
 # Changelog
 
 ## 2026-09-07
+- Camp minions get real aggro+chase+leash+reset behavior (LoL-style, not just passive proximity attack) and a new ranged Pyromancer caster archetype. North star (not built): hybrid vector-model+heuristic NPC brains, Dwarf-Fortress-style individual personalities. (sess-20260905-0720-ec33e7c5)
 - Map grown 9x (3x linear scale) with 4 new capturable Outpost nodes (9 total), applying the same visible-scale-factor idiom as the earlier golden-ratio pass; ability ranges/speeds deliberately unscaled so the map grows without changing combat pacing. (sess-20260905-0720-ec33e7c5)
 
 - King kills spawn a reward wave of lane creeps for the killer's team, advanced to the center node with bonus HP -- a real board-state consequence beyond the existing buff/econ reward (boss-death-as-match-event, closes a gap named twice in NORTHSTAR §22.6/22.7). (sess-20260905-0720-ec33e7c5)
