@@ -2445,10 +2445,31 @@ here: which neighbor absorbs an overpopulation split isn't specified anywhere (a
 decision, not just numbers to fill in), so this is named as a new open question rather than
 guessed at.
 
-## 22.7 Open questions (updated 2026-09-06)
+### 22.8 Boss-death-as-match-event — built (2026-09-07)
 
-- Boss-death-as-match-event (§22.6 item 3): no infrastructure for "a kill changes match state
-  beyond a buff/econ reward" -- real, cheap-to-remember pattern, not resolved.
+Founder, real-time: "keep grinding on ecowar it should be a dense and rhobust experience like a
+rts." Closes §22.6 item 3 / §22.7's first bullet, the one gap named twice (2026-08-10,
+2026-09-06) and left unresolved both times.
+
+**`king_reward_wave`** (`packages/simulation/arena_game.c`, called from
+`arena_hero_attack_kings`' own kill branch, right alongside `king_grant_buff`): a King kill now
+spawns `ARENA_KING_REWARD_WAVE_SIZE` (3) bonus lane creeps for the KILLER's team -- reusing the
+lane-creep system's existing team ownership, waypoint marching, and combat entirely, rather than
+teaching the neutral, team-less camp-minion system a new ownership concept it was never designed
+to carry. The real, board-changing part: these spawn at waypoint 1 (the contested CENTER node),
+not waypoint 0 (that team's own spawn line) the way an ordinary wave does -- a genuine tempo
+swing an opponent has to see and react to, not just a bigger number on a buff bar. They also
+carry `ARENA_KING_REWARD_CREEP_HP_BONUS_PCT` (+50%) HP over a normal melee creep, so a "boss
+kill sent a strike force" reads as tankier, not just early. `ARENA_MAX_LANE_CREEPS` grew to add
+real headroom for a reward wave landing on top of an ordinary one instead of silently starving
+either. One new test (`test_king_kill_spawns_reward_wave_of_lane_creeps`) proves the count, team
+ownership, advanced waypoint, and HP bonus directly off real post-kill state, not just that the
+function was called. `bash scripts/build.sh` + `scripts/test_arena.sh` both clean (1191 PASS, 3
+new checks, zero regressions).
+
+## 22.7 Open questions (updated 2026-09-07)
+
+- ~~Boss-death-as-match-event~~ -- built, see §22.8.
 - Population/pressure-driven automata (§22.6, spec-2): `GridCell.population` is tracked but
   inert. Needs a real design pass before implementation, at minimum: what triggers population
   growth per tick (currently nothing does), which neighbor cell absorbs an overpopulation split

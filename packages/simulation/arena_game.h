@@ -1273,7 +1273,9 @@ typedef enum {
  * ARENA_LANE_CREEP_KILL_FLOW/XP below.) */
 #define ARENA_LANE_WAYPOINT_COUNT      3
 #define ARENA_LANE_CREEPS_PER_WAVE     3
-#define ARENA_MAX_LANE_CREEPS          (ARENA_LANE_CREEPS_PER_WAVE * 2 * 2) /* both teams, generous headroom for the previous wave still marching when the next spawns */
+#define ARENA_KING_REWARD_WAVE_SIZE       3   /* §22.6/22.7 boss-death-as-match-event: a King kill now sends this many bonus lane creeps for the killer's team, not just a buff/econ reward -- see king_reward_wave's own doc comment in arena_game.c */
+#define ARENA_KING_REWARD_CREEP_HP_BONUS_PCT 50 /* reward creeps hit harder to survive than a normal wave -- "the boss kill sent a real strike force," not a slightly-early normal wave */
+#define ARENA_MAX_LANE_CREEPS          (ARENA_LANE_CREEPS_PER_WAVE * 2 * 2 + ARENA_KING_REWARD_WAVE_SIZE * 2) /* both teams, generous headroom for the previous wave still marching when the next spawns, plus headroom for a King-reward wave landing on top of a normal one */
 #define ARENA_LANE_WAVE_INTERVAL_MS    20000
 #define ARENA_LANE_WAVE_INITIAL_DELAY_MS 5000 /* real MOBA precedent (LoL's own first wave isn't at 0:00 either) -- also gives a match's opening seconds breathing room before waves are on the board, same spirit as a real "minions spawn in..." countdown */
 #define ARENA_LANE_CREEP_HP            60

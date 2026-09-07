@@ -3161,6 +3161,41 @@ static void lane_creep_spawn_wave(int team) {
     }
 }
 
+/* king_reward_wave (§22.6/§22.7 "boss-death-as-match-event"): the real, previously-missing
+ * consequence a King kill should have beyond a buff/econ reward -- named as an open gap twice
+ * (2026-08-10, 2026-09-06) and left unresolved both times. Reuses the lane-creep system
+ * entirely (team ownership, waypoint marching, and combat against heroes/towers/other creeps
+ * already exist and are already tested there) rather than teaching the neutral, team-less camp-
+ * minion system a new ownership concept it was never designed to carry.
+ *
+ * The real, board-changing part: these spawn at waypoint_index 1 (the contested CENTER node,
+ * see lane_creep_waypoint), not waypoint 0 (that team's own spawn line) the way a normal wave
+ * does -- a King kill hands the killer's team a strike force that's already halfway to the
+ * enemy's base, a genuine tempo swing an observer or opponent can see and has to react to, not
+ * just a bigger number ticking up on a buff bar. ARENA_KING_REWARD_CREEP_HP_BONUS_PCT on top of
+ * the normal melee creep HP makes them tankier too -- "the boss kill sent a real strike force,"
+ * not a slightly-early normal wave. Same "spawn as many as fit" graceful-degradation behavior
+ * as lane_creep_spawn_wave if the pool is tight from a normal wave still marching. */
+static void king_reward_wave(int team) {
+    int spawned = 0;
+    float wx, wz;
+    lane_creep_waypoint(team, 1, &wx, &wz);
+    for (int i = 0; i < ARENA_MAX_LANE_CREEPS && spawned < ARENA_KING_REWARD_WAVE_SIZE; i++) {
+        ArenaLaneCreep *creep = &arena_state.lane_creeps[i];
+        if (creep->active) continue;
+        creep->active = 1;
+        creep->alive = 1;
+        creep->team = team;
+        creep->waypoint_index = 1;
+        creep->role = ARENA_LANE_CREEP_MELEE;
+        creep->hp = creep->max_hp = ARENA_LANE_CREEP_HP + (ARENA_LANE_CREEP_HP * ARENA_KING_REWARD_CREEP_HP_BONUS_PCT) / 100;
+        creep->x = wx;
+        creep->z = wz + (spawned - (ARENA_KING_REWARD_WAVE_SIZE - 1) / 2.0f) * 1.0f;
+        creep->attack_cooldown_ms = 0;
+        spawned++;
+    }
+}
+
 /* arena_tick_lane_creeps (S170-139): see the header declaration's doc
  * comment. */
 void arena_tick_lane_creeps(unsigned int dt_ms) {
@@ -3795,6 +3830,7 @@ void arena_hero_attack_kings(unsigned int dt_ms) {
                 h->flow_earned += flow;
                 h->xp += ARENA_KING_KILL_XP;
                 king_grant_buff(c, h);
+                king_reward_wave(h->team); /* §22.6/22.7 boss-death-as-match-event */
             }
             break;
         }

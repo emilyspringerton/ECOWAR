@@ -6908,6 +6908,50 @@ static void test_hero_kills_north_king_and_gains_wealth_aura(void) {
     CHECK(near_armor > far_armor, "a nearby ally gets the Bulwark aura's armor bonus; a far-away one does not");
 }
 
+/* §22.6/22.7 "boss-death-as-match-event": a King kill must do something to the board beyond a
+ * buff/econ tick -- king_reward_wave spawns ARENA_KING_REWARD_WAVE_SIZE bonus lane creeps for
+ * the killer's team, already advanced to the contested center node (waypoint 1) rather than
+ * their own spawn line (waypoint 0). This test proves the real, observable state change: the
+ * right COUNT of NEW creeps exist, owned by the right TEAM, starting at the right (advanced,
+ * not spawn-line) waypoint, and tankier than a normal wave's melee creep. */
+static void test_king_kill_spawns_reward_wave_of_lane_creeps(void) {
+    arena_init_teams();
+    for (int i = 1; i < ARENA_MAX_HEROES; i++) arena_state.heroes[i].active = 0;
+    arena_state.heroes[0].hero_id = ARENA_HERO_DUCK;
+    arena_state.heroes[0].hp = arena_state.heroes[0].max_hp = 1000;
+    arena_state.heroes[0].team = 1; /* deliberately team 1, not the usual team-0 test default --
+                                        proves the reward wave is owned by the KILLER's team, not
+                                        hardcoded to 0 */
+
+    /* No natural lane-creep waves have spawned yet in this fresh match state -- every active
+       lane creep found after the kill below is attributable to king_reward_wave, not ambient
+       noise from the normal timer-driven wave system. */
+    int before = 0;
+    for (int i = 0; i < ARENA_MAX_LANE_CREEPS; i++) if (arena_state.lane_creeps[i].active) before++;
+    CHECK(before == 0, "setup: no lane creeps active yet in a freshly-initialized match");
+
+    arena_tick_kings(ARENA_KING_SPAWN_DELAY_MS);
+    float kx, kz;
+    arena_camp_position(0, &kx, &kz);
+    arena_state.heroes[0].x = kx;
+    arena_state.heroes[0].z = kz;
+    while (arena_state.kings[0].active) {
+        arena_state.heroes[0].attack_cooldown_ms = 0;
+        arena_hero_attack_kings(0);
+    }
+
+    int after = 0, team1_at_waypoint1 = 0;
+    float expected_hp = (float)(ARENA_LANE_CREEP_HP + (ARENA_LANE_CREEP_HP * ARENA_KING_REWARD_CREEP_HP_BONUS_PCT) / 100);
+    for (int i = 0; i < ARENA_MAX_LANE_CREEPS; i++) {
+        ArenaLaneCreep *c = &arena_state.lane_creeps[i];
+        if (!c->active) continue;
+        after++;
+        if (c->team == 1 && c->waypoint_index == 1 && (float)c->hp == expected_hp) team1_at_waypoint1++;
+    }
+    CHECK(after == ARENA_KING_REWARD_WAVE_SIZE, "a King kill spawns exactly ARENA_KING_REWARD_WAVE_SIZE new lane creeps");
+    CHECK(team1_at_waypoint1 == ARENA_KING_REWARD_WAVE_SIZE, "every reward creep belongs to the KILLER's team, starts at the advanced center waypoint (not the spawn line), and carries the reward HP bonus");
+}
+
 static void test_hero_kills_south_king_and_stacks_growth_on_takedown(void) {
     arena_init_teams();
     for (int i = 2; i < ARENA_MAX_HEROES; i++) arena_state.heroes[i].active = 0;
@@ -7225,6 +7269,7 @@ int main(void) {
     test_synergy_tier_rerolls_on_its_own_interval();
     test_synergy_lead_shifts_probability_toward_higher_tiers();
     test_hero_kills_north_king_and_gains_wealth_aura();
+    test_king_kill_spawns_reward_wave_of_lane_creeps();
     test_hero_kills_south_king_and_stacks_growth_on_takedown();
     test_hero_kills_east_king_and_music_spreads_on_respawn();
     test_hero_kills_west_king_and_gains_team_wide_farsight();
