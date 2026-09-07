@@ -1,6 +1,7 @@
 # Changelog
 
 ## 2026-09-07
+- Scoped (not built, per founder direction) true server-authoritative fog of war: found the core broadcast loop sends one shared snapshot to every client today, named the real design decisions needed before Phase 1 (heroes-only fog). (sess-20260905-0720-ec33e7c5)
 - Camp minions get real aggro+chase+leash+reset behavior (LoL-style, not just passive proximity attack) and a new ranged Pyromancer caster archetype. North star (not built): hybrid vector-model+heuristic NPC brains, Dwarf-Fortress-style individual personalities. (sess-20260905-0720-ec33e7c5)
 - Map grown 9x (3x linear scale) with 4 new capturable Outpost nodes (9 total), applying the same visible-scale-factor idiom as the earlier golden-ratio pass; ability ranges/speeds deliberately unscaled so the map grows without changing combat pacing. (sess-20260905-0720-ec33e7c5)
 
