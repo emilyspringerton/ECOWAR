@@ -21,10 +21,17 @@
 #
 # EnvironmentFile: same real bug/fix REDGARDEN's own matchmaker units already documented -- the
 # matchmaker spawns arena_server as a child, which needs IDUNA_AGENT_NAME/IDUNA_AGENT_SECRET to
-# report match/hero results for any real match played here. Not yet provisioned for ECOWAR
-# specifically (a real, separate WOTAN identity question -- does ECOWAR report under its own
-# agent identity or REDGARDEN's? -- flagged, not decided here); this unit references the same
-# env file path REDGARDEN's own units use as a starting point, update if/when that's resolved.
+# report match/hero results for any real match played here. Real, found-live incident,
+# 2026-09-11 ("stuck on queueing" for real players): this file never existed, and a bare
+# EnvironmentFile= (no leading "-") is REQUIRED by systemd -- a missing file fails the entire
+# unit's activation, not just the WOTAN-reporting feature, so the matchmaker never even started
+# and stayed dead for 5 days while the bot pool kept running against it. Fixed two ways: (1) the
+# file now exists with a real, distinct ECOWAR-BOTS agent identity (var/ecowar-iduna-agent.env,
+# provisioned via IDUNA/migrations/truestore/202609110001_ecowar_bots_agent.sql -- resolves the
+# earlier "does ECOWAR report under its own identity or REDGARDEN's?" open question: its own, so
+# WOTAN stats never mix with REDGARDEN's), and (2) the leading "-" below makes this file load
+# OPTIONAL going forward -- a future deletion/misconfiguration degrades WOTAN match-result
+# reporting only, it can never again take down real players' ability to queue and play.
 
 [Unit]
 Description=ECOWAR arena matchmaker — 1v1 queue with bots (:9779)
@@ -34,7 +41,7 @@ After=network-online.target
 Type=simple
 WorkingDirectory=/home/fatbaby/ECOWAR
 Environment=REDGARDEN_TICKET_SECRET=test-secret-for-vs0-vs1-validation
-EnvironmentFile=/home/fatbaby/ECOWAR/var/redgarden-iduna-agent.env
+EnvironmentFile=-/home/fatbaby/ECOWAR/var/ecowar-iduna-agent.env
 ExecStart=/home/fatbaby/ECOWAR/build/red_garden_matchmaker \
     --listen-port 9779 \
     --lobby-size 2 \

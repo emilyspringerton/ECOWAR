@@ -30,8 +30,23 @@ tests verified (`bash scripts/test_arena.sh` + `bazel test //tests/...`, same re
 REDGARDEN itself gets: every check passes except the already-documented, sandbox-only
 `test_arena_replay` segfault). A dedicated 1v1 matchmaker + bot pool (`ops/systemd/ecowar-
 matchmaker.service` / `ecowar-bot-pool.service`, port `:9779`, distinct from REDGARDEN's own
-`777x`/`877x` range) is staged and verified live end-to-end locally (real matchmaker, 2 real
-bots, a real match played) — not yet deployed as a running service.
+`777x`/`877x` range) is now actually deployed and live (2026-09-11) — see the incident note below,
+not just staged.
+
+**Status update, 2026-09-11: the "does ECOWAR report under its own agent identity or REDGARDEN's"
+question above (Direction for what comes next) is resolved: its own.** Real incident, found and
+fixed: `ecowar-matchmaker.service` had been dead for 5 days (`EnvironmentFile` referenced a
+credentials file that never existed for ECOWAR specifically, and a missing *required*
+`EnvironmentFile` fails a systemd unit's entire activation, not just the feature it backs) while
+the bot pool kept running against a matchmaker nothing was listening on — every real player's
+`PLAY.bat` was stuck on "queueing" with nothing to answer it. Fixed by provisioning a real,
+distinct `ECOWAR-BOTS` M2M agent in IDUNA (`IDUNA/config/agents.json` +
+`202609110001_ecowar_bots_agent.sql`), writing its real secret to `var/ecowar-iduna-agent.env`,
+and making the `EnvironmentFile` line optional going forward so this exact failure mode can't
+recur. Live-verified: a real two-bot test match queued, matched, spawned a server, connected both
+bots, and exchanged real gameplay ticks. See `CHANGELOG.md` for the full writeup. Real, separate,
+not-yet-fixed gap found along the way (needs root): `var/matches`/`var/corpus` are owned by a
+different user without world-write permission, so match/AI-corpus logging silently fails.
 
 **Real card system shipped** (`packages/simulation/arena_game.c`'s own `ECOWAR_CARDS` catalog +
 `ecowar_resolve_card_effect`): 16 cards, each grounded in a real `TYLER/multiverse_heroes.md`
