@@ -1047,6 +1047,27 @@ int main(int argc, char *argv[]) {
     int port = 7200;
     unsigned int seed_arg = 0;
     int have_seed_arg = 0;
+    /* --tick-ms / --fast-forward (2026-09-11, BACKLOG.md SECTION 377, founder: "can we also make
+     * it so that ticks happen faster and in fewer frames optionally via a command line flag" --
+     * ML training throughput for the eventual ECOWAR bot). Both default to today's real,
+     * unchanged behavior (16ms ticks, real-time-paced) -- an existing deploy (ops/systemd's own
+     * ecowar-matchmaker.service spawning this binary with no new flags) is completely unaffected
+     * unless one of these is explicitly passed. --tick-ms changes how much GAME time each tick
+     * simulates (passed straight through to arena_update/arena_update_teams as dt_ms, so bot
+     * decision cadence and every cooldown scale consistently with it, same as any other dt_ms
+     * caller in this codebase) -- "fewer frames" for the same match duration. --fast-forward
+     * removes the real-time usleep/Sleep pacing entirely, so ticks run back-to-back as fast as
+     * the CPU allows -- "ticks happen faster." The two combine (a real, fast-forwarded self-play
+     * match run through the real matchmaker+bot-pool+network path, for generating training data
+     * that exercises the actual UDP/packet-loss/lobby code, distinct from
+     * apps/arena_training/src/headless.c's own in-process sim_step(), which already has zero
+     * real-time throttling of its own and stays the faster choice whenever the real network path
+     * itself isn't what's being trained/tested). Deliberately no upper/lower bound on tick_ms
+     * beyond "at least 1" -- an absurd value is the caller's own problem, same as --lobby-size's
+     * neighboring real bound exists only because arena_game.c's own fixed-size arrays require it,
+     * not a general input-sanitization policy this file otherwise follows. */
+    int tick_ms = 16;
+    int fast_forward = 0;
     for (int i = 1; i < argc; i++) {
         if (strcmp(argv[i], "--port") == 0 && i + 1 < argc) {
             port = atoi(argv[++i]);
@@ -1054,6 +1075,11 @@ int main(int argc, char *argv[]) {
             lobby_size = atoi(argv[++i]);
             if (lobby_size < 2) lobby_size = 2;
             if (lobby_size > ARENA_MAX_HEROES) lobby_size = ARENA_MAX_HEROES;
+        } else if (strcmp(argv[i], "--tick-ms") == 0 && i + 1 < argc) {
+            tick_ms = atoi(argv[++i]);
+            if (tick_ms < 1) tick_ms = 1;
+        } else if (strcmp(argv[i], "--fast-forward") == 0) {
+            fast_forward = 1;
         } else if (strcmp(argv[i], "--seed") == 0 && i + 1 < argc) {
             /* S370-02 (2026-09-11): apps/matchmaker now always passes this for a real
                matchmaker-mediated match, so the procedural jungle (arena_set_match_seed) this
@@ -1131,15 +1157,15 @@ int main(int argc, char *argv[]) {
             len = recvfrom(sock, buffer, 1024, 0, (struct sockaddr *)&sender, &slen);
         }
         if (match_phase == ARENA_PHASE_LIVE) {
-            if (lobby_size == 2) arena_update(16);
-            else arena_update_teams(16);
-            snapshot_log_timer_ms += 16;
+            if (lobby_size == 2) arena_update(tick_ms);
+            else arena_update_teams(tick_ms);
+            snapshot_log_timer_ms += tick_ms;
             if (snapshot_log_timer_ms >= 500) {
                 snapshot_log_timer_ms = 0;
                 match_log_snapshot();
                 corpus_log_tick(get_server_time()); /* S170-194: same 500ms cadence as the match-replay snapshot above, one sensible shared throttle rather than a second independent timer */
             }
-            live_match_report_timer_ms += 16;
+            live_match_report_timer_ms += tick_ms;
             if (live_match_report_timer_ms >= LIVE_MATCH_REPORT_INTERVAL_MS) {
                 live_match_report_timer_ms = 0;
                 report_live_match_state();
@@ -1151,6 +1177,10 @@ int main(int argc, char *argv[]) {
                 shutdown_ticks = 0;
             }
         } else {
+            /* Deliberately NOT tied to --tick-ms/--fast-forward: a real client (human or bot)
+             * still needs real wall-clock time to complete a UDP handshake regardless of how fast
+             * the eventual match simulation itself will run once it starts -- this stays a real
+             * elapsed-time proxy (see the sleep below, which the WAITING phase never skips). */
             waiting_ticks_ms += 16;
             if (waiting_ticks_ms > 60000) { /* 60s with no real progress -- give up, not a leak */
                 printf("No lobby progress in 60s (phase=%d, %d/%d connected) -- shutting down.\n",
@@ -1161,16 +1191,23 @@ int main(int argc, char *argv[]) {
         server_broadcast();
         if (shutdown_ticks >= 0) {
             shutdown_ticks++;
-            if (shutdown_ticks > 60) { /* ~1s of final broadcasts at 16ms/tick, then exit for real */
+            if (shutdown_ticks > 60) { /* a bounded number of extra final broadcasts, then exit for real -- a plain iteration count, deliberately not real-time-based, so --fast-forward correctly makes this exit sooner in real time too (nothing more for a departing client to see past a few more identical winner-broadcasts) */
                 printf("Match over, shutting down.\n");
                 running = 0;
             }
         }
-        #ifdef _WIN32
-        Sleep(16);
-        #else
-        usleep(16000);
-        #endif
+        /* --fast-forward only ever skips the real-time pacing sleep once a match is actually
+         * LIVE (see this file's own header comment on --tick-ms/--fast-forward) -- the WAITING
+         * phase always sleeps, so waiting_ticks_ms's real-elapsed-time proxy above stays valid
+         * even when --fast-forward is passed. */
+        int should_sleep = !(fast_forward && match_phase == ARENA_PHASE_LIVE);
+        if (should_sleep) {
+            #ifdef _WIN32
+            Sleep(tick_ms);
+            #else
+            usleep((useconds_t)tick_ms * 1000);
+            #endif
+        }
     }
     return 0;
 }

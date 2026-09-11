@@ -150,6 +150,53 @@ one of the map's 469 hex cells including empty terrain — see `town_registry_fa
 own header comment for why, and for the real, deliberate exception this reading would need to be
 revisited under.
 
+## ML training throughput, and a real, open architecture fork
+
+Founder real-time: "as soon as some of these pieces are in place we are going to need to do a lot
+of ML unsupervised training to get the bot to a place where it knows how to play the game" —
+ECOWAR's bot needs REDGARDEN's own existing heuristics+AI baseline (a decent default-difficulty
+opponent) adapted to interact with friendly troops/creeps rather than teammates, but the Living
+Map adds far more state than REDGARDEN's hero-vs-hero MOBA ever had, so training leans harder on
+unsupervised crunching and needs real simulation throughput.
+
+**Real, checked-first finding: REDGARDEN/ECOWAR already have a fast, in-process training harness**
+for the hero-combat side — `apps/arena_training/src/headless.c`'s `sim_init`/`sim_step`/
+`sim_get_state` API (consumed by `scripts/rl_env.py`) already ticks `arena_update`/
+`arena_update_teams` directly via plain C function calls, with zero real-time throttling of its
+own — a Python training loop can already call `sim_step` as fast as the CPU allows. Nothing new
+was needed there. What the founder's own "faster ticks via a CLI flag" ask exposed as a real,
+separate gap: `apps/arena_server` (the real, live, *networked* match server real players and the
+matchmaker's own bot pool actually use) paces itself with a hardcoded `usleep(16000)` per tick —
+fine for real players, a real bottleneck for generating training data through the actual
+network/matchmaker/lobby path (distinct from `headless.c`'s in-process shortcut, which skips that
+path entirely and so can't exercise it).
+
+**Shipped this pass**: `apps/arena_server` gained `--tick-ms <N>` (how much game time each tick
+simulates — "fewer frames" for the same match duration) and `--fast-forward` (skip the real-time
+sleep once a match is actually LIVE, so ticks run back-to-back as fast as the CPU allows — "ticks
+happen faster"). Both default to today's unchanged behavior (16ms, real-time-paced) — the live
+`ecowar-matchmaker.service` deploy is unaffected unless one of these is explicitly passed. A real,
+deliberate safety boundary: `--fast-forward` only ever skips the sleep once `match_phase ==
+ARENA_PHASE_LIVE`, never during the WAITING-for-players phase — a real UDP handshake still needs
+real wall-clock time regardless of how fast the eventual match will simulate, and skipping the
+sleep there too would make the existing 60-second lobby-fill timeout fire almost instantly (found
+and fixed before shipping, not by observation in production). Live-verified: started a real
+`red_garden_arena_server --fast-forward --tick-ms 32` process, confirmed it printed its real
+startup log and stayed alive past the WAITING phase's real timeout window rather than exiting
+prematurely.
+
+**Not built this pass, and genuinely not decided**: an equivalent fast headless harness for the
+Living Map itself (`packages/livingmap` has no AI/bot decision-making to train yet, so there's
+nothing to point a training loop at — its `town_tick`/`creep_tick_all` functions are already plain
+C calls with zero throttling of their own, same shape `headless.c` already proved out for the
+arena side, whenever that's needed). And a real, open architecture fork the founder raised but did
+not resolve: "we may need to make the hero an NPC actually and convert it fully into a card
+battler — like choosing a hero puts that hero in your starting hand and shuffles the hero
+abilities cards into your deck." This would be a fundamental change to what ECOWAR's core loop
+even is (directly-piloted hero → deck-building card battler with an NPC hero), well beyond this
+doc's own Living Map scope, and is named here as real, live, unresolved founder direction — not
+guessed at, not built, not silently dropped.
+
 ## Mod event model, honestly
 
 The founder's ask — "everything that happens in the game needs to announce events and then mods
