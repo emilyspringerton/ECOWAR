@@ -17,7 +17,6 @@ gcc -std=c99 -O2 -Wall -Wextra -I"${ROOT_DIR}/packages" \
   -o "${BUILD_DIR}/test_arena_game" \
   -include "${ROOT_DIR}/packages/simulation/bloodflower_mod_host.h" \
   -include "${ROOT_DIR}/packages/simulation/tree_passive_mod_host.h" \
-  -include "${ROOT_DIR}/packages/simulation/build_template_mod_host.h" \
   -include "${ROOT_DIR}/packages/simulation/item_curriculum_mod_host.h" \
   -include "${ROOT_DIR}/packages/simulation/duck_smoke_bomb_mod_host.h" \
   -include "${ROOT_DIR}/packages/simulation/abraham_fireball_mod_host.h" \
@@ -28,7 +27,6 @@ gcc -std=c99 -O2 -Wall -Wextra -I"${ROOT_DIR}/packages" \
   "${ROOT_DIR}/packages/simulation/arena_game.c" \
   "${ROOT_DIR}/packages/simulation/bloodflower_mod.c" \
   "${ROOT_DIR}/packages/simulation/tree_passive_mod.c" \
-  "${ROOT_DIR}/packages/simulation/build_template_mod.c" \
   "${ROOT_DIR}/packages/simulation/item_curriculum_mod.c" \
   "${ROOT_DIR}/packages/simulation/duck_smoke_bomb_mod.c" \
   "${ROOT_DIR}/packages/simulation/abraham_fireball_mod.c" \
@@ -49,7 +47,6 @@ gcc -std=c99 -O2 -Wall -Wextra -I"${ROOT_DIR}/packages" \
   -o "${BUILD_DIR}/test_arena_replay" \
   -include "${ROOT_DIR}/packages/simulation/bloodflower_mod_host.h" \
   -include "${ROOT_DIR}/packages/simulation/tree_passive_mod_host.h" \
-  -include "${ROOT_DIR}/packages/simulation/build_template_mod_host.h" \
   -include "${ROOT_DIR}/packages/simulation/item_curriculum_mod_host.h" \
   -include "${ROOT_DIR}/packages/simulation/duck_smoke_bomb_mod_host.h" \
   -include "${ROOT_DIR}/packages/simulation/abraham_fireball_mod_host.h" \
@@ -61,7 +58,6 @@ gcc -std=c99 -O2 -Wall -Wextra -I"${ROOT_DIR}/packages" \
   "${ROOT_DIR}/packages/simulation/arena_replay.c" \
   "${ROOT_DIR}/packages/simulation/bloodflower_mod.c" \
   "${ROOT_DIR}/packages/simulation/tree_passive_mod.c" \
-  "${ROOT_DIR}/packages/simulation/build_template_mod.c" \
   "${ROOT_DIR}/packages/simulation/item_curriculum_mod.c" \
   "${ROOT_DIR}/packages/simulation/duck_smoke_bomb_mod.c" \
   "${ROOT_DIR}/packages/simulation/abraham_fireball_mod.c" \
@@ -77,7 +73,6 @@ gcc -std=c99 -O2 -Wall -Wextra -I"${ROOT_DIR}/packages" \
   -o "${BUILD_DIR}/test_arena_ai_bridge" \
   -include "${ROOT_DIR}/packages/simulation/bloodflower_mod_host.h" \
   -include "${ROOT_DIR}/packages/simulation/tree_passive_mod_host.h" \
-  -include "${ROOT_DIR}/packages/simulation/build_template_mod_host.h" \
   -include "${ROOT_DIR}/packages/simulation/item_curriculum_mod_host.h" \
   -include "${ROOT_DIR}/packages/simulation/duck_smoke_bomb_mod_host.h" \
   -include "${ROOT_DIR}/packages/simulation/abraham_fireball_mod_host.h" \
@@ -89,7 +84,6 @@ gcc -std=c99 -O2 -Wall -Wextra -I"${ROOT_DIR}/packages" \
   "${ROOT_DIR}/packages/simulation/arena_ai_bridge.c" \
   "${ROOT_DIR}/packages/simulation/bloodflower_mod.c" \
   "${ROOT_DIR}/packages/simulation/tree_passive_mod.c" \
-  "${ROOT_DIR}/packages/simulation/build_template_mod.c" \
   "${ROOT_DIR}/packages/simulation/item_curriculum_mod.c" \
   "${ROOT_DIR}/packages/simulation/duck_smoke_bomb_mod.c" \
   "${ROOT_DIR}/packages/simulation/abraham_fireball_mod.c" \
@@ -114,7 +108,6 @@ gcc -std=c99 -D_DEFAULT_SOURCE -O2 -Wall -Wextra -I"${ROOT_DIR}/packages" \
   -o "${BUILD_DIR}/test_arena_training" \
   -include "${ROOT_DIR}/packages/simulation/bloodflower_mod_host.h" \
   -include "${ROOT_DIR}/packages/simulation/tree_passive_mod_host.h" \
-  -include "${ROOT_DIR}/packages/simulation/build_template_mod_host.h" \
   -include "${ROOT_DIR}/packages/simulation/item_curriculum_mod_host.h" \
   -include "${ROOT_DIR}/packages/simulation/duck_smoke_bomb_mod_host.h" \
   -include "${ROOT_DIR}/packages/simulation/abraham_fireball_mod_host.h" \
@@ -126,7 +119,6 @@ gcc -std=c99 -D_DEFAULT_SOURCE -O2 -Wall -Wextra -I"${ROOT_DIR}/packages" \
   "${ROOT_DIR}/packages/simulation/arena_game.c" \
   "${ROOT_DIR}/packages/simulation/bloodflower_mod.c" \
   "${ROOT_DIR}/packages/simulation/tree_passive_mod.c" \
-  "${ROOT_DIR}/packages/simulation/build_template_mod.c" \
   "${ROOT_DIR}/packages/simulation/item_curriculum_mod.c" \
   "${ROOT_DIR}/packages/simulation/duck_smoke_bomb_mod.c" \
   "${ROOT_DIR}/packages/simulation/abraham_fireball_mod.c" \
@@ -151,7 +143,6 @@ gcc -std=c99 -O2 -Wall -Wextra -I"${ROOT_DIR}/packages" \
   -o "${BUILD_DIR}/test_bloodflower" \
   -include "${ROOT_DIR}/packages/simulation/bloodflower_mod_host.h" \
   -include "${ROOT_DIR}/packages/simulation/tree_passive_mod_host.h" \
-  -include "${ROOT_DIR}/packages/simulation/build_template_mod_host.h" \
   -include "${ROOT_DIR}/packages/simulation/item_curriculum_mod_host.h" \
   -include "${ROOT_DIR}/packages/simulation/duck_smoke_bomb_mod_host.h" \
   -include "${ROOT_DIR}/packages/simulation/abraham_fireball_mod_host.h" \
@@ -162,7 +153,6 @@ gcc -std=c99 -O2 -Wall -Wextra -I"${ROOT_DIR}/packages" \
   "${ROOT_DIR}/packages/simulation/arena_game.c" \
   "${ROOT_DIR}/packages/simulation/bloodflower_mod.c" \
   "${ROOT_DIR}/packages/simulation/tree_passive_mod.c" \
-  "${ROOT_DIR}/packages/simulation/build_template_mod.c" \
   "${ROOT_DIR}/packages/simulation/item_curriculum_mod.c" \
   "${ROOT_DIR}/packages/simulation/duck_smoke_bomb_mod.c" \
   "${ROOT_DIR}/packages/simulation/abraham_fireball_mod.c" \
@@ -178,7 +168,6 @@ gcc -std=c99 -O2 -Wall -Wextra -I"${ROOT_DIR}/packages" \
   -o "${BUILD_DIR}/test_damage_log" \
   -include "${ROOT_DIR}/packages/simulation/bloodflower_mod_host.h" \
   -include "${ROOT_DIR}/packages/simulation/tree_passive_mod_host.h" \
-  -include "${ROOT_DIR}/packages/simulation/build_template_mod_host.h" \
   -include "${ROOT_DIR}/packages/simulation/item_curriculum_mod_host.h" \
   -include "${ROOT_DIR}/packages/simulation/duck_smoke_bomb_mod_host.h" \
   -include "${ROOT_DIR}/packages/simulation/abraham_fireball_mod_host.h" \
@@ -189,7 +178,6 @@ gcc -std=c99 -O2 -Wall -Wextra -I"${ROOT_DIR}/packages" \
   "${ROOT_DIR}/packages/simulation/arena_game.c" \
   "${ROOT_DIR}/packages/simulation/bloodflower_mod.c" \
   "${ROOT_DIR}/packages/simulation/tree_passive_mod.c" \
-  "${ROOT_DIR}/packages/simulation/build_template_mod.c" \
   "${ROOT_DIR}/packages/simulation/item_curriculum_mod.c" \
   "${ROOT_DIR}/packages/simulation/duck_smoke_bomb_mod.c" \
   "${ROOT_DIR}/packages/simulation/abraham_fireball_mod.c" \
@@ -207,7 +195,6 @@ gcc -std=c99 -O2 -Wall -Wextra -I"${ROOT_DIR}/packages" \
   -o "${BUILD_DIR}/test_combat_log" \
   -include "${ROOT_DIR}/packages/simulation/bloodflower_mod_host.h" \
   -include "${ROOT_DIR}/packages/simulation/tree_passive_mod_host.h" \
-  -include "${ROOT_DIR}/packages/simulation/build_template_mod_host.h" \
   -include "${ROOT_DIR}/packages/simulation/item_curriculum_mod_host.h" \
   -include "${ROOT_DIR}/packages/simulation/duck_smoke_bomb_mod_host.h" \
   -include "${ROOT_DIR}/packages/simulation/abraham_fireball_mod_host.h" \
@@ -218,7 +205,6 @@ gcc -std=c99 -O2 -Wall -Wextra -I"${ROOT_DIR}/packages" \
   "${ROOT_DIR}/packages/simulation/arena_game.c" \
   "${ROOT_DIR}/packages/simulation/bloodflower_mod.c" \
   "${ROOT_DIR}/packages/simulation/tree_passive_mod.c" \
-  "${ROOT_DIR}/packages/simulation/build_template_mod.c" \
   "${ROOT_DIR}/packages/simulation/item_curriculum_mod.c" \
   "${ROOT_DIR}/packages/simulation/duck_smoke_bomb_mod.c" \
   "${ROOT_DIR}/packages/simulation/abraham_fireball_mod.c" \
@@ -234,7 +220,6 @@ gcc -std=c99 -O2 -Wall -Wextra -I"${ROOT_DIR}/packages" \
   -o "${BUILD_DIR}/test_tree_passive" \
   -include "${ROOT_DIR}/packages/simulation/bloodflower_mod_host.h" \
   -include "${ROOT_DIR}/packages/simulation/tree_passive_mod_host.h" \
-  -include "${ROOT_DIR}/packages/simulation/build_template_mod_host.h" \
   -include "${ROOT_DIR}/packages/simulation/item_curriculum_mod_host.h" \
   -include "${ROOT_DIR}/packages/simulation/duck_smoke_bomb_mod_host.h" \
   -include "${ROOT_DIR}/packages/simulation/abraham_fireball_mod_host.h" \
@@ -245,7 +230,6 @@ gcc -std=c99 -O2 -Wall -Wextra -I"${ROOT_DIR}/packages" \
   "${ROOT_DIR}/packages/simulation/arena_game.c" \
   "${ROOT_DIR}/packages/simulation/bloodflower_mod.c" \
   "${ROOT_DIR}/packages/simulation/tree_passive_mod.c" \
-  "${ROOT_DIR}/packages/simulation/build_template_mod.c" \
   "${ROOT_DIR}/packages/simulation/item_curriculum_mod.c" \
   "${ROOT_DIR}/packages/simulation/duck_smoke_bomb_mod.c" \
   "${ROOT_DIR}/packages/simulation/abraham_fireball_mod.c" \
@@ -261,7 +245,6 @@ gcc -std=c99 -O2 -Wall -Wextra -I"${ROOT_DIR}/packages" \
   -o "${BUILD_DIR}/test_procedural_jungle" \
   -include "${ROOT_DIR}/packages/simulation/bloodflower_mod_host.h" \
   -include "${ROOT_DIR}/packages/simulation/tree_passive_mod_host.h" \
-  -include "${ROOT_DIR}/packages/simulation/build_template_mod_host.h" \
   -include "${ROOT_DIR}/packages/simulation/item_curriculum_mod_host.h" \
   -include "${ROOT_DIR}/packages/simulation/duck_smoke_bomb_mod_host.h" \
   -include "${ROOT_DIR}/packages/simulation/abraham_fireball_mod_host.h" \
@@ -272,35 +255,6 @@ gcc -std=c99 -O2 -Wall -Wextra -I"${ROOT_DIR}/packages" \
   "${ROOT_DIR}/packages/simulation/arena_game.c" \
   "${ROOT_DIR}/packages/simulation/bloodflower_mod.c" \
   "${ROOT_DIR}/packages/simulation/tree_passive_mod.c" \
-  "${ROOT_DIR}/packages/simulation/build_template_mod.c" \
-  "${ROOT_DIR}/packages/simulation/item_curriculum_mod.c" \
-  "${ROOT_DIR}/packages/simulation/duck_smoke_bomb_mod.c" \
-  "${ROOT_DIR}/packages/simulation/abraham_fireball_mod.c" \
-  "${ROOT_DIR}/packages/simulation/bacon_puck_intangible_speed_mod.c" \
-  "${ROOT_DIR}/packages/simulation/card_effect_mod.c" \
-  "${ROOT_DIR}/packages/simulation/combat_log_mod.c" \
-  "${ROOT_DIR}/packages/common/mlp_infer.c" \
-  -lm
-
-# Build templates (2026-08-25): real live round-trip through the compiled PARENA mod
-# (stdlib/redgarden/build_template_mod.prn), same headless-testable reasoning as Bloodflower/
-# Tree passive above.
-gcc -std=c99 -O2 -Wall -Wextra -I"${ROOT_DIR}/packages" \
-  -o "${BUILD_DIR}/test_build_templates" \
-  -include "${ROOT_DIR}/packages/simulation/bloodflower_mod_host.h" \
-  -include "${ROOT_DIR}/packages/simulation/tree_passive_mod_host.h" \
-  -include "${ROOT_DIR}/packages/simulation/build_template_mod_host.h" \
-  -include "${ROOT_DIR}/packages/simulation/item_curriculum_mod_host.h" \
-  -include "${ROOT_DIR}/packages/simulation/duck_smoke_bomb_mod_host.h" \
-  -include "${ROOT_DIR}/packages/simulation/abraham_fireball_mod_host.h" \
-  -include "${ROOT_DIR}/packages/simulation/bacon_puck_intangible_speed_mod_host.h" \
-  -include "${ROOT_DIR}/packages/simulation/card_effect_mod_host.h" \
-  -include "${ROOT_DIR}/packages/simulation/combat_log_mod_host.h" \
-  "${ROOT_DIR}/tests/test_build_templates.c" \
-  "${ROOT_DIR}/packages/simulation/arena_game.c" \
-  "${ROOT_DIR}/packages/simulation/bloodflower_mod.c" \
-  "${ROOT_DIR}/packages/simulation/tree_passive_mod.c" \
-  "${ROOT_DIR}/packages/simulation/build_template_mod.c" \
   "${ROOT_DIR}/packages/simulation/item_curriculum_mod.c" \
   "${ROOT_DIR}/packages/simulation/duck_smoke_bomb_mod.c" \
   "${ROOT_DIR}/packages/simulation/abraham_fireball_mod.c" \
@@ -317,7 +271,6 @@ gcc -std=c99 -O2 -Wall -Wextra -I"${ROOT_DIR}/packages" \
   -o "${BUILD_DIR}/test_item_curriculum" \
   -include "${ROOT_DIR}/packages/simulation/bloodflower_mod_host.h" \
   -include "${ROOT_DIR}/packages/simulation/tree_passive_mod_host.h" \
-  -include "${ROOT_DIR}/packages/simulation/build_template_mod_host.h" \
   -include "${ROOT_DIR}/packages/simulation/item_curriculum_mod_host.h" \
   -include "${ROOT_DIR}/packages/simulation/duck_smoke_bomb_mod_host.h" \
   -include "${ROOT_DIR}/packages/simulation/abraham_fireball_mod_host.h" \
@@ -328,7 +281,6 @@ gcc -std=c99 -O2 -Wall -Wextra -I"${ROOT_DIR}/packages" \
   "${ROOT_DIR}/packages/simulation/arena_game.c" \
   "${ROOT_DIR}/packages/simulation/bloodflower_mod.c" \
   "${ROOT_DIR}/packages/simulation/tree_passive_mod.c" \
-  "${ROOT_DIR}/packages/simulation/build_template_mod.c" \
   "${ROOT_DIR}/packages/simulation/item_curriculum_mod.c" \
   "${ROOT_DIR}/packages/simulation/duck_smoke_bomb_mod.c" \
   "${ROOT_DIR}/packages/simulation/abraham_fireball_mod.c" \
@@ -345,7 +297,6 @@ gcc -std=c99 -O2 -Wall -Wextra -I"${ROOT_DIR}/packages" \
   -o "${BUILD_DIR}/test_duck_smoke_bomb" \
   -include "${ROOT_DIR}/packages/simulation/bloodflower_mod_host.h" \
   -include "${ROOT_DIR}/packages/simulation/tree_passive_mod_host.h" \
-  -include "${ROOT_DIR}/packages/simulation/build_template_mod_host.h" \
   -include "${ROOT_DIR}/packages/simulation/item_curriculum_mod_host.h" \
   -include "${ROOT_DIR}/packages/simulation/duck_smoke_bomb_mod_host.h" \
   -include "${ROOT_DIR}/packages/simulation/abraham_fireball_mod_host.h" \
@@ -356,7 +307,6 @@ gcc -std=c99 -O2 -Wall -Wextra -I"${ROOT_DIR}/packages" \
   "${ROOT_DIR}/packages/simulation/arena_game.c" \
   "${ROOT_DIR}/packages/simulation/bloodflower_mod.c" \
   "${ROOT_DIR}/packages/simulation/tree_passive_mod.c" \
-  "${ROOT_DIR}/packages/simulation/build_template_mod.c" \
   "${ROOT_DIR}/packages/simulation/item_curriculum_mod.c" \
   "${ROOT_DIR}/packages/simulation/duck_smoke_bomb_mod.c" \
   "${ROOT_DIR}/packages/simulation/abraham_fireball_mod.c" \
@@ -373,7 +323,6 @@ gcc -std=c99 -O2 -Wall -Wextra -I"${ROOT_DIR}/packages" \
   -o "${BUILD_DIR}/test_abraham_fireball" \
   -include "${ROOT_DIR}/packages/simulation/bloodflower_mod_host.h" \
   -include "${ROOT_DIR}/packages/simulation/tree_passive_mod_host.h" \
-  -include "${ROOT_DIR}/packages/simulation/build_template_mod_host.h" \
   -include "${ROOT_DIR}/packages/simulation/item_curriculum_mod_host.h" \
   -include "${ROOT_DIR}/packages/simulation/duck_smoke_bomb_mod_host.h" \
   -include "${ROOT_DIR}/packages/simulation/abraham_fireball_mod_host.h" \
@@ -384,7 +333,6 @@ gcc -std=c99 -O2 -Wall -Wextra -I"${ROOT_DIR}/packages" \
   "${ROOT_DIR}/packages/simulation/arena_game.c" \
   "${ROOT_DIR}/packages/simulation/bloodflower_mod.c" \
   "${ROOT_DIR}/packages/simulation/tree_passive_mod.c" \
-  "${ROOT_DIR}/packages/simulation/build_template_mod.c" \
   "${ROOT_DIR}/packages/simulation/item_curriculum_mod.c" \
   "${ROOT_DIR}/packages/simulation/duck_smoke_bomb_mod.c" \
   "${ROOT_DIR}/packages/simulation/abraham_fireball_mod.c" \
@@ -402,7 +350,6 @@ gcc -std=c99 -O2 -Wall -Wextra -I"${ROOT_DIR}/packages" \
   -o "${BUILD_DIR}/test_shadow_step" \
   -include "${ROOT_DIR}/packages/simulation/bloodflower_mod_host.h" \
   -include "${ROOT_DIR}/packages/simulation/tree_passive_mod_host.h" \
-  -include "${ROOT_DIR}/packages/simulation/build_template_mod_host.h" \
   -include "${ROOT_DIR}/packages/simulation/item_curriculum_mod_host.h" \
   -include "${ROOT_DIR}/packages/simulation/duck_smoke_bomb_mod_host.h" \
   -include "${ROOT_DIR}/packages/simulation/abraham_fireball_mod_host.h" \
@@ -413,7 +360,6 @@ gcc -std=c99 -O2 -Wall -Wextra -I"${ROOT_DIR}/packages" \
   "${ROOT_DIR}/packages/simulation/arena_game.c" \
   "${ROOT_DIR}/packages/simulation/bloodflower_mod.c" \
   "${ROOT_DIR}/packages/simulation/tree_passive_mod.c" \
-  "${ROOT_DIR}/packages/simulation/build_template_mod.c" \
   "${ROOT_DIR}/packages/simulation/item_curriculum_mod.c" \
   "${ROOT_DIR}/packages/simulation/duck_smoke_bomb_mod.c" \
   "${ROOT_DIR}/packages/simulation/abraham_fireball_mod.c" \
@@ -431,7 +377,6 @@ gcc -std=c99 -O2 -Wall -Wextra -I"${ROOT_DIR}/packages" \
   -o "${BUILD_DIR}/test_cart_delivery" \
   -include "${ROOT_DIR}/packages/simulation/bloodflower_mod_host.h" \
   -include "${ROOT_DIR}/packages/simulation/tree_passive_mod_host.h" \
-  -include "${ROOT_DIR}/packages/simulation/build_template_mod_host.h" \
   -include "${ROOT_DIR}/packages/simulation/item_curriculum_mod_host.h" \
   -include "${ROOT_DIR}/packages/simulation/duck_smoke_bomb_mod_host.h" \
   -include "${ROOT_DIR}/packages/simulation/abraham_fireball_mod_host.h" \
@@ -442,7 +387,6 @@ gcc -std=c99 -O2 -Wall -Wextra -I"${ROOT_DIR}/packages" \
   "${ROOT_DIR}/packages/simulation/arena_game.c" \
   "${ROOT_DIR}/packages/simulation/bloodflower_mod.c" \
   "${ROOT_DIR}/packages/simulation/tree_passive_mod.c" \
-  "${ROOT_DIR}/packages/simulation/build_template_mod.c" \
   "${ROOT_DIR}/packages/simulation/item_curriculum_mod.c" \
   "${ROOT_DIR}/packages/simulation/duck_smoke_bomb_mod.c" \
   "${ROOT_DIR}/packages/simulation/abraham_fireball_mod.c" \
@@ -459,7 +403,6 @@ gcc -std=c99 -O2 -Wall -Wextra -I"${ROOT_DIR}/packages" \
   -o "${BUILD_DIR}/test_ecowar_cards" \
   -include "${ROOT_DIR}/packages/simulation/bloodflower_mod_host.h" \
   -include "${ROOT_DIR}/packages/simulation/tree_passive_mod_host.h" \
-  -include "${ROOT_DIR}/packages/simulation/build_template_mod_host.h" \
   -include "${ROOT_DIR}/packages/simulation/item_curriculum_mod_host.h" \
   -include "${ROOT_DIR}/packages/simulation/duck_smoke_bomb_mod_host.h" \
   -include "${ROOT_DIR}/packages/simulation/abraham_fireball_mod_host.h" \
@@ -470,7 +413,6 @@ gcc -std=c99 -O2 -Wall -Wextra -I"${ROOT_DIR}/packages" \
   "${ROOT_DIR}/packages/simulation/arena_game.c" \
   "${ROOT_DIR}/packages/simulation/bloodflower_mod.c" \
   "${ROOT_DIR}/packages/simulation/tree_passive_mod.c" \
-  "${ROOT_DIR}/packages/simulation/build_template_mod.c" \
   "${ROOT_DIR}/packages/simulation/item_curriculum_mod.c" \
   "${ROOT_DIR}/packages/simulation/duck_smoke_bomb_mod.c" \
   "${ROOT_DIR}/packages/simulation/abraham_fireball_mod.c" \
@@ -484,7 +426,6 @@ gcc -std=c99 -O2 -Wall -Wextra -I"${ROOT_DIR}/packages" \
 "${BUILD_DIR}/test_bloodflower"
 "${BUILD_DIR}/test_tree_passive"
 "${BUILD_DIR}/test_procedural_jungle"
-"${BUILD_DIR}/test_build_templates"
 "${BUILD_DIR}/test_item_curriculum"
 "${BUILD_DIR}/test_duck_smoke_bomb"
 "${BUILD_DIR}/test_abraham_fireball"

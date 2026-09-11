@@ -731,6 +731,26 @@ static void server_broadcast(void) {
     memcpy(obstacles_buffer, &obstacles_head, sizeof(NetHeader));
     memcpy(obstacles_buffer + sizeof(NetHeader), &obstacles_msg, sizeof(ArenaSnapshotObstaclesMsg));
 
+    /* S371-01/02: fountain + shop layout packet -- see PACKET_ARENA_SNAPSHOT_LAYOUT's own doc
+       comment in protocol.h for why this needs to exist over the wire at all (apps/arena_bot
+       can't independently derive either, unlike apps/arena). Read straight out of arena_state --
+       arena_fountain_position/arena_shop_position are the same real accessors apps/arena itself
+       calls, so this can never disagree with what the authoritative sim actually did. */
+    ArenaSnapshotLayoutMsg layout_msg = {0};
+    for (int f = 0; f < 2 && f < ARENA_FOUNTAIN_COUNT; f++) {
+        arena_fountain_position(f, &layout_msg.fountain_x[f], &layout_msg.fountain_z[f]);
+    }
+    for (int s = 0; s < ARENA_SNAPSHOT_SHOP_COUNT && s < ARENA_SHOP_COUNT; s++) {
+        arena_shop_position(s, &layout_msg.shop_x[s], &layout_msg.shop_z[s]);
+        layout_msg.shop_item_mask[s] = arena_state.shops[s].item_mask;
+    }
+    char layout_buffer[sizeof(NetHeader) + sizeof(ArenaSnapshotLayoutMsg)];
+    NetHeader layout_head = {0};
+    layout_head.type = PACKET_ARENA_SNAPSHOT_LAYOUT;
+    layout_head.timestamp = head.timestamp;
+    memcpy(layout_buffer, &layout_head, sizeof(NetHeader));
+    memcpy(layout_buffer + sizeof(NetHeader), &layout_msg, sizeof(ArenaSnapshotLayoutMsg));
+
     for (int i = 0; i < lobby_size; i++) {
         if (!client_active[i]) continue;
         sendto(sock, buffer, sizeof(buffer), 0, (struct sockaddr *)&clients[i], sizeof(struct sockaddr_in));
@@ -739,6 +759,7 @@ static void server_broadcast(void) {
             sendto(sock, hero_buffer, sizeof(hero_buffer), 0, (struct sockaddr *)&clients[i], sizeof(struct sockaddr_in));
         }
         sendto(sock, obstacles_buffer, sizeof(obstacles_buffer), 0, (struct sockaddr *)&clients[i], sizeof(struct sockaddr_in));
+        sendto(sock, layout_buffer, sizeof(layout_buffer), 0, (struct sockaddr *)&clients[i], sizeof(struct sockaddr_in));
     }
 
     /* cast_flash_slot is a one-tick wire signal (S170-124) -- already
@@ -956,11 +977,11 @@ static void server_handle_packet(struct sockaddr_in *sender, char *buffer, int s
         ArenaShopSellCmd *cmd = (ArenaShopSellCmd *)(buffer + sizeof(NetHeader));
         arena_shop_sell(client_id, (ArenaItemSlot)cmd->slot);
     } else if (head->type == PACKET_ARENA_APPLY_BUILD_TEMPLATE) {
-        if (size < (int)(sizeof(NetHeader) + sizeof(ArenaApplyBuildTemplateCmd))) return;
-        ArenaApplyBuildTemplateCmd *cmd = (ArenaApplyBuildTemplateCmd *)(buffer + sizeof(NetHeader));
-        /* arena_hero_apply_build_template itself validates everything (range/proximity/Flow per
-           item, via arena_shop_buy underneath) -- same trust model as PACKET_ARENA_SHOP_BUY. */
-        arena_hero_apply_build_template(client_id, cmd->template_id);
+        /* RETIRED S371-02 -- see that packet id's own doc comment in protocol.h. Deliberately a
+           silent no-op (not removed from the dispatch chain) rather than falling through to "" an
+           unrecognized type: a not-yet-rebuilt client could still send this for a while, and
+           silently ignoring it is strictly safer than either crashing or resurrecting the
+           feature's old server-side behavior. */
     } else if (head->type == PACKET_ARENA_BLINK) {
         /* S170-205/S170-206: no payload -- arena_use_active_item itself figures out which
            active item (Blink Dagger or Donkey) the sending client actually has equipped and

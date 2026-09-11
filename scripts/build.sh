@@ -39,7 +39,6 @@ gcc "${COMMON_FLAGS[@]}" \
   -o "${BUILD_DIR}/red_garden_arena_server" \
   -include "${ROOT_DIR}/packages/simulation/bloodflower_mod_host.h" \
   -include "${ROOT_DIR}/packages/simulation/tree_passive_mod_host.h" \
-  -include "${ROOT_DIR}/packages/simulation/build_template_mod_host.h" \
   -include "${ROOT_DIR}/packages/simulation/item_curriculum_mod_host.h" \
   -include "${ROOT_DIR}/packages/simulation/duck_smoke_bomb_mod_host.h" \
   -include "${ROOT_DIR}/packages/simulation/abraham_fireball_mod_host.h" \
@@ -51,7 +50,6 @@ gcc "${COMMON_FLAGS[@]}" \
   "${ROOT_DIR}/packages/simulation/arena_ai_bridge.c" \
   "${ROOT_DIR}/packages/simulation/bloodflower_mod.c" \
   "${ROOT_DIR}/packages/simulation/tree_passive_mod.c" \
-  "${ROOT_DIR}/packages/simulation/build_template_mod.c" \
   "${ROOT_DIR}/packages/simulation/item_curriculum_mod.c" \
   "${ROOT_DIR}/packages/simulation/duck_smoke_bomb_mod.c" \
   "${ROOT_DIR}/packages/simulation/abraham_fireball_mod.c" \
@@ -86,7 +84,6 @@ gcc -std=c99 -D_DEFAULT_SOURCE -O2 -Wall -Wextra -I"${ROOT_DIR}/packages" \
   -o "${BUILD_DIR}/red_garden_arena" \
   -include "${ROOT_DIR}/packages/simulation/bloodflower_mod_host.h" \
   -include "${ROOT_DIR}/packages/simulation/tree_passive_mod_host.h" \
-  -include "${ROOT_DIR}/packages/simulation/build_template_mod_host.h" \
   -include "${ROOT_DIR}/packages/simulation/item_curriculum_mod_host.h" \
   -include "${ROOT_DIR}/packages/simulation/duck_smoke_bomb_mod_host.h" \
   -include "${ROOT_DIR}/packages/simulation/abraham_fireball_mod_host.h" \
@@ -99,7 +96,6 @@ gcc -std=c99 -D_DEFAULT_SOURCE -O2 -Wall -Wextra -I"${ROOT_DIR}/packages" \
   "${ROOT_DIR}/packages/simulation/arena_ai_bridge.c" \
   "${ROOT_DIR}/packages/simulation/bloodflower_mod.c" \
   "${ROOT_DIR}/packages/simulation/tree_passive_mod.c" \
-  "${ROOT_DIR}/packages/simulation/build_template_mod.c" \
   "${ROOT_DIR}/packages/simulation/item_curriculum_mod.c" \
   "${ROOT_DIR}/packages/simulation/duck_smoke_bomb_mod.c" \
   "${ROOT_DIR}/packages/simulation/abraham_fireball_mod.c" \

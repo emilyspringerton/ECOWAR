@@ -108,8 +108,8 @@ typedef enum {
 #define ARENA_HERO_COLLISION_RADIUS 0.6f /* how close a hero's own footprint can get to an obstacle's edge before being pushed back out */
 
 /* arena_set_match_seed (S370-01/02, 2026-09-11): stores the per-match seed the procedural
- * jungle generator (and anything else that wants real per-match-not-per-process determinism
- * later) reads from. Deliberately NOT a field on arena_state -- every init path
+ * jungle generator (and, per S371-01, the fountain placement margin and the 6-shop layout/item
+ * split below) reads from. Deliberately NOT a field on arena_state -- every init path
  * (arena_init_with_heroes/arena_init_teams) does a blanket memset(&arena_state, 0, ...) as its
  * very first line, which would silently wipe a seed stored there before
  * arena_obstacles_reset_layout ever got to read it. Deliberately NOT libc's global rand()/
@@ -151,6 +151,27 @@ void arena_set_match_seed(unsigned int seed);
 #define ARENA_FOUNTAIN_RADIUS 3.0f
 #define ARENA_FOUNTAIN_HEAL_PER_SEC 15 /* strong, deliberate -- "go here to top off," not a passive trickle */
 #define ARENA_FOUNTAIN_MANA_PER_SEC 15 /* S170-148, founder: "fountains should also restore mana" -- same rate as the heal, one consistent "resource top-off" spot */
+
+/* S371-01 (2026-09-11), founder: "it seems like we lost fountains - can you add them into the
+ * procedural generation of the map?" -- code-wise the fountains were never actually removed
+ * (arena_tick_fountains/arena_fountain_position/the client's own draw loop are all still real and
+ * unconditional), but they'd been sitting at a plain fixed-formula corner since before the map
+ * grew 9x (S170-191 golden-ratio widen, then ECOWAR-MAP-9X's further 3x) -- on a map with
+ * ARENA_HALF_EXTENT now ~465, a static point in one corner with no minimap marker (see the
+ * client's own S181-04 minimap comment -- it only ever plotted nodes/heroes) reads as "gone" in
+ * practice even though it's real and reachable. Two real fixes: this margin is now a genuine
+ * per-match PRNG output (arena_set_match_seed computes it once, alongside the jungle's own seed
+ * burn-in, same "isolated PRNG, not arena_state, not libc rand()" reasoning that function's own
+ * doc comment already gives) instead of the fixed ARENA_HALF_EXTENT-8.0f literal, so a fountain
+ * is now literally part of "the procedural generation of the map" per the founder's own framing,
+ * not just a formula that happens to reference a map-size constant -- and the client's minimap
+ * now plots both fountains (see that draw block's own doc comment). Range keeps both fountains
+ * safely inset from the play boundary (same lower bound the old fixed literal already gave) while
+ * varying which exact ring they sit on match to match; mirrored across the map origin (index 0's
+ * margin and index 1's margin are always identical) so the two stay exactly as symmetric/fair as
+ * the fixed layout already was -- this is real per-match variety, not a fairness regression. */
+#define ARENA_FOUNTAIN_MARGIN_MIN 8.0f
+#define ARENA_FOUNTAIN_MARGIN_MAX 24.0f
 
 /* Warsong Gulch-style powerups (S170-190, founder: "add berserker and health regen powerups
  * like from warsong gulch in between the nodes"). Real WoW WSG mechanic: two neutral map
@@ -1455,7 +1476,14 @@ typedef struct {
  * same amount whether it's held for one second or the whole fight. */
 #define ARENA_MP_DRAIN_W_PER_SEC    5
 
-/* ---- Flow/XP economy + item shop (S170-175) ----
+/* ---- Flow/XP economy + item shop (S170-175, shop placement/catalog redesigned S371-02) ----
+ * S371-02 (2026-09-11): the original "2 shops, one per team corner, every shop sells the whole
+ * catalog" design described by the founder quote directly below was superseded by a real,
+ * founder-requested redesign -- see the big comment above ARENA_SHOP_COUNT for the current
+ * design (6 neutral shops, procedurally placed, catalog split randomly across them). Kept here,
+ * unedited, as the real origin of the shop system itself (equip slots, Flow, FFXI/WoW item
+ * design references) -- everything below about slots/tiers/Flow/individual items is still
+ * exactly accurate, only WHERE items are sold and WHICH shop sells WHICH item changed.
  * Founder, real-time: "do a first pass shop interface have there be 2
  * shops in the other 2 corner of the maps that dont have fountains use
  * the ffxi items doc as a reference" / "add a cobination of ffxi and wow
@@ -1619,6 +1647,74 @@ void redgarden_host_log_king_spawn(int camp_id);
 
 #define ARENA_ITEM_SELL_REFUND_PCT 50 /* founder: "sell it back for less" */
 #define ARENA_SHOP_RADIUS 3.0f /* same "stand near it" convention as ARENA_FOUNTAIN_RADIUS */
+
+/* ---- S371-02 (2026-09-11): 6-shop neutral, catalog-split redesign ----
+ * Founder, real-time: "shops too? spawn like 6 shops on the map and divide the items on the
+ * pages between them (fundamental change to how the shop system works in ECOWAR vs REDGARDEN)
+ * the items will be randomized across the shops in the world so building towards a specifc kit
+ * with items is about strategy and luck." A genuine departure from the original S170-175 design
+ * (2 shops, one per team's own graveyard corner, every shop selling the full ARENA_ITEM_COUNT
+ * catalog): now ARENA_SHOP_COUNT (6) fully NEUTRAL shops -- same "contestable, not team-owned"
+ * precedent the fountains already established (see that section's own doc comment) -- scattered
+ * across the map by the same per-match seeded procedural pass the jungle/fountains use
+ * (arena_shops_reset_layout), each stocking only a real SUBSET of the full catalog. Which items
+ * land at which shop is itself a per-match seeded shuffle, not a fixed assignment -- "strategy
+ * and luck" reads as: a player can plan a build around what THIS match's shops happen to carry,
+ * but can't rely on a specific item always being at a specific shop, and the shop nearest their
+ * own base won't necessarily carry what they want, so reaching a distant (possibly
+ * enemy-contested) shop for a key item is itself now a real risk/reward decision. Positions and
+ * the item split are both deterministic from the match seed and computed identically client- and
+ * server-side, same "no wire sync needed" precedent as the fountains/jungle -- see
+ * arena_shops_reset_layout's own doc comment. */
+#define ARENA_SHOP_COUNT 6
+/* ARENA_SHOP_MIN_SEPARATION (S371-02): minimum center-to-center distance between any two of the
+ * 6 shops -- without this, pure rejection sampling could (rarely, but for real) land two shops
+ * within a few units of each other on a huge map, reading as one shop with two counters instead
+ * of six genuinely separate destinations. Well under 1/6 of the map's own diameter so six shops
+ * spread across a full map always have real room to satisfy this. */
+#define ARENA_SHOP_MIN_SEPARATION 40.0f
+
+typedef struct {
+    float x, z;
+    /* item_mask: bit `i` set means this shop stocks ARENA_ITEMS[i] -- ARENA_ITEM_COUNT (34) fits
+     * a uint64_t with room to spare, so a bitmask is simpler and cheaper to check/sync-free than
+     * a separate variable-length id array, same spirit as this file's other small per-entity
+     * bitfields. arena_shop_has_item() is the one real accessor -- callers should never test this
+     * bit directly, so the encoding can change later without an audit of every call site. */
+    unsigned long long item_mask;
+} ArenaShop;
+
+/* arena_shops_reset_layout (S371-02): (re)computes all ARENA_SHOP_COUNT shop positions and item
+ * catalogs for the current match, seeded from arena_set_match_seed the same way
+ * arena_obstacles_reset_layout's own procedural jungle pass is -- MUST be called after
+ * arena_obstacles_reset_layout (same call order arena_init_with_heroes/arena_init_teams/the
+ * client's own requeue handler already use) since shop placement itself avoids every jungle
+ * obstacle already placed, same exclusion discipline arena_jungle_spot_excluded already applies
+ * to trees/rocks. Positions are angularly spread (one per 60-degree sector around the map
+ * center, rejection-sampled within that sector against every existing exclusion zone plus
+ * ARENA_SHOP_MIN_SEPARATION from every shop already placed) so six shops read as real, separate
+ * destinations rather than clustering wherever rejection sampling happens to succeed first. Item
+ * catalogs: a seeded Fisher-Yates shuffle of all ARENA_ITEM_COUNT item ids, then split round-robin
+ * (item i's shuffled position mod ARENA_SHOP_COUNT) across the 6 shops -- every item is sold at
+ * exactly one shop, every shop gets ARENA_ITEM_COUNT/ARENA_SHOP_COUNT items (5 or 6, since 34
+ * doesn't divide evenly). */
+void arena_shops_reset_layout(void);
+
+/* arena_shop_has_item (S371-02): true if shop_index (0..ARENA_SHOP_COUNT-1) currently stocks
+ * item_id -- the one real accessor for ArenaShop.item_mask, see that field's own doc comment for
+ * why call sites should never test the bit directly. False for any out-of-range shop_index or
+ * item_id rather than asserting -- same "fail closed, never crash on a bad index" convention
+ * arena_shop_buy's own bounds checks already follow. */
+int arena_shop_has_item(int shop_index, int item_id);
+
+/* arena_find_shop_in_range (S371-02): returns the index (0..ARENA_SHOP_COUNT-1) of the first shop
+ * within ARENA_SHOP_RADIUS of (x,z), or -1 if none. The one real "which shop, if any, am I
+ * standing at" query -- arena_shop_buy/arena_shop_sell and the client's own proximity-open/HUD
+ * code all route through this rather than each re-deriving it, so "the panel says you're at a
+ * shop" and "the server will actually accept a purchase" can never disagree. Two shops
+ * overlapping within radius of the same point never happens in practice (ARENA_SHOP_MIN_SEPARATION
+ * is far larger than 2*ARENA_SHOP_RADIUS), so "first" is never actually ambiguous. */
+int arena_find_shop_in_range(float x, float z);
 
 /* Blink Dagger (S170-205, founder: "add blink dagger 1400 flow it gives a new keybind on screen
  * for tilda"). Real DOTA 2 item, "the premier mobility item" -- an instant, short, no-cast-time
@@ -2777,6 +2873,7 @@ typedef struct {
     ArenaTower towers[ARENA_NODE_COUNT]; /* 2026-07-30: index-matched to nodes, same convention as creeps */
     ArenaProjectile projectiles[ARENA_MAX_PROJECTILES];
     ArenaObstacle obstacles[ARENA_OBSTACLE_COUNT];
+    ArenaShop shops[ARENA_SHOP_COUNT]; /* S371-02: neutral, procedurally placed, per-match item-split shops -- see ArenaShop's own doc comment */
     ArenaPowerup powerups[ARENA_POWERUP_COUNT]; /* S170-190 */
     ArenaLaneCreep lane_creeps[ARENA_MAX_LANE_CREEPS]; /* S170-139 */
     int lane_wave_timer_ms[2]; /* S170-139: per-team countdown to next wave; starts at 0 (memset), so both teams' first wave spawns on the first tick, matching a real MOBA's 0:00 wave */
@@ -3076,93 +3173,49 @@ void arena_graveyard_position(int team, float *x, float *z);
  * clear, so this re-applies the bonuses on top immediately after). */
 void arena_recompute_item_stats(ArenaHero *h);
 
-/* arena_shop_position (S170-175): fills (x,z) with team `team`'s (0 or 1)
- * shop location -- a fixed offset from that team's own graveyard
- * (arena_graveyard_position), same corner arithmetic, so each team's shop
- * sits near their own permanent respawn point without exactly overlapping
- * it. Founder: "have there be 2 shops in the other 2 corner of the maps
- * that dont have fountains" -- the graveyard corners already ARE the two
- * corners the fountains don't occupy (S170-153/156), so the shop just
- * needs its own distinct point in that same corner region. */
-void arena_shop_position(int team, float *x, float *z);
+/* arena_shop_position (S170-175, redesigned S371-02): fills (x,z) with shop `index`'s
+ * (0..ARENA_SHOP_COUNT-1) location. Originally "team's shop, formula off that team's own
+ * graveyard corner" -- the S371-02 redesign (see the big comment above ARENA_SHOP_COUNT) made
+ * shops neutral and procedurally placed, so `index` is now a plain shop index, not a team, and
+ * the position is read out of arena_state.shops[index] (populated once per match by
+ * arena_shops_reset_layout) rather than computed from a formula on every call. */
+void arena_shop_position(int index, float *x, float *z);
 
-/* arena_shop_buy (S170-175): the real purchase path -- validates owner is
- * a real, active, alive hero within ARENA_SHOP_RADIUS of their OWN team's
- * shop, item_id is real, and h->flow covers item cost (net of an
- * automatic sell-back if item_id's slot is already occupied, "buying an
- * item auto equips it... no bag"). Silent no-op on any failure (same
- * "whiffed cast costs nothing" convention every ability cast in this file
- * already follows), returns 1 on a real purchase. */
+/* arena_shop_buy (S170-175, redesigned S371-02): the real purchase path -- validates owner is a
+ * real, active, alive hero within ARENA_SHOP_RADIUS of ANY shop (arena_find_shop_in_range; no
+ * longer "their own team's" shop -- shops are neutral, see ARENA_SHOP_COUNT's own doc comment),
+ * that shop actually stocks item_id (arena_shop_has_item -- the real, new "strategy and luck"
+ * gate this redesign adds), item_id is real, and h->flow covers item cost (net of an automatic
+ * sell-back if item_id's slot is already occupied, "buying an item auto equips it... no bag").
+ * Silent no-op on any failure (same "whiffed cast costs nothing" convention every ability cast in
+ * this file already follows, now also covering "right shop, wrong item"), returns 1 on a real
+ * purchase. */
 int arena_shop_buy(int owner, int item_id);
 
-/* arena_shop_sell (S170-175): sells whatever's in `slot` for
- * ARENA_ITEM_SELL_REFUND_PCT of its purchase cost, emptying the slot.
- * Same shop-proximity gate and silent-no-op-on-failure convention as
- * arena_shop_buy. Founder: "you can sell it back for less but no unequip
- * into bag for now" -- there's no bag to move it into, selling is the
- * only way to clear a slot. */
+/* arena_shop_sell (S170-175, redesigned S371-02): sells whatever's in `slot` for
+ * ARENA_ITEM_SELL_REFUND_PCT of its purchase cost, emptying the slot. Same shop-proximity gate as
+ * arena_shop_buy (any of the 6 neutral shops, not "your own team's" one) and silent-no-op-on-
+ * failure convention -- selling doesn't check the local shop's own catalog (you're cashing out
+ * your own equipped item for Flow, not constrained by what this particular shop happens to
+ * stock). Founder: "you can sell it back for less but no unequip into bag for now" -- there's no
+ * bag to move it into, selling is the only way to clear a slot. */
 int arena_shop_sell(int owner, ArenaItemSlot slot);
 
-/* ---------------- Build templates (2026-08-25) ----------------
- * Founder real-time, fragmented: "ok in redgarden lets experiment with the idea that tech trees
- * are just item templates" -> "choosing a build can let you auto buy at the shop" -> "or you can
- * make your own build obviously" -> "or do a custom build to buy your items" -> "or some
- * combination a build doesn't have to define all items" -> "and there can be complex ordering
- * rules" -> "all powered by parena scripting and parena mods" -> "not sure on the affordances
- * command based via the chat for now is fine."
- *
- * Reading: a build is a NAMED, ORDERED, POSSIBLY-PARTIAL list of items (it doesn't have to fill
- * all ARENA_ITEM_SLOT_COUNT slots) that the shop auto-buys from, in order, as Flow allows -- the
- * "complex ordering rules" this pass implements as the literal purchase-priority order baked
- * into each template (cheapest-affordable-first within a theme, so partial Flow still buys
- * something useful rather than stalling on one expensive first pick). "Or you can make your own
- * build obviously" reads as: item-by-item manual purchase (arena_shop_buy, already real, already
- * shipped) stays exactly as available as it always was -- a template is a shortcut on top of
- * that, not a replacement requiring a new build-EDITOR UI, which isn't attempted this pass.
- *
- * Affordance: apps/arena has no chat/command box at all (that's specific to GFD's own
- * apps2/battlegrounds_gui fork) -- the founder's own "not sure... chat... is fine for now" left
- * this genuinely open, so this instead extends the shop's EXISTING click-based page UI with one
- * more page listing build presets, matching the affordance the shop already trains players on
- * rather than inventing a second, unrelated input surface. Chat-based selection can still be
- * added later if GFD's own chat pattern gets ported upstream into apps/arena; not a dead end. */
-#define ARENA_BUILD_TEMPLATE_MAX_ITEMS 6 /* headroom above every preset below (4 items each); a template need not use them all -- item_count says how many are real */
-
-typedef struct {
-    const char *name;
-    const char *desc;
-    int item_ids[ARENA_BUILD_TEMPLATE_MAX_ITEMS]; /* PURCHASE ORDER -- the "complex ordering rules" -- cheapest-first within the theme */
-    int item_count;
-} ArenaBuildTemplate;
-
-extern const ArenaBuildTemplate ARENA_BUILD_TEMPLATES[];
-#define ARENA_BUILD_TEMPLATE_COUNT 3 /* Bruiser, Assassin, Caster -- a first, generic (any-hero) pass; per-hero curated builds are real, separate future scope, not attempted here */
-
-/* arena_hero_apply_build_template: buys as many of template_id's items as `owner` can currently
- * afford, IN ORDER, skipping any item already equipped in its own slot (idempotent re-click --
- * clicking the same build twice never re-buys what you already have) and STOPPING (not failing)
- * at the first item that's unaffordable right now -- so a partial Flow balance still buys real
- * progress toward the build instead of an all-or-nothing purchase, matching "a build doesn't
- * have to define all items" applying just as much to what a *player* can afford as to what the
- * template author chose to list. Same shop-proximity/alive/active gating as arena_shop_buy
- * (delegated to it directly -- every individual purchase in the sequence IS a real
- * arena_shop_buy call, not a parallel reimplementation). Each successful purchase routes through
- * the PARENA-compiled on_apply_build_template_item (the trigger, per "all powered by parena
- * scripting and parena mods"), which calls back into redgarden_host_buy_build_item -- same
- * "mod is the trigger, host C does the mutation" split bloodflower_mod.prn/tree_passive_mod.prn
- * both already established. Returns the number of items actually purchased this call (0 if the
- * template is fully owned already, out of range, or the hero can't afford/reach the shop at
- * all). */
-int arena_hero_apply_build_template(int owner, int template_id);
-
-/* redgarden_host_buy_build_item: the real host-side implementation the PARENA-compiled
- * on_apply_build_template_item calls back into (see build_template_mod_host.h). Thin wrapper
- * around arena_shop_buy -- exists as its own function (rather than calling arena_shop_buy
- * directly from the mod) only because the mod boundary needs a stable, minimal C ABI to cross,
- * same reasoning redgarden_host_spawn_bloodflower/redgarden_host_tree_passive_strike both already
- * establish. Returns 1 on a real purchase, 0 otherwise -- arena_hero_apply_build_template uses
- * this to know whether to keep advancing through the template or stop. */
-int redgarden_host_buy_build_item(int hero_index, int item_id);
+/* ---------------- Build templates (2026-08-25, REMOVED S371-02) ----------------
+ * Founder real-time, fragmented origin: "ok in redgarden lets experiment with the idea that tech
+ * trees are just item templates" -> ... -> "all powered by parena scripting and parena mods" --
+ * a named build a player could one-click auto-buy from at a shop (ArenaBuildTemplate,
+ * arena_hero_apply_build_template, redgarden_host_buy_build_item, the PARENA-compiled
+ * on_apply_build_template_item / build_template_mod.prn / build_template_mod_host.h, the shop
+ * UI's own build-presets page, PACKET_ARENA_APPLY_BUILD_TEMPLATE).
+ * Founder, real-time (2026-09-11), immediately after the S371-02 6-shop catalog-split redesign:
+ * "oh yea you can rip out templates" / "not needed in this version" -- removed outright rather
+ * than patched to fit the new shop design. It genuinely didn't fit anymore: a template assumed
+ * one shop sells everything on its list, which stopped being true the moment a single shop only
+ * stocks ~5-6 of the 34-item catalog (see ARENA_SHOP_COUNT's own doc comment) -- "buy this whole
+ * preset in one click" isn't a coherent affordance once the whole point is that no one shop has
+ * everything. Manual item-by-item purchase (arena_shop_buy) is unaffected and remains the only
+ * way to buy -- this removal has no other gameplay effect. */
 
 /* arena_use_blink (S170-205): activates Blink Dagger -- no-op (no cooldown spent) unless the
  * hero has ARENA_BLINK_DAGGER_ITEM_ID actually equipped, is alive, not stunned, and

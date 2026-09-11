@@ -6,7 +6,6 @@
 #include "../common/rl_policy_weights.h"
 #include "bloodflower_mod_host.h"
 #include "tree_passive_mod_host.h"
-#include "build_template_mod_host.h"
 #include "item_curriculum_mod_host.h"
 #include "duck_smoke_bomb_mod_host.h"
 #include "abraham_fireball_mod_host.h"
@@ -333,40 +332,10 @@ const ArenaItemDef *redgarden_host_item_curriculum_get(int slot_index) {
     return &ARENA_ITEM_CURRICULUM_SLOTS[slot_index];
 }
 
-/* ARENA_BUILD_TEMPLATES: see arena_game.h's own "Build templates" section doc comment for the
-   full founder-quote chain and design reasoning. A first, generic (any-hero) pass -- item
-   picks/ordering are a real judgment call, not founder-specified numbers, same "reasonable
-   defaults, document the choice" precedent ARENA_BLOODFLOWER_CLAIM_FLOW's own doc comment set.
-   Each template's item_ids are ordered CHEAPEST-FIRST within its theme (the "complex ordering
-   rules" the founder asked for, expressed as literal purchase priority) so a partial Flow
-   balance still lands real, useful progress instead of stalling on one expensive first pick.
-   One item per slot, verified by hand against ARENA_ITEMS' own indices above -- no two entries
-   in the same template share a slot. */
-const ArenaBuildTemplate ARENA_BUILD_TEMPLATES[ARENA_BUILD_TEMPLATE_COUNT] = {
-    {
-        "Bruiser", "Tanky, front-line -- armor and HP first, a heavy weapon last.",
-        { 22 /* Warwolf Belt: waist, 400, +80hp */,
-          20 /* Justice Badge: neck, 400, +14armor */,
-          15 /* Haubergeon: body, 450, +18armor */,
-          5  /* Ironbark Plate: weapon, 900, +10ad +150hp +20armor */ },
-        4
-    },
-    {
-        "Assassin", "AD and mobility -- hit hard, get there fast.",
-        { 21 /* Forager's Mantle: back, 350, +8ad +0.4spd */,
-          18 /* Creek F. Boots: feet, 400, +0.6spd */,
-          16 /* Battle Gloves: hands, 400, +12ad */,
-          8  /* Splinterfang: weapon, 900, +30ad */ },
-        4
-    },
-    {
-        "Caster", "MP and cooldown reduction -- an ability-spam playstyle.",
-        { 19 /* Astral Ring: ring, 350, +50mp */,
-          26 /* Haste Trinket: trinket, 900, +6% cdr */,
-          4  /* Wanecall Grimoire: weapon, 950, +25ad +60mp */ },
-        3
-    },
-};
+/* Build templates (2026-08-25) removed S371-02 -- see arena_game.h's own "Build templates"
+   section doc comment for the full founder-quote history and why. ARENA_BUILD_TEMPLATES,
+   arena_hero_apply_build_template, and redgarden_host_buy_build_item all lived here; gone
+   outright, not stubbed. */
 
 /* arena_creeps_reset (S170-51): shared init helper for both arena_init_*
  * entry points. memset already zeroes alive/respawn_ms_remaining to the
@@ -680,16 +649,15 @@ void arena_towers_reset(void) {
  * stay deterministic. */
 static unsigned int g_arena_match_seed = 0xA53Cu;
 
-void arena_set_match_seed(unsigned int seed) {
-    g_arena_match_seed = seed ? seed : 1u; /* xorshift32's all-zero state never advances */
-}
-
 /* arena_prng_next: xorshift32. Deliberately separate from libc rand()/srand() -- see
  * arena_set_match_seed's own doc comment. Not cryptographic, not this file's general gameplay
  * RNG (that's still plain rand() everywhere else) -- just enough quality for jungle placement.
  * Adjacent seeds (e.g. two matches spawned back-to-back off an incrementing seed source) produce
  * related early outputs with xorshift32, same as most small PRNGs -- arena_obstacles_reset_layout
- * burns a few values off the front of the stream before using it for exactly this reason. */
+ * burns a few values off the front of the stream before using it for exactly this reason.
+ * Moved above arena_set_match_seed (S371-01) so that function can call it directly to derive the
+ * fountain margin -- was originally defined just below it, back when nothing above it needed a
+ * PRNG yet. */
 static unsigned int arena_prng_next(unsigned int *state) {
     unsigned int x = *state;
     x ^= x << 13;
@@ -703,6 +671,29 @@ static unsigned int arena_prng_next(unsigned int *state) {
  * stream are the weakest; using the top 24 avoids leaning on those). */
 static float arena_prng_float01(unsigned int *state) {
     return (float)(arena_prng_next(state) >> 8) / (float)(1u << 24);
+}
+
+/* g_arena_fountain_margin (S371-01): see ARENA_FOUNTAIN_MARGIN_MIN/MAX's own doc comment in
+ * arena_game.h. Fixed default (matching the original hardcoded 8.0f literal exactly) so tests
+ * that never call arena_set_match_seed stay exactly as reproducible as before this pass. */
+static float g_arena_fountain_margin = ARENA_FOUNTAIN_MARGIN_MIN;
+
+void arena_set_match_seed(unsigned int seed) {
+    g_arena_match_seed = seed ? seed : 1u; /* xorshift32's all-zero state never advances */
+
+    /* S371-01: derive the per-match fountain margin from its own short-lived local PRNG stream,
+       seeded from (but not sharing state with) g_arena_match_seed -- a different burn-in count
+       than arena_obstacles_reset_layout's own jungle stream (8) and arena_shops_reset_layout's
+       own (below) so none of the three ever reads the same sequence of outputs off the same
+       seed. This runs here, at set-time, rather than lazily inside arena_fountain_position --
+       that function is called every tick from arena_tick_fountains, arena_jungle_spot_excluded,
+       the client's draw loop, etc., and must return the SAME answer all match long; computing it
+       once here means it only ever changes when a real new match seed arrives (matchmaker queue,
+       or a requeue), never mid-match. */
+    unsigned int fprng = g_arena_match_seed;
+    for (int burn = 0; burn < 3; burn++) arena_prng_next(&fprng);
+    float t = arena_prng_float01(&fprng);
+    g_arena_fountain_margin = ARENA_FOUNTAIN_MARGIN_MIN + t * (ARENA_FOUNTAIN_MARGIN_MAX - ARENA_FOUNTAIN_MARGIN_MIN);
 }
 
 /* arena_mandelbrot_escape: classic z = z^2 + c escape-time iteration count, capped at
@@ -721,15 +712,22 @@ static int arena_mandelbrot_escape(float cr, float ci, int max_iter) {
     return i;
 }
 
-/* arena_jungle_spot_excluded (S370-03): true if (x,z) is too close to a capture node, either
- * team's graveyard/spawn-fan, either team's shop, a jungle camp, a fountain, or any obstacle
- * already placed (hand-placed wall pieces included, via `placed_count` covering the full
- * [0,placed_count) prefix of arena_state.obstacles already written by the time this is called) --
- * the procedural jungle must never obstruct any of those, or crowd two obstacles close enough to
- * trap a hero between them, same clearance discipline the hand-placed layout's own doc comment
- * already applies to the lane walls. Clearance margins are generous on purpose: this only
- * shrinks the pool of candidate jungle spots on a map with a huge amount of open area to draw
- * from (ARENA_HALF_EXTENT ~155), never a tight budget. */
+/* arena_jungle_spot_excluded (S370-03, shop check removed S371-02): true if (x,z) is too close
+ * to a capture node, either team's graveyard/spawn-fan, a jungle camp, a fountain, or any
+ * obstacle already placed (hand-placed wall pieces included, via `placed_count` covering the
+ * full [0,placed_count) prefix of arena_state.obstacles already written by the time this is
+ * called) -- the procedural jungle must never obstruct any of those, or crowd two obstacles
+ * close enough to trap a hero between them, same clearance discipline the hand-placed layout's
+ * own doc comment already applies to the lane walls. Clearance margins are generous on purpose:
+ * this only shrinks the pool of candidate jungle spots on a map with a huge amount of open area
+ * to draw from (ARENA_HALF_EXTENT ~155), never a tight budget.
+ *
+ * S371-02: no longer excludes shop corners -- the shop redesign made shop count/position a
+ * per-match PRNG output computed by arena_shops_reset_layout, which this function's own caller
+ * (arena_obstacles_reset_layout) runs BEFORE, so no shop position exists yet to avoid at this
+ * point. The relationship flipped instead: arena_shops_reset_layout (which runs after this) is
+ * the one that excludes already-placed jungle obstacles, not the other way around -- see its own
+ * doc comment. */
 static int arena_jungle_spot_excluded(float x, float z, int placed_count) {
     for (int n = 0; n < ARENA_NODE_COUNT; n++) {
         float dx = x - arena_state.nodes[n].x, dz = z - arena_state.nodes[n].z;
@@ -741,12 +739,6 @@ static int arena_jungle_spot_excluded(float x, float z, int placed_count) {
         arena_graveyard_position(team, &gx, &gz);
         float dx = x - gx, dz = z - gz;
         if (dx * dx + dz * dz < 24.0f * 24.0f) return 1; /* clears the full ARENA_TEAM_SIZE-slot spawn fan-out */
-
-        float sx, sz;
-        arena_shop_position(team, &sx, &sz);
-        dx = x - sx; dz = z - sz;
-        float shop_clear = ARENA_SHOP_RADIUS + 4.0f;
-        if (dx * dx + dz * dz < shop_clear * shop_clear) return 1;
     }
     for (int f = 0; f < ARENA_FOUNTAIN_COUNT; f++) {
         float fx, fz;
@@ -1003,6 +995,7 @@ void arena_init_with_heroes(ArenaHeroID player_hero, ArenaHeroID bot_hero) {
     arena_nodes_reset_layout();
     arena_powerups_reset_layout(); /* S170-190 */
     arena_obstacles_reset_layout();
+    arena_shops_reset_layout(); /* S371-02: must run after arena_obstacles_reset_layout, see its own doc comment */
     arena_creeps_reset();
     /* Deliberately no arena_towers_reset() here -- towers (2026-07-30) are team-mode only, same
        scope lane creep waves already carry ("pushing toward the enemy spawn" isn't a meaningful
@@ -2316,23 +2309,27 @@ void arena_tick_nodes(unsigned int dt_ms) {
     }
 }
 
-/* arena_fountain_position (S170-147): see header doc comment. Diagonally opposite corners, well
- * clear of every jungle obstacle's own outer-edge dressing and always within the hero movement
- * clamp (ARENA_HALF_EXTENT), so a fountain is always reachable, never buried in terrain.
+/* arena_fountain_position (S170-147, margin proceduralized S371-01): see header doc comment.
+ * Diagonally opposite corners, well clear of every jungle obstacle's own outer-edge dressing and
+ * always within the hero movement clamp (ARENA_HALF_EXTENT), so a fountain is always reachable,
+ * never buried in terrain.
  *
  * S170-191 bugfix, found while re-checking everything against the new golden-ratio-scaled
  * ARENA_HALF_EXTENT: this used to be a hardcoded literal (-24,-24)/(24,24) that was ALREADY
  * stale even before this pass -- arena_graveyard_position's own comment flags it as "the
  * fountains' own now-stale literal 24 (their own 28-4)" from the S170-138 map widen (28->32)
- * that never got carried over here. Converted to a real formula (ARENA_HALF_EXTENT - 8.0f,
- * which reproduces the exact same 24.0 the old literal gave against the pre-S170-191 extent of
- * 32) so it can never drift out of sync with the map size again -- same "-4.0f margin" idiom
+ * that never got carried over here. Converted to a real formula (ARENA_HALF_EXTENT - margin) so
+ * it can never drift out of sync with the map size again -- same "-4.0f margin" idiom
  * arena_graveyard_position already uses, just a deliberately larger margin so fountains and
  * graveyards sit at two genuinely different rings, not stacked (graveyard_position's own
  * comment explains why: a respawning hero shouldn't land on top of the neutral, contested
- * fountain fight). */
+ * fountain fight).
+ *
+ * S371-01: `margin` is now g_arena_fountain_margin, a real per-match PRNG output (computed once
+ * by arena_set_match_seed, range [ARENA_FOUNTAIN_MARGIN_MIN, ARENA_FOUNTAIN_MARGIN_MAX]) instead
+ * of the fixed 8.0f literal -- see that constant's own doc comment in arena_game.h for why. */
 void arena_fountain_position(int index, float *x, float *z) {
-    float corner = ARENA_HALF_EXTENT - 8.0f;
+    float corner = ARENA_HALF_EXTENT - g_arena_fountain_margin;
     if (index < 0) index = 0;
     if (index >= ARENA_FOUNTAIN_COUNT) index = ARENA_FOUNTAIN_COUNT - 1;
     *x = (index == 0) ? -corner : corner;
@@ -2380,17 +2377,141 @@ void arena_graveyard_position(int team, float *x, float *z) {
     *z = (team == 0) ? corner : -corner;
 }
 
-/* arena_shop_position (S170-175): see header declaration's doc comment.
- * Offset a fixed distance from the team's own graveyard, along the same
- * diagonal that corner already sits on, so the shop reads as a second,
- * distinct structure in that corner rather than exactly overlapping the
- * graveyard's own point. */
-void arena_shop_position(int team, float *x, float *z) {
-    float gx, gz;
-    arena_graveyard_position(team, &gx, &gz);
-    float offset = (team == 0) ? -5.0f : 5.0f;
-    *x = gx + offset;
-    *z = gz - offset;
+/* arena_shop_spot_excluded (S371-02): true if (x,z) is too close to a capture node, either
+ * team's graveyard/spawn-fan, a fountain, a jungle camp, ANY obstacle (the full, already-final
+ * ARENA_OBSTACLE_COUNT -- shops are placed after arena_obstacles_reset_layout, so unlike
+ * arena_jungle_spot_excluded this always sees the complete, final jungle layout, not a growing
+ * prefix), or any of the `placed_shops` shops already placed this same pass (with
+ * ARENA_SHOP_MIN_SEPARATION, wider than every other clearance here -- six real, separate
+ * destinations is the actual point of this redesign, so shops need much more breathing room from
+ * EACH OTHER than from terrain). Deliberately its own function rather than a generalized
+ * arena_jungle_spot_excluded(..., shops) -- the two run at different points in the generation
+ * order against different obstacle-completeness states, and shops need the extra
+ * inter-shop-separation check jungle placement never did. */
+static int arena_shop_spot_excluded(float x, float z, int placed_shops) {
+    for (int n = 0; n < ARENA_NODE_COUNT; n++) {
+        float dx = x - arena_state.nodes[n].x, dz = z - arena_state.nodes[n].z;
+        float clear = ARENA_NODE_CAPTURE_RADIUS + 6.0f;
+        if (dx * dx + dz * dz < clear * clear) return 1;
+    }
+    for (int team = 0; team < 2; team++) {
+        float gx, gz;
+        arena_graveyard_position(team, &gx, &gz);
+        float dx = x - gx, dz = z - gz;
+        if (dx * dx + dz * dz < 24.0f * 24.0f) return 1;
+    }
+    for (int f = 0; f < ARENA_FOUNTAIN_COUNT; f++) {
+        float fx, fz;
+        arena_fountain_position(f, &fx, &fz);
+        float dx = x - fx, dz = z - fz;
+        float clear = ARENA_FOUNTAIN_RADIUS + 6.0f; /* a shop is a real destination in its own right, wants more breathing room from a fountain than a plain tree does */
+        if (dx * dx + dz * dz < clear * clear) return 1;
+    }
+    for (int c = 0; c < ARENA_CAMP_COUNT; c++) {
+        float cx, cz;
+        arena_camp_position(c, &cx, &cz);
+        float dx = x - cx, dz = z - cz;
+        if (dx * dx + dz * dz < 14.0f * 14.0f) return 1;
+    }
+    for (int i = 0; i < ARENA_OBSTACLE_COUNT; i++) {
+        float dx = x - arena_state.obstacles[i].x, dz = z - arena_state.obstacles[i].z;
+        float min_gap = arena_state.obstacles[i].radius + 5.0f; /* wider than jungle-vs-jungle clearance -- a shop structure reads bigger than a tree/rock */
+        if (dx * dx + dz * dz < min_gap * min_gap) return 1;
+    }
+    for (int s = 0; s < placed_shops; s++) {
+        float dx = x - arena_state.shops[s].x, dz = z - arena_state.shops[s].z;
+        if (dx * dx + dz * dz < ARENA_SHOP_MIN_SEPARATION * ARENA_SHOP_MIN_SEPARATION) return 1;
+    }
+    return 0;
+}
+
+/* arena_shops_reset_layout (S371-02): see header declaration's own doc comment. MUST run after
+ * arena_obstacles_reset_layout (see arena_shop_spot_excluded's own doc comment on why). Uses its
+ * own local PRNG stream off g_arena_match_seed, decorrelated from the jungle's (8-value burn-in)
+ * and the fountain margin's (3-value burn-in) by using a distinct 5-value burn-in -- same
+ * "different burn count per consumer" discipline arena_set_match_seed's own doc comment
+ * establishes. */
+void arena_shops_reset_layout(void) {
+    unsigned int prng_state = g_arena_match_seed;
+    for (int burn = 0; burn < 5; burn++) arena_prng_next(&prng_state);
+
+    /* ---- Placement: one shop per 60-degree sector around the map center, rejection-sampled
+       within that sector so six shops spread across real, distinct ground instead of clustering
+       wherever pure uniform rejection sampling happens to succeed first. ---- */
+    const float sector_span = 6.2831853f / (float)ARENA_SHOP_COUNT;
+    const float min_radius = (ARENA_HALF_EXTENT - 6.0f) * 0.30f;
+    const float max_radius = (ARENA_HALF_EXTENT - 6.0f) * 0.82f; /* stays inside the fountain/graveyard corner ring, same "well clear of the true boundary" idiom every other layout function here uses */
+    const int max_attempts_per_shop = 200; /* generous -- one sector's own slice of a ~930-unit-diameter map has plenty of room even after excluding every other structure */
+
+    for (int s = 0; s < ARENA_SHOP_COUNT; s++) {
+        float sector_center = (float)s * sector_span + arena_prng_float01(&prng_state) * 0.1f; /* slight per-match rotation of the whole 6-sector wheel, so shop 0 isn't always due to look identical match to match */
+        float best_x = 0.0f, best_z = 0.0f;
+        int found = 0;
+        for (int attempt = 0; attempt < max_attempts_per_shop && !found; attempt++) {
+            float angle = sector_center + (arena_prng_float01(&prng_state) - 0.5f) * sector_span * 0.9f; /* stays inside this shop's own sector, small margin so it never bleeds into the neighbor's */
+            float radius = min_radius + arena_prng_float01(&prng_state) * (max_radius - min_radius);
+            float x = cosf(angle) * radius;
+            float z = sinf(angle) * radius;
+            if (arena_shop_spot_excluded(x, z, s)) continue;
+            best_x = x; best_z = z; found = 1;
+        }
+        if (!found) {
+            /* Fallback (not observed against this map's real size/exclusion budget, same
+               "a fixed-size array needs a defined fallback" reasoning
+               arena_obstacles_reset_layout's own doc comment already gives): the sector's own
+               center point at the midpoint radius -- not guaranteed exclusion-free, but always a
+               real, in-bounds, roughly-correctly-spread position rather than leaving this shop
+               at (0,0) on top of Blacksmith. */
+            float radius = (min_radius + max_radius) * 0.5f;
+            best_x = cosf(sector_center) * radius;
+            best_z = sinf(sector_center) * radius;
+        }
+        arena_state.shops[s].x = best_x;
+        arena_state.shops[s].z = best_z;
+    }
+
+    /* ---- Catalog split: seeded Fisher-Yates shuffle of every item id, then round-robin across
+       the 6 shops -- every item sold at exactly one shop, every shop gets ARENA_ITEM_COUNT /
+       ARENA_SHOP_COUNT items (5 or 6, 34 doesn't divide evenly by 6). ---- */
+    int shuffled[ARENA_ITEM_COUNT];
+    for (int i = 0; i < ARENA_ITEM_COUNT; i++) shuffled[i] = i;
+    for (int i = ARENA_ITEM_COUNT - 1; i > 0; i--) {
+        int j = (int)(arena_prng_next(&prng_state) % (unsigned int)(i + 1));
+        int tmp = shuffled[i]; shuffled[i] = shuffled[j]; shuffled[j] = tmp;
+    }
+    for (int s = 0; s < ARENA_SHOP_COUNT; s++) arena_state.shops[s].item_mask = 0ull;
+    for (int i = 0; i < ARENA_ITEM_COUNT; i++) {
+        int shop_idx = i % ARENA_SHOP_COUNT;
+        arena_state.shops[shop_idx].item_mask |= (1ull << shuffled[i]);
+    }
+}
+
+/* arena_shop_has_item (S371-02): see header declaration's own doc comment. */
+int arena_shop_has_item(int shop_index, int item_id) {
+    if (shop_index < 0 || shop_index >= ARENA_SHOP_COUNT) return 0;
+    if (item_id < 0 || item_id >= ARENA_ITEM_COUNT) return 0;
+    return (arena_state.shops[shop_index].item_mask & (1ull << item_id)) != 0ull;
+}
+
+/* arena_find_shop_in_range (S371-02): see header declaration's own doc comment. */
+int arena_find_shop_in_range(float x, float z) {
+    for (int s = 0; s < ARENA_SHOP_COUNT; s++) {
+        float dx = x - arena_state.shops[s].x, dz = z - arena_state.shops[s].z;
+        if (dx * dx + dz * dz <= ARENA_SHOP_RADIUS * ARENA_SHOP_RADIUS) return s;
+    }
+    return -1;
+}
+
+/* arena_shop_position (S170-175, redesigned S371-02): see header declaration's doc comment --
+ * `index` is now a plain shop index, read directly out of arena_state.shops (populated once per
+ * match by arena_shops_reset_layout) rather than a per-team formula. Clamped the same
+ * fail-closed way arena_fountain_position's own index clamp does, so an out-of-range index reads
+ * as the last real shop rather than undefined array access. */
+void arena_shop_position(int index, float *x, float *z) {
+    if (index < 0) index = 0;
+    if (index >= ARENA_SHOP_COUNT) index = ARENA_SHOP_COUNT - 1;
+    *x = arena_state.shops[index].x;
+    *z = arena_state.shops[index].z;
 }
 
 /* arena_recompute_item_stats (S170-175): see header declaration's doc
@@ -2435,17 +2556,16 @@ void arena_recompute_item_stats(ArenaHero *h) {
     h->item_bonus_attack_range_pct = bonus_range_pct; /* S202-34, Kite String */
 }
 
-/* arena_shop_buy (S170-175): see header declaration's doc comment. */
+/* arena_shop_buy (S170-175, redesigned S371-02): see header declaration's doc comment. */
 int arena_shop_buy(int owner, int item_id) {
     if (owner < 0 || owner >= ARENA_MAX_HEROES) return 0;
     if (item_id < 0 || item_id >= ARENA_ITEM_COUNT) return 0;
     ArenaHero *h = &arena_state.heroes[owner];
     if (!h->active || !h->alive) return 0;
 
-    float shop_x, shop_z;
-    arena_shop_position(h->team, &shop_x, &shop_z);
-    float dx = h->x - shop_x, dz = h->z - shop_z;
-    if (sqrtf(dx * dx + dz * dz) > ARENA_SHOP_RADIUS) return 0;
+    int shop_idx = arena_find_shop_in_range(h->x, h->z);
+    if (shop_idx < 0) return 0; /* not standing at any of the 6 neutral shops */
+    if (!arena_shop_has_item(shop_idx, item_id)) return 0; /* the real, new "strategy and luck" gate -- this shop just doesn't carry it this match */
 
     const ArenaItemDef *def = &ARENA_ITEMS[item_id];
     int cost = def->cost;
@@ -2467,17 +2587,14 @@ int arena_shop_buy(int owner, int item_id) {
     return 1;
 }
 
-/* arena_shop_sell (S170-175): see header declaration's doc comment. */
+/* arena_shop_sell (S170-175, redesigned S371-02): see header declaration's doc comment. */
 int arena_shop_sell(int owner, ArenaItemSlot slot) {
     if (owner < 0 || owner >= ARENA_MAX_HEROES) return 0;
     if (slot < 0 || slot >= ARENA_ITEM_SLOT_COUNT) return 0;
     ArenaHero *h = &arena_state.heroes[owner];
     if (!h->active || !h->alive) return 0;
 
-    float shop_x, shop_z;
-    arena_shop_position(h->team, &shop_x, &shop_z);
-    float dx = h->x - shop_x, dz = h->z - shop_z;
-    if (sqrtf(dx * dx + dz * dz) > ARENA_SHOP_RADIUS) return 0;
+    if (arena_find_shop_in_range(h->x, h->z) < 0) return 0; /* any of the 6 neutral shops, no catalog check for selling */
 
     int item_id = h->equipped_item[slot];
     if (item_id < 0 || item_id >= ARENA_ITEM_COUNT) return 0; /* nothing there to sell */
@@ -2488,34 +2605,9 @@ int arena_shop_sell(int owner, ArenaItemSlot slot) {
     return 1;
 }
 
-/* redgarden_host_buy_build_item: see header declaration's own doc comment. Thin wrapper --
-   arena_shop_buy already does everything (proximity, affordability, auto-sell-on-occupied-slot,
-   stat recompute), this exists purely so the PARENA mod boundary has a stable name to call. */
-int redgarden_host_buy_build_item(int hero_index, int item_id) {
-    return arena_shop_buy(hero_index, item_id);
-}
-
-/* arena_hero_apply_build_template: see header declaration's own doc comment. */
-int arena_hero_apply_build_template(int owner, int template_id) {
-    if (owner < 0 || owner >= ARENA_MAX_HEROES) return 0;
-    if (template_id < 0 || template_id >= ARENA_BUILD_TEMPLATE_COUNT) return 0;
-    ArenaHero *h = &arena_state.heroes[owner];
-    if (!h->active || !h->alive) return 0;
-
-    const ArenaBuildTemplate *tmpl = &ARENA_BUILD_TEMPLATES[template_id];
-    int bought = 0;
-    for (int i = 0; i < tmpl->item_count; i++) {
-        int item_id = tmpl->item_ids[i];
-        if (item_id < 0 || item_id >= ARENA_ITEM_COUNT) continue;
-        /* Idempotent re-click: skip an item this hero already has equipped in that slot rather
-           than re-buying it (which arena_shop_buy would otherwise happily do, auto-selling and
-           re-buying the identical item for a net loss via the sell-refund gap). */
-        if (h->equipped_item[ARENA_ITEMS[item_id].slot] == item_id) continue;
-        if (!on_apply_build_template_item(owner, item_id)) break; /* first unaffordable item stops the sequence -- partial progress, not all-or-nothing */
-        bought++;
-    }
-    return bought;
-}
+/* redgarden_host_buy_build_item / arena_hero_apply_build_template: removed S371-02, founder:
+   "oh yea you can rip out templates" / "not needed in this version" -- see arena_game.h's own
+   "Build templates" section doc comment. */
 
 /* arena_use_blink (S170-205): see header declaration's doc comment. Direction-derivation
  * (move target, else nearest foe, else no-op) is deliberately the exact same fallback chain
@@ -7402,6 +7494,7 @@ void arena_init_teams(void) {
     arena_nodes_reset_layout();
     arena_powerups_reset_layout(); /* S170-190 */
     arena_obstacles_reset_layout();
+    arena_shops_reset_layout(); /* S371-02: must run after arena_obstacles_reset_layout, see its own doc comment */
     arena_creeps_reset();
     /* Deliberately no arena_towers_reset() here -- this shared sim-level function is also called
        directly by ~300 existing unit tests that place heroes at convenient coordinates never

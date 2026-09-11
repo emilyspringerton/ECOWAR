@@ -4817,12 +4817,31 @@ static void test_tyler_w_teleports_the_whole_clone_army(void) {
  * Seedling Charm (WEAPON, 300 Flow, +8 AD/+40 HP), 16 is Battle Gloves
  * (HANDS, 400 Flow, +12 AD), matching arena_game.c's own catalog. */
 
+/* position_hero_at_shop_with_item (S371-02): shops are now neutral, each stocking only a real
+ * subset of the catalog (per-match seeded split, see ARENA_SHOP_COUNT's own doc comment) -- the
+ * old "team 0's shop always sells everything" formula this whole test block was written against
+ * is gone. Walks the hero to whichever real shop this match's (fixed default test) seed actually
+ * put item_id at, so every test below still exercises the exact same arena_shop_buy/sell
+ * mechanics it always did. */
+static void position_hero_at_shop_with_item(int owner, int item_id) {
+    for (int s = 0; s < ARENA_SHOP_COUNT; s++) {
+        if (arena_shop_has_item(s, item_id)) {
+            float sx, sz;
+            arena_shop_position(s, &sx, &sz);
+            arena_state.heroes[owner].x = sx;
+            arena_state.heroes[owner].z = sz;
+            return;
+        }
+    }
+    /* Not observed (34 items always land somewhere across ARENA_SHOP_COUNT shops) -- leave the
+       hero wherever it already was so the calling test's own CHECK fails loudly instead of this
+       silently mis-positioning it. */
+}
+
 static void test_shop_buy_deducts_flow_and_equips_item(void) {
     arena_init_teams();
     arena_state.heroes[0].team = 0;
-    float sx, sz;
-    arena_shop_position(0, &sx, &sz);
-    arena_state.heroes[0].x = sx; arena_state.heroes[0].z = sz;
+    position_hero_at_shop_with_item(0, 0);
     arena_state.heroes[0].flow = 1000;
 
     int ok = arena_shop_buy(0, 0); /* Seedling Charm */
@@ -4848,9 +4867,7 @@ static void test_shop_buy_fails_outside_shop_radius(void) {
 static void test_shop_buy_fails_insufficient_flow(void) {
     arena_init_teams();
     arena_state.heroes[0].team = 0;
-    float sx, sz;
-    arena_shop_position(0, &sx, &sz);
-    arena_state.heroes[0].x = sx; arena_state.heroes[0].z = sz;
+    position_hero_at_shop_with_item(0, 0);
     arena_state.heroes[0].flow = 10; /* nowhere near ARENA_ITEMS[0]'s cost */
 
     int ok = arena_shop_buy(0, 0);
@@ -4862,13 +4879,12 @@ static void test_shop_buy_fails_insufficient_flow(void) {
 static void test_shop_buy_auto_sells_occupied_slot(void) {
     arena_init_teams();
     arena_state.heroes[0].team = 0;
-    float sx, sz;
-    arena_shop_position(0, &sx, &sz);
-    arena_state.heroes[0].x = sx; arena_state.heroes[0].z = sz;
+    position_hero_at_shop_with_item(0, 0);
     arena_state.heroes[0].flow = 5000;
     arena_shop_buy(0, 0);   /* Seedling Charm into WEAPON */
     int flow_after_first_buy = arena_state.heroes[0].flow;
 
+    position_hero_at_shop_with_item(0, 1); /* S371-02: item 1 isn't guaranteed to be at the SAME shop as item 0 anymore */
     int ok = arena_shop_buy(0, 1); /* Bramble Fang, also WEAPON -- should replace, not stack */
 
     CHECK(ok, "buying into an already-occupied slot succeeds");
@@ -4881,9 +4897,7 @@ static void test_shop_buy_auto_sells_occupied_slot(void) {
 static void test_shop_sell_refunds_partial_flow_and_clears_slot(void) {
     arena_init_teams();
     arena_state.heroes[0].team = 0;
-    float sx, sz;
-    arena_shop_position(0, &sx, &sz);
-    arena_state.heroes[0].x = sx; arena_state.heroes[0].z = sz;
+    position_hero_at_shop_with_item(0, 0);
     arena_state.heroes[0].flow = 1000;
     arena_shop_buy(0, 0);
     int flow_after_buy = arena_state.heroes[0].flow;
@@ -5701,14 +5715,17 @@ static void test_item_stats_apply_to_hp_mp_armor_ad_speed(void) {
     arena_init_teams();
     arena_state.heroes[0].team = 0;
     arena_state.heroes[0].hero_id = ARENA_HERO_GHOST; /* no hero-specific armor passive to muddy the item-only comparison */
-    float sx, sz;
-    arena_shop_position(0, &sx, &sz);
-    arena_state.heroes[0].x = sx; arena_state.heroes[0].z = sz;
     arena_state.heroes[0].flow = 5000;
     int base_max_hp = arena_state.heroes[0].max_hp;
 
+    /* S371-02: three different items, not necessarily all at the same one of the 6 neutral
+       shops anymore -- reposition before each buy, same "ask the real accessor" fix every other
+       shop test in this file got. */
+    position_hero_at_shop_with_item(0, 0);
     arena_shop_buy(0, 0);  /* Seedling Charm: WEAPON, +8 AD, +40 HP */
+    position_hero_at_shop_with_item(0, 15);
     arena_shop_buy(0, 15); /* Haubergeon: BODY, +18 Armor */
+    position_hero_at_shop_with_item(0, 18);
     arena_shop_buy(0, 18); /* Creek F. Boots: FEET, +0.6 move speed */
 
     CHECK(arena_state.heroes[0].max_hp == base_max_hp + ARENA_ITEMS[0].bonus_max_hp,
@@ -5976,8 +5993,15 @@ static void test_ability_kill_grants_no_flow(void) {
 static void test_flow_earned_does_not_decrease_on_purchase(void) {
     arena_init_teams();
     arena_state.heroes[0].team = 0;
+    /* S371-02: shops are now neutral and each stocks only a real subset of the catalog (per-match
+       seeded split) -- item 0 isn't guaranteed to be at shop index 0 anymore, so find whichever
+       shop this match's seed actually put it at, same "ask the real accessor, don't assume"
+       discipline arena_shop_has_item exists for. */
+    int shop_idx = -1;
+    for (int s = 0; s < ARENA_SHOP_COUNT; s++) if (arena_shop_has_item(s, 0)) { shop_idx = s; break; }
+    CHECK(shop_idx >= 0, "sanity: item 0 is stocked at SOME shop this match (34 items across 6 shops, always true)");
     float sx, sz;
-    arena_shop_position(0, &sx, &sz);
+    arena_shop_position(shop_idx, &sx, &sz);
     arena_state.heroes[0].x = sx; arena_state.heroes[0].z = sz;
     arena_state.heroes[0].flow = 1000;
     arena_state.heroes[0].flow_earned = 1000;
@@ -5995,8 +6019,13 @@ static void test_respawn_preserves_economy_and_equipped_items(void) {
     arena_state.heroes[0].xp = 321;
     arena_state.heroes[0].kills = 3;
     arena_state.heroes[0].deaths = 1;
+    /* S371-02: see test_flow_earned_does_not_decrease_on_purchase's own comment -- shop 0 no
+       longer necessarily stocks item 0. */
+    int shop_idx = -1;
+    for (int s = 0; s < ARENA_SHOP_COUNT; s++) if (arena_shop_has_item(s, 0)) { shop_idx = s; break; }
+    CHECK(shop_idx >= 0, "sanity: item 0 is stocked at SOME shop this match");
     float sx, sz;
-    arena_shop_position(0, &sx, &sz);
+    arena_shop_position(shop_idx, &sx, &sz);
     arena_state.heroes[0].x = sx; arena_state.heroes[0].z = sz;
     arena_shop_buy(0, 0);
     int flow_before_death = arena_state.heroes[0].flow;

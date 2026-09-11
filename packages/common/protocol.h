@@ -27,7 +27,12 @@
 #define PACKET_ARENA_ATTACK_MOVE 16 /* client -> arena_server: real LoL/WC3 "A + click", NORTHSTAR.md §17.4 + §24 Milestone 2 (2026-07-31) -- see ArenaAttackMoveCmd's own doc comment */
 #define PACKET_ARENA_HOLD 17 /* client -> arena_server: real WC3 "Hold Position", NORTHSTAR.md §24 Milestone 2 (2026-07-31) -- see ArenaHoldCmd's own doc comment */
 #define PACKET_ARENA_PATROL 18 /* client -> arena_server: real WC3 "Patrol", NORTHSTAR.md §24 Milestone 2 (2026-07-31) -- see ArenaPatrolCmd's own doc comment */
-#define PACKET_ARENA_APPLY_BUILD_TEMPLATE 19 /* client -> arena_server: auto-buy a named build template's items in order, 2026-08-25 -- see ArenaApplyBuildTemplateCmd's own doc comment */
+#define PACKET_ARENA_APPLY_BUILD_TEMPLATE 19 /* RETIRED S371-02 (build templates removed --
+    founder: "oh yea you can rip out templates" / "not needed in this version"; see
+    packages/simulation/arena_game.h's own "Build templates" section doc comment). Number kept
+    reserved, not reused, in case any not-yet-rebuilt binary is still sending it -- same "never
+    silently repurpose a wire id" discipline this codebase already follows for real, currently-
+    used ids below. */
 #define PACKET_ARENA_CARD_PLAY 20 /* client -> arena_server: play one of the 16 real ECOWAR cards
     on the currently-hovered hero, 2026-08-27 (Phase 2 of ECOWAR-MAPEDIT-NORTH: "arena apis
     first... build ecowar ontop of them" -> the confirmed "cards exist, zero real in-match
@@ -42,6 +47,22 @@
     procedurally-generated jungle would have pushed obstacle_hp[] back into ArenaSnapshotMsg's
     own MTU budget instead of opening new headroom for it. See ArenaSnapshotObstaclesMsg's own
     doc comment. */
+#define PACKET_ARENA_SNAPSHOT_LAYOUT 22 /* arena_server -> client: the real per-match-RANDOM
+    subset of the map layout -- both fountains' positions (S371-01, margin now a PRNG output)
+    and all ARENA_SHOP_COUNT shops' positions + item catalogs (S371-02, brand new this pass).
+    Every OTHER layout piece this engine has (nodes, jungle obstacles, camps, powerups) is either
+    a fixed formula or deterministically reproducible client-side from the match seed alone
+    (arena_obstacles_reset_layout's own doc comment names this "no wire sync needed" precedent) --
+    apps/arena (the real human client) still recomputes fountains/shops exactly that way, since it
+    links packages/simulation/arena_game.c directly and gets the same seed. This packet exists for
+    apps/arena_bot specifically: a genuinely separate, lightweight binary that deliberately does
+    NOT link arena_game.c (see its own historical "kept in sync by hand" comments, which is
+    exactly the class of bug -- a hand-duplicated formula silently drifting stale after a later
+    map-scale change -- found and fixed alongside this same pass) and, before this, never even
+    captured MatchFoundMsg's own seed field. Sent every broadcast tick, same "cheap enough to just
+    resend, simpler than a one-time-send-plus-reconnect-replay path" reasoning
+    ArenaSnapshotObstaclesMsg already established, even though the content itself never changes
+    once a match starts -- see ArenaSnapshotLayoutMsg's own doc comment. */
 
 #define ARENA_PHASE_WAITING 0 /* fewer than 2 real players connected yet */
 #define ARENA_PHASE_DRAFT   1 /* both connected, waiting on hero picks */
@@ -257,14 +278,8 @@ typedef struct {
     uint8_t slot;
 } ArenaShopSellCmd;
 
-// PACKET_ARENA_APPLY_BUILD_TEMPLATE payload (2026-08-25, build templates): which preset
-// (index into packages/simulation/arena_game.c's ARENA_BUILD_TEMPLATES catalog) to auto-buy
-// from. Server validates shop-proximity + Flow per item, same trust model as
-// PACKET_ARENA_SHOP_BUY -- this is just that same real purchase path called in a loop
-// (arena_hero_apply_build_template), not a separate mechanism.
-typedef struct {
-    uint8_t template_id;
-} ArenaApplyBuildTemplateCmd;
+// ArenaApplyBuildTemplateCmd (2026-08-25, build templates) removed S371-02 -- see
+// PACKET_ARENA_APPLY_BUILD_TEMPLATE's own doc comment above.
 
 // ARENA_SNAPSHOT_ITEM_SLOT_COUNT must match packages/simulation/arena_game.h's
 // ARENA_ITEM_SLOT_COUNT (S170-175), same duplication reasoning as every
@@ -713,20 +728,45 @@ typedef struct {
     uint16_t obstacle_hp[ARENA_SNAPSHOT_OBSTACLE_COUNT];
 } ArenaSnapshotObstaclesMsg;
 
+// ARENA_SNAPSHOT_SHOP_COUNT must match packages/simulation/arena_game.h's ARENA_SHOP_COUNT, same
+// duplication reasoning as ARENA_SNAPSHOT_OBSTACLE_COUNT/ARENA_SNAPSHOT_NODE_COUNT/etc above --
+// protocol.h stays free of any packages/simulation include so the network layer never depends on
+// the simulation layer's own headers.
+#define ARENA_SNAPSHOT_SHOP_COUNT 6
+
+// PACKET_ARENA_SNAPSHOT_LAYOUT payload (S371-01/02, 2026-09-11) -- see that packet id's own doc
+// comment for the full "why this exists" story. fountain_x/z[2] and shop_x/z[ARENA_SNAPSHOT_
+// SHOP_COUNT] are always fully populated (both are always-real, never-sparse per-match layout,
+// same "fixed-size, always meaningful" convention as ArenaSnapshotObstaclesMsg's own obstacle_hp[]).
+// shop_item_mask[i] mirrors ArenaShop.item_mask bit-for-bit (packages/simulation/arena_game.h) --
+// bit `n` set means that shop currently stocks ARENA_ITEMS[n]; a uint64_t comfortably covers
+// ARENA_ITEM_COUNT (34) with room for the catalog to keep growing.
+typedef struct {
+    float fountain_x[2];
+    float fountain_z[2];
+    float shop_x[ARENA_SNAPSHOT_SHOP_COUNT];
+    float shop_z[ARENA_SNAPSHOT_SHOP_COUNT];
+    uint64_t shop_item_mask[ARENA_SNAPSHOT_SHOP_COUNT];
+} ArenaSnapshotLayoutMsg;
+
 // Shared receive-buffer sizing for every PACKET_ARENA_SNAPSHOT*-handling
 // socket in this codebase (apps/arena_server's send side doesn't need this,
 // but every recvfrom call sizing a fixed rbuf does) -- one source of truth
 // for "big enough for any snapshot packet type," same "size dynamically,
 // never a magic-number guess" discipline S170-192's own critical fixed-
-// buffer bug established. Whichever of the three message types is currently
-// largest wins; all three are comfortably under a real MTU today (this
+// buffer bug established. Whichever of the four message types is currently
+// largest wins; all four are comfortably under a real MTU today (this
 // whole section exists because the OLD single combined message wasn't),
 // but if a future field addition ever pushes one of them back over that
 // line, this is the one place that needs the resulting redesign, not four
 // independently-drifting call sites.
+// PROTOCOL_MAX2 (S371-02): a plain two-way max, so the four-way chain below stays readable
+// instead of a wall of nested ternaries -- ArenaSnapshotLayoutMsg (S371-01/02) is the newest of
+// the four and, at ~112 bytes, comfortably the smallest, but this still resolves it generically
+// rather than assuming that stays true forever.
+#define PROTOCOL_MAX2(a, b) ((a) > (b) ? (a) : (b))
 #define ARENA_SNAPSHOT_RECV_BUF_SIZE (sizeof(NetHeader) + \
-    (sizeof(ArenaSnapshotMsg) > sizeof(ArenaSnapshotHeroesMsg) ? \
-        (sizeof(ArenaSnapshotMsg) > sizeof(ArenaSnapshotObstaclesMsg) ? sizeof(ArenaSnapshotMsg) : sizeof(ArenaSnapshotObstaclesMsg)) : \
-        (sizeof(ArenaSnapshotHeroesMsg) > sizeof(ArenaSnapshotObstaclesMsg) ? sizeof(ArenaSnapshotHeroesMsg) : sizeof(ArenaSnapshotObstaclesMsg))))
+    PROTOCOL_MAX2(PROTOCOL_MAX2(sizeof(ArenaSnapshotMsg), sizeof(ArenaSnapshotHeroesMsg)), \
+        PROTOCOL_MAX2(sizeof(ArenaSnapshotObstaclesMsg), sizeof(ArenaSnapshotLayoutMsg))))
 
 #endif

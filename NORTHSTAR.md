@@ -1653,6 +1653,21 @@ not just the killing blow, S170-187) all live. Full sprint history: `EMILY/BACKL
 different shape than originally specced below** -- see §19.5's own update note for exactly what
 shipped versus what this section originally proposed.
 
+**ECOWAR divergence (2026-09-11, S371-01/02):** the "real two-shop item system" line above is
+REDGARDEN's own still-accurate status -- REDGARDEN is untouched. ECOWAR itself has since
+diverged: fountains now sit at a real per-match PRNG-jittered position (part of "the procedural
+generation of the map," not a fixed literal) and, more fundamentally, the shop system was
+redesigned outright -- ARENA_SHOP_COUNT (6) fully neutral, procedurally placed shops, each
+stocking only a real per-match-seeded SUBSET of the full item catalog, not the old "2 shops, one
+per team, everything for sale at both" shape. Founder: "spawn like 6 shops on the map and divide
+the items on the pages between them... the items will be randomized across the shops in the world
+so building towards a specifc kit with items is about strategy and luck." The build-template
+system (below this section, "choosing a build can let you auto buy at the shop") was removed
+outright in the same pass -- founder: "oh yea you can rip out templates" / "not needed in this
+version" -- it assumed one shop sold everything, which stopped being true. See
+`packages/simulation/arena_game.h`'s own `ARENA_SHOP_COUNT`/`ARENA_FOUNTAIN_MARGIN_MIN` doc
+comments and `EMILY/BACKLOG.md` S371 for the full design and rationale.
+
 Founder, real-time: **"continue the backlog for redgarden."** Picks up the earlier sprint plan's
 own items 4 and 5, both explicitly flagged as needing "a real design pass of its own before any
 single feature... gets built against a placeholder" -- named separately there but designed together

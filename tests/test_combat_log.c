@@ -77,11 +77,19 @@ static void test_item_purchase_logs_real_buyer_item_and_cost(void) {
     h->active = 1;
     h->alive = 1;
     h->flow = 999999; /* affordability never blocks this test */
-    float shop_x, shop_z;
-    arena_shop_position(h->team, &shop_x, &shop_z);
-    h->x = shop_x; h->z = shop_z; /* real proximity check must actually pass */
 
     int item_id = 0;
+    /* S371-02: shops are now neutral and each stocks only a real subset of the catalog (per-match
+       seeded split) -- item 0 isn't guaranteed to be at "h->team's shop" anymore (that whole
+       per-team formula is gone). Find whichever of the 6 real shops this match's seed actually
+       put it at. */
+    int shop_idx = -1;
+    for (int s = 0; s < ARENA_SHOP_COUNT; s++) if (arena_shop_has_item(s, item_id)) { shop_idx = s; break; }
+    CHECK(shop_idx >= 0, "sanity: item 0 is stocked at SOME shop this match");
+    float shop_x, shop_z;
+    arena_shop_position(shop_idx, &shop_x, &shop_z);
+    h->x = shop_x; h->z = shop_z; /* real proximity check must actually pass */
+
     int expected_cost = ARENA_ITEMS[item_id].cost;
     int ok = arena_shop_buy(0, item_id);
 
