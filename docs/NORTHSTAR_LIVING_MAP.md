@@ -246,6 +246,35 @@ code path (WASD move, Q/W/R key cast) is completely untouched and still the only
 any real match today — "bring back classic RTS/MOBA hero affordances" requires deleting nothing,
 just never flipping the flag.
 
+## Cows (real, built)
+
+Founder, terse: "add cows." No further detail given — interpreted in context (a real, well-known
+RTS-map convention: harmless neutral critters that give a map real, visible "life" without being a
+gameplay threat, same spirit `packages/livingmap`'s own name already commits to) as: passive,
+wandering, neutral wildlife on the hex grid.
+
+- `creep_spawn_cow` (`creep.h/.c`) spawns a real cow: low HP (`LIVING_MAP_COW_HP`), neutral faction
+  (`LIVING_MAP_COW_FACTION_OWNER` = 0), and a new `LivingMapCreep.passive` flag.
+- A passive creep's own `IDLE` tick wanders instead of aggro-scanning (`creep_tick_wander`) — a
+  plain, deterministic step pattern (no PRNG needed for a purely cosmetic wander), bounded to
+  `LIVING_MAP_COW_WANDER_RADIUS` hexes from home, same "measured from home" convention the real
+  leash range already uses.
+- A cow never fights back and never initiates aggro — but it isn't immune to being targeted: its
+  faction_owner (0) is a real, ordinary value like any other, so a real faction creep's own
+  existing aggro scan can still find and kill one. This falls out of the existing aggro rule for
+  free, no special-casing needed — real emergent behavior (a hostile creep can incidentally farm a
+  cow), not a bug.
+- New `LIVING_MAP_EVENT_CREEP_WANDERED` event, fired only on a tick that actually moves the cow —
+  keeping faith with "everything that happens needs to announce events" for this too, not quietly
+  skipping it because it's minor.
+- 21 new tests (`tests/test_cow.c`), including a determinism check (two cows given the identical
+  tick sequence wander to the identical position) and a real kill-a-cow round trip. Full Living Map
+  suite green (132 assertions).
+
+Not decided or built: no death reward/loot, no visual/asset direction, no relationship yet to
+Jungle Enclave's own still-unbuilt "spawns hunters" (a real, later, open question — are hunters and
+cows the same creep-spawning surface, or separate concepts?).
+
 ## Mod event model, honestly
 
 The founder's ask — "everything that happens in the game needs to announce events and then mods

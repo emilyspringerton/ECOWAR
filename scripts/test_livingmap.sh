@@ -24,7 +24,7 @@ LIVINGMAP_INCLUDES=(
   -include "${LIVINGMAP_DIR}/walled_hamlet_mod_host.h"
 )
 
-for test_name in test_hex_grid test_town_frontier_village test_walled_hamlet test_creep; do
+for test_name in test_hex_grid test_town_frontier_village test_walled_hamlet test_creep test_cow; do
   gcc -std=c99 -O2 -Wall -Wextra -I"${ROOT_DIR}/packages" \
     "${LIVINGMAP_INCLUDES[@]}" \
     -o "${BUILD_DIR}/${test_name}" \
@@ -37,3 +37,4 @@ done
 "${BUILD_DIR}/test_town_frontier_village"
 "${BUILD_DIR}/test_walled_hamlet"
 "${BUILD_DIR}/test_creep"
+"${BUILD_DIR}/test_cow"

@@ -52,6 +52,13 @@ cc_test(
 )
 
 cc_test(
+    name = "test_cow",
+    srcs = ["test_cow.c"],
+    deps = ["//packages/livingmap:living_map"],
+    copts = COMMON_TEST_COPTS,
+)
+
+cc_test(
     name = "test_mat4",
     srcs = ["test_mat4.c"],
     deps = ["//packages/common:common_headers"],

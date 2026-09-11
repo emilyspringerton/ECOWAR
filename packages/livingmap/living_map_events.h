@@ -28,6 +28,10 @@ typedef enum {
     LIVING_MAP_EVENT_CREEP_ATTACK,
     LIVING_MAP_EVENT_CREEP_KILLED,
     LIVING_MAP_EVENT_CREEP_RESET,
+    /* A passive creep (a cow) actually moved one hex while wandering -- never fires for an
+     * aggressive creep, which only ever moves via CHASING/RETURNING (already covered by
+     * CREEP_AGGRO/CREEP_ATTACK/CREEP_RESET). */
+    LIVING_MAP_EVENT_CREEP_WANDERED,
     /* Walled Hamlet's own "shoots hostile creeps" -- subject_id is a TOWN id here (the shooter),
      * unlike every CREEP_* event above. */
     LIVING_MAP_EVENT_TOWN_DEFENSE_FIRE,
@@ -50,6 +54,7 @@ typedef enum {
  *   CREEP_KILLED:      subject=creep_id (the one killed). a = killer creep_id, or -1 if killed by
  *                       a town's defense fire (see TOWN_DEFENSE_FIRE). b = unused (0)
  *   CREEP_RESET:       subject=creep_id. a = unused (0), b = unused (0) -- back home, full hp
+ *   CREEP_WANDERED:    subject=creep_id. a = new q, b = new r (the cow's real post-move HexCoord)
  *   TOWN_DEFENSE_FIRE: subject=town_id (the shooter). a = target creep_id, b = damage dealt
  */
 typedef struct {

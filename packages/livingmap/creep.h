@@ -39,8 +39,23 @@
 
 #define LIVING_MAP_CREEP_MAX_COUNT 128
 
+/* Cows (founder: "add cows") -- real Living Map wildlife, same WC3-critter convention as any
+ * neutral RTS map: harmless, passive, wandering flavor that never fights back and never
+ * initiates aggro on its own. A faction creep's own aggro scan still finds one (faction_owner 0
+ * is a real, ordinary faction value, not immunity -- see LivingMapCreep.faction_owner's own doc
+ * comment), so cows CAN be killed for target practice, they just never chase or attack back.
+ * Deliberately low HP, no death reward this pass -- purely a "the world has life in it" detail,
+ * not a farmable resource yet. */
+#define LIVING_MAP_COW_HP 10
+#define LIVING_MAP_COW_FACTION_OWNER 0
+/* A cow never wanders more than this many hexes from where it was placed -- same real "measured
+ * from HOME, not current position" convention LIVING_MAP_CREEP_LEASH_RANGE already uses, so a
+ * cow can't accumulate drift step by step. */
+#define LIVING_MAP_COW_WANDER_RADIUS 2
+#define LIVING_MAP_COW_WANDER_INTERVAL_MS 4000
+
 typedef enum {
-    LIVING_MAP_CREEP_IDLE = 0,   /* at or near home, scanning for a hostile target every tick */
+    LIVING_MAP_CREEP_IDLE = 0,   /* at or near home, scanning for a hostile target every tick (or wandering, if passive) */
     LIVING_MAP_CREEP_CHASING,    /* has a live target within leash range -- closing distance or attacking */
     LIVING_MAP_CREEP_RETURNING   /* gave up (target died, fled, or leash exceeded) -- walking home to reset */
 } LivingMapCreepState;
@@ -60,6 +75,16 @@ typedef struct {
     int chase_target; /* valid only while state == CHASING; -1 otherwise */
     int attack_cooldown_ms;
     int move_timer_ms;
+    /* passive (cows, and any future harmless wildlife): 1 = never scans for or initiates aggro --
+     * IDLE ticks wander instead (see wander_step_count below). 0 (default, every existing
+     * creep_spawn caller) = normal aggressive creep, completely unchanged behavior. A passive
+     * creep can still be attacked/killed by an aggressive creep's own aggro scan -- this flag
+     * only ever gates THIS creep's own outgoing behavior, never whether others can target it. */
+    int passive;
+    /* wander_step_count: only meaningful while passive -- a plain, deterministic counter (not a
+     * random walk; see creep_tick_wander's own doc comment in creep.c for why) driving which of
+     * the 6 real hex directions a wandering cow steps toward next. */
+    int wander_step_count;
 } LivingMapCreep;
 
 typedef struct {
@@ -75,8 +100,15 @@ void creep_registry_init(CreepRegistry *reg);
  * is nothing to write back into HexCell for this to fail against (no "already occupied" check). */
 int creep_spawn(CreepRegistry *reg, LivingMapEventLog *log, HexCoord home, int faction_owner, int max_hp);
 
+/* Spawns a real cow: LIVING_MAP_COW_HP, LIVING_MAP_COW_FACTION_OWNER, passive. Same fail/emit/
+ * return-value contract as creep_spawn above (LIVING_MAP_EVENT_CREEP_SPAWNED still fires --
+ * there's no separate "it's a cow" event kind, a reader distinguishes one by checking
+ * LivingMapCreep.passive on the id the spawn event names). */
+int creep_spawn_cow(CreepRegistry *reg, LivingMapEventLog *log, HexCoord home);
+
 /* Advances one creep by dt_ms: IDLE scans for the nearest hostile creep within aggro range and
- * starts chasing it; CHASING moves toward (or attacks, once in range) its target, giving up (->
+ * starts chasing it (or, if passive, wanders instead of scanning -- see LivingMapCreep.passive's
+ * own doc comment); CHASING moves toward (or attacks, once in range) its target, giving up (->
  * RETURNING) if the target dies/deactivates or the creep's own leash range from home is exceeded;
  * RETURNING walks straight home and resets to full HP (-> IDLE) on arrival. No-op if creep_id is
  * inactive, dead, or out of range. */
