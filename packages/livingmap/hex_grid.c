@@ -44,6 +44,26 @@ int hex_distance(HexCoord a, HexCoord b) {
     return (adq + adqr + adr) / 2;
 }
 
+int hex_coord_equal(HexCoord a, HexCoord b) {
+    return a.q == b.q && a.r == b.r;
+}
+
+HexCoord hex_step_toward(HexCoord from, HexCoord to) {
+    if (hex_coord_equal(from, to)) return from;
+
+    HexCoord best = from;
+    int best_dist = -1;
+    for (int dir = 0; dir < 6; dir++) {
+        HexCoord candidate = hex_neighbor(from, dir);
+        int d = hex_distance(candidate, to);
+        if (best_dist == -1 || d < best_dist) {
+            best_dist = d;
+            best = candidate;
+        }
+    }
+    return best;
+}
+
 HexCoord hex_neighbor(HexCoord c, int direction) {
     int dir = direction % 6;
     if (dir < 0) dir += 6;

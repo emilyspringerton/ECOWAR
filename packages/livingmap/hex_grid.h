@@ -53,6 +53,17 @@ int hex_distance(HexCoord a, HexCoord b);
 /* direction is taken mod 6 (negative values wrap correctly), so callers never need to pre-clamp. */
 HexCoord hex_neighbor(HexCoord c, int direction);
 
+int hex_coord_equal(HexCoord a, HexCoord b);
+
+/* hex_step_toward -- real, minimal greedy hex pathing (creep.c's own chase/return movement):
+ * returns the one neighbor of `from` (of the 6 real directions) that minimizes real hex distance
+ * to `to`, ties broken by lowest direction index for determinism (same "same inputs, same
+ * decision" bar frontier_village_mod.prn's own deterministic pacing already holds itself to).
+ * Returns `from` unchanged if from == to. Real, honest, narrow limitation: no obstacle avoidance
+ * -- this map has no terrain/blocking cells yet, so straight-line greedy stepping is always
+ * optimal today; a real, later gap once anything can block a hex. */
+HexCoord hex_step_toward(HexCoord from, HexCoord to);
+
 /* -1 if c falls outside the map's hex-radius-HEX_MAP_RADIUS boundary. */
 int hex_grid_index_for(const HexGrid *grid, HexCoord c);
 

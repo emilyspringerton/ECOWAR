@@ -10,17 +10,21 @@ load("@rules_cc//cc:defs.bzl", "cc_library")
 cc_library(
     name = "living_map",
     srcs = [
+        "creep.c",
         "frontier_village_mod.c",
         "hex_grid.c",
         "living_map_events.c",
         "town.c",
+        "walled_hamlet_mod.c",
     ],
     hdrs = [
+        "creep.h",
         "frontier_village_mod_host.h",
         "hex_grid.h",
         "living_map_events.h",
         "parena_runtime.h",
         "town.h",
+        "walled_hamlet_mod_host.h",
     ],
     linkopts = ["-lm"],
     visibility = ["//visibility:public"],

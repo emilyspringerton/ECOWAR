@@ -10,10 +10,10 @@ void living_map_event_log_reset(LivingMapEventLog *log) {
     memset(log, 0, sizeof(*log));
 }
 
-void living_map_emit(LivingMapEventLog *log, LivingMapEventKind kind, int town_id, int a, int b) {
+void living_map_emit(LivingMapEventLog *log, LivingMapEventKind kind, int subject_id, int a, int b) {
     int slot = log->total_emitted % LIVING_MAP_EVENT_LOG_CAPACITY;
     log->events[slot].kind = kind;
-    log->events[slot].town_id = town_id;
+    log->events[slot].subject_id = subject_id;
     log->events[slot].a = a;
     log->events[slot].b = b;
     log->total_emitted++;

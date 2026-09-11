@@ -19,6 +19,20 @@ This doc names the real, honest scope of what that turns into, and what's actual
 today given ECOWAR's current engine and VS0's (PARENA's current compiler) real limits — same
 discipline DEADWEIGHT's/MIXFORGE's own NORTHSTAR docs already apply to their own big asks.
 
+**Founder real-time, continued (Phase 2, arriving mid-build):** "continue the living map including
+the spawned creeps make sure they have classic RTS interactions like agro chase and leash etc keep
+building out the factions" → "cards should be able to tie into stuff - like there should be a card
+that gives a chance to increase the number of militia emitted from frontier village by +1 so when
+you play it twice villages start putting up three militia out at a time" → a card-UI redesign ask
+(a Hearthstone/Clash-Royale-style draggable panel opened on **G**, hero/G-info at the top, drag
+onto the battlefield to cast a spell or onto the hex grid to spawn/grow an entity) → the win
+condition, resolved: "the wincon for ECOWAR - cap all of the control points - thats the base game
+mode ... redgarden you have to keep up pace or come back quick at the end which may include a 5
+cap - in ECOWAR the goal is to get the board into such a state that the volatility happens at the
+points you need it to happen when you need it to happen - and the cards will help - like a card
+could literally be capture a node - you drag it on pay the resource and it flips the base - so
+ECOWAR its going to be hard to cap all of the nodes at once and thats the point it should be hard."
+
 ## Real, checked-first finding: this is a new layer, not an extension of the arena map
 
 `packages/simulation/arena_game.c`'s existing map is `ARENA_NODE_COUNT` (9) fixed capture nodes on
@@ -68,6 +82,74 @@ data structures and the mod ABI end-to-end with real tests, matching the exact "
 tested end-to-end today, real UI/live wiring is separate, later work" bar `card_effect_mod.prn`
 itself shipped at.
 
+## Phase 2 (this pass): creeps, Walled Hamlet, militia-boost cards, the win condition
+
+- `packages/livingmap/creep.h/.c` — real classic-RTS creep aggro/chase/leash/reset, hex-grid
+  granularity. Directly mirrors `packages/simulation/arena_game.h`'s own proven
+  `ArenaCampMinion` shape rather than reinventing it: a real DETECT-vs-HIT distinction (aggro
+  range 3 hexes, attack range 1), leash measured from the creep's own HOME (never its current
+  position, so it can't silently grow as a creep is kited further and further away), and a reset
+  to full HP only once the creep is genuinely back home — not the instant it merely gives up.
+  Movement is real but discrete: one hex step per `LIVING_MAP_CREEP_MOVE_INTERVAL_MS`, greedily
+  toward the target (or home) via a new `hex_step_toward` helper (`hex_grid.h`) — a real, honest,
+  narrow limitation named there: no obstacle avoidance, since nothing on this map can block a hex
+  yet. A creep only ever aggros a *different* `faction_owner`'s creep (0/neutral included, treated
+  as an ordinary faction value like everywhere else in this package). Generic and standalone —
+  it doesn't know which town type spawned it; nothing spawns a creep yet except this phase's own
+  tests and Walled Hamlet's defense (below), which *shoots* creeps, not spawns them.
+- `TOWN_TYPE_WALLED_HAMLET` real behavior (`town.c`), driven by a new
+  `PARENA/stdlib/ecowar/walled_hamlet_mod.prn`: slower spawn cadence and a lower raise-threshold
+  than Frontier Village (economy traded for defense), a much higher baseline convert resistance
+  (60 vs. Frontier Village's 20 — "slow to flip," real and measured, see
+  `tests/test_walled_hamlet.c`), and genuinely new "shoots hostile creeps" behavior —
+  `town_tick_with_creeps` fires the town's own stationary, garrison-scaled ranged attack at the
+  nearest hostile `LivingMapCreep` within a real, garrison-scaled range/damage, on a real
+  cooldown, never chasing (the town doesn't move) and never hitting its own faction.
+- **Cards tie into the Living Map — a real mechanic, a real architecture gap.** `Town.militia_bonus`
+  (+ `town_apply_militia_boost`) is the exact mechanic described: playing the card once adds +1 to
+  every subsequent raise at that town (base 1 → 2 militia/garrison per raise), twice stacks to +2
+  (→ 3), capped at `TOWN_MILITIA_BONUS_CAP` (20 — a real, deliberate balancing bound against
+  unbounded stacking, not a tuned final number). Fully real and tested
+  (`tests/test_walled_hamlet.c`). **The real, honest gap**: `town_apply_militia_boost` has no
+  caller from a live match yet, because no running match anywhere in this repo initializes a
+  `HexGrid`/`TownRegistry` at all — Phase 1/2 are still headless (see "Not done, honestly" above).
+  Wiring an actual `apps/arena` card cast to call it needs (a) a live Living Map instance attached
+  to a real match, and (b) a real decision on how arena teams map to the 3 Living Map factions —
+  both genuinely open, not guessed at here. The founder's own **"capture a node" card idea needs
+  zero new Living Map mechanics to work once that bridge exists** — `town_attempt_convert`
+  (Phase 1) already takes an arbitrary `attempt_strength`; a card that "pays a resource and flips
+  the base" is just a call to it with a strength large enough to clear resistance and cross 100 in
+  one shot. Worth building the arena↔living-map bridge around that existing function, not a new
+  one.
+- **Card UI redesign — real founder direction, captured, not built this pass.** A panel opened on
+  **G** (hero/G-ability info at the top, matching the existing single-key HUD convention
+  `docs/ARENA_API.md`'s own card-input path already established), then a Hearthstone/Clash
+  Royale-style draggable card interface: drag onto the battlefield to cast a spell (the existing
+  16-card system's own shape), or drag onto the hex grid to spawn/grow an entity — affordance name
+  genuinely undecided per the founder's own "not sure what that affordance should be called."
+  Real, honest reason this isn't built in this same pass: it's client-side SDL2/OpenGL rendering
+  and input work in `apps/arena`'s existing (large, unread-in-this-pass) card/HUD code, with no
+  display available in this sandbox to visually verify it — the same real constraint every other
+  ECOWAR visual change in this repo already names. Real, concrete next step for whoever picks this
+  up: read the existing card HUD tile code (`docs/ARENA_API.md`'s own card-input path) before
+  designing the drag interaction, rather than building a parallel one.
+- Tests: `tests/test_creep.c`, `tests/test_walled_hamlet.c` (also covers `militia_bonus` and the
+  win condition below), both headless, wired into `scripts/test_livingmap.sh` and
+  `tests/BUILD.bazel`.
+
+**Win condition — resolved.** Founder: "the wincon for ECOWAR - cap all of the control points -
+thats the base game mode." `town_registry_faction_has_full_control` (`town.h/.c`) is the real,
+tested implementation: a faction wins by owning every currently-active `Town` at once (an empty
+board, or neutral/faction 0, can never "win"). A deliberate, real contrast with REDGARDEN's own
+pace/comeback-at-the-end dynamic (which can include a late 5-cap) — here the design intent is that
+capping every node simultaneously is genuinely hard, on purpose, and cards (the capture-node idea
+above) are the tool for engineering *when and where* a node flips rather than leaving it to
+whoever happens to be standing there. Other ECOWAR game modes (e.g. "resource race") are named as
+real, later, separate work, not designed here. "Control points" is read as **towns**, not every
+one of the map's 469 hex cells including empty terrain — see `town_registry_faction_has_full_control`'s
+own header comment for why, and for the real, deliberate exception this reading would need to be
+revisited under.
+
 ## Mod event model, honestly
 
 The founder's ask — "everything that happens in the game needs to announce events and then mods
@@ -98,13 +180,13 @@ What's real and buildable now, and what this phase actually ships:
    backlog of emitter gaps once VS0 grows past today's scalar-only ABI), not silently assumed away
    or faked with something that looks dynamic but isn't.
 
-## The 4 town types (only Frontier Village built this phase)
+## The 4 town types (2 of 4 built)
 
 | Type | Founder's own description | Status |
 |---|---|---|
 | Frontier Village | Spawns peasants → militia. Avoids conflict. Converts easily. | **Built** (Phase 1) |
-| Walled Hamlet | Defensive bias. Shoots hostile creeps. Slow to flip. | Named only — needs a real ranged-attack/aggro model this phase doesn't build |
-| Jungle Enclave | Symbiotic with creeps. Spawns hunters. Expands naturally. | Named only — needs a real relationship to `arena_game.c`'s own creep system (a cross-package integration question, not scoped here) |
+| Walled Hamlet | Defensive bias. Shoots hostile creeps. Slow to flip. | **Built** (Phase 2) — real creep-defense fire via `packages/livingmap/creep.h/.c` |
+| Jungle Enclave | Symbiotic with creeps. Spawns hunters. Expands naturally. | Named only — needs a real relationship to the now-real `creep.h/.c` system above (spawning hunters as `LivingMapCreep`s is a plausible fit, not yet decided) |
 | Blighted Settlement | Corrupted over time. Spawns cultists. Unstable, explosive outcome. | Named only — blocked on "Corruption, honestly" below |
 
 ## The 3 factions and the rock-paper-scissors question
@@ -130,7 +212,7 @@ siege but has no hard defense against a fast Corruption chain-reaction hijack �
 fastest through Symbiosis's own densely-interconnected, auto-aligned territory but burns out
 against Dominion's locked, non-adjacent cells it can't get a foothold in.** This is this doc's own
 proposed *shape* for the balancing force the founder asked about — a real, testable hypothesis for
-whoever scopes Phase 2 (Corruption/Blighted Settlement) to confirm, adjust, or replace once actual
+whoever scopes Phase 3 (Corruption/Blighted Settlement) to confirm, adjust, or replace once actual
 faction AI exists to test it against, not something to hard-code as game rules yet.
 
 **"Corruption" mechanically, staged as three honest options for that same later pass:**
@@ -151,28 +233,34 @@ Pact/rounded-organic, Ascended/tall-spires) mapped 1:1 onto the three gameplay f
 defers the actual tech-node list to whoever scopes it once Dominion/Symbiosis have enough real
 behavior for a doctrine choice to mean anything gameplay-wise. No code this phase.
 
-## Win condition — genuinely undecided, named not guessed
+## Win condition — see "Phase 2" above, resolved
 
-The founder said so directly: "im not sure what the win condition is to be honest with you." Not
-resolved here. Territory-percentage control, faction-elimination, and a Citadel/Bastion/Beacon
-capstone race are the three obvious candidates given the end-techs above, offered as a starting
-list for whoever picks this up next, not a decision made in this pass.
+Was genuinely undecided as of Phase 1 ("im not sure what the win condition is to be honest with
+you"); resolved in Phase 2 to Full Control (own every active town at once), real and tested via
+`town_registry_faction_has_full_control` — see the Phase 2 section above for the full reasoning
+and the real, deliberate contrast with REDGARDEN's own pace/comeback dynamic.
 
 ## Phased plan
 
-1. **Hex grid + Frontier Village** (this pass) — real, tested, standalone.
-2. Walled Hamlet — needs a real aggro/ranged-attack model against hostile creeps; first town type
-   that has to reach into something creep-shaped.
-3. Corruption mechanics (pick one of the 3 staged options above) + Blighted Settlement, once a
+1. **Hex grid + Frontier Village** (Phase 1) — real, tested, standalone.
+2. **Walled Hamlet + creeps + militia-boost cards + win condition** (Phase 2, this pass) — real,
+   tested; see the Phase 2 section above. Card-UI redesign and the arena↔living-map live-wiring
+   bridge are real founder direction, captured but not built this pass.
+3. Corruption mechanics (pick one of the 3 staged options below) + Blighted Settlement, once a
    real decision is made on how corruption actually works.
-4. Jungle Enclave — real integration question against `arena_game.c`'s own creep system or a new
-   living-map-local creep concept; not yet scoped which.
+4. Jungle Enclave — spawning "hunters" as real `LivingMapCreep`s (Phase 2's new system) is a
+   plausible fit, not yet decided as the final shape.
 5. The 3 factions as real AI agents contesting hex cells ("3 bots playing our version of
-   starcraft") — the rock-paper-scissors hypothesis above gets its first real test here.
+   starcraft") — the rock-paper-scissors hypothesis below gets its first real test here.
 6. Tech tree doctrines, "pick 2 max," end-tech capstones (Citadel Node / Living Bastion /
    Cataclysm Beacon).
-7. Win condition, decided from real play data once 5-6 exist, not guessed now.
-8. Visual factions (Imperatives/Verdant Pact/Ascended) — art/asset direction, deferred until the
+7. The arena↔living-map live-wiring bridge: a real running match that actually initializes a
+   `HexGrid`/`TownRegistry`, a real team-to-faction mapping, and the actual card-cast call sites
+   (`town_apply_militia_boost`, `town_attempt_convert` for "capture a node") — the real
+   prerequisite for every card-tie-in idea in Phase 2 to matter in a live game, not guessed at.
+8. Card UI redesign (G-key panel, Hearthstone/Clash-Royale-style drag-to-cast/drag-to-hex-grid
+   affordance) — real client rendering work, gated on reading the existing card HUD code first.
+9. Visual factions (Imperatives/Verdant Pact/Ascended) — art/asset direction, deferred until the
    gameplay factions above have real, distinguishable behavior worth skinning.
 
 ## Related
