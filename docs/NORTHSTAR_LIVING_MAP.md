@@ -150,6 +150,67 @@ one of the map's 469 hex cells including empty terrain — see `town_registry_fa
 own header comment for why, and for the real, deliberate exception this reading would need to be
 revisited under.
 
+## Win condition, refined: destroy vs. capture, and the three archetypes — DESIGN ONLY, not built
+
+Founder real-time, continuing the win-condition thread: towns *are* the control points, and a
+town can go two ways — **captured** (flips faction, already real: `town_attempt_convert`/CAP/
+ALLCAP) or **destroyed** (wiped off the map entirely — a real, named "ecological disaster," not
+built anywhere in this codebase yet). Destroying a town doesn't just remove a rival's asset — it
+*shrinks the board*: `town_registry_faction_has_full_control` counts a faction's owned towns
+against the currently-active total, so fewer active towns means fewer towns needed to reach full
+control. This reframes destruction from "denial" into a real, deliberate second win path, not a
+griefing side-effect.
+
+**Real, checked-first finding**: this is not a fresh idea landing on unprepared ground —
+`town.h`'s own `TownRegistry.town_count` comment has said, since Phase 1, "high-water mark of
+ever-founded towns — town ids are never reused within one registry's lifetime, even after a
+hypothetical future 'town destroyed' (not built yet)." The seam was named a long time before this
+design pass; this section is that hypothetical becoming a real, scoped mechanic.
+
+**Three archetypes, named directly from the founder's own framing, each a legitimate distinct way
+to reach ALLCAP's `owned == total` check (or a new draw check) rather than three flavors of the
+same play**:
+
+1. **The blowout ("Jimmy"/big-clean-win archetype)** — capture every town, on the board, intact.
+   No destruction anywhere. `total` never shrinks; you own all of it at its original size. The
+   archetype that wants the biggest, most dominant-looking win, not the most efficient one.
+2. **The draw** — every town on the board is destroyed, including your own. `total` (and every
+   faction's owned count) hits zero. No faction can be said to control an empty board — a real,
+   new terminal state `town_registry_faction_has_full_control` doesn't have any concept of today
+   (it currently requires "saw at least one active town," i.e. it can't return true OR resolve a
+   game with zero active towns; a real, new explicit draw check is needed, not inferred from the
+   existing function returning false).
+3. **The OTK ("Miracle Rogue" archetype) — destroy every town but the one you already hold, all in
+   one tight window.** ECOWAR has no turns, so "OTK" is read as a metaphor here, exactly as given:
+   not a single discrete action, but a *coordinated burst* — assembling enough simultaneous
+   destruction capability (cards/mods that can each wipe a town) and then, having survived
+   whatever the other factions were doing in the meantime (their own version of an aggro rush,
+   turtling behind Walled Hamlet defenses, or a slow Dominion/Symbiosis territorial curve-out),
+   firing all of it in a burst tight enough that when the dust settles only your own town(s)
+   remain active. The skill expression is explicitly named as identical to Miracle Rogue/Exodia in
+   Hearthstone: assemble the combo pieces, survive to the point of readiness, execute in a single
+   window while the opponent is mid-plan on their own axis (rush/wall/ramp/curve-out) rather than
+   expecting yours.
+
+A destroy-capable faction sitting on this win path also has a real, natural risk profile worth
+naming even at design stage: destruction is a blunt instrument relative to capture — a burst that
+lands one town short of "every rival town, none of mine" resolves as either a partial board-shrink
+(no win yet, denominator just got smaller for everyone) or, if your own town gets caught in the
+same burst, tips straight into the draw case above instead of the win. That's the real tension
+that makes archetype 3 a genuine high-skill/high-risk line rather than a strictly-better version
+of archetype 1, matching the Miracle Rogue framing's own "glass cannon combo, not the safe line."
+
+**Not designed here, real and open**: what actually *destroys* a town mechanically (a card? a
+Corruption-faction end-tech, tying back into "Corruption, honestly" above and the Cataclysm
+Beacon capstone? a new creep behavior?), whether destruction is instant or has its own HP/threshold
+model (parallel to `town_attempt_convert`'s resistance-vs-strength shape), whether a destroyed
+town's hex cell reverts to neutral open terrain or becomes a permanent (or temporary) unusable
+"crater," and how `living_map_events`/REFLUX announce a destruction (a natural `TOWN_DESTROYED`
+REFLUX action, mirroring `TOWN_CAPPED`'s own real shape from SECTION 381). None of this is built —
+this section captures the win-condition *shape* (destroy shrinks the denominator; three
+archetypes; a real new draw state needed) so whoever scopes the actual destroy mechanic isn't
+starting from nothing.
+
 ## ML training throughput, and a real, open architecture fork
 
 Founder real-time: "as soon as some of these pieces are in place we are going to need to do a lot
@@ -454,6 +515,11 @@ and the real, deliberate contrast with REDGARDEN's own pace/comeback dynamic.
    affordance) — real client rendering work, gated on reading the existing card HUD code first.
 9. Visual factions (Imperatives/Verdant Pact/Ascended) — art/asset direction, deferred until the
    gameplay factions above have real, distinguishable behavior worth skinning.
+10. **Town destruction + the draw state** — design captured above ("Win condition, refined"), not
+    built. Needs: a real destroy mechanic (card/Corruption-tech/creep behavior, undecided), a
+    `TOWN_DESTROYED` REFLUX action mirroring `TOWN_CAPPED`, a new draw check for "zero active towns
+    left," and ALLCAP's owned/total math already being denominator-based means it needs no rework
+    to support the shrinking-board reading — only a real destroy call site to ever exercise it.
 
 ## Related
 
