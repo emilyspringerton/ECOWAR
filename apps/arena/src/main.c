@@ -136,6 +136,15 @@ static int apm_compute(uint32_t now_ms) {
 
 static int net_sock = -1;
 static struct sockaddr_in net_server_addr;
+/* g_net_match_seed (S370-02, 2026-09-11): the per-match seed net_find_and_connect receives via
+ * PACKET_MATCH_FOUND's MatchFoundMsg.seed (previously read and immediately discarded -- only
+ * msg->port was ever kept). main() passes it to arena_set_match_seed() before the client's own
+ * arena_init() runs, so this client's independently-computed procedural jungle
+ * (arena_obstacles_reset_layout) matches the arena_server process the matchmaker spawned with
+ * the same seed via --seed. Stays 0 (arena_game.c's own fixed default) for the direct-connect
+ * path (net_connect, no matchmaker involved) -- a real, named, narrow gap, see apps/arena_server/
+ * src/main.c's own --seed doc comment. */
+static unsigned int g_net_match_seed = 0;
 
 /* g_supplied_ticket_hex (REDGARDEN_GUI_NORTHSTAR.md Milestone 3, 2026-07-31): a real,
  * already-minted ticket handed to this client externally -- GoblinFoxDragon/apps2/mud's
@@ -377,6 +386,7 @@ static int net_find_and_connect(const char *mm_host, int mm_port) {
             if (h->type == PACKET_MATCH_FOUND) {
                 MatchFoundMsg *msg = (MatchFoundMsg *)(buf + sizeof(NetHeader));
                 game_port = msg->port;
+                g_net_match_seed = msg->seed; /* S370-02 -- see g_net_match_seed's own doc comment */
                 break;
             }
         }
@@ -979,14 +989,19 @@ static void net_poll_snapshots(uint32_t now_ms) {
                 }
                 arena_state.resources[0] = msg->resources[0]; /* S170-153 */
                 arena_state.resources[1] = msg->resources[1];
-                /* Tree passive (2026-08-25): obstacles are always fully populated, same
-                   convention as kings just above -- only tree obstacles carry a real value.
+                /* obstacle_hp[] itself moved out to its own PACKET_ARENA_SNAPSHOT_OBSTACLES,
+                   handled in the sibling branch below -- see ArenaSnapshotObstaclesMsg's own
+                   doc comment in protocol.h (S370-04, 2026-09-11). */
+            } else if (h->type == PACKET_ARENA_SNAPSHOT_OBSTACLES && len >= (int)(sizeof(NetHeader) + sizeof(ArenaSnapshotObstaclesMsg))) {
+                /* S370-04: obstacles are always fully populated, same convention as kings/
+                   creeps/towers in the world packet -- only tree obstacles carry a real value.
                    Any decrease vs. the last snapshot's own value fires the local hit-reaction
                    squish (compute_tree_squish's own doc comment); a regen-driven increase does
                    not -- same "only a hit looks like a hit" reasoning a heal-flash-vs-damage-flash
                    distinction elsewhere in this file already draws. */
+                ArenaSnapshotObstaclesMsg *omsg = (ArenaSnapshotObstaclesMsg *)(rbuf + sizeof(NetHeader));
                 for (int i = 0; i < ARENA_SNAPSHOT_OBSTACLE_COUNT && i < ARENA_OBSTACLE_COUNT; i++) {
-                    uint16_t new_hp = msg->obstacle_hp[i];
+                    uint16_t new_hp = omsg->obstacle_hp[i];
                     if (obstacle_hp_prev_valid[i] && new_hp < obstacle_hp_prev[i]) {
                         trigger_tree_squish(i);
                     }
@@ -2840,6 +2855,7 @@ int main(int argc, char *argv[]) {
 
     glEnable(GL_DEPTH_TEST);
 
+    arena_set_match_seed(g_net_match_seed); /* S370-02 -- 0/default for local practice or direct-connect (no matchmaker seed), the real matched value for a matchmaker-queued match; must happen before arena_init() below so its own arena_obstacles_reset_layout() call picks it up */
     arena_init();
     /* In net_mode, apps/arena_server is authoritative and writes its own
        match log -- a local log here would be redundant and would wrongly
@@ -3262,7 +3278,13 @@ int main(int argc, char *argv[]) {
                        static layout in the first place. Was the real cause of
                        "first game had jungle rocks and trees, subsequent games
                        didn't" -- every match after the first requeue silently
-                       lost its jungle terrain. */
+                       lost its jungle terrain.
+                       S370-02 (2026-09-11): this first call still uses the PREVIOUS match's
+                       g_net_match_seed (net_find_and_connect below hasn't run yet, so there's
+                       no new one yet) -- deliberately, same "never show an empty map" reasoning
+                       as the bugfix above, just applied to seed freshness too. Regenerated for
+                       real with the actual new seed right after a successful reconnect, below. */
+                    arena_set_match_seed(g_net_match_seed);
                     arena_obstacles_reset_layout();
                     memset(rings, 0, sizeof(rings));
                     win_logged = 0;
@@ -3275,6 +3297,12 @@ int main(int argc, char *argv[]) {
                     if (!reconnected) {
                         fprintf(stderr, "[arena client] requeue failed -- matchmaker/bot pool may be down\n");
                     } else {
+                        /* S370-02: net_find_and_connect just captured this NEW match's own
+                           g_net_match_seed -- regenerate the jungle from it so this client's
+                           layout actually matches the server it just connected to, not the
+                           previous match's placeholder set above. */
+                        arena_set_match_seed(g_net_match_seed);
+                        arena_obstacles_reset_layout();
                         printf("[arena client] requeue connected -- hero slot %d\n", my_owner);
                     }
                     fflush(stdout);

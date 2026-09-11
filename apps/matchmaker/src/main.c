@@ -27,6 +27,7 @@
 #include <string.h>
 #include <signal.h>
 #include <sys/time.h>
+#include <time.h> /* S370-02 (2026-09-11): time() for the per-match jungle seed, see try_match's own doc comment */
 
 #ifdef _WIN32
     #error "matchmaker requires fork(); not supported on Windows yet"
@@ -127,20 +128,26 @@ static void mark_recently_matched(const struct sockaddr_in *addr, unsigned int n
     recently_matched_count++;
 }
 
-static int spawn_game_server(int port) {
+static int spawn_game_server(int port, unsigned int seed) {
     pid_t pid = fork();
     if (pid < 0) return 0;
     if (pid == 0) {
         char port_str[16];
+        char seed_str[16];
         snprintf(port_str, sizeof(port_str), "%d", port);
+        /* S370-02 (2026-09-11): --seed, so the spawned server's own procedural jungle
+           (arena_set_match_seed, packages/simulation/arena_game.c) generates the identical
+           layout the client is told about via this same match's MatchFoundMsg.seed below --
+           see try_match's own doc comment for where the seed value itself comes from. */
+        snprintf(seed_str, sizeof(seed_str), "%u", seed);
         if (lobby_size == 2) {
             /* Matches the original, live-verified invocation exactly --
                no --lobby-size arg at all for the default card-RTS/1v1 case. */
-            execl(server_bin, server_bin, "--port", port_str, (char *)NULL);
+            execl(server_bin, server_bin, "--port", port_str, "--seed", seed_str, (char *)NULL);
         } else {
             char lobby_str[16];
             snprintf(lobby_str, sizeof(lobby_str), "%d", lobby_size);
-            execl(server_bin, server_bin, "--port", port_str, "--lobby-size", lobby_str, (char *)NULL);
+            execl(server_bin, server_bin, "--port", port_str, "--lobby-size", lobby_str, "--seed", seed_str, (char *)NULL);
         }
         fprintf(stderr, "MATCHMAKER: failed to exec %s\n", server_bin);
         _exit(127);
@@ -175,18 +182,29 @@ static void try_match(void) {
         queue_count -= lobby_size;
 
         int port = next_game_port++;
-        if (!spawn_game_server(port)) {
+        /* S370-02 (2026-09-11), "procedurally generate the map for each new game": one seed per
+           match, mixing wall-clock time, this matchmaker process's own uptime, and the just-
+           assigned (unique per concurrent match) game port -- plenty of per-match distinctness
+           without needing this file's own srand()'d RNG stream (it doesn't have one, and adding
+           one just for this would be a bigger change than this needs). Passed to the spawned
+           server via --seed (spawn_game_server) and to every client in this group via
+           MatchFoundMsg.seed below, so both sides' procedural jungle generation
+           (arena_set_match_seed, packages/simulation/arena_game.c) agree without a separate
+           round trip. */
+        unsigned int seed = ((unsigned int)time(NULL) << 16) ^ now_ms() ^ (unsigned int)port;
+        if (!spawn_game_server(port, seed)) {
             printf("MATCHMAKER: failed to spawn game server on port %d\n", port);
             continue;
         }
-        printf("MATCHMAKER: matched %d players -> spawned server on port %d\n", lobby_size, port);
+        printf("MATCHMAKER: matched %d players -> spawned server on port %d (seed=%u)\n", lobby_size, port, seed);
 
         char buf[sizeof(NetHeader) + sizeof(MatchFoundMsg)];
+        memset(buf, 0, sizeof(buf)); /* S370-02 bugfix: only NetHeader used to get zeroed here, leaving MatchFoundMsg's own fields (mode, and now seed) as uninitialized stack garbage sent straight over the wire -- zero the whole buffer instead. */
         NetHeader *h = (NetHeader *)buf;
-        memset(h, 0, sizeof(NetHeader));
         h->type = PACKET_MATCH_FOUND;
         MatchFoundMsg *msg = (MatchFoundMsg *)(buf + sizeof(NetHeader));
         msg->port = (uint16_t)port;
+        msg->seed = seed;
 
         unsigned int now = now_ms();
         for (int i = 0; i < lobby_size; i++) {

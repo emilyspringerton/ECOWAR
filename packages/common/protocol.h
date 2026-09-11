@@ -35,6 +35,13 @@
     (id 1) above -- that one belongs to apps/server's own separate cellular-automata card-RTS
     game (local_game.c); this one is the hero-arena engine's own real ECOWAR_CARDS catalog
     (arena_game.h/.c, ecowar_resolve_card_effect). See ArenaCardPlayCmd's own doc comment. */
+#define PACKET_ARENA_SNAPSHOT_OBSTACLES 21 /* arena_server -> client: obstacle_hp[], split out of
+    ArenaSnapshotMsg, S370-04 (2026-09-11, "use the mandelbrot set to add more trees... a lot
+    more trees like DOTA2"). Same MTU-fragmentation reasoning as PACKET_ARENA_SNAPSHOT_HEROES's
+    own split (S170-193) -- ARENA_OBSTACLE_COUNT growing from 32 (hand-placed) to a real
+    procedurally-generated jungle would have pushed obstacle_hp[] back into ArenaSnapshotMsg's
+    own MTU budget instead of opening new headroom for it. See ArenaSnapshotObstaclesMsg's own
+    doc comment. */
 
 #define ARENA_PHASE_WAITING 0 /* fewer than 2 real players connected yet */
 #define ARENA_PHASE_DRAFT   1 /* both connected, waiting on hero picks */
@@ -93,8 +100,16 @@ typedef struct {
 // Sent by the matchmaker after PACKET_MATCH_FOUND's NetHeader: the UDP port
 // of the freshly-spawned red_garden_server instance the client should now
 // connect to (see apps/matchmaker/src/main.c).
+// seed added S370-02 (2026-09-11, "procedurally generate the map for each new game"): the
+// matchmaker generates one seed per match and passes it both to the spawned server (--seed) and
+// here to the client, so arena_set_match_seed's own procedural jungle generator
+// (packages/simulation/arena_game.c) produces the identical layout on both sides without a
+// separate round trip -- same "compute independently from shared input" precedent the rest of
+// this struct's own obstacle layout already relied on before it had anything seed-dependent to
+// generate.
 typedef struct {
     uint16_t port;
+    uint32_t seed;
 } MatchFoundMsg;
 
 // ---- apps/arena_server wire structs (2026-07-24 pivot: the MOBA is the
@@ -580,7 +595,15 @@ typedef struct {
 // the one genuinely dynamic field, "always fully populated" same as kings/creeps/towers below
 // rather than a sparse pool, since the layout itself never changes size or order mid-match. Only
 // ARENA_OBSTACLE_TREE entries carry a real value; rocks stay 0.
-#define ARENA_SNAPSHOT_OBSTACLE_COUNT 32
+// S370-03 (2026-09-11): 32 -> 128 -- the hand-placed 32-piece "lane wall" layout stays exactly
+// as-is at indices [0,32); indices [32,128) are a real per-match procedurally-generated jungle
+// (Mandelbrot escape-time boundary sampling, packages/simulation/arena_game.c's
+// arena_obstacles_reset_layout), same "position/radius/kind static+deterministic, hp is the one
+// synced field" split as before -- just a lot more of them. obstacle_hp[] itself moved out of
+// ArenaSnapshotMsg into its own ArenaSnapshotObstaclesMsg/PACKET_ARENA_SNAPSHOT_OBSTACLES at the
+// same time (S370-04) specifically because this count growth would have blown the old struct's
+// MTU budget.
+#define ARENA_SNAPSHOT_OBSTACLE_COUNT 128
 
 // Per-King state (Jungle Camps Milestones 2/4). Always exactly ARENA_SNAPSHOT_CAMP_COUNT
 // entries, index-matched to camps (0=N/Wealth, 1=S/Growth, 2=E/Music, 3=W/All-Seeing), same
@@ -629,7 +652,11 @@ typedef struct {
     uint8_t camp_minion_count; /* jungle camps client-visibility fix, 2026-08-20 */
     ArenaCampMinionSnapshot camp_minions[ARENA_SNAPSHOT_MAX_CAMP_MINIONS];
     ArenaKingSnapshot kings[ARENA_SNAPSHOT_CAMP_COUNT]; /* always fully populated, see that struct's doc comment */
-    uint16_t obstacle_hp[ARENA_SNAPSHOT_OBSTACLE_COUNT]; /* Tree passive (2026-08-25) -- see ARENA_SNAPSHOT_OBSTACLE_COUNT's own doc comment. Index-matched to the deterministic obstacle layout both sides already compute identically. */
+    /* obstacle_hp[] lived here through S170-193's own split (obstacle_hp (2026-08-25) predates
+       S370-04) but moved out to its own ArenaSnapshotObstaclesMsg/PACKET_ARENA_SNAPSHOT_OBSTACLES
+       below when ARENA_SNAPSHOT_OBSTACLE_COUNT grew 32 -> 128 (S370-04, 2026-09-11) -- same
+       MTU-fragmentation reasoning as heroes[]'s own earlier split, just triggered by obstacle
+       count growth instead of hero count. */
 } ArenaSnapshotMsg;
 
 // PACKET_ARENA_SNAPSHOT_HEROES payload (S170-193, founder: split the
@@ -673,18 +700,33 @@ typedef struct {
     ArenaHeroSnapshot heroes[ARENA_SNAPSHOT_HERO_CHUNK_SIZE]; /* owner slots [chunk_index*ARENA_SNAPSHOT_HERO_CHUNK_SIZE .. +SIZE) */
 } ArenaSnapshotHeroesMsg;
 
+// PACKET_ARENA_SNAPSHOT_OBSTACLES payload (S370-04, 2026-09-11): obstacle_hp[], split out of
+// ArenaSnapshotMsg the same way heroes[] was (S170-193) -- see ARENA_SNAPSHOT_OBSTACLE_COUNT's
+// own doc comment for why growing 32 -> 128 forced this. Unlike the hero split there's no
+// per-tick chunking here (128 * sizeof(uint16_t) = 256 bytes, comfortably one packet -- chunking
+// exists to fit under MTU, not as a goal in itself), just its own independent packet so a lost
+// obstacle-hp update never costs anything but that one tick's tree-HP freshness. Always fully
+// populated (fixed-size, index-matched to the deterministic obstacle layout both sides already
+// compute identically), same convention ArenaSnapshotMsg's own obstacle_hp[] used before it
+// moved here.
+typedef struct {
+    uint16_t obstacle_hp[ARENA_SNAPSHOT_OBSTACLE_COUNT];
+} ArenaSnapshotObstaclesMsg;
+
 // Shared receive-buffer sizing for every PACKET_ARENA_SNAPSHOT*-handling
 // socket in this codebase (apps/arena_server's send side doesn't need this,
 // but every recvfrom call sizing a fixed rbuf does) -- one source of truth
-// for "big enough for either snapshot packet type," same "size dynamically,
+// for "big enough for any snapshot packet type," same "size dynamically,
 // never a magic-number guess" discipline S170-192's own critical fixed-
-// buffer bug established. Whichever of the two message types is currently
-// larger wins; both are comfortably under a real MTU today (this whole
-// section exists because the OLD single combined message wasn't), but if a
-// future field addition ever pushes one of them back over that line, this
-// is the one place that needs the resulting redesign, not three
+// buffer bug established. Whichever of the three message types is currently
+// largest wins; all three are comfortably under a real MTU today (this
+// whole section exists because the OLD single combined message wasn't),
+// but if a future field addition ever pushes one of them back over that
+// line, this is the one place that needs the resulting redesign, not four
 // independently-drifting call sites.
 #define ARENA_SNAPSHOT_RECV_BUF_SIZE (sizeof(NetHeader) + \
-    (sizeof(ArenaSnapshotMsg) > sizeof(ArenaSnapshotHeroesMsg) ? sizeof(ArenaSnapshotMsg) : sizeof(ArenaSnapshotHeroesMsg)))
+    (sizeof(ArenaSnapshotMsg) > sizeof(ArenaSnapshotHeroesMsg) ? \
+        (sizeof(ArenaSnapshotMsg) > sizeof(ArenaSnapshotObstaclesMsg) ? sizeof(ArenaSnapshotMsg) : sizeof(ArenaSnapshotObstaclesMsg)) : \
+        (sizeof(ArenaSnapshotHeroesMsg) > sizeof(ArenaSnapshotObstaclesMsg) ? sizeof(ArenaSnapshotHeroesMsg) : sizeof(ArenaSnapshotObstaclesMsg))))
 
 #endif

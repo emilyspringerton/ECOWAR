@@ -699,11 +699,15 @@ static void server_broadcast(void) {
         }
     }
 
-    /* Tree passive (2026-08-25): obstacles are always fully populated (fixed layout, never
-       sparse), same convention as kings/towers/creeps above -- only ARENA_OBSTACLE_TREE entries
-       carry a real value, rocks stay 0. */
+    /* S370-04 (2026-09-11): obstacle_hp moved out of ArenaSnapshotMsg into its own
+       ArenaSnapshotObstaclesMsg/PACKET_ARENA_SNAPSHOT_OBSTACLES -- see protocol.h's own doc
+       comment on both for why (ARENA_OBSTACLE_COUNT growing 32 -> 128 for the procedural
+       jungle). Still always fully populated (fixed layout, never sparse), same convention as
+       kings/towers/creeps above -- only ARENA_OBSTACLE_TREE entries carry a real value, rocks
+       stay 0. */
+    ArenaSnapshotObstaclesMsg obstacles_msg = {0};
     for (int i = 0; i < ARENA_SNAPSHOT_OBSTACLE_COUNT && i < ARENA_OBSTACLE_COUNT; i++) {
-        msg.obstacle_hp[i] = (uint16_t)(arena_state.obstacles[i].hp > 0 ? arena_state.obstacles[i].hp : 0);
+        obstacles_msg.obstacle_hp[i] = (uint16_t)(arena_state.obstacles[i].hp > 0 ? arena_state.obstacles[i].hp : 0);
     }
 
     memcpy(buffer, &head, sizeof(NetHeader));
@@ -719,6 +723,14 @@ static void server_broadcast(void) {
     hero_head.timestamp = head.timestamp;
     memcpy(hero_buffer, &hero_head, sizeof(NetHeader));
 
+    /* S370-04: obstacle-hp packet, same independent-packet framing as the hero chunks above. */
+    char obstacles_buffer[sizeof(NetHeader) + sizeof(ArenaSnapshotObstaclesMsg)];
+    NetHeader obstacles_head = {0};
+    obstacles_head.type = PACKET_ARENA_SNAPSHOT_OBSTACLES;
+    obstacles_head.timestamp = head.timestamp;
+    memcpy(obstacles_buffer, &obstacles_head, sizeof(NetHeader));
+    memcpy(obstacles_buffer + sizeof(NetHeader), &obstacles_msg, sizeof(ArenaSnapshotObstaclesMsg));
+
     for (int i = 0; i < lobby_size; i++) {
         if (!client_active[i]) continue;
         sendto(sock, buffer, sizeof(buffer), 0, (struct sockaddr *)&clients[i], sizeof(struct sockaddr_in));
@@ -726,6 +738,7 @@ static void server_broadcast(void) {
             memcpy(hero_buffer + sizeof(NetHeader), &chunks[c], sizeof(ArenaSnapshotHeroesMsg));
             sendto(sock, hero_buffer, sizeof(hero_buffer), 0, (struct sockaddr *)&clients[i], sizeof(struct sockaddr_in));
         }
+        sendto(sock, obstacles_buffer, sizeof(obstacles_buffer), 0, (struct sockaddr *)&clients[i], sizeof(struct sockaddr_in));
     }
 
     /* cast_flash_slot is a one-tick wire signal (S170-124) -- already
@@ -1011,6 +1024,8 @@ int main(int argc, char *argv[]) {
     signal(SIGILL, crash_signal_handler);
 #endif
     int port = 7200;
+    unsigned int seed_arg = 0;
+    int have_seed_arg = 0;
     for (int i = 1; i < argc; i++) {
         if (strcmp(argv[i], "--port") == 0 && i + 1 < argc) {
             port = atoi(argv[++i]);
@@ -1018,14 +1033,29 @@ int main(int argc, char *argv[]) {
             lobby_size = atoi(argv[++i]);
             if (lobby_size < 2) lobby_size = 2;
             if (lobby_size > ARENA_MAX_HEROES) lobby_size = ARENA_MAX_HEROES;
+        } else if (strcmp(argv[i], "--seed") == 0 && i + 1 < argc) {
+            /* S370-02 (2026-09-11): apps/matchmaker now always passes this for a real
+               matchmaker-mediated match, so the procedural jungle (arena_set_match_seed) this
+               process generates matches what every connecting client was told via
+               MatchFoundMsg.seed. A manually-launched server (direct-connect dev workflow, no
+               matchmaker involved) that omits --seed keeps arena_game.c's own fixed default --
+               a real, named, narrow gap: a client connecting directly without going through the
+               matchmaker has no seed to match either, so the two sides only actually agree in
+               that path when neither one was ever told a --seed/MatchFoundMsg.seed at all. */
+            seed_arg = (unsigned int)strtoul(argv[++i], NULL, 10);
+            have_seed_arg = 1;
         }
     }
+    if (have_seed_arg) arena_set_match_seed(seed_arg); /* before the first arena_init_teams()/arena_init_with_heroes() call, later once the lobby fills -- see arena_set_match_seed's own doc comment */
     /* No srand() call existed anywhere in this file before (found while wiring The Cart's real
        rand()-based delivery outcomes, NORTHSTAR §24 Milestone 2, 2026-07-31) -- rand() without
        this would use the C library's default seed (1) every single server process start,
        making a "random" delivery completely predictable across restarts on the one binary that
        actually arbitrates real networked matches. apps/arena and apps/arena_bot already seed
-       their own local RNG the same way; this was the one binary that never needed it before. */
+       their own local RNG the same way; this was the one binary that never needed it before.
+       Deliberately a SEPARATE seed source from arena_set_match_seed just above -- see that
+       function's own doc comment for why the procedural jungle can't share this general-purpose
+       rand() stream. */
     srand((unsigned int)time(NULL) ^ (unsigned int)getpid());
     load_ticket_secret();
     load_iduna_agent_config();

@@ -91,8 +91,42 @@ typedef enum {
     ARENA_OBSTACLE_ROCK = 0,
     ARENA_OBSTACLE_TREE = 1,
 } ArenaObstacleKind;
-#define ARENA_OBSTACLE_COUNT 32 /* S170-191: was 22 -- scaled positions plus 10 new pieces, "add more jungle obstacles" to fill the golden-ratio-expanded map instead of leaving new open space empty */
+#define ARENA_OBSTACLE_HANDPLACED_COUNT 32 /* S170-191: was 22 -- scaled positions plus 10 new pieces, "add more jungle obstacles" to fill the golden-ratio-expanded map instead of leaving new open space empty. Indices [0, ARENA_OBSTACLE_HANDPLACED_COUNT) are this founder-tuned lane-wall layout, untouched by S370-03 below -- it's the skeleton the procedural jungle fills in AROUND, not a layout it replaces. */
+/* S370-03 (2026-09-11), founder real-time: "lets use the mandelbrot set to add more trees in
+ * between the bases. we want there to be a lot more trees like DOTA2 - but actually can we build
+ * it into the game so that we procedurally generate the map for each new game?" Indices
+ * [ARENA_OBSTACLE_HANDPLACED_COUNT, ARENA_OBSTACLE_COUNT) are generated fresh per match by
+ * arena_obstacles_reset_layout (packages/simulation/arena_game.c) via Mandelbrot escape-time
+ * boundary sampling, seeded from arena_set_match_seed's own per-match seed -- see that
+ * function's own doc comment for the full algorithm and exclusion-zone reasoning. Still never
+ * wire-synced (client and server independently compute the identical result from the identical
+ * seed, same "no sync needed for a deterministic layout" precedent the hand-placed half already
+ * used) -- only the resulting HP per obstacle rides the wire (ArenaSnapshotObstaclesMsg,
+ * protocol.h). */
+#define ARENA_OBSTACLE_PROCEDURAL_COUNT 96
+#define ARENA_OBSTACLE_COUNT (ARENA_OBSTACLE_HANDPLACED_COUNT + ARENA_OBSTACLE_PROCEDURAL_COUNT) /* 128 */
 #define ARENA_HERO_COLLISION_RADIUS 0.6f /* how close a hero's own footprint can get to an obstacle's edge before being pushed back out */
+
+/* arena_set_match_seed (S370-01/02, 2026-09-11): stores the per-match seed the procedural
+ * jungle generator (and anything else that wants real per-match-not-per-process determinism
+ * later) reads from. Deliberately NOT a field on arena_state -- every init path
+ * (arena_init_with_heroes/arena_init_teams) does a blanket memset(&arena_state, 0, ...) as its
+ * very first line, which would silently wipe a seed stored there before
+ * arena_obstacles_reset_layout ever got to read it. Deliberately NOT libc's global rand()/
+ * srand() stream either -- client and server each call rand() for their own independent,
+ * differently-ordered things (server-side bot AI decisions, none client-side, etc.), so sharing
+ * that stream would desync the jungle layout the instant call order ever differed between the
+ * two sides. This is its own small, isolated PRNG state, touched only by the jungle generator.
+ * Call once, before the first arena_init_with_heroes/arena_init_teams of a match:
+ *   - server: apps/arena_server/src/main.c, right after computing its own effective --seed value
+ *     (the same value it already passes to srand()).
+ *   - client: apps/arena/src/main.c, from the seed net_find_and_connect already receives in
+ *     MatchFoundMsg.seed (previously read and discarded -- see that function's own doc comment).
+ * A seed of 0 is remapped to 1 (xorshift32's degenerate all-zero state never advances). Never
+ * called (unset, e.g. every one of this file's ~300 direct arena_init_teams/
+ * arena_init_with_heroes unit-test callers) means a fixed default -- deterministic, not
+ * undefined, so existing tests stay reproducible without needing to call this themselves. */
+void arena_set_match_seed(unsigned int seed);
 
 /* Healing fountains (S170-147). Founder: "add healing fountains at 2
  * corners of the map across from each other." Two static, fixed-position

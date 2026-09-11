@@ -673,6 +673,102 @@ void arena_towers_reset(void) {
     }
 }
 
+/* S370: per-match seed + isolated PRNG for procedural jungle generation (2026-09-11). See
+ * arena_set_match_seed's own doc comment in arena_game.h for the full "why not arena_state, why
+ * not libc rand()" reasoning. Fixed non-zero default so the ~300 existing unit tests that call
+ * arena_init_with_heroes/arena_init_teams directly, without ever calling arena_set_match_seed,
+ * stay deterministic. */
+static unsigned int g_arena_match_seed = 0xA53Cu;
+
+void arena_set_match_seed(unsigned int seed) {
+    g_arena_match_seed = seed ? seed : 1u; /* xorshift32's all-zero state never advances */
+}
+
+/* arena_prng_next: xorshift32. Deliberately separate from libc rand()/srand() -- see
+ * arena_set_match_seed's own doc comment. Not cryptographic, not this file's general gameplay
+ * RNG (that's still plain rand() everywhere else) -- just enough quality for jungle placement.
+ * Adjacent seeds (e.g. two matches spawned back-to-back off an incrementing seed source) produce
+ * related early outputs with xorshift32, same as most small PRNGs -- arena_obstacles_reset_layout
+ * burns a few values off the front of the stream before using it for exactly this reason. */
+static unsigned int arena_prng_next(unsigned int *state) {
+    unsigned int x = *state;
+    x ^= x << 13;
+    x ^= x >> 17;
+    x ^= x << 5;
+    *state = x;
+    return x;
+}
+
+/* arena_prng_float01: [0,1) from arena_prng_next's top bits (the low bits of an xorshift32
+ * stream are the weakest; using the top 24 avoids leaning on those). */
+static float arena_prng_float01(unsigned int *state) {
+    return (float)(arena_prng_next(state) >> 8) / (float)(1u << 24);
+}
+
+/* arena_mandelbrot_escape: classic z = z^2 + c escape-time iteration count, capped at
+ * max_iter. Standard |z|^2 > 4 bailout (equivalent to |z| > 2, the real escape radius) compared
+ * as squared magnitude so no sqrt is needed per iteration. */
+static int arena_mandelbrot_escape(float cr, float ci, int max_iter) {
+    float zr = 0.0f, zi = 0.0f;
+    int i;
+    for (i = 0; i < max_iter; i++) {
+        float zr2 = zr * zr, zi2 = zi * zi;
+        if (zr2 + zi2 > 4.0f) break;
+        float new_zi = 2.0f * zr * zi + ci;
+        zr = zr2 - zi2 + cr;
+        zi = new_zi;
+    }
+    return i;
+}
+
+/* arena_jungle_spot_excluded (S370-03): true if (x,z) is too close to a capture node, either
+ * team's graveyard/spawn-fan, either team's shop, a jungle camp, a fountain, or any obstacle
+ * already placed (hand-placed wall pieces included, via `placed_count` covering the full
+ * [0,placed_count) prefix of arena_state.obstacles already written by the time this is called) --
+ * the procedural jungle must never obstruct any of those, or crowd two obstacles close enough to
+ * trap a hero between them, same clearance discipline the hand-placed layout's own doc comment
+ * already applies to the lane walls. Clearance margins are generous on purpose: this only
+ * shrinks the pool of candidate jungle spots on a map with a huge amount of open area to draw
+ * from (ARENA_HALF_EXTENT ~155), never a tight budget. */
+static int arena_jungle_spot_excluded(float x, float z, int placed_count) {
+    for (int n = 0; n < ARENA_NODE_COUNT; n++) {
+        float dx = x - arena_state.nodes[n].x, dz = z - arena_state.nodes[n].z;
+        float clear = ARENA_NODE_CAPTURE_RADIUS + 6.0f;
+        if (dx * dx + dz * dz < clear * clear) return 1;
+    }
+    for (int team = 0; team < 2; team++) {
+        float gx, gz;
+        arena_graveyard_position(team, &gx, &gz);
+        float dx = x - gx, dz = z - gz;
+        if (dx * dx + dz * dz < 24.0f * 24.0f) return 1; /* clears the full ARENA_TEAM_SIZE-slot spawn fan-out */
+
+        float sx, sz;
+        arena_shop_position(team, &sx, &sz);
+        dx = x - sx; dz = z - sz;
+        float shop_clear = ARENA_SHOP_RADIUS + 4.0f;
+        if (dx * dx + dz * dz < shop_clear * shop_clear) return 1;
+    }
+    for (int f = 0; f < ARENA_FOUNTAIN_COUNT; f++) {
+        float fx, fz;
+        arena_fountain_position(f, &fx, &fz);
+        float dx = x - fx, dz = z - fz;
+        float clear = ARENA_FOUNTAIN_RADIUS + 4.0f;
+        if (dx * dx + dz * dz < clear * clear) return 1;
+    }
+    for (int c = 0; c < ARENA_CAMP_COUNT; c++) {
+        float cx, cz;
+        arena_camp_position(c, &cx, &cz);
+        float dx = x - cx, dz = z - cz;
+        if (dx * dx + dz * dz < 12.0f * 12.0f) return 1;
+    }
+    for (int i = 0; i < placed_count; i++) {
+        float dx = x - arena_state.obstacles[i].x, dz = z - arena_state.obstacles[i].z;
+        float min_gap = arena_state.obstacles[i].radius + 1.4f /* this candidate's own largest possible radius, 0.8+0.6 */ + 0.8f /* breathing room so two clumps never pinch a hero-width gap shut */;
+        if (dx * dx + dz * dz < min_gap * min_gap) return 1;
+    }
+    return 0;
+}
+
 /* arena_obstacles_reset_layout (S170-138, "add rocks and trees so we
  * naturally start to create some lanes"): two mirrored jungle walls, one
  * between each team's spawn column and that side's flank nodes (Stables/
@@ -720,7 +816,14 @@ void arena_towers_reset(void) {
  * exactly the "first game had jungle rocks and trees, subsequent games
  * didn't" bug report this fixes. */
 void arena_obstacles_reset_layout(void) {
-    static const struct { float x, z, radius; ArenaObstacleKind kind; } layout[ARENA_OBSTACLE_COUNT] = {
+    /* S370-03: this hand-placed table stays exactly ARENA_OBSTACLE_HANDPLACED_COUNT (32) entries
+       -- ARENA_OBSTACLE_COUNT itself grew to 128 to make room for the procedural jungle
+       generated further down in this function, NOT by extending this table. Sizing this array
+       (and the loop just below it) to the old ARENA_OBSTACLE_COUNT would have silently zero-
+       initialized the other 96 slots -- x=0,z=0,radius=0,kind=ARENA_OBSTACLE_ROCK(0) -- landing
+       a phantom zero-radius obstacle exactly on top of Blacksmith, the map's own true-center
+       contested node. */
+    static const struct { float x, z, radius; ArenaObstacleKind kind; } layout[ARENA_OBSTACLE_HANDPLACED_COUNT] = {
         /* left wall (between team 0's spawn and Stables/Farm) */
         { -11.5f * 1.618034f * ARENA_MAP_SCALE_9X,  5.5f * 1.618034f * ARENA_MAP_SCALE_9X, 1.0f, ARENA_OBSTACLE_TREE },
         { -13.0f * 1.618034f * ARENA_MAP_SCALE_9X,  4.0f * 1.618034f * ARENA_MAP_SCALE_9X, 0.9f, ARENA_OBSTACLE_ROCK },
@@ -761,7 +864,7 @@ void arena_obstacles_reset_layout(void) {
         { -38.0f * ARENA_MAP_SCALE_9X, -32.0f * ARENA_MAP_SCALE_9X, 1.1f, ARENA_OBSTACLE_TREE },
         {  38.0f * ARENA_MAP_SCALE_9X,  32.0f * ARENA_MAP_SCALE_9X, 1.1f, ARENA_OBSTACLE_TREE },
     };
-    for (int i = 0; i < ARENA_OBSTACLE_COUNT; i++) {
+    for (int i = 0; i < ARENA_OBSTACLE_HANDPLACED_COUNT; i++) {
         arena_state.obstacles[i].x = layout[i].x;
         arena_state.obstacles[i].z = layout[i].z;
         arena_state.obstacles[i].radius = layout[i].radius;
@@ -775,6 +878,82 @@ void arena_obstacles_reset_layout(void) {
         } else {
             arena_state.obstacles[i].hp = 0;
             arena_state.obstacles[i].max_hp = 0;
+        }
+    }
+
+    /* S370-03: procedural jungle, indices [ARENA_OBSTACLE_HANDPLACED_COUNT, ARENA_OBSTACLE_COUNT)
+     * -- Mandelbrot escape-time boundary sampling, seeded per match via arena_set_match_seed
+     * (its own doc comment in arena_game.h has the full "why not arena_state, why not rand()"
+     * reasoning). Rejection-samples candidate points across the play area, keeping only points
+     * whose escape-time iteration count falls in the boundary band between "escapes immediately"
+     * (open ground) and "never escapes" (deep set interior, would read as a solid unwalkable
+     * blob) -- that band is exactly the fractal's own filigreed edge, which is what makes the
+     * result cluster into organic, branching thickets instead of a uniform scatter. Each match
+     * samples a randomized pan/zoom/rotation sub-window of the same real boundary-rich region of
+     * the complex plane (near the main cardioid/period-2-bulb junction), so different matches
+     * get visibly different jungle shapes, not just different trees within one fixed shape. */
+    {
+        unsigned int prng_state = g_arena_match_seed;
+        for (int burn = 0; burn < 8; burn++) arena_prng_next(&prng_state); /* see arena_prng_next's own doc comment: decorrelates adjacent seeds' opening samples */
+
+        float center_r = -0.75f + (arena_prng_float01(&prng_state) - 0.5f) * 0.5f;
+        float center_i = 0.1f + (arena_prng_float01(&prng_state) - 0.5f) * 0.5f;
+        float window = 0.9f + arena_prng_float01(&prng_state) * 0.6f;
+        float rot = arena_prng_float01(&prng_state) * 6.2831853f;
+        float cos_r = cosf(rot), sin_r = sinf(rot);
+
+        float region_half = ARENA_HALF_EXTENT - 6.0f; /* stay inside the real play boundary */
+        const int max_attempts = ARENA_OBSTACLE_PROCEDURAL_COUNT * 40; /* generous headroom -- exclusion zones cover a small fraction of this map's real (9x-scaled) area */
+        int placed = ARENA_OBSTACLE_HANDPLACED_COUNT;
+        int attempts = 0;
+        while (placed < ARENA_OBSTACLE_COUNT && attempts < max_attempts) {
+            attempts++;
+            float x = (arena_prng_float01(&prng_state) * 2.0f - 1.0f) * region_half;
+            float z = (arena_prng_float01(&prng_state) * 2.0f - 1.0f) * region_half;
+            if (arena_jungle_spot_excluded(x, z, placed)) continue;
+
+            float nx = x / region_half, nz = z / region_half; /* normalize to [-1,1] */
+            float rx = nx * cos_r - nz * sin_r; /* rotate so the sampled pattern isn't always map-axis-aligned */
+            float rz = nx * sin_r + nz * cos_r;
+            float cr = center_r + rx * window;
+            float ci = center_i + rz * window;
+
+            int iter = arena_mandelbrot_escape(cr, ci, 80);
+            if (iter < 6 || iter >= 80) continue; /* skip open ground (fast escape) and solid interior (never escapes) -- boundary band only */
+
+            ArenaObstacle *o = &arena_state.obstacles[placed];
+            o->x = x;
+            o->z = z;
+            float t = (float)(iter - 6) / (float)(80 - 6); /* 0 near the inner edge of the band, 1 near the outer edge -- closer to the true boundary reads as a denser/older clump */
+            if (t < 0.0f) t = 0.0f;
+            if (t > 1.0f) t = 1.0f;
+            int is_rock = (arena_prng_next(&prng_state) % 100) < 15; /* ~15% rocks -- same minority sight-blocking-accent role rocks already play in the hand-placed layout */
+            o->kind = is_rock ? ARENA_OBSTACLE_ROCK : ARENA_OBSTACLE_TREE;
+            o->radius = 0.8f + t * 0.6f;
+            if (o->kind == ARENA_OBSTACLE_TREE) {
+                o->hp = ARENA_TREE_HP;
+                o->max_hp = ARENA_TREE_HP;
+            } else {
+                o->hp = 0;
+                o->max_hp = 0;
+            }
+            placed++;
+        }
+        /* Any slot rejection sampling couldn't fill within max_attempts (not observed against
+           this map's real size/exclusion budget, but a fixed-size array needs a defined
+           fallback rather than relying on arena_state's own memset-zero, which would land a
+           phantom zero-radius obstacle at (0,0) -- Blacksmith -- same hazard the hand-placed
+           table's own doc comment above names) sits far outside the play area at zero radius --
+           resolve_hero_obstacle_collision's own min_dist check means it can never trigger a
+           push-out. */
+        for (; placed < ARENA_OBSTACLE_COUNT; placed++) {
+            ArenaObstacle *o = &arena_state.obstacles[placed];
+            o->x = 1.0e6f;
+            o->z = 1.0e6f;
+            o->radius = 0.0f;
+            o->kind = ARENA_OBSTACLE_ROCK;
+            o->hp = 0;
+            o->max_hp = 0;
         }
     }
 }

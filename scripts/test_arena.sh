@@ -255,6 +255,33 @@ gcc -std=c99 -O2 -Wall -Wextra -I"${ROOT_DIR}/packages" \
   "${ROOT_DIR}/packages/common/mlp_infer.c" \
   -lm
 
+# Procedural jungle (S370-03/05, 2026-09-11): Mandelbrot-seeded jungle generation, exclusion-zone
+# and determinism checks, same headless-testable reasoning as the rest of this file.
+gcc -std=c99 -O2 -Wall -Wextra -I"${ROOT_DIR}/packages" \
+  -o "${BUILD_DIR}/test_procedural_jungle" \
+  -include "${ROOT_DIR}/packages/simulation/bloodflower_mod_host.h" \
+  -include "${ROOT_DIR}/packages/simulation/tree_passive_mod_host.h" \
+  -include "${ROOT_DIR}/packages/simulation/build_template_mod_host.h" \
+  -include "${ROOT_DIR}/packages/simulation/item_curriculum_mod_host.h" \
+  -include "${ROOT_DIR}/packages/simulation/duck_smoke_bomb_mod_host.h" \
+  -include "${ROOT_DIR}/packages/simulation/abraham_fireball_mod_host.h" \
+  -include "${ROOT_DIR}/packages/simulation/bacon_puck_intangible_speed_mod_host.h" \
+  -include "${ROOT_DIR}/packages/simulation/card_effect_mod_host.h" \
+  -include "${ROOT_DIR}/packages/simulation/combat_log_mod_host.h" \
+  "${ROOT_DIR}/tests/test_procedural_jungle.c" \
+  "${ROOT_DIR}/packages/simulation/arena_game.c" \
+  "${ROOT_DIR}/packages/simulation/bloodflower_mod.c" \
+  "${ROOT_DIR}/packages/simulation/tree_passive_mod.c" \
+  "${ROOT_DIR}/packages/simulation/build_template_mod.c" \
+  "${ROOT_DIR}/packages/simulation/item_curriculum_mod.c" \
+  "${ROOT_DIR}/packages/simulation/duck_smoke_bomb_mod.c" \
+  "${ROOT_DIR}/packages/simulation/abraham_fireball_mod.c" \
+  "${ROOT_DIR}/packages/simulation/bacon_puck_intangible_speed_mod.c" \
+  "${ROOT_DIR}/packages/simulation/card_effect_mod.c" \
+  "${ROOT_DIR}/packages/simulation/combat_log_mod.c" \
+  "${ROOT_DIR}/packages/common/mlp_infer.c" \
+  -lm
+
 # Build templates (2026-08-25): real live round-trip through the compiled PARENA mod
 # (stdlib/redgarden/build_template_mod.prn), same headless-testable reasoning as Bloodflower/
 # Tree passive above.
@@ -456,6 +483,7 @@ gcc -std=c99 -O2 -Wall -Wextra -I"${ROOT_DIR}/packages" \
 "${BUILD_DIR}/test_arena_game"
 "${BUILD_DIR}/test_bloodflower"
 "${BUILD_DIR}/test_tree_passive"
+"${BUILD_DIR}/test_procedural_jungle"
 "${BUILD_DIR}/test_build_templates"
 "${BUILD_DIR}/test_item_curriculum"
 "${BUILD_DIR}/test_duck_smoke_bomb"
