@@ -80,17 +80,39 @@ jobs:
       # real recurrences of the identical gap is a real signal the LIST itself was the wrong
       # shape, not that anyone kept forgetting -- replaced with a real glob over
       # packages/simulation/*_mod_host.h / *_mod.c, so a new mod's own generated files are
-      # picked up automatically the moment they're committed, closing this whole bug class at
-      # once rather than patching a fifth recurrence later.
+      # picked up automatically the moment they're committed.
+      #
+      # Real 5th/6th recurrence found live 2026-09-11 (founder: "theres a bunch of updates to
+      # the game that im not seeing... since the add more trees thread"): that "closing this
+      # whole bug class at once" claim was too narrow -- the glob only ever scanned
+      # packages/simulation/, and every commit since d56f24e (Phase 7, the Living Map bridge)
+      # landed real new engine/mod files under two SIBLING package directories the glob never
+      # reached (packages/livingmap/, packages/reflux/), plus a non-"*_mod.c"-named engine file
+      # (living_map_bridge.c, same category as mlp_infer.c/the goldenband files below -- real
+      # host-side glue, not a PARENA mod, so no naming convention was ever going to catch it by
+      # glob). Every CI run since d56f24e failed at this exact step (confirmed via GitHub API +
+      # a local mingw repro, undefined reference to living_map_bridge_*/reflux_* symbols
+      # arena_game.c calls unconditionally) -- so every real feature since (Living Map bridge,
+      # REFLUX, day/night, ALLCAP, cows' hostile-spawn wiring) had a GREEN local build/test but
+      # never actually reached a real GitHub Release; the `release` job below only runs on a
+      # successful `build`, so it silently never fired. v0.36.0 (commit daf4bb7) is the last
+      # real release cut before this broke.
+      #
+      # Fixed by widening the glob to every package directory (packages/*/*_mod_host.h,
+      # packages/*/*_mod.c -- not just packages/simulation/), matching
+      # scripts/build_arena.sh's own already-correct, already-proven-working file list exactly
+      # (that script's own comments trace each of these same files being added correctly over
+      # time; this step just never mirrored it), plus explicit entries for the two real
+      # non-mod engine files no naming convention will ever glob-match.
       - name: Cross-compile Windows arena client
         run: |
           set -euo pipefail
           mod_includes=()
-          for h in packages/simulation/*_mod_host.h; do
+          for h in packages/*/*_mod_host.h; do
             mod_includes+=(-include "$h")
           done
           mod_sources=()
-          for c in packages/simulation/*_mod.c; do
+          for c in packages/*/*_mod.c; do
             mod_sources+=("$c")
           done
           x86_64-w64-mingw32-gcc -std=c99 -D_DEFAULT_SOURCE -O2 \
@@ -100,6 +122,12 @@ jobs:
             packages/simulation/arena_game.c \
             packages/simulation/arena_replay.c \
             packages/simulation/arena_ai_bridge.c \
+            packages/simulation/living_map_bridge.c \
+            packages/livingmap/hex_grid.c \
+            packages/livingmap/town.c \
+            packages/livingmap/creep.c \
+            packages/livingmap/living_map_events.c \
+            packages/reflux/reflux_runtime.c \
             "${mod_sources[@]}" \
             packages/common/mlp_infer.c \
             packages/goldenband/gband.c \
