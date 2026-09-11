@@ -76,4 +76,20 @@ void living_map_bridge_creep_world_pos(int index, float *out_x, float *out_z);
 int living_map_bridge_creep_faction_owner(int index);
 int living_map_bridge_creep_alive(int index);
 
+/* living_map_bridge_spawn_hostile_creep_at_map_center -- Bloodflower's own "for now" real
+ * behavior (EMILY/BACKLOG.md SECTION 380, founder: "for now just have it spawn a bunch of
+ * hostile creeps into the map at exactly the midpoint"). Spawns one real, aggressive
+ * LivingMapCreep at hex (0,0) (the map's real midpoint -- ArenaState.bloodflower_x/z are always
+ * (0,0) too, see arena_game.h's own doc comment), owned by Living Map faction 3 (Corruption) --
+ * its first real, live use anywhere in this codebase (every other Living Map system so far only
+ * ever assigns faction 1/2/neutral). Hostile to every real player faction (1 and 2) via the same
+ * faction-inequality aggro rule every other creep already uses -- no special-casing needed. The
+ * real HOST-side caller (packages/simulation/arena_game.c's own
+ * ecowar_tick_bloodflower_hostile_spawner) calls this once per creep
+ * PARENA/stdlib/ecowar/bloodflower_hostile_spawner_mod.prn's own on-bloodflower-hostile-spawner-
+ * creep-count names, in a real loop -- this function itself only ever spawns exactly one. Returns
+ * the new creep's id, or -1 if the registry is full (same "real, honest limit, not a crash"
+ * convention living_map_creep_spawn's own doc comment already uses). */
+int living_map_bridge_spawn_hostile_creep_at_map_center(void);
+
 #endif /* LIVING_MAP_BRIDGE_H */

@@ -112,3 +112,16 @@ int living_map_bridge_creep_faction_owner(int index) {
 int living_map_bridge_creep_alive(int index) {
     return g_living_map_creeps.creeps[index].alive;
 }
+
+/* Bloodflower's own real hostile creeps (SECTION 380): stronger than a cow (10 hp, passive) but
+ * not a boss -- a real, deliberate, tunable middle value. Living Map faction 3 (Corruption)'s
+ * first real, live use anywhere in this codebase. */
+#define LIVING_MAP_BLOODFLOWER_HOSTILE_HP 40
+#define LIVING_MAP_BLOODFLOWER_HOSTILE_FACTION 3
+
+int living_map_bridge_spawn_hostile_creep_at_map_center(void) {
+    HexCoord center = {0, 0};
+    return living_map_creep_spawn(&g_living_map_creeps, &g_living_map_log, center,
+                                   LIVING_MAP_BLOODFLOWER_HOSTILE_FACTION,
+                                   LIVING_MAP_BLOODFLOWER_HOSTILE_HP);
+}

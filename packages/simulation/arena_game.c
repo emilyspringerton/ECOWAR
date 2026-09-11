@@ -12,6 +12,7 @@
 #include "bacon_puck_intangible_speed_mod_host.h"
 #include "combat_log_mod_host.h"
 #include "living_map_bridge.h"
+#include "bloodflower_hostile_spawner_mod_host.h"
 
 ArenaState arena_state;
 int arena_bot_enabled = 1;
@@ -101,6 +102,36 @@ void arena_daynight_ambient_rgb(float *out_r, float *out_g, float *out_b) {
     if (out_r) *out_r = 0.03f + sun_visibility * 0.10f;
     if (out_g) *out_g = 0.05f + sun_visibility * 0.10f;
     if (out_b) *out_b = 0.04f + sun_visibility * 0.08f;
+}
+
+/* arena_daynight_light_dir (EMILY/BACKLOG.md SECTION 380, founder: "add the day night rendering
+ * - we can take the graphics of the day night rendering from OG SHANKPIT i love the way the
+ * lighting shifts from day to night in shankpit"). Real, checked-first finding: this codebase
+ * already ported SHANKPIT retro_lighting.c's own ambient-color blend (arena_daynight_ambient_rgb
+ * just above), but the actual 3D SCENE light direction apps/arena's shader uses (`uLightDir`) was
+ * still a hardcoded constant (0.4, 0.8, 0.3) -- never moving, the real gap behind "I love the way
+ * the lighting shifts." This function ports the other real half of SHANKPIT's own dynamic
+ * lighting: retro_sky_eval_sun_dir's real sun orbit (same formula arena_daynight_ambient_rgb's
+ * own sun_height already reuses, extended here into a full 3D direction vector), plus
+ * retro_lighting.c's own RETRO_LIGHTING_DYNAMIC "sun by day, moon (the exact opposite direction)
+ * by night" convention -- keeps a real, moving light source above the horizon for the toon
+ * shader's `dot(N, uLightDir)` band cutoffs to react to (apps/arena's shader normalizes uLightDir
+ * and has no separate light-COLOR uniform, so direction alone drives the real "surfaces darken as
+ * the sun dips, brighten again as the moon rises opposite it" visual -- ambient_rgb above already
+ * covers the color-grade half). */
+void arena_daynight_light_dir(float *out_x, float *out_y, float *out_z) {
+    float orbit_t = arena_state.time_of_day_sec * ARENA_DAYNIGHT_ORBIT_SPEED;
+    float sun_x = cosf(orbit_t);
+    float sun_y = sinf(orbit_t) * cosf(ARENA_DAYNIGHT_TILT);
+    float sun_z = sinf(orbit_t) * sinf(ARENA_DAYNIGHT_TILT);
+
+    float dir_x = sun_y > 0.0f ? sun_x : -sun_x;
+    float dir_y = sun_y > 0.0f ? sun_y : -sun_y;
+    float dir_z = sun_y > 0.0f ? sun_z : -sun_z;
+
+    if (out_x) *out_x = dir_x;
+    if (out_y) *out_y = dir_y;
+    if (out_z) *out_z = dir_z;
 }
 
 /* ARENA_ITEMS (S170-175): the actual 24-item shop catalog. See
@@ -1417,6 +1448,35 @@ void arena_npc_hero_tick(int hero_index, int foe_index, unsigned int dt_ms) {
 
     arena_set_move_target(hero_index, foe->x, foe->z);
     bot_cast_kit_if_ready(bot, foe);
+}
+
+/* ecowar_tick_bloodflower_hostile_spawner (EMILY/BACKLOG.md SECTION 380) -- the real, host-side
+ * REFLUX POLLING loop for bloodflower_hostile_spawner_mod.prn, the first real REFLUX subscriber.
+ * REFLUX has no push/callback mechanism (see stdlib/reflux/reflux.prn's own header comment) --
+ * this function IS the "who calls the subscriber and when" half every mod in this repo needs from
+ * host C, same as any other mod's own real tick/call site, just reached via a shared, generic
+ * action log instead of a bespoke direct call from one specific other mod.
+ *
+ * g_bloodflower_hostile_spawner_last_seen is real, persistent, HOST-side cursor state (PARENA has
+ * no way to hold state across calls) -- every action in the shared REFLUX log from that cursor
+ * onward is real and new since the last time this ran. Asks the mod itself
+ * (on_bloodflower_hostile_spawner_should_react) whether each one is real, relevant action; if so,
+ * asks the mod (on_bloodflower_hostile_spawner_creep_count) how many creeps "a bunch" means and
+ * spawns exactly that many via the real Living Map bridge. */
+static int g_bloodflower_hostile_spawner_last_seen = 0;
+
+static void ecowar_tick_bloodflower_hostile_spawner(void) {
+    int size = reflux_log_size();
+    for (int i = g_bloodflower_hostile_spawner_last_seen; i < size; i++) {
+        int action_type = reflux_action_type_at(i);
+        if (on_bloodflower_hostile_spawner_should_react(action_type)) {
+            int count = on_bloodflower_hostile_spawner_creep_count();
+            for (int c = 0; c < count; c++) {
+                living_map_bridge_spawn_hostile_creep_at_map_center();
+            }
+        }
+    }
+    g_bloodflower_hostile_spawner_last_seen = size;
 }
 
 /* resolve_hero_obstacle_collision (S170-138): plain circle-vs-circle push-out,
@@ -7472,6 +7532,7 @@ void arena_update(unsigned int dt_ms) {
      * hero-death check above already follows, so a Living Map win can't overwrite a hero-death
      * win from the same tick or vice versa. */
     living_map_bridge_tick(dt_ms);
+    ecowar_tick_bloodflower_hostile_spawner();
     if (arena_state.winner == 0) {
         int win_faction = living_map_bridge_full_control_faction();
         if (win_faction != 0) {
@@ -7901,6 +7962,7 @@ void arena_update_teams(unsigned int dt_ms) {
      * arena_state.winner == 0 so a Living Map win can never overwrite the resource-race win just
      * above from the same tick. */
     living_map_bridge_tick(dt_ms);
+    ecowar_tick_bloodflower_hostile_spawner();
     if (arena_state.winner == 0) {
         int win_faction = living_map_bridge_full_control_faction();
         if (win_faction != 0) {

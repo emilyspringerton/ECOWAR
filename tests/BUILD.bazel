@@ -21,6 +21,32 @@ cc_test(
     copts = COMMON_TEST_COPTS,
 )
 
+# Living Map bridge (BACKLOG.md SECTION 377 Phase 7) -- depends on :arena_game since
+# living_map_bridge.c is now bundled into it (arena_game.c calls into it unconditionally).
+cc_test(
+    name = "test_living_map_bridge",
+    srcs = ["test_living_map_bridge.c"],
+    deps = ["//packages/simulation:arena_game"],
+    copts = COMMON_TEST_COPTS,
+)
+
+# REFLUX (BACKLOG.md SECTION 380) -- the real cross-mod pub/sub layer, plus its first real
+# dispatcher/subscriber pair (bloodflower_mod / bloodflower_hostile_spawner_mod).
+cc_test(
+    name = "test_reflux",
+    srcs = ["test_reflux.c"],
+    deps = ["//packages/simulation:arena_game"],
+    copts = COMMON_TEST_COPTS,
+)
+
+# Day/night dynamic scene lighting (BACKLOG.md SECTION 380).
+cc_test(
+    name = "test_daynight_lighting",
+    srcs = ["test_daynight_lighting.c"],
+    deps = ["//packages/simulation:arena_game"],
+    copts = COMMON_TEST_COPTS,
+)
+
 # Living Map (docs/NORTHSTAR_LIVING_MAP.md, BACKLOG.md SECTION 377) -- deliberately depends on
 # :living_map only, not :arena_game, matching that package's own "new, standalone layer" design.
 cc_test(

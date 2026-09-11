@@ -3468,6 +3468,13 @@ void arena_hero_claim_bloodflower(void);
  * before a match's own clock is running). */
 void arena_daynight_ambient_rgb(float *out_r, float *out_g, float *out_b);
 
+/* arena_daynight_light_dir (SECTION 380): the real, moving 3D scene light direction -- the
+ * SHANKPIT retro_lighting.c "sun by day, moon by night" real dynamic-lighting half
+ * arena_daynight_ambient_rgb's own ambient-color port didn't cover. Same pure-query, no-side-
+ * effects, recompute-fresh-every-call shape. Caller: apps/arena/src/main.c's in-match render
+ * loop, replacing what used to be a hardcoded, never-moving uLightDir uniform value. */
+void arena_daynight_light_dir(float *out_x, float *out_y, float *out_z);
+
 /* redgarden_host_spawn_bloodflower: the real host-side implementation the PARENA-compiled
  * on_moon_zenith calls back into (see bloodflower_mod_host.h). Sets bloodflower_active/x/z/
  * ms_remaining on arena_state -- the actual, real world-state mutation; on_moon_zenith itself

@@ -3721,7 +3721,19 @@ int main(int argc, char *argv[]) {
         g_last_vp = vp; /* 2026-07-30: see this variable's own doc comment -- next frame's drag-select box-test reads this */
 
         glUseProgram_(prog);
-        glUniform3f_(loc_light, 0.4f, 0.8f, 0.3f);
+        /* Day/night dynamic scene lighting (BACKLOG.md SECTION 380, founder: "i love the way the
+         * lighting shifts from day to night in shankpit"): was a hardcoded, never-moving
+         * direction -- arena_daynight_light_dir ports SHANKPIT retro_lighting.c's own real
+         * "sun by day, moon by night" dynamic direction (the ambient clear-color tint just above
+         * was already ported; this is the other real half). The shader normalizes uLightDir
+         * itself and has no separate light-color uniform, so direction alone drives the real
+         * toon-shader band shift as the light arcs across the sky and dips/rises at the
+         * horizon. */
+        {
+            float dn_light_x, dn_light_y, dn_light_z;
+            arena_daynight_light_dir(&dn_light_x, &dn_light_y, &dn_light_z);
+            glUniform3f_(loc_light, dn_light_x, dn_light_y, dn_light_z);
+        }
 
         /* ground */
         {
