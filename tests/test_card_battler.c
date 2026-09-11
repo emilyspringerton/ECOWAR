@@ -179,6 +179,36 @@ static void test_npc_hero_tick_moves_toward_a_living_foe(void) {
     CHECK(npc->moving, "arena_npc_hero_tick issues a real move command toward the foe");
 }
 
+/* Founder real-time correction: NPC-controlled heroes must be deterministic and rule-based, like
+ * Clash Royale's own troops -- "no AI there." Two identical setups must walk toward the exact
+ * same real target every time, proving there's no neural net or randomness left in the movement
+ * decision (the original version of this function called bot_brain_forward, a trained net --
+ * removed). */
+static void test_npc_hero_tick_is_deterministic_not_ai_driven(void) {
+    arena_init_with_heroes(ARENA_HERO_UNICORN, ARENA_HERO_DUCK);
+    arena_state.heroes[0].x = -20.0f; arena_state.heroes[0].z = 5.0f;
+    arena_state.heroes[1].x = 20.0f; arena_state.heroes[1].z = -8.0f;
+
+    arena_npc_hero_tick(0, 1, 16);
+    float target_x_first = arena_state.heroes[0].target_x;
+    float target_z_first = arena_state.heroes[0].target_z;
+
+    /* A fresh, identical setup -- same positions, same call -- must produce the exact same real
+       move target. Bit-exact equality (not "close enough"): a real rule ("walk straight at the
+       target's real position") has no floating-point variance to tolerate, unlike a neural net's
+       own forward pass might. */
+    arena_init_with_heroes(ARENA_HERO_UNICORN, ARENA_HERO_DUCK);
+    arena_state.heroes[0].x = -20.0f; arena_state.heroes[0].z = 5.0f;
+    arena_state.heroes[1].x = 20.0f; arena_state.heroes[1].z = -8.0f;
+
+    arena_npc_hero_tick(0, 1, 16);
+
+    CHECK(arena_state.heroes[0].target_x == target_x_first && arena_state.heroes[0].target_z == target_z_first,
+          "arena_npc_hero_tick is fully deterministic -- identical inputs produce the bit-exact same real move target, no AI/RNG in the decision");
+    CHECK(target_x_first == 20.0f && target_z_first == -8.0f,
+          "the real deterministic rule is exactly 'walk straight at the target's current real position', not some steered approximation of it");
+}
+
 static void test_npc_hero_tick_is_a_real_noop_when_the_npc_is_dead(void) {
     arena_init_with_heroes(ARENA_HERO_UNICORN, ARENA_HERO_DUCK);
     ArenaHero *npc = &arena_state.heroes[0];
@@ -202,6 +232,7 @@ int main(void) {
     test_card_battler_registry_drives_a_real_generic_card_play();
     test_card_battler_hero_q_slot_casts_the_real_ability();
     test_npc_hero_tick_moves_toward_a_living_foe();
+    test_npc_hero_tick_is_deterministic_not_ai_driven();
     test_npc_hero_tick_is_a_real_noop_when_the_npc_is_dead();
     printf("\n%s\n", failures == 0 ? "ALL PASS" : "SOME FAILED");
     return failures == 0 ? 0 : 1;

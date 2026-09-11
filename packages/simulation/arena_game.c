@@ -1383,32 +1383,30 @@ void arena_bot_tick_heuristic(unsigned int dt_ms) {
     arena_set_move_target(1, bot->x + out[0] * step, bot->z + out[1] * step);
 }
 
-/* arena_npc_hero_tick -- see arena_game.h's own doc comment for the full reasoning. Literally the
- * same math as arena_bot_tick_heuristic just above (bot_brain_forward's own 4 inputs are already
- * relative dx/dz/dist/hp-diff, not owner-specific), generalized to any hero_index/foe_index pair,
- * plus bot_cast_kit_if_ready folded in so one call drives both movement and ability casting. */
+/* arena_npc_hero_tick -- see arena_game.h's own doc comment for the full reasoning. Founder
+ * real-time correction (S378 continued): NPC-controlled heroes must be deterministic and
+ * rule-based, like Clash Royale's own troops, NOT neural-net/AI-driven -- "you can bet a hero is
+ * gonna do about the same things ... all of the entities need to behave like Clash Royale
+ * entities deterministic so that can be reasoned about - no AI there." This REPLACES the
+ * original version of this function (which steered via bot_brain_forward, a trained neural net --
+ * the wrong model per this direction) with a plain, explicit rule: walk straight at the real,
+ * current position of the target every tick (no lookahead/steering model, no randomness), same
+ * "click to move, auto-attack once in range" shape a real player's own move command already
+ * produces via arena_set_move_target + update_hero_motion/resolve_combat -- nothing new needed
+ * for the "closes distance, auto-attacks in range" half of Clash-Royale-style troop behavior.
+ * bot_cast_kit_if_ready's own range/cooldown gates were already fully deterministic (no RNG) --
+ * untouched. Real, honest, not yet built: "turns and chases whichever hostile creep just entered
+ * aggro range" (the founder's own literal Knight-vs-archer example) needs this function to also
+ * see Living Map creep positions, which requires the arena<->living-map bridge (BACKLOG.md
+ * SECTION 377 Phase 7) to exist first -- today this only ever targets the one assigned
+ * foe_index, same scope the original version had. */
 void arena_npc_hero_tick(int hero_index, int foe_index, unsigned int dt_ms) {
     (void)dt_ms;
     ArenaHero *bot = &arena_state.heroes[hero_index];
     ArenaHero *foe = &arena_state.heroes[foe_index];
     if (!bot->alive || !foe->alive) return;
 
-    float dx = foe->x - bot->x;
-    float dz = foe->z - bot->z;
-    float dist = sqrtf(dx * dx + dz * dz);
-
-    float in[4];
-    in[0] = dx / ARENA_HALF_EXTENT;
-    in[1] = dz / ARENA_HALF_EXTENT;
-    in[2] = dist / (ARENA_HALF_EXTENT * 2.0f);
-    in[3] = ((float)bot->hp / bot->max_hp) - ((float)foe->hp / foe->max_hp);
-
-    float out[2];
-    bot_brain_forward(in, out);
-
-    float step = 3.0f;
-    arena_set_move_target(hero_index, bot->x + out[0] * step, bot->z + out[1] * step);
-
+    arena_set_move_target(hero_index, foe->x, foe->z);
     bot_cast_kit_if_ready(bot, foe);
 }
 
