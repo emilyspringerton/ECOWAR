@@ -11,6 +11,7 @@
 #include "abraham_fireball_mod_host.h"
 #include "bacon_puck_intangible_speed_mod_host.h"
 #include "combat_log_mod_host.h"
+#include "living_map_bridge.h"
 
 ArenaState arena_state;
 int arena_bot_enabled = 1;
@@ -1004,6 +1005,14 @@ void arena_init_with_heroes(ArenaHeroID player_hero, ArenaHeroID bot_hero) {
        at all, see that function's own doc comment. */
 
     arena_state.winner = 0;
+
+    /* Living Map bridge (BACKLOG.md SECTION 377 Phase 7): founds the real hex-grid towns/cows
+     * for this match. See living_map_bridge.c's own doc comment for the real starting layout --
+     * safe to call unconditionally (every test in this codebase that calls arena_init_with_heroes
+     * now also resets a small, separate, unread-by-them Living Map instance; harmless, and
+     * nothing here can set arena_state.winner on its own -- see living_map_bridge_tick's own doc
+     * comment for why). */
+    living_map_bridge_init_match();
 }
 
 void arena_init(void) {
@@ -7454,6 +7463,23 @@ void arena_update(unsigned int dt_ms) {
         int npc_foe = 1 - npc_i;
         arena_npc_hero_tick(npc_i, npc_foe, dt_ms);
     }
+    /* Living Map bridge (BACKLOG.md SECTION 377 Phase 7): ticks the real hex-grid towns/cows for
+     * this match, then checks the real "cap all of the control points" win condition. Owner 0 ==
+     * Living Map faction 1 (Dominion), owner 1 == faction 2 (Symbiosis) -- see
+     * living_map_bridge_faction_to_owner's own doc comment for the real, current mapping and its
+     * honest limits (faction 3/Corruption has no real player in a 2-sided match today). Only sets
+     * arena_state.winner if it isn't already set -- same "first winner sticks" convention the
+     * hero-death check above already follows, so a Living Map win can't overwrite a hero-death
+     * win from the same tick or vice versa. */
+    living_map_bridge_tick(dt_ms);
+    if (arena_state.winner == 0) {
+        int win_faction = living_map_bridge_full_control_faction();
+        if (win_faction != 0) {
+            int win_owner = living_map_bridge_faction_to_owner(win_faction);
+            if (win_owner == 0) arena_state.winner = 1;
+            else if (win_owner == 1) arena_state.winner = 2;
+        }
+    }
     arena_tick_projectiles(dt_ms);
     arena_tick_fountains(dt_ms);
     arena_tick_powerups(dt_ms); /* S170-190 */
@@ -7562,6 +7588,10 @@ void arena_init_teams(void) {
     arena_state.synergy_tier[0] = ARENA_SYNERGY_TIER_COUNT - 1;
     arena_state.synergy_tier[1] = ARENA_SYNERGY_TIER_COUNT - 1;
     arena_state.winner = 0;
+
+    /* Living Map bridge (BACKLOG.md SECTION 377 Phase 7) -- see arena_init_with_heroes's own
+     * identical call for the full reasoning; same safe-for-every-existing-test addition. */
+    living_map_bridge_init_match();
 }
 
 /* arena_team_owns_any_node (S170-121): node.owner is 1 = team 0, 2 = team 1
@@ -7864,6 +7894,21 @@ void arena_update_teams(unsigned int dt_ms) {
        ARENA_RESOURCE_CAP wins. */
     if (arena_state.resources[0] >= ARENA_RESOURCE_CAP) arena_state.winner = 1;
     else if (arena_state.resources[1] >= ARENA_RESOURCE_CAP) arena_state.winner = 2;
+
+    /* Living Map bridge (BACKLOG.md SECTION 377 Phase 7) -- same real wiring as arena_update's
+     * own identical block (see that one's own doc comment for the full reasoning). Team 0 ==
+     * Living Map faction 1 (Dominion), team 1 == faction 2 (Symbiosis). Guarded on
+     * arena_state.winner == 0 so a Living Map win can never overwrite the resource-race win just
+     * above from the same tick. */
+    living_map_bridge_tick(dt_ms);
+    if (arena_state.winner == 0) {
+        int win_faction = living_map_bridge_full_control_faction();
+        if (win_faction != 0) {
+            int win_team = living_map_bridge_faction_to_owner(win_faction);
+            if (win_team == 0) arena_state.winner = 1;
+            else if (win_team == 1) arena_state.winner = 2;
+        }
+    }
 
     /* S170-157 sudden-death fallback, founder: "i think there may be
        zombie games with infinite win cons." Removing team-wipe (above)

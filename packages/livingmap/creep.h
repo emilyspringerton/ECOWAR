@@ -10,7 +10,7 @@
  *
  * This is a standalone, generic hostile-unit system -- it doesn't know or care which town type
  * spawned a creep (Jungle Enclave's hunters, Blighted Settlement's cultists, and a future neutral
- * map-fauna system would all be real, later CALLERS of creep_spawn; none of that exists yet, only
+ * map-fauna system would all be real, later CALLERS of living_map_creep_spawn; none of that exists yet, only
  * the real, tested mechanic itself). Walled Hamlet's own "shoots hostile creeps" (town.c's
  * town_tick_with_creeps) is the first real consumer -- a town defending against creeps, not a
  * creep spawner itself.
@@ -77,7 +77,7 @@ typedef struct {
     int move_timer_ms;
     /* passive (cows, and any future harmless wildlife): 1 = never scans for or initiates aggro --
      * IDLE ticks wander instead (see wander_step_count below). 0 (default, every existing
-     * creep_spawn caller) = normal aggressive creep, completely unchanged behavior. A passive
+     * living_map_creep_spawn caller) = normal aggressive creep, completely unchanged behavior. A passive
      * creep can still be attacked/killed by an aggressive creep's own aggro scan -- this flag
      * only ever gates THIS creep's own outgoing behavior, never whether others can target it. */
     int passive;
@@ -98,10 +98,10 @@ void creep_registry_init(CreepRegistry *reg);
  * registry is full. Emits LIVING_MAP_EVENT_CREEP_SPAWNED. Returns the new creep's id on success.
  * Deliberately takes no HexGrid -- unlike a Town, a creep doesn't claim/own its hex cell, so there
  * is nothing to write back into HexCell for this to fail against (no "already occupied" check). */
-int creep_spawn(CreepRegistry *reg, LivingMapEventLog *log, HexCoord home, int faction_owner, int max_hp);
+int living_map_creep_spawn(CreepRegistry *reg, LivingMapEventLog *log, HexCoord home, int faction_owner, int max_hp);
 
 /* Spawns a real cow: LIVING_MAP_COW_HP, LIVING_MAP_COW_FACTION_OWNER, passive. Same fail/emit/
- * return-value contract as creep_spawn above (LIVING_MAP_EVENT_CREEP_SPAWNED still fires --
+ * return-value contract as living_map_creep_spawn above (LIVING_MAP_EVENT_CREEP_SPAWNED still fires --
  * there's no separate "it's a cow" event kind, a reader distinguishes one by checking
  * LivingMapCreep.passive on the id the spawn event names). */
 int creep_spawn_cow(CreepRegistry *reg, LivingMapEventLog *log, HexCoord home);

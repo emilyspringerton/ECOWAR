@@ -47,6 +47,7 @@
 #include "../../../packages/common/hmac_sha256.h"
 #include "../../../packages/common/http_client.h"
 #include "../../../packages/simulation/arena_game.h"
+#include "../../../packages/simulation/living_map_bridge.h"
 
 static int lobby_size = 2; /* --lobby-size; 2 = original 1v1 mode, up to ARENA_MAX_HEROES for team mode */
 
@@ -751,6 +752,32 @@ static void server_broadcast(void) {
     memcpy(layout_buffer, &layout_head, sizeof(NetHeader));
     memcpy(layout_buffer + sizeof(NetHeader), &layout_msg, sizeof(ArenaSnapshotLayoutMsg));
 
+    /* Living Map bridge (BACKLOG.md SECTION 377 Phase 7): the real hex-grid town/creep state --
+       see PACKET_ARENA_SNAPSHOT_LIVING_MAP's own doc comment (protocol.h) for why this can't be
+       deterministically reproduced client-side the way fountains/shops above are, and has to
+       actually go over the wire every tick like heroes do. */
+    ArenaSnapshotLivingMapMsg living_map_msg = {0};
+    living_map_msg.town_count = (uint8_t)living_map_bridge_town_count();
+    for (int t = 0; t < living_map_msg.town_count; t++) {
+        living_map_bridge_town_world_pos(t, &living_map_msg.town_x[t], &living_map_msg.town_z[t]);
+        living_map_msg.town_type[t] = (uint8_t)living_map_bridge_town_type(t);
+        living_map_msg.town_faction_owner[t] = (uint8_t)living_map_bridge_town_faction_owner(t);
+        living_map_msg.town_population[t] = (int16_t)living_map_bridge_town_population(t);
+        living_map_msg.town_militia[t] = (int16_t)living_map_bridge_town_militia(t);
+    }
+    living_map_msg.creep_count = (uint8_t)living_map_bridge_creep_count();
+    for (int c = 0; c < living_map_msg.creep_count; c++) {
+        living_map_bridge_creep_world_pos(c, &living_map_msg.creep_x[c], &living_map_msg.creep_z[c]);
+        living_map_msg.creep_faction_owner[c] = (uint8_t)living_map_bridge_creep_faction_owner(c);
+        living_map_msg.creep_alive[c] = (uint8_t)living_map_bridge_creep_alive(c);
+    }
+    char living_map_buffer[sizeof(NetHeader) + sizeof(ArenaSnapshotLivingMapMsg)];
+    NetHeader living_map_head = {0};
+    living_map_head.type = PACKET_ARENA_SNAPSHOT_LIVING_MAP;
+    living_map_head.timestamp = head.timestamp;
+    memcpy(living_map_buffer, &living_map_head, sizeof(NetHeader));
+    memcpy(living_map_buffer + sizeof(NetHeader), &living_map_msg, sizeof(ArenaSnapshotLivingMapMsg));
+
     for (int i = 0; i < lobby_size; i++) {
         if (!client_active[i]) continue;
         sendto(sock, buffer, sizeof(buffer), 0, (struct sockaddr *)&clients[i], sizeof(struct sockaddr_in));
@@ -760,6 +787,7 @@ static void server_broadcast(void) {
         }
         sendto(sock, obstacles_buffer, sizeof(obstacles_buffer), 0, (struct sockaddr *)&clients[i], sizeof(struct sockaddr_in));
         sendto(sock, layout_buffer, sizeof(layout_buffer), 0, (struct sockaddr *)&clients[i], sizeof(struct sockaddr_in));
+        sendto(sock, living_map_buffer, sizeof(living_map_buffer), 0, (struct sockaddr *)&clients[i], sizeof(struct sockaddr_in));
     }
 
     /* cast_flash_slot is a one-tick wire signal (S170-124) -- already

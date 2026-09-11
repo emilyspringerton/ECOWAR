@@ -23,6 +23,8 @@ gcc -std=c99 -O2 -Wall -Wextra -I"${ROOT_DIR}/packages" \
   -include "${ROOT_DIR}/packages/simulation/bacon_puck_intangible_speed_mod_host.h" \
   -include "${ROOT_DIR}/packages/simulation/card_effect_mod_host.h" \
   -include "${ROOT_DIR}/packages/simulation/combat_log_mod_host.h" \
+  -include "${ROOT_DIR}/packages/livingmap/frontier_village_mod_host.h" \
+  -include "${ROOT_DIR}/packages/livingmap/walled_hamlet_mod_host.h" \
   "${ROOT_DIR}/tests/test_arena_game.c" \
   "${ROOT_DIR}/packages/simulation/arena_game.c" \
   "${ROOT_DIR}/packages/simulation/bloodflower_mod.c" \
@@ -33,6 +35,13 @@ gcc -std=c99 -O2 -Wall -Wextra -I"${ROOT_DIR}/packages" \
   "${ROOT_DIR}/packages/simulation/bacon_puck_intangible_speed_mod.c" \
   "${ROOT_DIR}/packages/simulation/card_effect_mod.c" \
   "${ROOT_DIR}/packages/simulation/combat_log_mod.c" \
+  "${ROOT_DIR}/packages/simulation/living_map_bridge.c" \
+  "${ROOT_DIR}/packages/livingmap/hex_grid.c" \
+  "${ROOT_DIR}/packages/livingmap/town.c" \
+  "${ROOT_DIR}/packages/livingmap/creep.c" \
+  "${ROOT_DIR}/packages/livingmap/living_map_events.c" \
+  "${ROOT_DIR}/packages/livingmap/frontier_village_mod.c" \
+  "${ROOT_DIR}/packages/livingmap/walled_hamlet_mod.c" \
   "${ROOT_DIR}/packages/common/mlp_infer.c" \
   -lm
 
@@ -53,6 +62,8 @@ gcc -std=c99 -O2 -Wall -Wextra -I"${ROOT_DIR}/packages" \
   -include "${ROOT_DIR}/packages/simulation/bacon_puck_intangible_speed_mod_host.h" \
   -include "${ROOT_DIR}/packages/simulation/card_effect_mod_host.h" \
   -include "${ROOT_DIR}/packages/simulation/combat_log_mod_host.h" \
+  -include "${ROOT_DIR}/packages/livingmap/frontier_village_mod_host.h" \
+  -include "${ROOT_DIR}/packages/livingmap/walled_hamlet_mod_host.h" \
   "${ROOT_DIR}/tests/test_arena_replay.c" \
   "${ROOT_DIR}/packages/simulation/arena_game.c" \
   "${ROOT_DIR}/packages/simulation/arena_replay.c" \
@@ -64,6 +75,13 @@ gcc -std=c99 -O2 -Wall -Wextra -I"${ROOT_DIR}/packages" \
   "${ROOT_DIR}/packages/simulation/bacon_puck_intangible_speed_mod.c" \
   "${ROOT_DIR}/packages/simulation/card_effect_mod.c" \
   "${ROOT_DIR}/packages/simulation/combat_log_mod.c" \
+  "${ROOT_DIR}/packages/simulation/living_map_bridge.c" \
+  "${ROOT_DIR}/packages/livingmap/hex_grid.c" \
+  "${ROOT_DIR}/packages/livingmap/town.c" \
+  "${ROOT_DIR}/packages/livingmap/creep.c" \
+  "${ROOT_DIR}/packages/livingmap/living_map_events.c" \
+  "${ROOT_DIR}/packages/livingmap/frontier_village_mod.c" \
+  "${ROOT_DIR}/packages/livingmap/walled_hamlet_mod.c" \
   "${ROOT_DIR}/packages/common/mlp_infer.c" \
   -lm
 
@@ -79,6 +97,8 @@ gcc -std=c99 -O2 -Wall -Wextra -I"${ROOT_DIR}/packages" \
   -include "${ROOT_DIR}/packages/simulation/bacon_puck_intangible_speed_mod_host.h" \
   -include "${ROOT_DIR}/packages/simulation/card_effect_mod_host.h" \
   -include "${ROOT_DIR}/packages/simulation/combat_log_mod_host.h" \
+  -include "${ROOT_DIR}/packages/livingmap/frontier_village_mod_host.h" \
+  -include "${ROOT_DIR}/packages/livingmap/walled_hamlet_mod_host.h" \
   "${ROOT_DIR}/tests/test_arena_ai_bridge.c" \
   "${ROOT_DIR}/packages/simulation/arena_game.c" \
   "${ROOT_DIR}/packages/simulation/arena_ai_bridge.c" \
@@ -90,6 +110,13 @@ gcc -std=c99 -O2 -Wall -Wextra -I"${ROOT_DIR}/packages" \
   "${ROOT_DIR}/packages/simulation/bacon_puck_intangible_speed_mod.c" \
   "${ROOT_DIR}/packages/simulation/card_effect_mod.c" \
   "${ROOT_DIR}/packages/simulation/combat_log_mod.c" \
+  "${ROOT_DIR}/packages/simulation/living_map_bridge.c" \
+  "${ROOT_DIR}/packages/livingmap/hex_grid.c" \
+  "${ROOT_DIR}/packages/livingmap/town.c" \
+  "${ROOT_DIR}/packages/livingmap/creep.c" \
+  "${ROOT_DIR}/packages/livingmap/living_map_events.c" \
+  "${ROOT_DIR}/packages/livingmap/frontier_village_mod.c" \
+  "${ROOT_DIR}/packages/livingmap/walled_hamlet_mod.c" \
   "${ROOT_DIR}/packages/common/mlp_infer.c" \
   -lm
 
@@ -114,6 +141,8 @@ gcc -std=c99 -D_DEFAULT_SOURCE -O2 -Wall -Wextra -I"${ROOT_DIR}/packages" \
   -include "${ROOT_DIR}/packages/simulation/bacon_puck_intangible_speed_mod_host.h" \
   -include "${ROOT_DIR}/packages/simulation/card_effect_mod_host.h" \
   -include "${ROOT_DIR}/packages/simulation/combat_log_mod_host.h" \
+  -include "${ROOT_DIR}/packages/livingmap/frontier_village_mod_host.h" \
+  -include "${ROOT_DIR}/packages/livingmap/walled_hamlet_mod_host.h" \
   "${ROOT_DIR}/tests/test_arena_training.c" \
   "${ROOT_DIR}/apps/arena_training/src/headless.c" \
   "${ROOT_DIR}/packages/simulation/arena_game.c" \
@@ -125,6 +154,13 @@ gcc -std=c99 -D_DEFAULT_SOURCE -O2 -Wall -Wextra -I"${ROOT_DIR}/packages" \
   "${ROOT_DIR}/packages/simulation/bacon_puck_intangible_speed_mod.c" \
   "${ROOT_DIR}/packages/simulation/card_effect_mod.c" \
   "${ROOT_DIR}/packages/simulation/combat_log_mod.c" \
+  "${ROOT_DIR}/packages/simulation/living_map_bridge.c" \
+  "${ROOT_DIR}/packages/livingmap/hex_grid.c" \
+  "${ROOT_DIR}/packages/livingmap/town.c" \
+  "${ROOT_DIR}/packages/livingmap/creep.c" \
+  "${ROOT_DIR}/packages/livingmap/living_map_events.c" \
+  "${ROOT_DIR}/packages/livingmap/frontier_village_mod.c" \
+  "${ROOT_DIR}/packages/livingmap/walled_hamlet_mod.c" \
   "${ROOT_DIR}/packages/common/mlp_infer.c" \
   -lm
 
@@ -149,6 +185,8 @@ gcc -std=c99 -O2 -Wall -Wextra -I"${ROOT_DIR}/packages" \
   -include "${ROOT_DIR}/packages/simulation/bacon_puck_intangible_speed_mod_host.h" \
   -include "${ROOT_DIR}/packages/simulation/card_effect_mod_host.h" \
   -include "${ROOT_DIR}/packages/simulation/combat_log_mod_host.h" \
+  -include "${ROOT_DIR}/packages/livingmap/frontier_village_mod_host.h" \
+  -include "${ROOT_DIR}/packages/livingmap/walled_hamlet_mod_host.h" \
   "${ROOT_DIR}/tests/test_bloodflower.c" \
   "${ROOT_DIR}/packages/simulation/arena_game.c" \
   "${ROOT_DIR}/packages/simulation/bloodflower_mod.c" \
@@ -159,6 +197,13 @@ gcc -std=c99 -O2 -Wall -Wextra -I"${ROOT_DIR}/packages" \
   "${ROOT_DIR}/packages/simulation/bacon_puck_intangible_speed_mod.c" \
   "${ROOT_DIR}/packages/simulation/card_effect_mod.c" \
   "${ROOT_DIR}/packages/simulation/combat_log_mod.c" \
+  "${ROOT_DIR}/packages/simulation/living_map_bridge.c" \
+  "${ROOT_DIR}/packages/livingmap/hex_grid.c" \
+  "${ROOT_DIR}/packages/livingmap/town.c" \
+  "${ROOT_DIR}/packages/livingmap/creep.c" \
+  "${ROOT_DIR}/packages/livingmap/living_map_events.c" \
+  "${ROOT_DIR}/packages/livingmap/frontier_village_mod.c" \
+  "${ROOT_DIR}/packages/livingmap/walled_hamlet_mod.c" \
   "${ROOT_DIR}/packages/common/mlp_infer.c" \
   -lm
 
@@ -174,6 +219,8 @@ gcc -std=c99 -O2 -Wall -Wextra -I"${ROOT_DIR}/packages" \
   -include "${ROOT_DIR}/packages/simulation/bacon_puck_intangible_speed_mod_host.h" \
   -include "${ROOT_DIR}/packages/simulation/card_effect_mod_host.h" \
   -include "${ROOT_DIR}/packages/simulation/combat_log_mod_host.h" \
+  -include "${ROOT_DIR}/packages/livingmap/frontier_village_mod_host.h" \
+  -include "${ROOT_DIR}/packages/livingmap/walled_hamlet_mod_host.h" \
   "${ROOT_DIR}/tests/test_damage_log.c" \
   "${ROOT_DIR}/packages/simulation/arena_game.c" \
   "${ROOT_DIR}/packages/simulation/bloodflower_mod.c" \
@@ -184,6 +231,13 @@ gcc -std=c99 -O2 -Wall -Wextra -I"${ROOT_DIR}/packages" \
   "${ROOT_DIR}/packages/simulation/bacon_puck_intangible_speed_mod.c" \
   "${ROOT_DIR}/packages/simulation/card_effect_mod.c" \
   "${ROOT_DIR}/packages/simulation/combat_log_mod.c" \
+  "${ROOT_DIR}/packages/simulation/living_map_bridge.c" \
+  "${ROOT_DIR}/packages/livingmap/hex_grid.c" \
+  "${ROOT_DIR}/packages/livingmap/town.c" \
+  "${ROOT_DIR}/packages/livingmap/creep.c" \
+  "${ROOT_DIR}/packages/livingmap/living_map_events.c" \
+  "${ROOT_DIR}/packages/livingmap/frontier_village_mod.c" \
+  "${ROOT_DIR}/packages/livingmap/walled_hamlet_mod.c" \
   "${ROOT_DIR}/packages/common/mlp_infer.c" \
   -lm
 
@@ -201,6 +255,8 @@ gcc -std=c99 -O2 -Wall -Wextra -I"${ROOT_DIR}/packages" \
   -include "${ROOT_DIR}/packages/simulation/bacon_puck_intangible_speed_mod_host.h" \
   -include "${ROOT_DIR}/packages/simulation/card_effect_mod_host.h" \
   -include "${ROOT_DIR}/packages/simulation/combat_log_mod_host.h" \
+  -include "${ROOT_DIR}/packages/livingmap/frontier_village_mod_host.h" \
+  -include "${ROOT_DIR}/packages/livingmap/walled_hamlet_mod_host.h" \
   "${ROOT_DIR}/tests/test_combat_log.c" \
   "${ROOT_DIR}/packages/simulation/arena_game.c" \
   "${ROOT_DIR}/packages/simulation/bloodflower_mod.c" \
@@ -211,6 +267,13 @@ gcc -std=c99 -O2 -Wall -Wextra -I"${ROOT_DIR}/packages" \
   "${ROOT_DIR}/packages/simulation/bacon_puck_intangible_speed_mod.c" \
   "${ROOT_DIR}/packages/simulation/card_effect_mod.c" \
   "${ROOT_DIR}/packages/simulation/combat_log_mod.c" \
+  "${ROOT_DIR}/packages/simulation/living_map_bridge.c" \
+  "${ROOT_DIR}/packages/livingmap/hex_grid.c" \
+  "${ROOT_DIR}/packages/livingmap/town.c" \
+  "${ROOT_DIR}/packages/livingmap/creep.c" \
+  "${ROOT_DIR}/packages/livingmap/living_map_events.c" \
+  "${ROOT_DIR}/packages/livingmap/frontier_village_mod.c" \
+  "${ROOT_DIR}/packages/livingmap/walled_hamlet_mod.c" \
   "${ROOT_DIR}/packages/common/mlp_infer.c" \
   -lm
 
@@ -226,6 +289,8 @@ gcc -std=c99 -O2 -Wall -Wextra -I"${ROOT_DIR}/packages" \
   -include "${ROOT_DIR}/packages/simulation/bacon_puck_intangible_speed_mod_host.h" \
   -include "${ROOT_DIR}/packages/simulation/card_effect_mod_host.h" \
   -include "${ROOT_DIR}/packages/simulation/combat_log_mod_host.h" \
+  -include "${ROOT_DIR}/packages/livingmap/frontier_village_mod_host.h" \
+  -include "${ROOT_DIR}/packages/livingmap/walled_hamlet_mod_host.h" \
   "${ROOT_DIR}/tests/test_tree_passive.c" \
   "${ROOT_DIR}/packages/simulation/arena_game.c" \
   "${ROOT_DIR}/packages/simulation/bloodflower_mod.c" \
@@ -236,6 +301,13 @@ gcc -std=c99 -O2 -Wall -Wextra -I"${ROOT_DIR}/packages" \
   "${ROOT_DIR}/packages/simulation/bacon_puck_intangible_speed_mod.c" \
   "${ROOT_DIR}/packages/simulation/card_effect_mod.c" \
   "${ROOT_DIR}/packages/simulation/combat_log_mod.c" \
+  "${ROOT_DIR}/packages/simulation/living_map_bridge.c" \
+  "${ROOT_DIR}/packages/livingmap/hex_grid.c" \
+  "${ROOT_DIR}/packages/livingmap/town.c" \
+  "${ROOT_DIR}/packages/livingmap/creep.c" \
+  "${ROOT_DIR}/packages/livingmap/living_map_events.c" \
+  "${ROOT_DIR}/packages/livingmap/frontier_village_mod.c" \
+  "${ROOT_DIR}/packages/livingmap/walled_hamlet_mod.c" \
   "${ROOT_DIR}/packages/common/mlp_infer.c" \
   -lm
 
@@ -251,6 +323,8 @@ gcc -std=c99 -O2 -Wall -Wextra -I"${ROOT_DIR}/packages" \
   -include "${ROOT_DIR}/packages/simulation/bacon_puck_intangible_speed_mod_host.h" \
   -include "${ROOT_DIR}/packages/simulation/card_effect_mod_host.h" \
   -include "${ROOT_DIR}/packages/simulation/combat_log_mod_host.h" \
+  -include "${ROOT_DIR}/packages/livingmap/frontier_village_mod_host.h" \
+  -include "${ROOT_DIR}/packages/livingmap/walled_hamlet_mod_host.h" \
   "${ROOT_DIR}/tests/test_procedural_jungle.c" \
   "${ROOT_DIR}/packages/simulation/arena_game.c" \
   "${ROOT_DIR}/packages/simulation/bloodflower_mod.c" \
@@ -261,6 +335,13 @@ gcc -std=c99 -O2 -Wall -Wextra -I"${ROOT_DIR}/packages" \
   "${ROOT_DIR}/packages/simulation/bacon_puck_intangible_speed_mod.c" \
   "${ROOT_DIR}/packages/simulation/card_effect_mod.c" \
   "${ROOT_DIR}/packages/simulation/combat_log_mod.c" \
+  "${ROOT_DIR}/packages/simulation/living_map_bridge.c" \
+  "${ROOT_DIR}/packages/livingmap/hex_grid.c" \
+  "${ROOT_DIR}/packages/livingmap/town.c" \
+  "${ROOT_DIR}/packages/livingmap/creep.c" \
+  "${ROOT_DIR}/packages/livingmap/living_map_events.c" \
+  "${ROOT_DIR}/packages/livingmap/frontier_village_mod.c" \
+  "${ROOT_DIR}/packages/livingmap/walled_hamlet_mod.c" \
   "${ROOT_DIR}/packages/common/mlp_infer.c" \
   -lm
 
@@ -277,6 +358,8 @@ gcc -std=c99 -O2 -Wall -Wextra -I"${ROOT_DIR}/packages" \
   -include "${ROOT_DIR}/packages/simulation/bacon_puck_intangible_speed_mod_host.h" \
   -include "${ROOT_DIR}/packages/simulation/card_effect_mod_host.h" \
   -include "${ROOT_DIR}/packages/simulation/combat_log_mod_host.h" \
+  -include "${ROOT_DIR}/packages/livingmap/frontier_village_mod_host.h" \
+  -include "${ROOT_DIR}/packages/livingmap/walled_hamlet_mod_host.h" \
   "${ROOT_DIR}/tests/test_item_curriculum.c" \
   "${ROOT_DIR}/packages/simulation/arena_game.c" \
   "${ROOT_DIR}/packages/simulation/bloodflower_mod.c" \
@@ -287,6 +370,13 @@ gcc -std=c99 -O2 -Wall -Wextra -I"${ROOT_DIR}/packages" \
   "${ROOT_DIR}/packages/simulation/bacon_puck_intangible_speed_mod.c" \
   "${ROOT_DIR}/packages/simulation/card_effect_mod.c" \
   "${ROOT_DIR}/packages/simulation/combat_log_mod.c" \
+  "${ROOT_DIR}/packages/simulation/living_map_bridge.c" \
+  "${ROOT_DIR}/packages/livingmap/hex_grid.c" \
+  "${ROOT_DIR}/packages/livingmap/town.c" \
+  "${ROOT_DIR}/packages/livingmap/creep.c" \
+  "${ROOT_DIR}/packages/livingmap/living_map_events.c" \
+  "${ROOT_DIR}/packages/livingmap/frontier_village_mod.c" \
+  "${ROOT_DIR}/packages/livingmap/walled_hamlet_mod.c" \
   "${ROOT_DIR}/packages/common/mlp_infer.c" \
   -lm
 
@@ -303,6 +393,8 @@ gcc -std=c99 -O2 -Wall -Wextra -I"${ROOT_DIR}/packages" \
   -include "${ROOT_DIR}/packages/simulation/bacon_puck_intangible_speed_mod_host.h" \
   -include "${ROOT_DIR}/packages/simulation/card_effect_mod_host.h" \
   -include "${ROOT_DIR}/packages/simulation/combat_log_mod_host.h" \
+  -include "${ROOT_DIR}/packages/livingmap/frontier_village_mod_host.h" \
+  -include "${ROOT_DIR}/packages/livingmap/walled_hamlet_mod_host.h" \
   "${ROOT_DIR}/tests/test_duck_smoke_bomb.c" \
   "${ROOT_DIR}/packages/simulation/arena_game.c" \
   "${ROOT_DIR}/packages/simulation/bloodflower_mod.c" \
@@ -313,6 +405,13 @@ gcc -std=c99 -O2 -Wall -Wextra -I"${ROOT_DIR}/packages" \
   "${ROOT_DIR}/packages/simulation/bacon_puck_intangible_speed_mod.c" \
   "${ROOT_DIR}/packages/simulation/card_effect_mod.c" \
   "${ROOT_DIR}/packages/simulation/combat_log_mod.c" \
+  "${ROOT_DIR}/packages/simulation/living_map_bridge.c" \
+  "${ROOT_DIR}/packages/livingmap/hex_grid.c" \
+  "${ROOT_DIR}/packages/livingmap/town.c" \
+  "${ROOT_DIR}/packages/livingmap/creep.c" \
+  "${ROOT_DIR}/packages/livingmap/living_map_events.c" \
+  "${ROOT_DIR}/packages/livingmap/frontier_village_mod.c" \
+  "${ROOT_DIR}/packages/livingmap/walled_hamlet_mod.c" \
   "${ROOT_DIR}/packages/common/mlp_infer.c" \
   -lm
 
@@ -329,6 +428,8 @@ gcc -std=c99 -O2 -Wall -Wextra -I"${ROOT_DIR}/packages" \
   -include "${ROOT_DIR}/packages/simulation/bacon_puck_intangible_speed_mod_host.h" \
   -include "${ROOT_DIR}/packages/simulation/card_effect_mod_host.h" \
   -include "${ROOT_DIR}/packages/simulation/combat_log_mod_host.h" \
+  -include "${ROOT_DIR}/packages/livingmap/frontier_village_mod_host.h" \
+  -include "${ROOT_DIR}/packages/livingmap/walled_hamlet_mod_host.h" \
   "${ROOT_DIR}/tests/test_abraham_fireball.c" \
   "${ROOT_DIR}/packages/simulation/arena_game.c" \
   "${ROOT_DIR}/packages/simulation/bloodflower_mod.c" \
@@ -339,6 +440,13 @@ gcc -std=c99 -O2 -Wall -Wextra -I"${ROOT_DIR}/packages" \
   "${ROOT_DIR}/packages/simulation/bacon_puck_intangible_speed_mod.c" \
   "${ROOT_DIR}/packages/simulation/card_effect_mod.c" \
   "${ROOT_DIR}/packages/simulation/combat_log_mod.c" \
+  "${ROOT_DIR}/packages/simulation/living_map_bridge.c" \
+  "${ROOT_DIR}/packages/livingmap/hex_grid.c" \
+  "${ROOT_DIR}/packages/livingmap/town.c" \
+  "${ROOT_DIR}/packages/livingmap/creep.c" \
+  "${ROOT_DIR}/packages/livingmap/living_map_events.c" \
+  "${ROOT_DIR}/packages/livingmap/frontier_village_mod.c" \
+  "${ROOT_DIR}/packages/livingmap/walled_hamlet_mod.c" \
   "${ROOT_DIR}/packages/common/mlp_infer.c" \
   -lm
 
@@ -356,6 +464,8 @@ gcc -std=c99 -O2 -Wall -Wextra -I"${ROOT_DIR}/packages" \
   -include "${ROOT_DIR}/packages/simulation/bacon_puck_intangible_speed_mod_host.h" \
   -include "${ROOT_DIR}/packages/simulation/card_effect_mod_host.h" \
   -include "${ROOT_DIR}/packages/simulation/combat_log_mod_host.h" \
+  -include "${ROOT_DIR}/packages/livingmap/frontier_village_mod_host.h" \
+  -include "${ROOT_DIR}/packages/livingmap/walled_hamlet_mod_host.h" \
   "${ROOT_DIR}/tests/test_shadow_step.c" \
   "${ROOT_DIR}/packages/simulation/arena_game.c" \
   "${ROOT_DIR}/packages/simulation/bloodflower_mod.c" \
@@ -366,6 +476,13 @@ gcc -std=c99 -O2 -Wall -Wextra -I"${ROOT_DIR}/packages" \
   "${ROOT_DIR}/packages/simulation/bacon_puck_intangible_speed_mod.c" \
   "${ROOT_DIR}/packages/simulation/card_effect_mod.c" \
   "${ROOT_DIR}/packages/simulation/combat_log_mod.c" \
+  "${ROOT_DIR}/packages/simulation/living_map_bridge.c" \
+  "${ROOT_DIR}/packages/livingmap/hex_grid.c" \
+  "${ROOT_DIR}/packages/livingmap/town.c" \
+  "${ROOT_DIR}/packages/livingmap/creep.c" \
+  "${ROOT_DIR}/packages/livingmap/living_map_events.c" \
+  "${ROOT_DIR}/packages/livingmap/frontier_village_mod.c" \
+  "${ROOT_DIR}/packages/livingmap/walled_hamlet_mod.c" \
   "${ROOT_DIR}/packages/common/mlp_infer.c" \
   -lm
 
@@ -383,6 +500,8 @@ gcc -std=c99 -O2 -Wall -Wextra -I"${ROOT_DIR}/packages" \
   -include "${ROOT_DIR}/packages/simulation/bacon_puck_intangible_speed_mod_host.h" \
   -include "${ROOT_DIR}/packages/simulation/card_effect_mod_host.h" \
   -include "${ROOT_DIR}/packages/simulation/combat_log_mod_host.h" \
+  -include "${ROOT_DIR}/packages/livingmap/frontier_village_mod_host.h" \
+  -include "${ROOT_DIR}/packages/livingmap/walled_hamlet_mod_host.h" \
   "${ROOT_DIR}/tests/test_cart_delivery.c" \
   "${ROOT_DIR}/packages/simulation/arena_game.c" \
   "${ROOT_DIR}/packages/simulation/bloodflower_mod.c" \
@@ -393,6 +512,13 @@ gcc -std=c99 -O2 -Wall -Wextra -I"${ROOT_DIR}/packages" \
   "${ROOT_DIR}/packages/simulation/bacon_puck_intangible_speed_mod.c" \
   "${ROOT_DIR}/packages/simulation/card_effect_mod.c" \
   "${ROOT_DIR}/packages/simulation/combat_log_mod.c" \
+  "${ROOT_DIR}/packages/simulation/living_map_bridge.c" \
+  "${ROOT_DIR}/packages/livingmap/hex_grid.c" \
+  "${ROOT_DIR}/packages/livingmap/town.c" \
+  "${ROOT_DIR}/packages/livingmap/creep.c" \
+  "${ROOT_DIR}/packages/livingmap/living_map_events.c" \
+  "${ROOT_DIR}/packages/livingmap/frontier_village_mod.c" \
+  "${ROOT_DIR}/packages/livingmap/walled_hamlet_mod.c" \
   "${ROOT_DIR}/packages/common/mlp_infer.c" \
   -lm
 
@@ -409,6 +535,8 @@ gcc -std=c99 -O2 -Wall -Wextra -I"${ROOT_DIR}/packages" \
   -include "${ROOT_DIR}/packages/simulation/bacon_puck_intangible_speed_mod_host.h" \
   -include "${ROOT_DIR}/packages/simulation/card_effect_mod_host.h" \
   -include "${ROOT_DIR}/packages/simulation/combat_log_mod_host.h" \
+  -include "${ROOT_DIR}/packages/livingmap/frontier_village_mod_host.h" \
+  -include "${ROOT_DIR}/packages/livingmap/walled_hamlet_mod_host.h" \
   "${ROOT_DIR}/tests/test_ecowar_cards.c" \
   "${ROOT_DIR}/packages/simulation/arena_game.c" \
   "${ROOT_DIR}/packages/simulation/bloodflower_mod.c" \
@@ -419,6 +547,13 @@ gcc -std=c99 -O2 -Wall -Wextra -I"${ROOT_DIR}/packages" \
   "${ROOT_DIR}/packages/simulation/bacon_puck_intangible_speed_mod.c" \
   "${ROOT_DIR}/packages/simulation/card_effect_mod.c" \
   "${ROOT_DIR}/packages/simulation/combat_log_mod.c" \
+  "${ROOT_DIR}/packages/simulation/living_map_bridge.c" \
+  "${ROOT_DIR}/packages/livingmap/hex_grid.c" \
+  "${ROOT_DIR}/packages/livingmap/town.c" \
+  "${ROOT_DIR}/packages/livingmap/creep.c" \
+  "${ROOT_DIR}/packages/livingmap/living_map_events.c" \
+  "${ROOT_DIR}/packages/livingmap/frontier_village_mod.c" \
+  "${ROOT_DIR}/packages/livingmap/walled_hamlet_mod.c" \
   "${ROOT_DIR}/packages/common/mlp_infer.c" \
   -lm
 
@@ -438,6 +573,8 @@ gcc -std=c99 -O2 -Wall -Wextra -I"${ROOT_DIR}/packages" \
   -include "${ROOT_DIR}/packages/simulation/bacon_puck_intangible_speed_mod_host.h" \
   -include "${ROOT_DIR}/packages/simulation/card_effect_mod_host.h" \
   -include "${ROOT_DIR}/packages/simulation/combat_log_mod_host.h" \
+  -include "${ROOT_DIR}/packages/livingmap/frontier_village_mod_host.h" \
+  -include "${ROOT_DIR}/packages/livingmap/walled_hamlet_mod_host.h" \
   "${ROOT_DIR}/tests/test_card_battler.c" \
   "${ROOT_DIR}/packages/simulation/arena_game.c" \
   "${ROOT_DIR}/packages/simulation/bloodflower_mod.c" \
@@ -448,8 +585,50 @@ gcc -std=c99 -O2 -Wall -Wextra -I"${ROOT_DIR}/packages" \
   "${ROOT_DIR}/packages/simulation/bacon_puck_intangible_speed_mod.c" \
   "${ROOT_DIR}/packages/simulation/card_effect_mod.c" \
   "${ROOT_DIR}/packages/simulation/combat_log_mod.c" \
+  "${ROOT_DIR}/packages/simulation/living_map_bridge.c" \
+  "${ROOT_DIR}/packages/livingmap/hex_grid.c" \
+  "${ROOT_DIR}/packages/livingmap/town.c" \
+  "${ROOT_DIR}/packages/livingmap/creep.c" \
+  "${ROOT_DIR}/packages/livingmap/living_map_events.c" \
+  "${ROOT_DIR}/packages/livingmap/frontier_village_mod.c" \
+  "${ROOT_DIR}/packages/livingmap/walled_hamlet_mod.c" \
   "${ROOT_DIR}/packages/simulation/card_deck.c" \
   "${ROOT_DIR}/packages/simulation/card_battler.c" \
+  "${ROOT_DIR}/packages/common/mlp_infer.c" \
+  -lm
+
+# Living Map bridge (BACKLOG.md SECTION 377 Phase 7): the real arena<->Living Map integration --
+# proves arena_init/arena_update actually found and tick real towns/cows, and that the real win
+# condition never falsely triggers from ticking alone.
+gcc -std=c99 -O2 -Wall -Wextra -I"${ROOT_DIR}/packages" \
+  -o "${BUILD_DIR}/test_living_map_bridge" \
+  -include "${ROOT_DIR}/packages/simulation/bloodflower_mod_host.h" \
+  -include "${ROOT_DIR}/packages/simulation/tree_passive_mod_host.h" \
+  -include "${ROOT_DIR}/packages/simulation/item_curriculum_mod_host.h" \
+  -include "${ROOT_DIR}/packages/simulation/duck_smoke_bomb_mod_host.h" \
+  -include "${ROOT_DIR}/packages/simulation/abraham_fireball_mod_host.h" \
+  -include "${ROOT_DIR}/packages/simulation/bacon_puck_intangible_speed_mod_host.h" \
+  -include "${ROOT_DIR}/packages/simulation/card_effect_mod_host.h" \
+  -include "${ROOT_DIR}/packages/simulation/combat_log_mod_host.h" \
+  -include "${ROOT_DIR}/packages/livingmap/frontier_village_mod_host.h" \
+  -include "${ROOT_DIR}/packages/livingmap/walled_hamlet_mod_host.h" \
+  "${ROOT_DIR}/tests/test_living_map_bridge.c" \
+  "${ROOT_DIR}/packages/simulation/arena_game.c" \
+  "${ROOT_DIR}/packages/simulation/bloodflower_mod.c" \
+  "${ROOT_DIR}/packages/simulation/tree_passive_mod.c" \
+  "${ROOT_DIR}/packages/simulation/item_curriculum_mod.c" \
+  "${ROOT_DIR}/packages/simulation/duck_smoke_bomb_mod.c" \
+  "${ROOT_DIR}/packages/simulation/abraham_fireball_mod.c" \
+  "${ROOT_DIR}/packages/simulation/bacon_puck_intangible_speed_mod.c" \
+  "${ROOT_DIR}/packages/simulation/card_effect_mod.c" \
+  "${ROOT_DIR}/packages/simulation/combat_log_mod.c" \
+  "${ROOT_DIR}/packages/simulation/living_map_bridge.c" \
+  "${ROOT_DIR}/packages/livingmap/hex_grid.c" \
+  "${ROOT_DIR}/packages/livingmap/town.c" \
+  "${ROOT_DIR}/packages/livingmap/creep.c" \
+  "${ROOT_DIR}/packages/livingmap/living_map_events.c" \
+  "${ROOT_DIR}/packages/livingmap/frontier_village_mod.c" \
+  "${ROOT_DIR}/packages/livingmap/walled_hamlet_mod.c" \
   "${ROOT_DIR}/packages/common/mlp_infer.c" \
   -lm
 
@@ -464,6 +643,7 @@ gcc -std=c99 -O2 -Wall -Wextra -I"${ROOT_DIR}/packages" \
 "${BUILD_DIR}/test_cart_delivery"
 "${BUILD_DIR}/test_ecowar_cards"
 "${BUILD_DIR}/test_card_battler"
+"${BUILD_DIR}/test_living_map_bridge"
 "${BUILD_DIR}/test_damage_log"
 "${BUILD_DIR}/test_combat_log"
 "${BUILD_DIR}/test_mat4"

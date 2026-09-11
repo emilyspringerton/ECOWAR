@@ -63,6 +63,15 @@
     resend, simpler than a one-time-send-plus-reconnect-replay path" reasoning
     ArenaSnapshotObstaclesMsg already established, even though the content itself never changes
     once a match starts -- see ArenaSnapshotLayoutMsg's own doc comment. */
+#define PACKET_ARENA_SNAPSHOT_LIVING_MAP 23 /* arena_server -> client: real hex-grid town/creep
+    state (BACKLOG.md SECTION 377 Phase 7, founder: "can we make sure we get these updates in the
+    client and the server? ... im not seeing frontier village ... i dont see a hex grid"). Unlike
+    every packet above, this one's underlying data (packages/simulation/living_map_bridge.c's own
+    module-level HexGrid/TownRegistry/CreepRegistry) is NOT deterministically reproducible
+    client-side from the match seed alone -- town/creep state changes based on real gameplay
+    (conversion attempts, combat), so it has to actually go over the wire, same "real per-match
+    state, not a fixed formula" reasoning PACKET_ARENA_SNAPSHOT_HEROES already established for
+    heroes. Sent every broadcast tick. See ArenaSnapshotLivingMapMsg's own doc comment. */
 
 #define ARENA_PHASE_WAITING 0 /* fewer than 2 real players connected yet */
 #define ARENA_PHASE_DRAFT   1 /* both connected, waiting on hero picks */
@@ -749,6 +758,43 @@ typedef struct {
     uint64_t shop_item_mask[ARENA_SNAPSHOT_SHOP_COUNT];
 } ArenaSnapshotLayoutMsg;
 
+// ARENA_SNAPSHOT_LIVING_MAP_TOWN_COUNT/_CREEP_COUNT must match
+// packages/simulation/living_map_bridge.h's own LIVING_MAP_BRIDGE_MAX_SYNC_TOWNS/_CREEPS, same
+// duplication reasoning as ARENA_SNAPSHOT_SHOP_COUNT above -- protocol.h stays free of any
+// packages/simulation or packages/livingmap include.
+#define ARENA_SNAPSHOT_LIVING_MAP_TOWN_COUNT 8
+#define ARENA_SNAPSHOT_LIVING_MAP_CREEP_COUNT 16
+
+// PACKET_ARENA_SNAPSHOT_LIVING_MAP payload (BACKLOG.md SECTION 377 Phase 7, 2026-09-11) -- see
+// that packet id's own doc comment for the full "why this exists" story. town_count/creep_count
+// name how many of the fixed-size arrays below are actually real this match (living_map_bridge.c
+// never founds more than the real cap, but a match could -- in principle, once dynamic town
+// founding exists -- have fewer than the cap; today it's always the same fixed starting layout,
+// but the client reads town_count/creep_count rather than assuming the arrays are always fully
+// populated, same defensive convention every other snapshot message with a real "how many of
+// these are real" count field already uses, e.g. ArenaSnapshotHeroesMsg.total_count).
+// town_type/town_faction_owner mirror TownType/HexCell.faction_owner's own real integer values
+// (packages/livingmap/town.h/hex_grid.h) bit-for-bit -- 0..3 both times, comfortably fits a
+// uint8_t. town_population/militia are real int32 fields on the wire as int16_t: a town's
+// population/militia realistically never approaches 32767 given today's real spawn-rate tuning,
+// and this halves the wire cost of two fields every single snapshot tick carries regardless of
+// whether either changed since the last one.
+typedef struct {
+    uint8_t town_count;
+    float town_x[ARENA_SNAPSHOT_LIVING_MAP_TOWN_COUNT];
+    float town_z[ARENA_SNAPSHOT_LIVING_MAP_TOWN_COUNT];
+    uint8_t town_type[ARENA_SNAPSHOT_LIVING_MAP_TOWN_COUNT];
+    uint8_t town_faction_owner[ARENA_SNAPSHOT_LIVING_MAP_TOWN_COUNT];
+    int16_t town_population[ARENA_SNAPSHOT_LIVING_MAP_TOWN_COUNT];
+    int16_t town_militia[ARENA_SNAPSHOT_LIVING_MAP_TOWN_COUNT];
+
+    uint8_t creep_count;
+    float creep_x[ARENA_SNAPSHOT_LIVING_MAP_CREEP_COUNT];
+    float creep_z[ARENA_SNAPSHOT_LIVING_MAP_CREEP_COUNT];
+    uint8_t creep_faction_owner[ARENA_SNAPSHOT_LIVING_MAP_CREEP_COUNT];
+    uint8_t creep_alive[ARENA_SNAPSHOT_LIVING_MAP_CREEP_COUNT];
+} ArenaSnapshotLivingMapMsg;
+
 // Shared receive-buffer sizing for every PACKET_ARENA_SNAPSHOT*-handling
 // socket in this codebase (apps/arena_server's send side doesn't need this,
 // but every recvfrom call sizing a fixed rbuf does) -- one source of truth
@@ -760,13 +806,15 @@ typedef struct {
 // but if a future field addition ever pushes one of them back over that
 // line, this is the one place that needs the resulting redesign, not four
 // independently-drifting call sites.
-// PROTOCOL_MAX2 (S376-02): a plain two-way max, so the four-way chain below stays readable
-// instead of a wall of nested ternaries -- ArenaSnapshotLayoutMsg (S376-01/02) is the newest of
-// the four and, at ~112 bytes, comfortably the smallest, but this still resolves it generically
-// rather than assuming that stays true forever.
+// PROTOCOL_MAX2 (S376-02): a plain two-way max, so the five-way chain below stays readable
+// instead of a wall of nested ternaries -- ArenaSnapshotLivingMapMsg (SECTION 377 Phase 7) is the
+// newest of the five and, at ~280 bytes, the largest so far, but this still resolves it
+// generically rather than assuming any one of them stays the biggest forever.
 #define PROTOCOL_MAX2(a, b) ((a) > (b) ? (a) : (b))
 #define ARENA_SNAPSHOT_RECV_BUF_SIZE (sizeof(NetHeader) + \
-    PROTOCOL_MAX2(PROTOCOL_MAX2(sizeof(ArenaSnapshotMsg), sizeof(ArenaSnapshotHeroesMsg)), \
-        PROTOCOL_MAX2(sizeof(ArenaSnapshotObstaclesMsg), sizeof(ArenaSnapshotLayoutMsg))))
+    PROTOCOL_MAX2( \
+        PROTOCOL_MAX2(PROTOCOL_MAX2(sizeof(ArenaSnapshotMsg), sizeof(ArenaSnapshotHeroesMsg)), \
+            PROTOCOL_MAX2(sizeof(ArenaSnapshotObstaclesMsg), sizeof(ArenaSnapshotLayoutMsg))), \
+        sizeof(ArenaSnapshotLivingMapMsg)))
 
 #endif

@@ -21,7 +21,7 @@ static void test_spawn_places_creep_at_home_full_hp(void) {
     CreepRegistry reg; LivingMapEventLog log;
     setup(&reg, &log);
 
-    int id = creep_spawn(&reg, &log, (HexCoord){2, -1}, 3, 50);
+    int id = living_map_creep_spawn(&reg, &log, (HexCoord){2, -1}, 3, 50);
     CHECK(id == 0, "the first spawned creep gets id 0");
     CHECK(reg.creeps[id].hp == 50 && reg.creeps[id].max_hp == 50, "a fresh creep starts at full hp");
     CHECK(hex_coord_equal(reg.creeps[id].pos, reg.creeps[id].home), "a fresh creep starts exactly at its own home");
@@ -36,8 +36,8 @@ static void test_same_faction_creeps_never_aggro_each_other(void) {
     CreepRegistry reg; LivingMapEventLog log;
     setup(&reg, &log);
 
-    int a = creep_spawn(&reg, &log, (HexCoord){0, 0}, 1, 50);
-    creep_spawn(&reg, &log, (HexCoord){1, 0}, 1, 50); /* same faction, adjacent -- well within aggro range */
+    int a = living_map_creep_spawn(&reg, &log, (HexCoord){0, 0}, 1, 50);
+    living_map_creep_spawn(&reg, &log, (HexCoord){1, 0}, 1, 50); /* same faction, adjacent -- well within aggro range */
 
     for (int i = 0; i < 10; i++) creep_tick_all(&reg, &log, 100);
 
@@ -48,8 +48,8 @@ static void test_idle_creep_aggros_a_nearby_hostile_creep(void) {
     CreepRegistry reg; LivingMapEventLog log;
     setup(&reg, &log);
 
-    int a = creep_spawn(&reg, &log, (HexCoord){0, 0}, 1, 50);
-    int b = creep_spawn(&reg, &log, (HexCoord){2, 0}, 2, 50); /* distance 2, within LIVING_MAP_CREEP_AGGRO_RANGE (3) */
+    int a = living_map_creep_spawn(&reg, &log, (HexCoord){0, 0}, 1, 50);
+    int b = living_map_creep_spawn(&reg, &log, (HexCoord){2, 0}, 2, 50); /* distance 2, within LIVING_MAP_CREEP_AGGRO_RANGE (3) */
 
     creep_tick(&reg, &log, a, 0);
 
@@ -68,8 +68,8 @@ static void test_a_far_away_hostile_creep_is_not_aggroed(void) {
     CreepRegistry reg; LivingMapEventLog log;
     setup(&reg, &log);
 
-    int a = creep_spawn(&reg, &log, (HexCoord){0, 0}, 1, 50);
-    creep_spawn(&reg, &log, (HexCoord){10, 0}, 2, 50); /* far outside aggro range */
+    int a = living_map_creep_spawn(&reg, &log, (HexCoord){0, 0}, 1, 50);
+    living_map_creep_spawn(&reg, &log, (HexCoord){10, 0}, 2, 50); /* far outside aggro range */
 
     creep_tick(&reg, &log, a, 0);
 
@@ -80,8 +80,8 @@ static void test_chasing_creep_closes_distance_and_attacks(void) {
     CreepRegistry reg; LivingMapEventLog log;
     setup(&reg, &log);
 
-    int a = creep_spawn(&reg, &log, (HexCoord){0, 0}, 1, 50);
-    int b = creep_spawn(&reg, &log, (HexCoord){2, 0}, 2, 50);
+    int a = living_map_creep_spawn(&reg, &log, (HexCoord){0, 0}, 1, 50);
+    int b = living_map_creep_spawn(&reg, &log, (HexCoord){2, 0}, 2, 50);
     creep_tick(&reg, &log, a, 0); /* aggro */
     CHECK(reg.creeps[a].state == LIVING_MAP_CREEP_CHASING, "setup: chasing");
 
@@ -108,8 +108,8 @@ static void test_killing_the_target_ends_the_chase(void) {
     CreepRegistry reg; LivingMapEventLog log;
     setup(&reg, &log);
 
-    int a = creep_spawn(&reg, &log, (HexCoord){0, 0}, 1, 100);
-    int b = creep_spawn(&reg, &log, (HexCoord){1, 0}, 2, 5); /* low hp -- one hit kills */
+    int a = living_map_creep_spawn(&reg, &log, (HexCoord){0, 0}, 1, 100);
+    int b = living_map_creep_spawn(&reg, &log, (HexCoord){1, 0}, 2, 5); /* low hp -- one hit kills */
     creep_tick(&reg, &log, a, 0); /* aggro, already adjacent */
     creep_tick(&reg, &log, a, 0); /* attack -- cooldown starts at 0, so this lands immediately */
 
@@ -128,8 +128,8 @@ static void test_creep_gives_up_beyond_leash_range_and_resets_at_home(void) {
     CreepRegistry reg; LivingMapEventLog log;
     setup(&reg, &log);
 
-    int a = creep_spawn(&reg, &log, (HexCoord){0, 0}, 1, 50);
-    int b = creep_spawn(&reg, &log, (HexCoord){LIVING_MAP_CREEP_LEASH_RANGE + 2, 0}, 2, 50);
+    int a = living_map_creep_spawn(&reg, &log, (HexCoord){0, 0}, 1, 50);
+    int b = living_map_creep_spawn(&reg, &log, (HexCoord){LIVING_MAP_CREEP_LEASH_RANGE + 2, 0}, 2, 50);
     /* Real leash is checked against the CREEP's own distance from ITS OWN home (never the
      * target's), so simulate "already chased this far" by hand-placing a's own current position
      * past its own real leash range -- a real, direct way to isolate this one rule without first
@@ -157,8 +157,8 @@ static void test_a_dead_target_also_ends_the_chase(void) {
     CreepRegistry reg; LivingMapEventLog log;
     setup(&reg, &log);
 
-    int a = creep_spawn(&reg, &log, (HexCoord){0, 0}, 1, 50);
-    int b = creep_spawn(&reg, &log, (HexCoord){1, 0}, 2, 50);
+    int a = living_map_creep_spawn(&reg, &log, (HexCoord){0, 0}, 1, 50);
+    int b = living_map_creep_spawn(&reg, &log, (HexCoord){1, 0}, 2, 50);
     reg.creeps[a].state = LIVING_MAP_CREEP_CHASING;
     reg.creeps[a].chase_target = b;
     reg.creeps[b].alive = 0; /* died some other way (e.g. a town's own defense fire) */

@@ -1,0 +1,79 @@
+/* packages/simulation/living_map_bridge.h -- the real arena<->Living Map integration point
+ * (BACKLOG.md SECTION 377 Phase 7). Founder real-time: "can we make sure we get these updates in
+ * the client and the server? ... im not seeing frontier village ... i dont see a hex grid" --
+ * every Living Map system built earlier this session (hex_grid/town/creep, packages/livingmap)
+ * was real and tested but never connected to an actual running match. This file is that
+ * connection: one real, live HexGrid/TownRegistry/CreepRegistry per match, founded at
+ * arena_init/arena_init_teams, ticked every arena_update/arena_update_teams tick, and read by
+ * apps/arena_server's own snapshot broadcast (protocol.h's ArenaSnapshotLivingMapMsg) so a real
+ * client can finally render it.
+ *
+ * Module-level state (like arena_bot_enabled), not part of ArenaState -- deliberately kept
+ * separate so packages/livingmap itself never has to know arena_game.h exists (the dependency
+ * runs only this direction: this file depends on both, neither of the two systems it connects
+ * depends on the other).
+ */
+#ifndef LIVING_MAP_BRIDGE_H
+#define LIVING_MAP_BRIDGE_H
+
+#include "arena_game.h"
+#include "../livingmap/hex_grid.h"
+#include "../livingmap/town.h"
+#include "../livingmap/creep.h"
+
+/* Bounded, wire-sized caps for apps/arena_server's own snapshot broadcast (protocol.h's
+ * ArenaSnapshotLivingMapMsg uses the same numbers, duplicated there on purpose -- protocol.h
+ * deliberately never includes packages/simulation or packages/livingmap headers, same
+ * "network layer doesn't depend on the simulation layer" discipline ARENA_SNAPSHOT_SHOP_COUNT
+ * etc. already established). A real, honest limit, not a crash: any town/creep beyond these caps
+ * still exists and is simulated correctly, it just isn't sent over the wire this pass. */
+#define LIVING_MAP_BRIDGE_MAX_SYNC_TOWNS 8
+#define LIVING_MAP_BRIDGE_MAX_SYNC_CREEPS 16
+
+/* Founds a fresh, real Living Map for a new match: a hex grid sized to fit within
+ * ARENA_HALF_EXTENT, a handful of real towns (2 pre-owned by each of the 2 real player sides, 2
+ * neutral/contestable), and a few real, wandering cows. Call once, right after
+ * arena_init_with_heroes/arena_init_teams resets everything else -- both already do. Safe to call
+ * from every existing test in this codebase that calls those two functions: this resets a small,
+ * separate module-level instance nothing else reads unless something explicitly queries this
+ * file's own accessors below. */
+void living_map_bridge_init_match(void);
+
+/* Advances every real town and creep by dt_ms. Call once per real arena_update/
+ * arena_update_teams tick. Cannot itself set arena_state.winner or otherwise affect combat --
+ * towns/creeps only ever change ownership via town_attempt_convert, which nothing in this file
+ * (or anywhere in a live match yet) calls automatically, so this is safe to tick unconditionally
+ * in every existing test without risking a spurious side effect. */
+void living_map_bridge_tick(unsigned int dt_ms);
+
+/* Returns the real Living Map faction (1..3) that currently owns every active town in this
+ * match, or 0 if no one does yet (see town_registry_faction_has_full_control's own doc comment).
+ * Does NOT set arena_state.winner itself -- the caller (arena_update/arena_update_teams) decides
+ * what that means for the match overall, same "tick computes, caller decides" split every other
+ * subsystem in arena_game.c already uses. */
+int living_map_bridge_full_control_faction(void);
+
+/* Maps a real Living Map faction id (1 or 2) back to the real "side" (owner in 1v1, team in team
+ * mode -- both are 0/1) that faction belongs to. Returns -1 for faction 3 (Corruption): no real
+ * player maps to it in a 2-sided match today, a real, honest, named limit -- see
+ * living_map_bridge_init_match's own .c-side doc comment for the current 1=Dominion/2=Symbiosis
+ * assignment. */
+int living_map_bridge_faction_to_owner(int faction);
+
+/* Read-only accessors for apps/arena_server's own snapshot broadcast. index must be in
+ * [0, living_map_bridge_town_count())/[0, living_map_bridge_creep_count()) -- no bounds
+ * checking here, same "caller already knows the real count" convention arena_state.heroes[]
+ * array access uses throughout this codebase. */
+int living_map_bridge_town_count(void); /* real count, capped at LIVING_MAP_BRIDGE_MAX_SYNC_TOWNS */
+void living_map_bridge_town_world_pos(int index, float *out_x, float *out_z);
+int living_map_bridge_town_type(int index);
+int living_map_bridge_town_faction_owner(int index);
+int living_map_bridge_town_population(int index);
+int living_map_bridge_town_militia(int index);
+
+int living_map_bridge_creep_count(void); /* real count, capped at LIVING_MAP_BRIDGE_MAX_SYNC_CREEPS */
+void living_map_bridge_creep_world_pos(int index, float *out_x, float *out_z);
+int living_map_bridge_creep_faction_owner(int index);
+int living_map_bridge_creep_alive(int index);
+
+#endif /* LIVING_MAP_BRIDGE_H */

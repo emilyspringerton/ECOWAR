@@ -107,7 +107,7 @@ static void test_walled_hamlet_shoots_a_hostile_creep_in_range(void) {
     creep_registry_init(&creeps);
 
     int town_id = town_found(&reg, &grid, &log, TOWN_TYPE_WALLED_HAMLET, (HexCoord){0, 0}, 1);
-    int creep_id = creep_spawn(&creeps, &log, (HexCoord){1, 0}, 2, 50); /* hostile (faction 2), within the real base defense range (1, zero garrison) */
+    int creep_id = living_map_creep_spawn(&creeps, &log, (HexCoord){1, 0}, 2, 50); /* hostile (faction 2), within the real base defense range (1, zero garrison) */
 
     int range = on_walled_hamlet_defense_range(0);
     int damage = on_walled_hamlet_defense_damage(0);
@@ -131,7 +131,7 @@ static void test_walled_hamlet_never_shoots_its_own_faction(void) {
     creep_registry_init(&creeps);
 
     int town_id = town_found(&reg, &grid, &log, TOWN_TYPE_WALLED_HAMLET, (HexCoord){0, 0}, 1);
-    int creep_id = creep_spawn(&creeps, &log, (HexCoord){1, 0}, 1, 50); /* SAME faction as the hamlet */
+    int creep_id = living_map_creep_spawn(&creeps, &log, (HexCoord){1, 0}, 1, 50); /* SAME faction as the hamlet */
 
     town_tick_with_creeps(&reg, &grid, &creeps, &log, town_id, 0);
 
@@ -144,7 +144,7 @@ static void test_walled_hamlet_defense_respects_its_own_cooldown(void) {
     creep_registry_init(&creeps);
 
     int town_id = town_found(&reg, &grid, &log, TOWN_TYPE_WALLED_HAMLET, (HexCoord){0, 0}, 1);
-    int creep_id = creep_spawn(&creeps, &log, (HexCoord){1, 0}, 2, 1000); /* high hp -- survives many real shots */
+    int creep_id = living_map_creep_spawn(&creeps, &log, (HexCoord){1, 0}, 2, 1000); /* high hp -- survives many real shots */
 
     town_tick_with_creeps(&reg, &grid, &creeps, &log, town_id, 0); /* first shot lands (cooldown starts at 0) */
     int hp_after_first_shot = creeps.creeps[creep_id].hp;

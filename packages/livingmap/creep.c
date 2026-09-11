@@ -33,7 +33,7 @@ static int creep_spawn_internal(CreepRegistry *reg, LivingMapEventLog *log, HexC
     return id;
 }
 
-int creep_spawn(CreepRegistry *reg, LivingMapEventLog *log, HexCoord home, int faction_owner, int max_hp) {
+int living_map_creep_spawn(CreepRegistry *reg, LivingMapEventLog *log, HexCoord home, int faction_owner, int max_hp) {
     return creep_spawn_internal(reg, log, home, faction_owner, max_hp, 0);
 }
 

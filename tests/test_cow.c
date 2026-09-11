@@ -36,7 +36,7 @@ static void test_cow_never_initiates_aggro_even_with_a_hostile_creep_adjacent(vo
     setup(&reg, &log);
 
     int cow = creep_spawn_cow(&reg, &log, (HexCoord){0, 0});
-    creep_spawn(&reg, &log, (HexCoord){1, 0}, 1, 50); /* a real, aggressive, hostile-faction creep right next to it */
+    living_map_creep_spawn(&reg, &log, (HexCoord){1, 0}, 1, 50); /* a real, aggressive, hostile-faction creep right next to it */
 
     for (int i = 0; i < 10; i++) creep_tick(&reg, &log, cow, 100);
 
@@ -49,7 +49,7 @@ static void test_a_hostile_creep_can_still_aggro_and_kill_a_cow(void) {
     setup(&reg, &log);
 
     int cow = creep_spawn_cow(&reg, &log, (HexCoord){0, 0});
-    int hunter = creep_spawn(&reg, &log, (HexCoord){1, 0}, 1, 50);
+    int hunter = living_map_creep_spawn(&reg, &log, (HexCoord){1, 0}, 1, 50);
 
     /* Drive the hunter (not the cow) forward -- a cow's own faction_owner (0) is a real, ordinary
        faction value, not immunity, so the hunter's own aggro scan should find it. */

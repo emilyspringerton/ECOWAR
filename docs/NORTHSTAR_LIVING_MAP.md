@@ -275,6 +275,71 @@ Not decided or built: no death reward/loot, no visual/asset direction, no relati
 Jungle Enclave's own still-unbuilt "spawns hunters" (a real, later, open question — are hunters and
 cows the same creep-spawning surface, or separate concepts?).
 
+## Phase 7 (this pass): the real arena↔living-map live wiring bridge — DONE
+
+Founder real-time, playing the actual live client/server: "can we make sure we get these updates
+in the client and the server? hitting g doesnt bring up carrd casting interface - no all cap win
+con - im not seeing frontier village unless its just there arent many and the map is huge i dont
+see a hex grid." Real, confirmed root cause: every Living Map system built in Phases 1-2 (hex
+grid, towns, creeps, cows) was real and fully tested but genuinely never connected to any running
+match — exactly the gap this doc's own "Not done, honestly" sections already named at every prior
+phase, now actually closed for the town/creep/win-condition half.
+
+- New `packages/simulation/living_map_bridge.h/.c`: one real, live `HexGrid`/`TownRegistry`/
+  `CreepRegistry` per match. `living_map_bridge_init_match` founds a real starting layout (2
+  Frontier Villages pre-owned by each of the 2 real player sides, 2 neutral/contestable towns, 3
+  wandering cows) — a real, tunable design choice, not founder-specified, matching the "hard to
+  cap all of the nodes at once" win-condition intent from Phase 2. `LIVING_MAP_BRIDGE_HEX_SIZE`
+  is the one real number this doc's own Phase 1 section left "caller-tunable... no real system
+  ties the two together yet" — picked so the hex grid's own real extent exactly covers
+  `ARENA_HALF_EXTENT`'s play area.
+- Wired into the real, live entry points: `arena_init`/`arena_init_teams` call
+  `living_map_bridge_init_match()`; `arena_update`/`arena_update_teams` call
+  `living_map_bridge_tick(dt_ms)` and check `living_map_bridge_full_control_faction()` every
+  tick, setting `arena_state.winner` through the same "first winner sticks" convention every
+  other win-condition check in this file already uses. Owner 0 / team 0 = Living Map faction 1
+  (Dominion); owner 1 / team 1 = faction 2 (Symbiosis) — faction 3 (Corruption) has no real
+  player mapping in a 2-sided match today, a real, named limit.
+- **Real naming collision found and fixed**: `arena_game.c` already had its own, unrelated
+  `creep_spawn` (the older node-guardian-creep respawn mechanic) — linking `packages/livingmap`
+  into the same binary for the first time surfaced a genuine compile-time conflict. Fixed by
+  renaming the Living Map's own function to `living_map_creep_spawn` (creep.h/.c and every real
+  test call site) — the correct, permanent fix (proper namespacing now that these two systems
+  share a binary), not a workaround.
+- **New wire packet**: `PACKET_ARENA_SNAPSHOT_LIVING_MAP` / `ArenaSnapshotLivingMapMsg`
+  (protocol.h) — real town/creep world positions + faction/type/population/militia, sent every
+  broadcast tick by `apps/arena_server`, since (unlike fountains/shops) this state depends on
+  real gameplay and can't be deterministically recomputed client-side from the match seed alone.
+- **Real client rendering**: `apps/arena`'s existing minimap gained town markers (a diamond,
+  colored by the same neutral/mine/enemy convention the hero dots already use) and creep/cow
+  markers (a small yellow dot). The local (non-networked) 1v1 demo path reads the live bridge
+  state directly (`living_map_client_*` wrapper functions); the networked path reads a client-
+  local mirror of the new snapshot packet — same "local demo calls the shared function directly,
+  networked path reads the wire" split this file's own card dispatch already uses.
+- **Live-verified end to end**: a real `red_garden_arena_server --fast-forward` process +
+  two real `red_garden_arena_bot` processes completed a full real match (connect → draft → pick →
+  live → match over) with the new Living Map init/tick/broadcast wiring active the whole time, no
+  crash, no errors. Full headless suite green (3169 assertions); `scripts/build.sh`/
+  `scripts/build_arena.sh` both clean.
+- 5 new tests (`tests/test_living_map_bridge.c`), including a real, live round trip through
+  `arena_init_with_heroes`/`arena_update` proving towns are founded, actually tick (population
+  changes over real simulated time), and that the win condition never falsely fires from ticking
+  alone (nothing but a real `town_attempt_convert` call can flip a town, and nothing in a live
+  match calls that yet — see "Not done, honestly" below).
+
+**Not done, honestly**: no hex-grid outline actually drawn on the minimap (town/creep dots only —
+a real hex-tessellated overlay is a bigger rendering task, not attempted blind in this same pass
+with no display available to visually verify it). No card actually calls `town_attempt_convert`
+yet ("capture a node") or `town_apply_militia_boost` yet — the real win condition exists and is
+now live, but nothing can currently *flip* a town in a real match, so in practice no one can win
+this way today; that's the next real, concrete wiring gap (a real "capture node" card, per Phase
+2's own design). The G-key card-casting-interface redesign (a real Hearthstone/Clash-Royale-style
+panel) is **not built this pass either** — a separate, substantial client UI task from the
+win-condition/visibility fixes above, still gated on reading the existing card HUD code first
+before designing the drag interaction, exactly as this doc already said in Phase 2. None of this
+pass's visual changes (minimap dots) were visually confirmed in a real running client — no display
+available in this sandbox — only compiled, linked, and confirmed not to crash a real live match.
+
 ## Mod event model, honestly
 
 The founder's ask — "everything that happens in the game needs to announce events and then mods
@@ -379,10 +444,12 @@ and the real, deliberate contrast with REDGARDEN's own pace/comeback dynamic.
    starcraft") — the rock-paper-scissors hypothesis below gets its first real test here.
 6. Tech tree doctrines, "pick 2 max," end-tech capstones (Citadel Node / Living Bastion /
    Cataclysm Beacon).
-7. The arena↔living-map live-wiring bridge: a real running match that actually initializes a
-   `HexGrid`/`TownRegistry`, a real team-to-faction mapping, and the actual card-cast call sites
-   (`town_apply_militia_boost`, `town_attempt_convert` for "capture a node") — the real
-   prerequisite for every card-tie-in idea in Phase 2 to matter in a live game, not guessed at.
+7. **The arena↔living-map live wiring bridge** (Phase 7, this pass) — DONE. A real running match
+   now initializes a `HexGrid`/`TownRegistry`/`CreepRegistry`, ticks it, checks the real win
+   condition, and syncs town/creep state to the client (visible on the minimap). See the Phase 7
+   section above. Still genuinely missing: any real card-cast call site
+   (`town_apply_militia_boost`, `town_attempt_convert` for "capture a node") — the win condition
+   is live but nothing can flip a town in a real match yet.
 8. Card UI redesign (G-key panel, Hearthstone/Clash-Royale-style drag-to-cast/drag-to-hex-grid
    affordance) — real client rendering work, gated on reading the existing card HUD code first.
 9. Visual factions (Imperatives/Verdant Pact/Ascended) — art/asset direction, deferred until the

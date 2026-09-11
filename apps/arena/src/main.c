@@ -36,6 +36,7 @@
 #include "../../../packages/common/hmac_sha256.h"
 #include "../../../packages/common/http_client.h"
 #include "../../../packages/simulation/arena_game.h"
+#include "../../../packages/simulation/living_map_bridge.h"
 #include "../../../packages/simulation/arena_ai_bridge.h"
 #include "../../../packages/simulation/arena_replay.h"
 #include "../../../packages/goldenband/gband.h"
@@ -689,6 +690,47 @@ static uint16_t obstacle_hp_prev[ARENA_OBSTACLE_COUNT];
 static int obstacle_hp_prev_valid[ARENA_OBSTACLE_COUNT];
 #define ARENA_AUDIO_HEARING_RADIUS 15.0f /* how far from the local player's own hero a cast/hit sound is still audible */
 
+/* Living Map bridge (BACKLOG.md SECTION 377 Phase 7, founder: "im not seeing frontier village
+ * ... i dont see a hex grid"): a plain client-local mirror of the most recent
+ * PACKET_ARENA_SNAPSHOT_LIVING_MAP, read by the minimap draw pass further down. Unlike
+ * fountains/shops (PACKET_ARENA_SNAPSHOT_LAYOUT, deliberately NOT handled by this client -- see
+ * that packet's own doc comment), Living Map town/creep state genuinely can't be recomputed
+ * locally from the match seed, so it has to be mirrored from the wire like heroes are. */
+static int g_living_map_town_count = 0;
+static float g_living_map_town_x[ARENA_SNAPSHOT_LIVING_MAP_TOWN_COUNT];
+static float g_living_map_town_z[ARENA_SNAPSHOT_LIVING_MAP_TOWN_COUNT];
+static uint8_t g_living_map_town_faction_owner[ARENA_SNAPSHOT_LIVING_MAP_TOWN_COUNT];
+static int g_living_map_creep_count = 0;
+static float g_living_map_creep_x[ARENA_SNAPSHOT_LIVING_MAP_CREEP_COUNT];
+static float g_living_map_creep_z[ARENA_SNAPSHOT_LIVING_MAP_CREEP_COUNT];
+static uint8_t g_living_map_creep_alive[ARENA_SNAPSHOT_LIVING_MAP_CREEP_COUNT];
+
+/* living_map_client_* -- same real "networked path reads the wire mirror, local demo reads the
+ * shared in-process state directly" split this file's own card dispatch (net_send_card_play vs.
+ * arena_ecowar_play_card) already uses. The local 1v1 demo links arena_game.c/living_map_bridge.c
+ * directly, so its own Living Map state is already live and current with zero network round trip
+ * needed -- only the real networked path needs the g_living_map_* wire mirror above. */
+static int living_map_client_town_count(void) {
+    return net_mode ? g_living_map_town_count : living_map_bridge_town_count();
+}
+static void living_map_client_town_pos(int index, float *out_x, float *out_z) {
+    if (net_mode) { *out_x = g_living_map_town_x[index]; *out_z = g_living_map_town_z[index]; }
+    else living_map_bridge_town_world_pos(index, out_x, out_z);
+}
+static int living_map_client_town_faction_owner(int index) {
+    return net_mode ? g_living_map_town_faction_owner[index] : living_map_bridge_town_faction_owner(index);
+}
+static int living_map_client_creep_count(void) {
+    return net_mode ? g_living_map_creep_count : living_map_bridge_creep_count();
+}
+static void living_map_client_creep_pos(int index, float *out_x, float *out_z) {
+    if (net_mode) { *out_x = g_living_map_creep_x[index]; *out_z = g_living_map_creep_z[index]; }
+    else living_map_bridge_creep_world_pos(index, out_x, out_z);
+}
+static int living_map_client_creep_alive(int index) {
+    return net_mode ? g_living_map_creep_alive[index] : living_map_bridge_creep_alive(index);
+}
+
 static void net_poll_snapshots(uint32_t now_ms) {
     /* CRITICAL BUG FOUND LIVE (S170-192): this was a fixed char rbuf[2048] -- see
        apps/arena_bot/src/main.c's own identical fix for the full story. Same truncation, same
@@ -997,6 +1039,24 @@ static void net_poll_snapshots(uint32_t now_ms) {
                     arena_state.obstacles[i].hp = new_hp;
                     obstacle_hp_prev[i] = new_hp;
                     obstacle_hp_prev_valid[i] = 1;
+                }
+            } else if (h->type == PACKET_ARENA_SNAPSHOT_LIVING_MAP && len >= (int)(sizeof(NetHeader) + sizeof(ArenaSnapshotLivingMapMsg))) {
+                /* BACKLOG.md SECTION 377 Phase 7 -- see this file's own g_living_map_* doc
+                   comment above for why this has to be mirrored from the wire. */
+                ArenaSnapshotLivingMapMsg *lmsg = (ArenaSnapshotLivingMapMsg *)(rbuf + sizeof(NetHeader));
+                g_living_map_town_count = lmsg->town_count < ARENA_SNAPSHOT_LIVING_MAP_TOWN_COUNT
+                    ? lmsg->town_count : ARENA_SNAPSHOT_LIVING_MAP_TOWN_COUNT;
+                for (int t = 0; t < g_living_map_town_count; t++) {
+                    g_living_map_town_x[t] = lmsg->town_x[t];
+                    g_living_map_town_z[t] = lmsg->town_z[t];
+                    g_living_map_town_faction_owner[t] = lmsg->town_faction_owner[t];
+                }
+                g_living_map_creep_count = lmsg->creep_count < ARENA_SNAPSHOT_LIVING_MAP_CREEP_COUNT
+                    ? lmsg->creep_count : ARENA_SNAPSHOT_LIVING_MAP_CREEP_COUNT;
+                for (int c = 0; c < g_living_map_creep_count; c++) {
+                    g_living_map_creep_x[c] = lmsg->creep_x[c];
+                    g_living_map_creep_z[c] = lmsg->creep_z[c];
+                    g_living_map_creep_alive[c] = lmsg->creep_alive[c];
                 }
             }
         }
@@ -4741,6 +4801,62 @@ int main(int argc, char *argv[]) {
                 for (int mi = 0; mi <= 8; mi++) {
                     float a = (float)mi / 8.0f * 2.0f * (float)M_PI;
                     glVertex2f(px + cosf(a) * dot_r, py + sinf(a) * dot_r);
+                }
+                glEnd();
+            }
+
+            /* Living Map bridge (BACKLOG.md SECTION 377 Phase 7, founder: "im not seeing
+             * frontier village ... i dont see a hex grid"): real town/creep markers on the same
+             * minimap the node/hero dots above already use. Towns draw as a diamond (distinct
+             * from the node/hero circles above) colored by the same relationship convention the
+             * hero dots use (neutral gray, my faction cyan, enemy faction red) -- "my faction" is
+             * a real, fixed mapping (owner 0 -> Living Map faction 1, owner 1 -> faction 2, see
+             * living_map_bridge_faction_to_owner's own doc comment), not per-hero. Cows/creeps
+             * draw as a small yellow dot, distinct from every other marker color on this
+             * minimap. No real hex-grid outline drawn yet -- see docs/NORTHSTAR_LIVING_MAP.md's
+             * own Phase 7 section for that as real, separate follow-up (a real hex-tessellated
+             * overlay is a bigger rendering task than town/creep dots, deliberately not attempted
+             * blind in this same pass with no display to visually verify either). */
+            int my_faction = (my_owner == 0) ? 1 : 2;
+            for (int t = 0; t < living_map_client_town_count(); t++) {
+                float twx, twz;
+                living_map_client_town_pos(t, &twx, &twz);
+                float tx = twx / ARENA_HALF_EXTENT;
+                float tz = twz / ARENA_HALF_EXTENT;
+                float tdist = sqrtf(tx * tx + tz * tz);
+                if (tdist > 1.0f) { tx /= tdist; tz /= tdist; }
+                float px = mm_cx + tx * mm_r;
+                float py = mm_cy + tz * mm_r;
+                int town_owner = living_map_client_town_faction_owner(t);
+                if (town_owner == 0) glColor3f(0.6f, 0.6f, 0.6f);
+                else if (town_owner == my_faction) glColor3f(0.1f, 0.8f, 0.95f);
+                else glColor3f(0.9f, 0.25f, 0.15f);
+                float dr = 4.0f;
+                glBegin(GL_TRIANGLE_FAN);
+                glVertex2f(px, py);
+                glVertex2f(px, py - dr);
+                glVertex2f(px + dr, py);
+                glVertex2f(px, py + dr);
+                glVertex2f(px - dr, py);
+                glVertex2f(px, py - dr);
+                glEnd();
+            }
+            for (int c = 0; c < living_map_client_creep_count(); c++) {
+                if (!living_map_client_creep_alive(c)) continue;
+                float cwx, cwz;
+                living_map_client_creep_pos(c, &cwx, &cwz);
+                float cx = cwx / ARENA_HALF_EXTENT;
+                float cz = cwz / ARENA_HALF_EXTENT;
+                float cdist = sqrtf(cx * cx + cz * cz);
+                if (cdist > 1.0f) { cx /= cdist; cz /= cdist; }
+                float px = mm_cx + cx * mm_r;
+                float py = mm_cy + cz * mm_r;
+                glColor3f(0.95f, 0.85f, 0.3f);
+                glBegin(GL_TRIANGLE_FAN);
+                glVertex2f(px, py);
+                for (int mi = 0; mi <= 6; mi++) {
+                    float a = (float)mi / 6.0f * 2.0f * (float)M_PI;
+                    glVertex2f(px + cosf(a) * 2.0f, py + sinf(a) * 2.0f);
                 }
                 glEnd();
             }
