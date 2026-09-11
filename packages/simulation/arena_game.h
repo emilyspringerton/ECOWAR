@@ -2677,6 +2677,19 @@ typedef struct {
      * real MOBA's own "you keep facing whichever way you last moved" convention. Radians,
      * standard atan2f range (-pi, pi]. */
     float facing_rad;
+    /* npc_controlled (S378, ECOWAR's card-battler experiment -- founder: "lets experiment with
+     * making the hero cards based and if it ends up being unfun we bring back classic RTS/MOBA
+     * hero affordances in order to increase player agency"): 1 = this hero is driven every tick
+     * by arena_npc_hero_tick (a generalized, any-index version of the existing
+     * arena_bot_tick_heuristic/bot_cast_kit_if_ready practice-bot AI -- the SAME real, already-
+     * proven heuristics, not new ones) instead of real player WASD-move/Q-W-R-cast input; that
+     * player's real input surface becomes card plays (packages/simulation/card_deck.h) instead,
+     * including PLAYING that hero's own Q/W/R as cards (CARD_ID_HERO_Q/_W/_R). Default 0
+     * (unchanged, real player-piloted hero) everywhere -- nothing sets this yet from any live
+     * client, so this is architecture-only enablement this pass, a deliberate, cheap-to-revert
+     * toggle per the founder's own explicit "if unfun, bring it back" framing, not a wholesale,
+     * one-way replacement of direct hero control. */
+    int npc_controlled;
 } ArenaHero;
 
 typedef struct {
@@ -2968,6 +2981,19 @@ void arena_bot_tick(unsigned int dt_ms);
  * this" reasoning. */
 void arena_bot_tick_heuristic(unsigned int dt_ms);
 void bot_cast_kit_if_ready(ArenaHero *bot, ArenaHero *foe);
+
+/* arena_npc_hero_tick (S378, ECOWAR's card-battler experiment): a generalized, any-hero-index
+ * version of arena_bot_tick_heuristic + bot_cast_kit_if_ready combined into one call -- the exact
+ * same real, already-proven movement/cast heuristics (bot_brain_forward's own relative-geometry
+ * inputs and bot_cast_kit_if_ready's own per-hero-id switch are both already hero-index-agnostic
+ * internally; only arena_bot_tick_heuristic's own hardcoded "always hero 1 vs hero 0" wrapper
+ * wasn't), so any hero -- including owner 0, a real human's own card-battler-mode hero -- can be
+ * NPC-driven by it. Intended caller: arena_update, once per tick, for any hero with
+ * ArenaHero.npc_controlled set (see that field's own doc comment) -- not called anywhere
+ * automatically yet, so this is purely additive, zero-risk to every existing caller of
+ * arena_bot_tick_heuristic/bot_cast_kit_if_ready. No-op if either hero is dead/inactive, same
+ * convention arena_bot_tick_heuristic already holds itself to. */
+void arena_npc_hero_tick(int hero_index, int foe_index, unsigned int dt_ms);
 
 /* Team-mode entry points (2026-07-24, NORTHSTAR §13 cont'd): a real N-vs-N
  * match (up to ARENA_TEAM_SIZE per side). arena_init_teams sets up

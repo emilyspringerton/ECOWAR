@@ -422,6 +422,37 @@ gcc -std=c99 -O2 -Wall -Wextra -I"${ROOT_DIR}/packages" \
   "${ROOT_DIR}/packages/common/mlp_infer.c" \
   -lm
 
+# Card-battler experiment (BACKLOG.md SECTION 377/S378): Deck/Hand mechanics (card_deck.c) + the
+# per-owner registry/NPC-hero dispatch (card_battler.c) -- real live round-trip through the real
+# arena_cast_q/arena_toggle_w/arena_cast_r/arena_ecowar_play_card functions, same bar
+# test_ecowar_cards.c already holds itself to. Neither card_deck.c nor card_battler.c is needed
+# by arena_game.c itself (the dependency runs the other way -- card_battler.c calls INTO
+# arena_game.c), so this is the only compile block that needs them, not every block above.
+gcc -std=c99 -O2 -Wall -Wextra -I"${ROOT_DIR}/packages" \
+  -o "${BUILD_DIR}/test_card_battler" \
+  -include "${ROOT_DIR}/packages/simulation/bloodflower_mod_host.h" \
+  -include "${ROOT_DIR}/packages/simulation/tree_passive_mod_host.h" \
+  -include "${ROOT_DIR}/packages/simulation/item_curriculum_mod_host.h" \
+  -include "${ROOT_DIR}/packages/simulation/duck_smoke_bomb_mod_host.h" \
+  -include "${ROOT_DIR}/packages/simulation/abraham_fireball_mod_host.h" \
+  -include "${ROOT_DIR}/packages/simulation/bacon_puck_intangible_speed_mod_host.h" \
+  -include "${ROOT_DIR}/packages/simulation/card_effect_mod_host.h" \
+  -include "${ROOT_DIR}/packages/simulation/combat_log_mod_host.h" \
+  "${ROOT_DIR}/tests/test_card_battler.c" \
+  "${ROOT_DIR}/packages/simulation/arena_game.c" \
+  "${ROOT_DIR}/packages/simulation/bloodflower_mod.c" \
+  "${ROOT_DIR}/packages/simulation/tree_passive_mod.c" \
+  "${ROOT_DIR}/packages/simulation/item_curriculum_mod.c" \
+  "${ROOT_DIR}/packages/simulation/duck_smoke_bomb_mod.c" \
+  "${ROOT_DIR}/packages/simulation/abraham_fireball_mod.c" \
+  "${ROOT_DIR}/packages/simulation/bacon_puck_intangible_speed_mod.c" \
+  "${ROOT_DIR}/packages/simulation/card_effect_mod.c" \
+  "${ROOT_DIR}/packages/simulation/combat_log_mod.c" \
+  "${ROOT_DIR}/packages/simulation/card_deck.c" \
+  "${ROOT_DIR}/packages/simulation/card_battler.c" \
+  "${ROOT_DIR}/packages/common/mlp_infer.c" \
+  -lm
+
 "${BUILD_DIR}/test_arena_game"
 "${BUILD_DIR}/test_bloodflower"
 "${BUILD_DIR}/test_tree_passive"
@@ -432,6 +463,7 @@ gcc -std=c99 -O2 -Wall -Wextra -I"${ROOT_DIR}/packages" \
 "${BUILD_DIR}/test_shadow_step"
 "${BUILD_DIR}/test_cart_delivery"
 "${BUILD_DIR}/test_ecowar_cards"
+"${BUILD_DIR}/test_card_battler"
 "${BUILD_DIR}/test_damage_log"
 "${BUILD_DIR}/test_combat_log"
 "${BUILD_DIR}/test_mat4"

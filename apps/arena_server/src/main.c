@@ -878,7 +878,14 @@ static void server_handle_packet(struct sockaddr_in *sender, char *buffer, int s
            can only ever affect its own hero), just widened to a small owned set instead of
            exactly one slot. An unauthorized unit_owner is silently dropped, same "malformed/
            out-of-bounds input is just ignored" convention every other handler here already uses. */
-        if (arena_owner_controls(client_id, cmd->unit_owner)) {
+        /* Card-battler experiment (S378, BACKLOG.md SECTION 377): an npc_controlled hero is
+         * driven by arena_npc_hero_tick every tick, not real player input -- a real move command
+         * for one would just get silently overwritten again next tick anyway, but dropping it
+         * here is the honest, explicit version of that rather than a race the AI happens to win.
+         * No real client sends PACKET_ARENA_MOVE for an npc_controlled hero yet (nothing sets
+         * npc_controlled from any live client), so this is a defensive no-op today, not yet
+         * exercised by real traffic. */
+        if (arena_owner_controls(client_id, cmd->unit_owner) && !arena_state.heroes[cmd->unit_owner].npc_controlled) {
             /* Real, server-side diagnostic (2026-08-26, founder: "AT ONE POINT I GOT STUCK
                SIDEWAYS AND HE WAS LIKE TRYING TO ROTATE TO RUN WHERE I WANTED BUT KIND
                ACOULDNT IT WAS WEIRD" -> "CAN WE ADD LOGS TO HELP DEBUG IT?" -- an
@@ -913,9 +920,14 @@ static void server_handle_packet(struct sockaddr_in *sender, char *buffer, int s
         /* S202-34: same "record right before dispatch, individual cast function decides
            whether it cares" shape as hover_target just above -- only Abraham's W does today. */
         arena_set_ground_target(client_id, cmd->has_ground_target, cmd->target_x, cmd->target_z);
-        if (cmd->slot == 0) arena_cast_q(client_id);
-        else if (cmd->slot == 1) arena_toggle_w(client_id);
-        else if (cmd->slot == 2) arena_cast_r(client_id);
+        /* Card-battler experiment (S378): same reasoning as PACKET_ARENA_MOVE's own guard just
+         * above -- an npc_controlled hero's Q/W/R are cast by arena_npc_hero_tick/
+         * bot_cast_kit_if_ready, not real player key input. */
+        if (!arena_state.heroes[client_id].npc_controlled) {
+            if (cmd->slot == 0) arena_cast_q(client_id);
+            else if (cmd->slot == 1) arena_toggle_w(client_id);
+            else if (cmd->slot == 2) arena_cast_r(client_id);
+        }
     } else if (head->type == PACKET_ARENA_CARD_PLAY) {
         if (size < (int)(sizeof(NetHeader) + sizeof(ArenaCardPlayCmd))) return;
         ArenaCardPlayCmd *cmd = (ArenaCardPlayCmd *)(buffer + sizeof(NetHeader));

@@ -1383,6 +1383,35 @@ void arena_bot_tick_heuristic(unsigned int dt_ms) {
     arena_set_move_target(1, bot->x + out[0] * step, bot->z + out[1] * step);
 }
 
+/* arena_npc_hero_tick -- see arena_game.h's own doc comment for the full reasoning. Literally the
+ * same math as arena_bot_tick_heuristic just above (bot_brain_forward's own 4 inputs are already
+ * relative dx/dz/dist/hp-diff, not owner-specific), generalized to any hero_index/foe_index pair,
+ * plus bot_cast_kit_if_ready folded in so one call drives both movement and ability casting. */
+void arena_npc_hero_tick(int hero_index, int foe_index, unsigned int dt_ms) {
+    (void)dt_ms;
+    ArenaHero *bot = &arena_state.heroes[hero_index];
+    ArenaHero *foe = &arena_state.heroes[foe_index];
+    if (!bot->alive || !foe->alive) return;
+
+    float dx = foe->x - bot->x;
+    float dz = foe->z - bot->z;
+    float dist = sqrtf(dx * dx + dz * dz);
+
+    float in[4];
+    in[0] = dx / ARENA_HALF_EXTENT;
+    in[1] = dz / ARENA_HALF_EXTENT;
+    in[2] = dist / (ARENA_HALF_EXTENT * 2.0f);
+    in[3] = ((float)bot->hp / bot->max_hp) - ((float)foe->hp / foe->max_hp);
+
+    float out[2];
+    bot_brain_forward(in, out);
+
+    float step = 3.0f;
+    arena_set_move_target(hero_index, bot->x + out[0] * step, bot->z + out[1] * step);
+
+    bot_cast_kit_if_ready(bot, foe);
+}
+
 /* resolve_hero_obstacle_collision (S170-138): plain circle-vs-circle push-out,
  * same "cheap and good enough" spirit as the rest of this sim's collision-free
  * approach -- no physics engine, just shove the hero back to the obstacle's
@@ -7413,6 +7442,19 @@ void arena_update(unsigned int dt_ms) {
         } else {
             bot_cast_kit_if_ready(&arena_state.heroes[1], &arena_state.heroes[0]);
         }
+    }
+    /* Card-battler experiment (S378): any hero explicitly marked npc_controlled gets driven by
+     * the exact same real heuristic AI the practice bot already uses (arena_npc_hero_tick),
+     * instead of expecting real player-submitted move/cast commands -- see
+     * ArenaHero.npc_controlled's own doc comment. Skips hero 1 when arena_bot_enabled already
+     * drives it above, so it's never double-ticked. Both heroes default to npc_controlled == 0,
+     * so this loop is a real no-op for every existing caller unless something explicitly opts a
+     * hero in. */
+    for (int npc_i = 0; npc_i < 2; npc_i++) {
+        if (!arena_state.heroes[npc_i].npc_controlled) continue;
+        if (arena_bot_enabled && npc_i == 1) continue;
+        int npc_foe = 1 - npc_i;
+        arena_npc_hero_tick(npc_i, npc_foe, dt_ms);
     }
     arena_tick_projectiles(dt_ms);
     arena_tick_fountains(dt_ms);

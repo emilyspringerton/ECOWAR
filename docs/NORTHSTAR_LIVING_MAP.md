@@ -185,17 +185,66 @@ and fixed before shipping, not by observation in production). Live-verified: sta
 startup log and stayed alive past the WAITING phase's real timeout window rather than exiting
 prematurely.
 
-**Not built this pass, and genuinely not decided**: an equivalent fast headless harness for the
-Living Map itself (`packages/livingmap` has no AI/bot decision-making to train yet, so there's
-nothing to point a training loop at — its `town_tick`/`creep_tick_all` functions are already plain
-C calls with zero throttling of their own, same shape `headless.c` already proved out for the
-arena side, whenever that's needed). And a real, open architecture fork the founder raised but did
-not resolve: "we may need to make the hero an NPC actually and convert it fully into a card
-battler — like choosing a hero puts that hero in your starting hand and shuffles the hero
-abilities cards into your deck." This would be a fundamental change to what ECOWAR's core loop
-even is (directly-piloted hero → deck-building card battler with an NPC hero), well beyond this
-doc's own Living Map scope, and is named here as real, live, unresolved founder direction — not
-guessed at, not built, not silently dropped.
+**Not built this pass**: an equivalent fast headless harness for the Living Map itself
+(`packages/livingmap` has no AI/bot decision-making to train yet, so there's nothing to point a
+training loop at — its `town_tick`/`creep_tick_all` functions are already plain C calls with zero
+throttling of their own, same shape `headless.c` already proved out for the arena side, whenever
+that's needed).
+
+## The hero-as-NPC / card-battler experiment (S378) — green-lit, real, in progress
+
+Founder: "we may need to make the hero an NPC actually and convert it fully into a card battler —
+like choosing a hero puts that hero in your starting hand and shuffles the hero abilities cards
+into your deck," followed by a real, explicit go-ahead once the idea was named: "lets experiment
+with making the hero cards based and if it ends up being unfun we bring back classic RTS/MOBA hero
+affordances in order to increase player agency." Read exactly as framed — a real, reversible
+experiment with an explicit rollback trigger tied to fun/player-agency, not a one-way architecture
+commit. Every piece below defaults OFF everywhere; nothing in any live client sets it yet, so this
+is real, tested, additive architecture, not a live behavior change.
+
+**Real, checked-first finding: the two hardest-sounding pieces already existed.** `arena_game.c`'s
+own `arena_bot_tick_heuristic`/`bot_cast_kit_if_ready` (built for the practice-mode bot and RL
+training opponent) are ALREADY hero-index-agnostic in their real math (relative dx/dz/dist/hp-diff
+inputs, a per-hero-id cast switch) — only their own thin wrapper hardcoded "always hero 1 vs hero
+0." So "hero becomes an NPC" needed no new AI, just `arena_npc_hero_tick(hero_index, foe_index,
+dt_ms)` — a real, generalized merge of both functions, callable for ANY hero (including a human
+player's own owner-0 hero in card-battler mode).
+
+**Shipped this pass**:
+- `ArenaHero.npc_controlled` (default 0) — when set, `arena_update`'s own per-tick loop drives
+  that hero via `arena_npc_hero_tick` instead of expecting player input. `apps/arena_server`'s
+  `PACKET_ARENA_MOVE`/`PACKET_ARENA_CAST` handlers both gate on it too, so a stray real command for
+  an NPC-controlled hero is a real, explicit no-op rather than a race the AI happens to win.
+- `packages/simulation/card_deck.h/.c` (new): real Deck/Hand mechanics, Clash-Royale-style
+  continuous draw (matching ECOWAR's own real-time economy, and the founder's own
+  "Hearthstone/Clash Royale-style" card-UI framing better than Hearthstone's turn-based full-hand
+  draw would). One copy of every real card id (the 16 existing `ECOWAR_CARDS` plus
+  `CARD_ID_HERO_Q`/`_W`/`_R` — "the hero abilities cards shuffled into your deck," literally), a
+  4-card hand, playing a card empties its slot and starts a real 3-second redraw. A real,
+  deliberate simplification named honestly: an endless, recycling shuffled sequence, not a
+  draw-pile/discard-pile model or curated deck-building — real, separate, later work if the
+  experiment sticks.
+- `packages/simulation/card_battler.h/.c` (new): the per-owner registry connecting a Deck/Hand to
+  real gameplay. `card_battler_play_slot` resolves a generic card id via the EXISTING
+  `arena_ecowar_play_card` (unchanged), and a hero-ability card id via that hero's own EXISTING
+  `arena_cast_q`/`arena_toggle_w`/`arena_cast_r` — every hero's real kit implementation reused
+  as-is, zero new per-hero content authored.
+- 24 new tests (`tests/test_card_battler.c`), including a real live round-trip proving a
+  `CARD_ID_HERO_Q` play genuinely starts that hero's own real ability cooldown (not a stub), and
+  that `arena_npc_hero_tick` is a real no-op for a dead hero. Full suite green (3145 assertions,
+  `scripts/test_arena.sh`); `scripts/build.sh`/`scripts/build_arena.sh` both clean.
+
+**Not built this pass, real and named**: no client UI wiring (playing a card is still only
+reachable by a test calling `card_battler_play_slot` directly — the G-key panel from Phase 2's own
+card-UI section is the real, separate next step here too), no `card_battler_init_hero`/
+`card_battler_tick` call sites wired into any live match loop, no balance pass on hand size/redraw
+timing/which cards even make sense drawn randomly (a "capture a node" card drawn with no hover
+target, or a Doc Wheel heal card with no living ally, both already whiff safely today via their
+own existing real no-op conventions — not a new gap this pass introduces). **The real rollback
+path, kept cheap on purpose**: `npc_controlled` defaults to 0 and every existing direct-control
+code path (WASD move, Q/W/R key cast) is completely untouched and still the only path exercised by
+any real match today — "bring back classic RTS/MOBA hero affordances" requires deleting nothing,
+just never flipping the flag.
 
 ## Mod event model, honestly
 

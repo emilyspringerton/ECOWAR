@@ -14,6 +14,13 @@ cc_test(
     copts = COMMON_TEST_COPTS,
 )
 
+cc_test(
+    name = "test_card_battler",
+    srcs = ["test_card_battler.c"],
+    deps = ["//packages/simulation:card_battler"],
+    copts = COMMON_TEST_COPTS,
+)
+
 # Living Map (docs/NORTHSTAR_LIVING_MAP.md, BACKLOG.md SECTION 377) -- deliberately depends on
 # :living_map only, not :arena_game, matching that package's own "new, standalone layer" design.
 cc_test(

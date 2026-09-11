@@ -76,3 +76,23 @@ cc_library(
     linkopts = ["-lm"],
     visibility = ["//visibility:public"],
 )
+
+# card_battler -- ECOWAR's card-battler experiment (BACKLOG.md SECTION 377/S378): Deck/Hand
+# mechanics (card_deck.c) + the per-owner registry/NPC-hero dispatch (card_battler.c). A real
+# ordinary deps=[":arena_game"] edge (not bundled into that target like the mods above) --
+# card_battler.c calls INTO arena_game.c (arena_cast_q/arena_toggle_w/arena_cast_r/
+# arena_ecowar_play_card), but arena_game.c never calls back into this, so there's no cycle to
+# work around.
+cc_library(
+    name = "card_battler",
+    srcs = [
+        "card_battler.c",
+        "card_deck.c",
+    ],
+    hdrs = [
+        "card_battler.h",
+        "card_deck.h",
+    ],
+    deps = [":arena_game"],
+    visibility = ["//visibility:public"],
+)
