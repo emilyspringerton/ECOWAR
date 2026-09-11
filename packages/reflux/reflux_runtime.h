@@ -1,5 +1,5 @@
-/* packages/simulation/reflux_runtime.h -- REFLUX, the real cross-mod pub/sub layer (BACKLOG.md
- * SECTION 377/380, founder: "have the spawning in hostiles be a mod too with cross mod pub sub
+/* packages/reflux/reflux_runtime.h -- REFLUX, the real cross-mod pub/sub layer (BACKLOG.md
+ * SECTION 377/380/381, founder: "have the spawning in hostiles be a mod too with cross mod pub sub
  * communications (THINK REDUX HOWEVER REDUX WORKS) call the mod itself REFLUX a mod that presents
  * a new layer of mod interface for cross mod communication - give it its own stdlib in PARENA").
  *
@@ -16,10 +16,12 @@
  * listening; a polling mod (e.g. bloodflower_hostile_spawner_mod.prn) never needs the host to
  * hand-wire a bespoke call site for it the way every OTHER mod in this repo needs today.
  *
- * Real, honest, arena-scoped for now: this runtime lives in packages/simulation (one global log
- * per match, alongside arena_state) because ECOWAR is REFLUX's only real consumer today. If a
- * second game ever wants it, extracting this into its own standalone package (no arena_game.h
- * dependency at all -- this file already has none) is a real, cheap, later move, not a redesign.
+ * Real, standalone package (SECTION 381): this runtime has zero dependency on
+ * packages/simulation or packages/livingmap, either direction -- ECOWAR's own arena (bloodflower)
+ * AND its Living Map (town captures) both dispatch into and poll the exact same one, real, shared
+ * log without either package needing to know the other exists. A genuine second real internal
+ * consumer (packages/livingmap/town.c, SECTION 381) already proved this was worth extracting for,
+ * not a hypothetical -- see docs/NORTHSTAR_REFLUX.md's own SECTION 381 addendum.
  */
 #ifndef REFLUX_RUNTIME_H
 #define REFLUX_RUNTIME_H
@@ -29,6 +31,14 @@
  * living_map_bridge.h already use for their own duplicated wire constants -- REFLUX has no
  * exported-constant mechanism of its own, PARENA's (export ...) covers functions, not values). */
 #define REFLUX_ACTION_BLOODFLOWER_TRIGGERED 1
+/* SECTION 381: dispatched by ecowar/town_cap_mod.prn (via packages/livingmap/town.c's own
+ * town_attempt_convert, on a real successful flip). Payload: a = town_id, b = old_faction_owner,
+ * c = new_faction_owner. */
+#define REFLUX_ACTION_TOWN_CAPPED 2
+/* SECTION 381: dispatched by ecowar_tick_allcap_win_check (arena_game.c) once
+ * ecowar/allcap_mod.prn's own on-allcap-check confirms a faction owns every town. Payload:
+ * a = the winning faction, b/c unused (0). */
+#define REFLUX_ACTION_ALLCAP_WIN 3
 
 #define REFLUX_LOG_CAPACITY 256
 

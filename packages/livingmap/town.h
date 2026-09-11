@@ -127,4 +127,17 @@ void town_apply_militia_boost(TownRegistry *reg, int town_id);
  * silent change to this one's meaning. */
 int town_registry_faction_has_full_control(const TownRegistry *reg, int faction_owner);
 
+/* town_registry_owned_count -- how many active towns faction_owner currently owns (EMILY/
+ * BACKLOG.md SECTION 381). Real, host-side counting -- VS0's own scalar-only ABI can't loop over
+ * structured TownRegistry data, so this real loop stays C; ecowar/allcap_mod.prn's own
+ * on-allcap-check receives the resulting counts as plain I32 params, matching the real
+ * "PARENA does the decision rule, host does the structural work" split every mod in this repo
+ * already uses. */
+int town_registry_owned_count(const TownRegistry *reg, int faction_owner);
+
+/* town_registry_active_count -- how many towns are active in total (both convertible AND
+ * neutral/any faction) -- the real denominator on-allcap-check's own total_count parameter needs.
+ * Distinct from living_map_bridge_town_count(), which is capped for wire-sync purposes. */
+int town_registry_active_count(const TownRegistry *reg);
+
 #endif /* LIVINGMAP_TOWN_H */

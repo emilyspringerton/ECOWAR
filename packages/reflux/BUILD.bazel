@@ -1,0 +1,22 @@
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+# reflux -- the real cross-mod pub/sub layer (EMILY/BACKLOG.md SECTION 380/381). Deliberately its
+# own, fully standalone package -- zero dependency on packages/simulation or packages/livingmap,
+# either direction, so ANY package (or a future game entirely) can dispatch into or poll from the
+# one shared action log without pulling in ECOWAR's own arena/Living Map code. Bundles the
+# generated PARENA mod (reflux_mod.c) together with its own host runtime for the same real
+# "the mod calls back into the runtime, no real cycle to work around by splitting them" reasoning
+# packages/simulation/BUILD.bazel's own :arena_game target already documents.
+cc_library(
+    name = "reflux",
+    srcs = [
+        "reflux_mod.c",
+        "reflux_runtime.c",
+    ],
+    hdrs = [
+        "parena_runtime.h",
+        "reflux_mod_host.h",
+        "reflux_runtime.h",
+    ],
+    visibility = ["//visibility:public"],
+)

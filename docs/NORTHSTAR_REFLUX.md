@@ -113,6 +113,52 @@ shifts": the ambient tint alone can't move shadows/highlights across a hero or t
   named this). No visual confirmation possible in this sandbox (no display) — only compiled,
   linked, and confirmed the real underlying math behaves correctly.
 
+## ALLCAP — the win condition itself, made mod-driven (SECTION 381)
+
+Founder real-time: "even the win con should be mods - capping a base should work as a mod or a
+collection of mods and the wincon mod should interface with that mod via the ALLCAP mod or
+something like that."
+
+Real, checked-first finding this design builds on: the DECISION of whether a capture attempt
+succeeds was already mod-driven before this pass — every real town type's own convert-resistance
+function (`frontier_village_mod.prn`, `walled_hamlet_mod.prn`) already decides how hard a town is
+to flip. What was NOT a mod: the announcement that a capture happened, and the win-condition rule
+itself. This pass makes both real, dispatched mod events, giving REFLUX its second real
+dispatcher/subscriber pair — and its first real 3-hop chain:
+
+1. **CAP** (`PARENA/stdlib/ecowar/town_cap_mod.prn`, new) — a trigger-only mod, same shape
+   `bloodflower_mod.prn` already established. `packages/livingmap/town.c`'s own
+   `town_attempt_convert` calls `on-town-captured(town-id, old-faction, new-faction)` the instant
+   a real conversion succeeds; the mod's only job is dispatching
+   `REFLUX_ACTION_TOWN_CAPPED(town-id, old-faction, new-faction)`.
+2. **ALLCAP** (`PARENA/stdlib/ecowar/allcap_mod.prn`, new) — real, pure PARENA logic, no `#target`
+   escape needed at all: `on-allcap-check(owned-count, total-count) : Bool` is a plain
+   `(= owned-count total-count)`. **Never imports, includes, or calls `town_cap_mod.prn`** — the
+   only real connection is the shared REFLUX log. New host-side
+   `ecowar_tick_allcap_win_check` (`arena_game.c`) polls for `TOWN_CAPPED`, computes the real
+   owned/total counts via new `town_registry_owned_count`/`town_registry_active_count`
+   (`packages/livingmap/town.h/.c` — real host C, since VS0's scalar-only ABI can't loop over
+   structured `TownRegistry` data), asks the mod, and dispatches `REFLUX_ACTION_ALLCAP_WIN` if
+   true.
+3. `arena_update`/`arena_update_teams` — now poll for `REFLUX_ACTION_ALLCAP_WIN` (their own
+   separate real cursor) instead of calling `living_map_bridge_full_control_faction()` directly.
+   That function still exists, real and tested, for direct/test use — the REFLUX-mediated path is
+   what the live match loop actually uses now.
+
+New `living_map_bridge_attempt_convert_town` — the real, live entry point the founder's own
+"capture a node" card (Phase 2) will eventually call; this pass's own test
+(`tests/test_allcap.c`) is its first real caller, proving the whole chain end to end: converting
+every real starting town to one faction and confirming `arena_state.winner` gets set with zero
+direct call anywhere between `town.c`, the CAP mod, the ALLCAP mod, and `arena_update`.
+
+**REFLUX extracted into its own standalone package** (`packages/reflux/`, moved from
+`packages/simulation/`) as part of this pass — `packages/livingmap/town.c` needed to dispatch into
+REFLUX too, and packages/livingmap was never meant to depend on packages/simulation (or vice
+versa). A real, concrete second internal consumer, not a hypothetical — exactly the trigger
+`docs/NORTHSTAR_REFLUX.md`'s own original "arena-scoped for now" note said to watch for.
+
+7 new tests (`tests/test_allcap.c`), full suite green (3196 assertions).
+
 ## Related
 
 - `docs/NORTHSTAR_LIVING_MAP.md` — the "Mod event model, honestly" section this doc's own REFLUX

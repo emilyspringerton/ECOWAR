@@ -125,3 +125,16 @@ int living_map_bridge_spawn_hostile_creep_at_map_center(void) {
                                    LIVING_MAP_BLOODFLOWER_HOSTILE_FACTION,
                                    LIVING_MAP_BLOODFLOWER_HOSTILE_HP);
 }
+
+int living_map_bridge_faction_owned_count(int faction_owner) {
+    return town_registry_owned_count(&g_living_map_towns, faction_owner);
+}
+
+int living_map_bridge_real_town_count(void) {
+    return town_registry_active_count(&g_living_map_towns);
+}
+
+int living_map_bridge_attempt_convert_town(int town_index, int attacking_faction, int attempt_strength) {
+    return town_attempt_convert(&g_living_map_towns, &g_living_map_grid, &g_living_map_log,
+                                 town_index, attacking_faction, attempt_strength);
+}

@@ -13,6 +13,7 @@
 #include "combat_log_mod_host.h"
 #include "living_map_bridge.h"
 #include "bloodflower_hostile_spawner_mod_host.h"
+#include "allcap_mod_host.h"
 
 ArenaState arena_state;
 int arena_bot_enabled = 1;
@@ -1477,6 +1478,58 @@ static void ecowar_tick_bloodflower_hostile_spawner(void) {
         }
     }
     g_bloodflower_hostile_spawner_last_seen = size;
+}
+
+/* ecowar_tick_allcap_win_check / ecowar_check_allcap_win_faction (EMILY/BACKLOG.md SECTION 381,
+ * founder: "even the win con should be mods - capping a base should work as a mod or a collection
+ * of mods and the wincon mod should interface with that mod via the ALLCAP mod"). REFLUX's second
+ * real dispatcher/subscriber chain, and the first real 3-hop one: packages/livingmap/town.c's own
+ * town_attempt_convert calls ecowar/town_cap_mod.prn's on-town-captured on a real successful flip
+ * (dispatches REFLUX_ACTION_TOWN_CAPPED) -> ecowar_tick_allcap_win_check (here) polls for that,
+ * asks ecowar/allcap_mod.prn's own on-allcap-check whether the capturing faction now owns every
+ * town, and if so dispatches REFLUX_ACTION_ALLCAP_WIN -> arena_update/arena_update_teams poll for
+ * THAT (their own separate real cursor, ecowar_check_allcap_win_faction) to decide
+ * arena_state.winner. Three real, separately-tickable stages, none of them calling each other
+ * directly -- the actual "wincon mod interfaces with the capping mod via REFLUX" shape asked for,
+ * not a direct function call chain dressed up to look decoupled.
+ *
+ * living_map_bridge_full_control_faction() (living_map_bridge.h) still exists, real and tested,
+ * for direct/test use -- this REFLUX-mediated path is what the live match loop actually uses now,
+ * not a replacement for that function's own real, narrower "just tell me who's winning right now"
+ * query use case. */
+static int g_allcap_win_check_last_seen = 0;
+
+static void ecowar_tick_allcap_win_check(void) {
+    int size = reflux_log_size();
+    for (int i = g_allcap_win_check_last_seen; i < size; i++) {
+        if (reflux_action_type_at(i) == REFLUX_ACTION_TOWN_CAPPED) {
+            int new_faction = reflux_action_c_at(i); /* on-town-captured's own real (town-id, old-faction, new-faction) payload order */
+            int owned = living_map_bridge_faction_owned_count(new_faction);
+            int total = living_map_bridge_real_town_count();
+            if (on_allcap_check(owned, total)) {
+                reflux_dispatch(REFLUX_ACTION_ALLCAP_WIN, new_faction, 0, 0);
+            }
+        }
+    }
+    g_allcap_win_check_last_seen = size;
+}
+
+static int g_arena_allcap_win_last_seen = 0;
+
+/* Returns the real winning faction (1..3) the moment a real REFLUX_ACTION_ALLCAP_WIN appears in
+ * the shared log since this cursor last checked, or 0 if none has (yet). Advances its own real
+ * cursor every call, same "no event missed, none double-counted" convention every other real
+ * REFLUX poller in this file already uses. */
+static int ecowar_check_allcap_win_faction(void) {
+    int size = reflux_log_size();
+    int result = 0;
+    for (int i = g_arena_allcap_win_last_seen; i < size; i++) {
+        if (reflux_action_type_at(i) == REFLUX_ACTION_ALLCAP_WIN) {
+            result = reflux_action_a_at(i);
+        }
+    }
+    g_arena_allcap_win_last_seen = size;
+    return result;
 }
 
 /* resolve_hero_obstacle_collision (S170-138): plain circle-vs-circle push-out,
@@ -7533,8 +7586,9 @@ void arena_update(unsigned int dt_ms) {
      * win from the same tick or vice versa. */
     living_map_bridge_tick(dt_ms);
     ecowar_tick_bloodflower_hostile_spawner();
+    ecowar_tick_allcap_win_check();
     if (arena_state.winner == 0) {
-        int win_faction = living_map_bridge_full_control_faction();
+        int win_faction = ecowar_check_allcap_win_faction();
         if (win_faction != 0) {
             int win_owner = living_map_bridge_faction_to_owner(win_faction);
             if (win_owner == 0) arena_state.winner = 1;
@@ -7963,8 +8017,9 @@ void arena_update_teams(unsigned int dt_ms) {
      * above from the same tick. */
     living_map_bridge_tick(dt_ms);
     ecowar_tick_bloodflower_hostile_spawner();
+    ecowar_tick_allcap_win_check();
     if (arena_state.winner == 0) {
-        int win_faction = living_map_bridge_full_control_faction();
+        int win_faction = ecowar_check_allcap_win_faction();
         if (win_faction != 0) {
             int win_team = living_map_bridge_faction_to_owner(win_faction);
             if (win_team == 0) arena_state.winner = 1;

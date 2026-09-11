@@ -1,4 +1,4 @@
-/* packages/simulation/reflux_runtime.c -- see reflux_runtime.h for the real design rationale.
+/* packages/reflux/reflux_runtime.c -- see reflux_runtime.h for the real design rationale.
  * The RefluxLog ring-buffer implementation is a deliberate, near-identical port of
  * packages/livingmap/living_map_events.c's own proven shape -- same real "total_emitted vs.
  * capacity" wraparound logic, generalized from Living Map events into a real, cross-mod primitive. */

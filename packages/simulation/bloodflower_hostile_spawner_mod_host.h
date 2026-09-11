@@ -10,7 +10,7 @@
 #ifndef BLOODFLOWER_HOSTILE_SPAWNER_MOD_HOST_H
 #define BLOODFLOWER_HOSTILE_SPAWNER_MOD_HOST_H
 
-#include "reflux_mod_host.h"
+#include "../reflux/reflux_mod_host.h"
 
 extern int on_bloodflower_hostile_spawner_should_react(int action_type);
 extern int on_bloodflower_hostile_spawner_creep_count(void);

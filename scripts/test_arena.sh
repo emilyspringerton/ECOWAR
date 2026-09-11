@@ -42,9 +42,11 @@ gcc -std=c99 -O2 -Wall -Wextra -I"${ROOT_DIR}/packages" \
   "${ROOT_DIR}/packages/livingmap/living_map_events.c" \
   "${ROOT_DIR}/packages/livingmap/frontier_village_mod.c" \
   "${ROOT_DIR}/packages/livingmap/walled_hamlet_mod.c" \
-  "${ROOT_DIR}/packages/simulation/reflux_runtime.c" \
-  "${ROOT_DIR}/packages/simulation/reflux_mod.c" \
+  "${ROOT_DIR}/packages/livingmap/town_cap_mod.c" \
+  "${ROOT_DIR}/packages/reflux/reflux_runtime.c" \
+  "${ROOT_DIR}/packages/reflux/reflux_mod.c" \
   "${ROOT_DIR}/packages/simulation/bloodflower_hostile_spawner_mod.c" \
+  "${ROOT_DIR}/packages/simulation/allcap_mod.c" \
   "${ROOT_DIR}/packages/common/mlp_infer.c" \
   -lm
 
@@ -80,9 +82,11 @@ gcc -std=c99 -O2 -Wall -Wextra -I"${ROOT_DIR}/packages" \
   "${ROOT_DIR}/packages/livingmap/living_map_events.c" \
   "${ROOT_DIR}/packages/livingmap/frontier_village_mod.c" \
   "${ROOT_DIR}/packages/livingmap/walled_hamlet_mod.c" \
-  "${ROOT_DIR}/packages/simulation/reflux_runtime.c" \
-  "${ROOT_DIR}/packages/simulation/reflux_mod.c" \
+  "${ROOT_DIR}/packages/livingmap/town_cap_mod.c" \
+  "${ROOT_DIR}/packages/reflux/reflux_runtime.c" \
+  "${ROOT_DIR}/packages/reflux/reflux_mod.c" \
   "${ROOT_DIR}/packages/simulation/bloodflower_hostile_spawner_mod.c" \
+  "${ROOT_DIR}/packages/simulation/allcap_mod.c" \
   "${ROOT_DIR}/packages/common/mlp_infer.c" \
   -lm
 
@@ -123,9 +127,11 @@ gcc -std=c99 -O2 -Wall -Wextra -I"${ROOT_DIR}/packages" \
   "${ROOT_DIR}/packages/livingmap/living_map_events.c" \
   "${ROOT_DIR}/packages/livingmap/frontier_village_mod.c" \
   "${ROOT_DIR}/packages/livingmap/walled_hamlet_mod.c" \
-  "${ROOT_DIR}/packages/simulation/reflux_runtime.c" \
-  "${ROOT_DIR}/packages/simulation/reflux_mod.c" \
+  "${ROOT_DIR}/packages/livingmap/town_cap_mod.c" \
+  "${ROOT_DIR}/packages/reflux/reflux_runtime.c" \
+  "${ROOT_DIR}/packages/reflux/reflux_mod.c" \
   "${ROOT_DIR}/packages/simulation/bloodflower_hostile_spawner_mod.c" \
+  "${ROOT_DIR}/packages/simulation/allcap_mod.c" \
   "${ROOT_DIR}/packages/common/mlp_infer.c" \
   -lm
 
@@ -161,9 +167,11 @@ gcc -std=c99 -O2 -Wall -Wextra -I"${ROOT_DIR}/packages" \
   "${ROOT_DIR}/packages/livingmap/living_map_events.c" \
   "${ROOT_DIR}/packages/livingmap/frontier_village_mod.c" \
   "${ROOT_DIR}/packages/livingmap/walled_hamlet_mod.c" \
-  "${ROOT_DIR}/packages/simulation/reflux_runtime.c" \
-  "${ROOT_DIR}/packages/simulation/reflux_mod.c" \
+  "${ROOT_DIR}/packages/livingmap/town_cap_mod.c" \
+  "${ROOT_DIR}/packages/reflux/reflux_runtime.c" \
+  "${ROOT_DIR}/packages/reflux/reflux_mod.c" \
   "${ROOT_DIR}/packages/simulation/bloodflower_hostile_spawner_mod.c" \
+  "${ROOT_DIR}/packages/simulation/allcap_mod.c" \
   "${ROOT_DIR}/packages/common/mlp_infer.c" \
   -lm
 
@@ -208,9 +216,11 @@ gcc -std=c99 -D_DEFAULT_SOURCE -O2 -Wall -Wextra -I"${ROOT_DIR}/packages" \
   "${ROOT_DIR}/packages/livingmap/living_map_events.c" \
   "${ROOT_DIR}/packages/livingmap/frontier_village_mod.c" \
   "${ROOT_DIR}/packages/livingmap/walled_hamlet_mod.c" \
-  "${ROOT_DIR}/packages/simulation/reflux_runtime.c" \
-  "${ROOT_DIR}/packages/simulation/reflux_mod.c" \
+  "${ROOT_DIR}/packages/livingmap/town_cap_mod.c" \
+  "${ROOT_DIR}/packages/reflux/reflux_runtime.c" \
+  "${ROOT_DIR}/packages/reflux/reflux_mod.c" \
   "${ROOT_DIR}/packages/simulation/bloodflower_hostile_spawner_mod.c" \
+  "${ROOT_DIR}/packages/simulation/allcap_mod.c" \
   "${ROOT_DIR}/packages/common/mlp_infer.c" \
   -lm
 
@@ -254,9 +264,11 @@ gcc -std=c99 -O2 -Wall -Wextra -I"${ROOT_DIR}/packages" \
   "${ROOT_DIR}/packages/livingmap/living_map_events.c" \
   "${ROOT_DIR}/packages/livingmap/frontier_village_mod.c" \
   "${ROOT_DIR}/packages/livingmap/walled_hamlet_mod.c" \
-  "${ROOT_DIR}/packages/simulation/reflux_runtime.c" \
-  "${ROOT_DIR}/packages/simulation/reflux_mod.c" \
+  "${ROOT_DIR}/packages/livingmap/town_cap_mod.c" \
+  "${ROOT_DIR}/packages/reflux/reflux_runtime.c" \
+  "${ROOT_DIR}/packages/reflux/reflux_mod.c" \
   "${ROOT_DIR}/packages/simulation/bloodflower_hostile_spawner_mod.c" \
+  "${ROOT_DIR}/packages/simulation/allcap_mod.c" \
   "${ROOT_DIR}/packages/common/mlp_infer.c" \
   -lm
 
@@ -291,9 +303,11 @@ gcc -std=c99 -O2 -Wall -Wextra -I"${ROOT_DIR}/packages" \
   "${ROOT_DIR}/packages/livingmap/living_map_events.c" \
   "${ROOT_DIR}/packages/livingmap/frontier_village_mod.c" \
   "${ROOT_DIR}/packages/livingmap/walled_hamlet_mod.c" \
-  "${ROOT_DIR}/packages/simulation/reflux_runtime.c" \
-  "${ROOT_DIR}/packages/simulation/reflux_mod.c" \
+  "${ROOT_DIR}/packages/livingmap/town_cap_mod.c" \
+  "${ROOT_DIR}/packages/reflux/reflux_runtime.c" \
+  "${ROOT_DIR}/packages/reflux/reflux_mod.c" \
   "${ROOT_DIR}/packages/simulation/bloodflower_hostile_spawner_mod.c" \
+  "${ROOT_DIR}/packages/simulation/allcap_mod.c" \
   "${ROOT_DIR}/packages/common/mlp_infer.c" \
   -lm
 
@@ -330,9 +344,11 @@ gcc -std=c99 -O2 -Wall -Wextra -I"${ROOT_DIR}/packages" \
   "${ROOT_DIR}/packages/livingmap/living_map_events.c" \
   "${ROOT_DIR}/packages/livingmap/frontier_village_mod.c" \
   "${ROOT_DIR}/packages/livingmap/walled_hamlet_mod.c" \
-  "${ROOT_DIR}/packages/simulation/reflux_runtime.c" \
-  "${ROOT_DIR}/packages/simulation/reflux_mod.c" \
+  "${ROOT_DIR}/packages/livingmap/town_cap_mod.c" \
+  "${ROOT_DIR}/packages/reflux/reflux_runtime.c" \
+  "${ROOT_DIR}/packages/reflux/reflux_mod.c" \
   "${ROOT_DIR}/packages/simulation/bloodflower_hostile_spawner_mod.c" \
+  "${ROOT_DIR}/packages/simulation/allcap_mod.c" \
   "${ROOT_DIR}/packages/common/mlp_infer.c" \
   -lm
 
@@ -367,9 +383,11 @@ gcc -std=c99 -O2 -Wall -Wextra -I"${ROOT_DIR}/packages" \
   "${ROOT_DIR}/packages/livingmap/living_map_events.c" \
   "${ROOT_DIR}/packages/livingmap/frontier_village_mod.c" \
   "${ROOT_DIR}/packages/livingmap/walled_hamlet_mod.c" \
-  "${ROOT_DIR}/packages/simulation/reflux_runtime.c" \
-  "${ROOT_DIR}/packages/simulation/reflux_mod.c" \
+  "${ROOT_DIR}/packages/livingmap/town_cap_mod.c" \
+  "${ROOT_DIR}/packages/reflux/reflux_runtime.c" \
+  "${ROOT_DIR}/packages/reflux/reflux_mod.c" \
   "${ROOT_DIR}/packages/simulation/bloodflower_hostile_spawner_mod.c" \
+  "${ROOT_DIR}/packages/simulation/allcap_mod.c" \
   "${ROOT_DIR}/packages/common/mlp_infer.c" \
   -lm
 
@@ -404,9 +422,11 @@ gcc -std=c99 -O2 -Wall -Wextra -I"${ROOT_DIR}/packages" \
   "${ROOT_DIR}/packages/livingmap/living_map_events.c" \
   "${ROOT_DIR}/packages/livingmap/frontier_village_mod.c" \
   "${ROOT_DIR}/packages/livingmap/walled_hamlet_mod.c" \
-  "${ROOT_DIR}/packages/simulation/reflux_runtime.c" \
-  "${ROOT_DIR}/packages/simulation/reflux_mod.c" \
+  "${ROOT_DIR}/packages/livingmap/town_cap_mod.c" \
+  "${ROOT_DIR}/packages/reflux/reflux_runtime.c" \
+  "${ROOT_DIR}/packages/reflux/reflux_mod.c" \
   "${ROOT_DIR}/packages/simulation/bloodflower_hostile_spawner_mod.c" \
+  "${ROOT_DIR}/packages/simulation/allcap_mod.c" \
   "${ROOT_DIR}/packages/common/mlp_infer.c" \
   -lm
 
@@ -442,9 +462,11 @@ gcc -std=c99 -O2 -Wall -Wextra -I"${ROOT_DIR}/packages" \
   "${ROOT_DIR}/packages/livingmap/living_map_events.c" \
   "${ROOT_DIR}/packages/livingmap/frontier_village_mod.c" \
   "${ROOT_DIR}/packages/livingmap/walled_hamlet_mod.c" \
-  "${ROOT_DIR}/packages/simulation/reflux_runtime.c" \
-  "${ROOT_DIR}/packages/simulation/reflux_mod.c" \
+  "${ROOT_DIR}/packages/livingmap/town_cap_mod.c" \
+  "${ROOT_DIR}/packages/reflux/reflux_runtime.c" \
+  "${ROOT_DIR}/packages/reflux/reflux_mod.c" \
   "${ROOT_DIR}/packages/simulation/bloodflower_hostile_spawner_mod.c" \
+  "${ROOT_DIR}/packages/simulation/allcap_mod.c" \
   "${ROOT_DIR}/packages/common/mlp_infer.c" \
   -lm
 
@@ -480,9 +502,11 @@ gcc -std=c99 -O2 -Wall -Wextra -I"${ROOT_DIR}/packages" \
   "${ROOT_DIR}/packages/livingmap/living_map_events.c" \
   "${ROOT_DIR}/packages/livingmap/frontier_village_mod.c" \
   "${ROOT_DIR}/packages/livingmap/walled_hamlet_mod.c" \
-  "${ROOT_DIR}/packages/simulation/reflux_runtime.c" \
-  "${ROOT_DIR}/packages/simulation/reflux_mod.c" \
+  "${ROOT_DIR}/packages/livingmap/town_cap_mod.c" \
+  "${ROOT_DIR}/packages/reflux/reflux_runtime.c" \
+  "${ROOT_DIR}/packages/reflux/reflux_mod.c" \
   "${ROOT_DIR}/packages/simulation/bloodflower_hostile_spawner_mod.c" \
+  "${ROOT_DIR}/packages/simulation/allcap_mod.c" \
   "${ROOT_DIR}/packages/common/mlp_infer.c" \
   -lm
 
@@ -518,9 +542,11 @@ gcc -std=c99 -O2 -Wall -Wextra -I"${ROOT_DIR}/packages" \
   "${ROOT_DIR}/packages/livingmap/living_map_events.c" \
   "${ROOT_DIR}/packages/livingmap/frontier_village_mod.c" \
   "${ROOT_DIR}/packages/livingmap/walled_hamlet_mod.c" \
-  "${ROOT_DIR}/packages/simulation/reflux_runtime.c" \
-  "${ROOT_DIR}/packages/simulation/reflux_mod.c" \
+  "${ROOT_DIR}/packages/livingmap/town_cap_mod.c" \
+  "${ROOT_DIR}/packages/reflux/reflux_runtime.c" \
+  "${ROOT_DIR}/packages/reflux/reflux_mod.c" \
   "${ROOT_DIR}/packages/simulation/bloodflower_hostile_spawner_mod.c" \
+  "${ROOT_DIR}/packages/simulation/allcap_mod.c" \
   "${ROOT_DIR}/packages/common/mlp_infer.c" \
   -lm
 
@@ -557,9 +583,11 @@ gcc -std=c99 -O2 -Wall -Wextra -I"${ROOT_DIR}/packages" \
   "${ROOT_DIR}/packages/livingmap/living_map_events.c" \
   "${ROOT_DIR}/packages/livingmap/frontier_village_mod.c" \
   "${ROOT_DIR}/packages/livingmap/walled_hamlet_mod.c" \
-  "${ROOT_DIR}/packages/simulation/reflux_runtime.c" \
-  "${ROOT_DIR}/packages/simulation/reflux_mod.c" \
+  "${ROOT_DIR}/packages/livingmap/town_cap_mod.c" \
+  "${ROOT_DIR}/packages/reflux/reflux_runtime.c" \
+  "${ROOT_DIR}/packages/reflux/reflux_mod.c" \
   "${ROOT_DIR}/packages/simulation/bloodflower_hostile_spawner_mod.c" \
+  "${ROOT_DIR}/packages/simulation/allcap_mod.c" \
   "${ROOT_DIR}/packages/common/mlp_infer.c" \
   -lm
 
@@ -596,9 +624,11 @@ gcc -std=c99 -O2 -Wall -Wextra -I"${ROOT_DIR}/packages" \
   "${ROOT_DIR}/packages/livingmap/living_map_events.c" \
   "${ROOT_DIR}/packages/livingmap/frontier_village_mod.c" \
   "${ROOT_DIR}/packages/livingmap/walled_hamlet_mod.c" \
-  "${ROOT_DIR}/packages/simulation/reflux_runtime.c" \
-  "${ROOT_DIR}/packages/simulation/reflux_mod.c" \
+  "${ROOT_DIR}/packages/livingmap/town_cap_mod.c" \
+  "${ROOT_DIR}/packages/reflux/reflux_runtime.c" \
+  "${ROOT_DIR}/packages/reflux/reflux_mod.c" \
   "${ROOT_DIR}/packages/simulation/bloodflower_hostile_spawner_mod.c" \
+  "${ROOT_DIR}/packages/simulation/allcap_mod.c" \
   "${ROOT_DIR}/packages/common/mlp_infer.c" \
   -lm
 
@@ -634,9 +664,11 @@ gcc -std=c99 -O2 -Wall -Wextra -I"${ROOT_DIR}/packages" \
   "${ROOT_DIR}/packages/livingmap/living_map_events.c" \
   "${ROOT_DIR}/packages/livingmap/frontier_village_mod.c" \
   "${ROOT_DIR}/packages/livingmap/walled_hamlet_mod.c" \
-  "${ROOT_DIR}/packages/simulation/reflux_runtime.c" \
-  "${ROOT_DIR}/packages/simulation/reflux_mod.c" \
+  "${ROOT_DIR}/packages/livingmap/town_cap_mod.c" \
+  "${ROOT_DIR}/packages/reflux/reflux_runtime.c" \
+  "${ROOT_DIR}/packages/reflux/reflux_mod.c" \
   "${ROOT_DIR}/packages/simulation/bloodflower_hostile_spawner_mod.c" \
+  "${ROOT_DIR}/packages/simulation/allcap_mod.c" \
   "${ROOT_DIR}/packages/common/mlp_infer.c" \
   -lm
 
@@ -675,9 +707,11 @@ gcc -std=c99 -O2 -Wall -Wextra -I"${ROOT_DIR}/packages" \
   "${ROOT_DIR}/packages/livingmap/living_map_events.c" \
   "${ROOT_DIR}/packages/livingmap/frontier_village_mod.c" \
   "${ROOT_DIR}/packages/livingmap/walled_hamlet_mod.c" \
-  "${ROOT_DIR}/packages/simulation/reflux_runtime.c" \
-  "${ROOT_DIR}/packages/simulation/reflux_mod.c" \
+  "${ROOT_DIR}/packages/livingmap/town_cap_mod.c" \
+  "${ROOT_DIR}/packages/reflux/reflux_runtime.c" \
+  "${ROOT_DIR}/packages/reflux/reflux_mod.c" \
   "${ROOT_DIR}/packages/simulation/bloodflower_hostile_spawner_mod.c" \
+  "${ROOT_DIR}/packages/simulation/allcap_mod.c" \
   "${ROOT_DIR}/packages/simulation/card_deck.c" \
   "${ROOT_DIR}/packages/simulation/card_battler.c" \
   "${ROOT_DIR}/packages/common/mlp_infer.c" \
@@ -715,9 +749,11 @@ gcc -std=c99 -O2 -Wall -Wextra -I"${ROOT_DIR}/packages" \
   "${ROOT_DIR}/packages/livingmap/living_map_events.c" \
   "${ROOT_DIR}/packages/livingmap/frontier_village_mod.c" \
   "${ROOT_DIR}/packages/livingmap/walled_hamlet_mod.c" \
-  "${ROOT_DIR}/packages/simulation/reflux_runtime.c" \
-  "${ROOT_DIR}/packages/simulation/reflux_mod.c" \
+  "${ROOT_DIR}/packages/livingmap/town_cap_mod.c" \
+  "${ROOT_DIR}/packages/reflux/reflux_runtime.c" \
+  "${ROOT_DIR}/packages/reflux/reflux_mod.c" \
   "${ROOT_DIR}/packages/simulation/bloodflower_hostile_spawner_mod.c" \
+  "${ROOT_DIR}/packages/simulation/allcap_mod.c" \
   "${ROOT_DIR}/packages/common/mlp_infer.c" \
   -lm
 
@@ -754,9 +790,52 @@ gcc -std=c99 -O2 -Wall -Wextra -I"${ROOT_DIR}/packages" \
   "${ROOT_DIR}/packages/livingmap/living_map_events.c" \
   "${ROOT_DIR}/packages/livingmap/frontier_village_mod.c" \
   "${ROOT_DIR}/packages/livingmap/walled_hamlet_mod.c" \
-  "${ROOT_DIR}/packages/simulation/reflux_runtime.c" \
-  "${ROOT_DIR}/packages/simulation/reflux_mod.c" \
+  "${ROOT_DIR}/packages/livingmap/town_cap_mod.c" \
+  "${ROOT_DIR}/packages/reflux/reflux_runtime.c" \
+  "${ROOT_DIR}/packages/reflux/reflux_mod.c" \
   "${ROOT_DIR}/packages/simulation/bloodflower_hostile_spawner_mod.c" \
+  "${ROOT_DIR}/packages/simulation/allcap_mod.c" \
+  "${ROOT_DIR}/packages/common/mlp_infer.c" \
+  -lm
+
+# ALLCAP (BACKLOG.md SECTION 381): the real mod-driven win condition -- proves the full real
+# 3-hop REFLUX chain (town.c's own town_attempt_convert -> town_cap_mod dispatches TOWN_CAPPED ->
+# ecowar_tick_allcap_win_check polls + asks allcap_mod -> dispatches ALLCAP_WIN -> arena_update's
+# own poll sets arena_state.winner), with no direct call anywhere in that chain.
+gcc -std=c99 -O2 -Wall -Wextra -I"${ROOT_DIR}/packages" \
+  -o "${BUILD_DIR}/test_allcap" \
+  -include "${ROOT_DIR}/packages/simulation/bloodflower_mod_host.h" \
+  -include "${ROOT_DIR}/packages/simulation/tree_passive_mod_host.h" \
+  -include "${ROOT_DIR}/packages/simulation/item_curriculum_mod_host.h" \
+  -include "${ROOT_DIR}/packages/simulation/duck_smoke_bomb_mod_host.h" \
+  -include "${ROOT_DIR}/packages/simulation/abraham_fireball_mod_host.h" \
+  -include "${ROOT_DIR}/packages/simulation/bacon_puck_intangible_speed_mod_host.h" \
+  -include "${ROOT_DIR}/packages/simulation/card_effect_mod_host.h" \
+  -include "${ROOT_DIR}/packages/simulation/combat_log_mod_host.h" \
+  -include "${ROOT_DIR}/packages/livingmap/frontier_village_mod_host.h" \
+  -include "${ROOT_DIR}/packages/livingmap/walled_hamlet_mod_host.h" \
+  "${ROOT_DIR}/tests/test_allcap.c" \
+  "${ROOT_DIR}/packages/simulation/arena_game.c" \
+  "${ROOT_DIR}/packages/simulation/bloodflower_mod.c" \
+  "${ROOT_DIR}/packages/simulation/tree_passive_mod.c" \
+  "${ROOT_DIR}/packages/simulation/item_curriculum_mod.c" \
+  "${ROOT_DIR}/packages/simulation/duck_smoke_bomb_mod.c" \
+  "${ROOT_DIR}/packages/simulation/abraham_fireball_mod.c" \
+  "${ROOT_DIR}/packages/simulation/bacon_puck_intangible_speed_mod.c" \
+  "${ROOT_DIR}/packages/simulation/card_effect_mod.c" \
+  "${ROOT_DIR}/packages/simulation/combat_log_mod.c" \
+  "${ROOT_DIR}/packages/simulation/living_map_bridge.c" \
+  "${ROOT_DIR}/packages/livingmap/hex_grid.c" \
+  "${ROOT_DIR}/packages/livingmap/town.c" \
+  "${ROOT_DIR}/packages/livingmap/creep.c" \
+  "${ROOT_DIR}/packages/livingmap/living_map_events.c" \
+  "${ROOT_DIR}/packages/livingmap/frontier_village_mod.c" \
+  "${ROOT_DIR}/packages/livingmap/walled_hamlet_mod.c" \
+  "${ROOT_DIR}/packages/livingmap/town_cap_mod.c" \
+  "${ROOT_DIR}/packages/reflux/reflux_runtime.c" \
+  "${ROOT_DIR}/packages/reflux/reflux_mod.c" \
+  "${ROOT_DIR}/packages/simulation/bloodflower_hostile_spawner_mod.c" \
+  "${ROOT_DIR}/packages/simulation/allcap_mod.c" \
   "${ROOT_DIR}/packages/common/mlp_infer.c" \
   -lm
 
@@ -774,6 +853,7 @@ gcc -std=c99 -O2 -Wall -Wextra -I"${ROOT_DIR}/packages" \
 "${BUILD_DIR}/test_card_battler"
 "${BUILD_DIR}/test_living_map_bridge"
 "${BUILD_DIR}/test_reflux"
+"${BUILD_DIR}/test_allcap"
 "${BUILD_DIR}/test_damage_log"
 "${BUILD_DIR}/test_combat_log"
 "${BUILD_DIR}/test_mat4"

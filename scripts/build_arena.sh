@@ -61,9 +61,11 @@ gcc -std=c99 -D_DEFAULT_SOURCE -O2 -Wall -Wextra -I"${ROOT_DIR}/packages" \
   "${ROOT_DIR}/packages/livingmap/living_map_events.c" \
   "${ROOT_DIR}/packages/livingmap/frontier_village_mod.c" \
   "${ROOT_DIR}/packages/livingmap/walled_hamlet_mod.c" \
-  "${ROOT_DIR}/packages/simulation/reflux_runtime.c" \
-  "${ROOT_DIR}/packages/simulation/reflux_mod.c" \
+  "${ROOT_DIR}/packages/livingmap/town_cap_mod.c" \
+  "${ROOT_DIR}/packages/reflux/reflux_runtime.c" \
+  "${ROOT_DIR}/packages/reflux/reflux_mod.c" \
   "${ROOT_DIR}/packages/simulation/bloodflower_hostile_spawner_mod.c" \
+  "${ROOT_DIR}/packages/simulation/allcap_mod.c" \
   "${ROOT_DIR}/packages/common/mlp_infer.c" \
   "${ROOT_DIR}/packages/goldenband/gband.c" \
   "${ROOT_DIR}/packages/goldenband/gband_rig.c" \

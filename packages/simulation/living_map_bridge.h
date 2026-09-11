@@ -92,4 +92,23 @@ int living_map_bridge_creep_alive(int index);
  * convention living_map_creep_spawn's own doc comment already uses). */
 int living_map_bridge_spawn_hostile_creep_at_map_center(void);
 
+/* living_map_bridge_faction_owned_count / _real_town_count (EMILY/BACKLOG.md SECTION 381, "even
+ * the win con should be mods"): the real counts ecowar_tick_allcap_win_check (arena_game.c) feeds
+ * into ecowar/allcap_mod.prn's own on-allcap-check. _real_town_count is the true total (unlike
+ * living_map_bridge_town_count() above, which is capped at LIVING_MAP_BRIDGE_MAX_SYNC_TOWNS for
+ * wire-sync purposes only). */
+int living_map_bridge_faction_owned_count(int faction_owner);
+int living_map_bridge_real_town_count(void);
+
+/* living_map_bridge_attempt_convert_town -- the real, live entry point for "capture a node"
+ * (docs/NORTHSTAR_LIVING_MAP.md's own Phase 2 section, "a card could literally be capture a node
+ * - you drag it on pay the resource and it flips the base"). Wraps town_attempt_convert
+ * (packages/livingmap/town.h) against this match's own real TownRegistry/HexGrid/event log --
+ * town_index is a plain registry index (0..living_map_bridge_real_town_count()-1), NOT a
+ * wire-capped snapshot index. Real, current caller: tests/test_allcap.c (proving the ALLCAP win
+ * chain end to end); the real "capture a node" card itself is still real, separate, not-yet-built
+ * work -- this function is what it will call once it exists. Returns 1 if this call caused a real
+ * flip (same real return-value contract town_attempt_convert itself uses), 0 otherwise. */
+int living_map_bridge_attempt_convert_town(int town_index, int attacking_faction, int attempt_strength);
+
 #endif /* LIVING_MAP_BRIDGE_H */

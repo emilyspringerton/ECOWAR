@@ -2,6 +2,7 @@
 #include "town.h"
 #include "frontier_village_mod_host.h"
 #include "walled_hamlet_mod_host.h"
+#include "town_cap_mod_host.h"
 
 #include <string.h>
 
@@ -164,6 +165,23 @@ int town_registry_faction_has_full_control(const TownRegistry *reg, int faction_
     return saw_any_active_town;
 }
 
+int town_registry_owned_count(const TownRegistry *reg, int faction_owner) {
+    int count = 0;
+    for (int i = 0; i < reg->town_count; i++) {
+        const Town *t = &reg->towns[i];
+        if (t->active && t->faction_owner == faction_owner) count++;
+    }
+    return count;
+}
+
+int town_registry_active_count(const TownRegistry *reg) {
+    int count = 0;
+    for (int i = 0; i < reg->town_count; i++) {
+        if (reg->towns[i].active) count++;
+    }
+    return count;
+}
+
 int town_attempt_convert(TownRegistry *reg, HexGrid *grid, LivingMapEventLog *log,
                           int town_id, int attacking_faction, int attempt_strength) {
     if (town_id < 0 || town_id >= reg->town_count) return 0;
@@ -196,6 +214,14 @@ int town_attempt_convert(TownRegistry *reg, HexGrid *grid, LivingMapEventLog *lo
     if (cell) cell->faction_owner = attacking_faction;
 
     living_map_emit(log, LIVING_MAP_EVENT_TOWN_CONVERTED, town_id, old_owner, attacking_faction);
+    /* CAP mod (EMILY/BACKLOG.md SECTION 381, "capping a base should work as a mod"): the
+     * LIVING_MAP_EVENT_TOWN_CONVERTED emit just above is this package's own internal event log
+     * (living_map_events.h) -- a separate, real system from REFLUX. on_town_captured is the real
+     * CROSS-SYSTEM announcement: ecowar/town_cap_mod.prn dispatches REFLUX_ACTION_TOWN_CAPPED,
+     * which arena_game.c's own ecowar_tick_allcap_win_check (a REAL SUBSCRIBER this package has
+     * never heard of) polls for -- see that function's own doc comment for the real win-condition
+     * chain this feeds. */
+    on_town_captured(town_id, old_owner, attacking_faction);
     return 1;
 }
 

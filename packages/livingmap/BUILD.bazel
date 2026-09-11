@@ -15,6 +15,7 @@ cc_library(
         "hex_grid.c",
         "living_map_events.c",
         "town.c",
+        "town_cap_mod.c",
         "walled_hamlet_mod.c",
     ],
     hdrs = [
@@ -24,8 +25,10 @@ cc_library(
         "living_map_events.h",
         "parena_runtime.h",
         "town.h",
+        "town_cap_mod_host.h",
         "walled_hamlet_mod_host.h",
     ],
+    deps = ["//packages/reflux:reflux"],
     linkopts = ["-lm"],
     visibility = ["//visibility:public"],
 )

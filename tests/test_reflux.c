@@ -5,7 +5,7 @@
  * as test_arena_game.c's own header comment. */
 #include <stdio.h>
 
-#include "../packages/simulation/reflux_mod_host.h"
+#include "../packages/reflux/reflux_mod_host.h"
 #include "../packages/simulation/bloodflower_hostile_spawner_mod_host.h"
 #include "../packages/simulation/living_map_bridge.h"
 
