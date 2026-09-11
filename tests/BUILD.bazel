@@ -14,6 +14,22 @@ cc_test(
     copts = COMMON_TEST_COPTS,
 )
 
+# Living Map (docs/NORTHSTAR_LIVING_MAP.md, BACKLOG.md SECTION 377) -- deliberately depends on
+# :living_map only, not :arena_game, matching that package's own "new, standalone layer" design.
+cc_test(
+    name = "test_hex_grid",
+    srcs = ["test_hex_grid.c"],
+    deps = ["//packages/livingmap:living_map"],
+    copts = COMMON_TEST_COPTS,
+)
+
+cc_test(
+    name = "test_town_frontier_village",
+    srcs = ["test_town_frontier_village.c"],
+    deps = ["//packages/livingmap:living_map"],
+    copts = COMMON_TEST_COPTS,
+)
+
 cc_test(
     name = "test_mat4",
     srcs = ["test_mat4.c"],

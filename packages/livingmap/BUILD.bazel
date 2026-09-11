@@ -1,0 +1,27 @@
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+# living_map -- ECOWAR's own new, standalone hex-grid/town strategic layer (docs/
+# NORTHSTAR_LIVING_MAP.md, BACKLOG.md SECTION 377). Deliberately its own package, not folded into
+# :arena_game (packages/simulation) -- this is a new layer over the whole map, not an extension of
+# the existing 9-node MOBA arena sim, and keeping it separate means the live, tested arena sim is
+# never at risk while this new layer is still being found. Same "one cc_library bundling a mod and
+# its host" reasoning as packages/simulation/BUILD.bazel's own :arena_game target: town.c calls
+# directly into frontier_village_mod.c's real, PARENA-compiled decision functions.
+cc_library(
+    name = "living_map",
+    srcs = [
+        "frontier_village_mod.c",
+        "hex_grid.c",
+        "living_map_events.c",
+        "town.c",
+    ],
+    hdrs = [
+        "frontier_village_mod_host.h",
+        "hex_grid.h",
+        "living_map_events.h",
+        "parena_runtime.h",
+        "town.h",
+    ],
+    linkopts = ["-lm"],
+    visibility = ["//visibility:public"],
+)

@@ -26,6 +26,10 @@ jobs:
         run: |
           bash scripts/test_arena.sh
 
+      - name: Headless tests (Living Map hex grid + Frontier Village)
+        run: |
+          bash scripts/test_livingmap.sh
+
       - name: Networked bot-pool smoke test (VS0/VS1)
         run: |
           bash scripts/test_10_bots.sh
