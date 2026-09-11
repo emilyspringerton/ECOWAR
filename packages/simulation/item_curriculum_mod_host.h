@@ -2,7 +2,7 @@
  * item_curriculum_mod.c's #target/inline-c body calls into, plus the mod's own entry point.
  * Same "-include this header before compiling the generated C" pattern tree_passive_mod_host.h
  * already established -- pure C linking, no cgo layer needed. (build_template_mod_host.h was
- * this same pattern's other real example when this comment was written; removed S371-02.)
+ * this same pattern's other real example when this comment was written; removed S376-02.)
  *
  * redgarden_host_item_curriculum_generate_counter_item has a real implementation in
  * arena_game.c (blends two ARENA_ITEMS catalog entries into a runtime-mutable curriculum

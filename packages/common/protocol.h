@@ -27,7 +27,7 @@
 #define PACKET_ARENA_ATTACK_MOVE 16 /* client -> arena_server: real LoL/WC3 "A + click", NORTHSTAR.md §17.4 + §24 Milestone 2 (2026-07-31) -- see ArenaAttackMoveCmd's own doc comment */
 #define PACKET_ARENA_HOLD 17 /* client -> arena_server: real WC3 "Hold Position", NORTHSTAR.md §24 Milestone 2 (2026-07-31) -- see ArenaHoldCmd's own doc comment */
 #define PACKET_ARENA_PATROL 18 /* client -> arena_server: real WC3 "Patrol", NORTHSTAR.md §24 Milestone 2 (2026-07-31) -- see ArenaPatrolCmd's own doc comment */
-#define PACKET_ARENA_APPLY_BUILD_TEMPLATE 19 /* RETIRED S371-02 (build templates removed --
+#define PACKET_ARENA_APPLY_BUILD_TEMPLATE 19 /* RETIRED S376-02 (build templates removed --
     founder: "oh yea you can rip out templates" / "not needed in this version"; see
     packages/simulation/arena_game.h's own "Build templates" section doc comment). Number kept
     reserved, not reused, in case any not-yet-rebuilt binary is still sending it -- same "never
@@ -48,8 +48,8 @@
     own MTU budget instead of opening new headroom for it. See ArenaSnapshotObstaclesMsg's own
     doc comment. */
 #define PACKET_ARENA_SNAPSHOT_LAYOUT 22 /* arena_server -> client: the real per-match-RANDOM
-    subset of the map layout -- both fountains' positions (S371-01, margin now a PRNG output)
-    and all ARENA_SHOP_COUNT shops' positions + item catalogs (S371-02, brand new this pass).
+    subset of the map layout -- both fountains' positions (S376-01, margin now a PRNG output)
+    and all ARENA_SHOP_COUNT shops' positions + item catalogs (S376-02, brand new this pass).
     Every OTHER layout piece this engine has (nodes, jungle obstacles, camps, powerups) is either
     a fixed formula or deterministically reproducible client-side from the match seed alone
     (arena_obstacles_reset_layout's own doc comment names this "no wire sync needed" precedent) --
@@ -278,7 +278,7 @@ typedef struct {
     uint8_t slot;
 } ArenaShopSellCmd;
 
-// ArenaApplyBuildTemplateCmd (2026-08-25, build templates) removed S371-02 -- see
+// ArenaApplyBuildTemplateCmd (2026-08-25, build templates) removed S376-02 -- see
 // PACKET_ARENA_APPLY_BUILD_TEMPLATE's own doc comment above.
 
 // ARENA_SNAPSHOT_ITEM_SLOT_COUNT must match packages/simulation/arena_game.h's
@@ -734,7 +734,7 @@ typedef struct {
 // the simulation layer's own headers.
 #define ARENA_SNAPSHOT_SHOP_COUNT 6
 
-// PACKET_ARENA_SNAPSHOT_LAYOUT payload (S371-01/02, 2026-09-11) -- see that packet id's own doc
+// PACKET_ARENA_SNAPSHOT_LAYOUT payload (S376-01/02, 2026-09-11) -- see that packet id's own doc
 // comment for the full "why this exists" story. fountain_x/z[2] and shop_x/z[ARENA_SNAPSHOT_
 // SHOP_COUNT] are always fully populated (both are always-real, never-sparse per-match layout,
 // same "fixed-size, always meaningful" convention as ArenaSnapshotObstaclesMsg's own obstacle_hp[]).
@@ -760,8 +760,8 @@ typedef struct {
 // but if a future field addition ever pushes one of them back over that
 // line, this is the one place that needs the resulting redesign, not four
 // independently-drifting call sites.
-// PROTOCOL_MAX2 (S371-02): a plain two-way max, so the four-way chain below stays readable
-// instead of a wall of nested ternaries -- ArenaSnapshotLayoutMsg (S371-01/02) is the newest of
+// PROTOCOL_MAX2 (S376-02): a plain two-way max, so the four-way chain below stays readable
+// instead of a wall of nested ternaries -- ArenaSnapshotLayoutMsg (S376-01/02) is the newest of
 // the four and, at ~112 bytes, comfortably the smallest, but this still resolves it generically
 // rather than assuming that stays true forever.
 #define PROTOCOL_MAX2(a, b) ((a) > (b) ? (a) : (b))

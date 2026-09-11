@@ -82,7 +82,7 @@ static int shop_was_in_range = 0; /* S170-231, founder: "pop the shop window up 
  * didn't (S170-210 had to hand-bump it). */
 #define SHOP_ITEMS_PER_PAGE 9
 #define SHOP_PAGE_COUNT ((ARENA_ITEM_COUNT + SHOP_ITEMS_PER_PAGE - 1) / SHOP_ITEMS_PER_PAGE)
-/* SHOP_BUILDS_PAGE (2026-08-25, build templates) removed S371-02 -- founder: "oh yea you can rip
+/* SHOP_BUILDS_PAGE (2026-08-25, build templates) removed S376-02 -- founder: "oh yea you can rip
    out templates" / "not needed in this version". This page strip is just the real catalog pages
    again now, no trailing virtual "B" tab. */
 #define SHOP_PAGE_BTN_W 30.0f
@@ -530,7 +530,7 @@ static void net_send_shop_sell(int slot) {
     sendto(net_sock, buf, sizeof(buf), 0, (struct sockaddr *)&net_server_addr, sizeof(net_server_addr));
 }
 
-/* net_send_apply_build_template (2026-08-25, build templates) removed S371-02 -- founder:
+/* net_send_apply_build_template (2026-08-25, build templates) removed S376-02 -- founder:
    "oh yea you can rip out templates" / "not needed in this version". */
 
 /* net_send_active_item (S170-205/S170-206): no payload -- arena_use_active_item derives
@@ -3013,7 +3013,7 @@ int main(int argc, char *argv[]) {
                    directly above the buy list, one small box per page, current page drawn
                    highlighted solid in the render pass below. Checked before the buy grid
                    since they occupy the row directly above it. */
-                /* S371-02: was SHOP_PAGE_COUNT + 1 (a trailing virtual "build presets" tab) --
+                /* S376-02: was SHOP_PAGE_COUNT + 1 (a trailing virtual "build presets" tab) --
                    removed with the build-template system, founder: "oh yea you can rip out
                    templates" / "not needed in this version". Real catalog pages only now. */
                 for (int p = 0; p < SHOP_PAGE_COUNT && !handled; p++) {
@@ -3263,7 +3263,7 @@ int main(int argc, char *argv[]) {
                        real with the actual new seed right after a successful reconnect, below. */
                     arena_set_match_seed(g_net_match_seed);
                     arena_obstacles_reset_layout();
-                    arena_shops_reset_layout(); /* S371-02: same "never show an empty map" reasoning as the jungle regen above */
+                    arena_shops_reset_layout(); /* S376-02: same "never show an empty map" reasoning as the jungle regen above */
                     memset(rings, 0, sizeof(rings));
                     win_logged = 0;
                     net_picked = 0;
@@ -3281,7 +3281,7 @@ int main(int argc, char *argv[]) {
                            previous match's placeholder set above. */
                         arena_set_match_seed(g_net_match_seed);
                         arena_obstacles_reset_layout();
-                        arena_shops_reset_layout(); /* S371-02: regenerate for the real new match seed, same reasoning as the jungle regen right above */
+                        arena_shops_reset_layout(); /* S376-02: regenerate for the real new match seed, same reasoning as the jungle regen right above */
                         printf("[arena client] requeue connected -- hero slot %d\n", my_owner);
                     }
                     fflush(stdout);
@@ -5188,7 +5188,7 @@ int main(int argc, char *argv[]) {
                affordability-color-coding instinct the item rows below already use
                to make state legible at a glance, applied here to "which page." Click
                hit-test for these lives in the event loop above, same box geometry. */
-            /* S371-02: was SHOP_PAGE_COUNT + 1 with a trailing "B" (build presets) tab --
+            /* S376-02: was SHOP_PAGE_COUNT + 1 with a trailing "B" (build presets) tab --
                removed with the build-template system, founder: "oh yea you can rip out
                templates" / "not needed in this version". Real catalog pages only now. */
             for (int p = 0; p < SHOP_PAGE_COUNT; p++) {

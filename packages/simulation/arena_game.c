@@ -332,7 +332,7 @@ const ArenaItemDef *redgarden_host_item_curriculum_get(int slot_index) {
     return &ARENA_ITEM_CURRICULUM_SLOTS[slot_index];
 }
 
-/* Build templates (2026-08-25) removed S371-02 -- see arena_game.h's own "Build templates"
+/* Build templates (2026-08-25) removed S376-02 -- see arena_game.h's own "Build templates"
    section doc comment for the full founder-quote history and why. ARENA_BUILD_TEMPLATES,
    arena_hero_apply_build_template, and redgarden_host_buy_build_item all lived here; gone
    outright, not stubbed. */
@@ -655,7 +655,7 @@ static unsigned int g_arena_match_seed = 0xA53Cu;
  * Adjacent seeds (e.g. two matches spawned back-to-back off an incrementing seed source) produce
  * related early outputs with xorshift32, same as most small PRNGs -- arena_obstacles_reset_layout
  * burns a few values off the front of the stream before using it for exactly this reason.
- * Moved above arena_set_match_seed (S371-01) so that function can call it directly to derive the
+ * Moved above arena_set_match_seed (S376-01) so that function can call it directly to derive the
  * fountain margin -- was originally defined just below it, back when nothing above it needed a
  * PRNG yet. */
 static unsigned int arena_prng_next(unsigned int *state) {
@@ -673,7 +673,7 @@ static float arena_prng_float01(unsigned int *state) {
     return (float)(arena_prng_next(state) >> 8) / (float)(1u << 24);
 }
 
-/* g_arena_fountain_margin (S371-01): see ARENA_FOUNTAIN_MARGIN_MIN/MAX's own doc comment in
+/* g_arena_fountain_margin (S376-01): see ARENA_FOUNTAIN_MARGIN_MIN/MAX's own doc comment in
  * arena_game.h. Fixed default (matching the original hardcoded 8.0f literal exactly) so tests
  * that never call arena_set_match_seed stay exactly as reproducible as before this pass. */
 static float g_arena_fountain_margin = ARENA_FOUNTAIN_MARGIN_MIN;
@@ -681,7 +681,7 @@ static float g_arena_fountain_margin = ARENA_FOUNTAIN_MARGIN_MIN;
 void arena_set_match_seed(unsigned int seed) {
     g_arena_match_seed = seed ? seed : 1u; /* xorshift32's all-zero state never advances */
 
-    /* S371-01: derive the per-match fountain margin from its own short-lived local PRNG stream,
+    /* S376-01: derive the per-match fountain margin from its own short-lived local PRNG stream,
        seeded from (but not sharing state with) g_arena_match_seed -- a different burn-in count
        than arena_obstacles_reset_layout's own jungle stream (8) and arena_shops_reset_layout's
        own (below) so none of the three ever reads the same sequence of outputs off the same
@@ -712,7 +712,7 @@ static int arena_mandelbrot_escape(float cr, float ci, int max_iter) {
     return i;
 }
 
-/* arena_jungle_spot_excluded (S370-03, shop check removed S371-02): true if (x,z) is too close
+/* arena_jungle_spot_excluded (S370-03, shop check removed S376-02): true if (x,z) is too close
  * to a capture node, either team's graveyard/spawn-fan, a jungle camp, a fountain, or any
  * obstacle already placed (hand-placed wall pieces included, via `placed_count` covering the
  * full [0,placed_count) prefix of arena_state.obstacles already written by the time this is
@@ -722,7 +722,7 @@ static int arena_mandelbrot_escape(float cr, float ci, int max_iter) {
  * this only shrinks the pool of candidate jungle spots on a map with a huge amount of open area
  * to draw from (ARENA_HALF_EXTENT ~155), never a tight budget.
  *
- * S371-02: no longer excludes shop corners -- the shop redesign made shop count/position a
+ * S376-02: no longer excludes shop corners -- the shop redesign made shop count/position a
  * per-match PRNG output computed by arena_shops_reset_layout, which this function's own caller
  * (arena_obstacles_reset_layout) runs BEFORE, so no shop position exists yet to avoid at this
  * point. The relationship flipped instead: arena_shops_reset_layout (which runs after this) is
@@ -995,7 +995,7 @@ void arena_init_with_heroes(ArenaHeroID player_hero, ArenaHeroID bot_hero) {
     arena_nodes_reset_layout();
     arena_powerups_reset_layout(); /* S170-190 */
     arena_obstacles_reset_layout();
-    arena_shops_reset_layout(); /* S371-02: must run after arena_obstacles_reset_layout, see its own doc comment */
+    arena_shops_reset_layout(); /* S376-02: must run after arena_obstacles_reset_layout, see its own doc comment */
     arena_creeps_reset();
     /* Deliberately no arena_towers_reset() here -- towers (2026-07-30) are team-mode only, same
        scope lane creep waves already carry ("pushing toward the enemy spawn" isn't a meaningful
@@ -2309,7 +2309,7 @@ void arena_tick_nodes(unsigned int dt_ms) {
     }
 }
 
-/* arena_fountain_position (S170-147, margin proceduralized S371-01): see header doc comment.
+/* arena_fountain_position (S170-147, margin proceduralized S376-01): see header doc comment.
  * Diagonally opposite corners, well clear of every jungle obstacle's own outer-edge dressing and
  * always within the hero movement clamp (ARENA_HALF_EXTENT), so a fountain is always reachable,
  * never buried in terrain.
@@ -2325,7 +2325,7 @@ void arena_tick_nodes(unsigned int dt_ms) {
  * comment explains why: a respawning hero shouldn't land on top of the neutral, contested
  * fountain fight).
  *
- * S371-01: `margin` is now g_arena_fountain_margin, a real per-match PRNG output (computed once
+ * S376-01: `margin` is now g_arena_fountain_margin, a real per-match PRNG output (computed once
  * by arena_set_match_seed, range [ARENA_FOUNTAIN_MARGIN_MIN, ARENA_FOUNTAIN_MARGIN_MAX]) instead
  * of the fixed 8.0f literal -- see that constant's own doc comment in arena_game.h for why. */
 void arena_fountain_position(int index, float *x, float *z) {
@@ -2377,7 +2377,7 @@ void arena_graveyard_position(int team, float *x, float *z) {
     *z = (team == 0) ? corner : -corner;
 }
 
-/* arena_shop_spot_excluded (S371-02): true if (x,z) is too close to a capture node, either
+/* arena_shop_spot_excluded (S376-02): true if (x,z) is too close to a capture node, either
  * team's graveyard/spawn-fan, a fountain, a jungle camp, ANY obstacle (the full, already-final
  * ARENA_OBSTACLE_COUNT -- shops are placed after arena_obstacles_reset_layout, so unlike
  * arena_jungle_spot_excluded this always sees the complete, final jungle layout, not a growing
@@ -2425,7 +2425,7 @@ static int arena_shop_spot_excluded(float x, float z, int placed_shops) {
     return 0;
 }
 
-/* arena_shops_reset_layout (S371-02): see header declaration's own doc comment. MUST run after
+/* arena_shops_reset_layout (S376-02): see header declaration's own doc comment. MUST run after
  * arena_obstacles_reset_layout (see arena_shop_spot_excluded's own doc comment on why). Uses its
  * own local PRNG stream off g_arena_match_seed, decorrelated from the jungle's (8-value burn-in)
  * and the fountain margin's (3-value burn-in) by using a distinct 5-value burn-in -- same
@@ -2486,14 +2486,14 @@ void arena_shops_reset_layout(void) {
     }
 }
 
-/* arena_shop_has_item (S371-02): see header declaration's own doc comment. */
+/* arena_shop_has_item (S376-02): see header declaration's own doc comment. */
 int arena_shop_has_item(int shop_index, int item_id) {
     if (shop_index < 0 || shop_index >= ARENA_SHOP_COUNT) return 0;
     if (item_id < 0 || item_id >= ARENA_ITEM_COUNT) return 0;
     return (arena_state.shops[shop_index].item_mask & (1ull << item_id)) != 0ull;
 }
 
-/* arena_find_shop_in_range (S371-02): see header declaration's own doc comment. */
+/* arena_find_shop_in_range (S376-02): see header declaration's own doc comment. */
 int arena_find_shop_in_range(float x, float z) {
     for (int s = 0; s < ARENA_SHOP_COUNT; s++) {
         float dx = x - arena_state.shops[s].x, dz = z - arena_state.shops[s].z;
@@ -2502,7 +2502,7 @@ int arena_find_shop_in_range(float x, float z) {
     return -1;
 }
 
-/* arena_shop_position (S170-175, redesigned S371-02): see header declaration's doc comment --
+/* arena_shop_position (S170-175, redesigned S376-02): see header declaration's doc comment --
  * `index` is now a plain shop index, read directly out of arena_state.shops (populated once per
  * match by arena_shops_reset_layout) rather than a per-team formula. Clamped the same
  * fail-closed way arena_fountain_position's own index clamp does, so an out-of-range index reads
@@ -2556,7 +2556,7 @@ void arena_recompute_item_stats(ArenaHero *h) {
     h->item_bonus_attack_range_pct = bonus_range_pct; /* S202-34, Kite String */
 }
 
-/* arena_shop_buy (S170-175, redesigned S371-02): see header declaration's doc comment. */
+/* arena_shop_buy (S170-175, redesigned S376-02): see header declaration's doc comment. */
 int arena_shop_buy(int owner, int item_id) {
     if (owner < 0 || owner >= ARENA_MAX_HEROES) return 0;
     if (item_id < 0 || item_id >= ARENA_ITEM_COUNT) return 0;
@@ -2587,7 +2587,7 @@ int arena_shop_buy(int owner, int item_id) {
     return 1;
 }
 
-/* arena_shop_sell (S170-175, redesigned S371-02): see header declaration's doc comment. */
+/* arena_shop_sell (S170-175, redesigned S376-02): see header declaration's doc comment. */
 int arena_shop_sell(int owner, ArenaItemSlot slot) {
     if (owner < 0 || owner >= ARENA_MAX_HEROES) return 0;
     if (slot < 0 || slot >= ARENA_ITEM_SLOT_COUNT) return 0;
@@ -2605,7 +2605,7 @@ int arena_shop_sell(int owner, ArenaItemSlot slot) {
     return 1;
 }
 
-/* redgarden_host_buy_build_item / arena_hero_apply_build_template: removed S371-02, founder:
+/* redgarden_host_buy_build_item / arena_hero_apply_build_template: removed S376-02, founder:
    "oh yea you can rip out templates" / "not needed in this version" -- see arena_game.h's own
    "Build templates" section doc comment. */
 
@@ -7494,7 +7494,7 @@ void arena_init_teams(void) {
     arena_nodes_reset_layout();
     arena_powerups_reset_layout(); /* S170-190 */
     arena_obstacles_reset_layout();
-    arena_shops_reset_layout(); /* S371-02: must run after arena_obstacles_reset_layout, see its own doc comment */
+    arena_shops_reset_layout(); /* S376-02: must run after arena_obstacles_reset_layout, see its own doc comment */
     arena_creeps_reset();
     /* Deliberately no arena_towers_reset() here -- this shared sim-level function is also called
        directly by ~300 existing unit tests that place heroes at convenient coordinates never

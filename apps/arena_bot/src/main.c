@@ -973,7 +973,7 @@ static void play_one_match(int game_port) {
     BotSnapshotView cur_view = {0};
     BotSnapshotView last = {0};
     BotSnapshotView prev = {0}; /* S170-160: previous tick's snapshot, purely so flock_offset can infer ally velocity for alignment -- the wire snapshot itself never carries velocity */
-    /* S371-01/02: fountain/shop layout, received via PACKET_ARENA_SNAPSHOT_LAYOUT -- not part of
+    /* S376-01/02: fountain/shop layout, received via PACKET_ARENA_SNAPSHOT_LAYOUT -- not part of
        BotSnapshotView (that struct mirrors ArenaSnapshotMsg + heroes specifically, see its own
        doc comment) since this is a genuinely separate packet on its own cadence. have_layout
        gates the shopping/fountain-camping logic below so a bot never acts on all-zero (0,0)
@@ -1049,7 +1049,7 @@ static void play_one_match(int game_port) {
                     }
                     got_one = 1;
                 } else if (h->type == PACKET_ARENA_SNAPSHOT_LAYOUT && len >= (int)(sizeof(NetHeader) + sizeof(ArenaSnapshotLayoutMsg))) {
-                    /* S371-01/02: doesn't set got_one -- this packet's own content never changes
+                    /* S376-01/02: doesn't set got_one -- this packet's own content never changes
                        mid-match (see its own doc comment), so its arrival shouldn't reset
                        silent_ticks/count as "real tick progress" the way a heroes/world packet
                        genuinely dropping would. */
@@ -1144,11 +1144,11 @@ static void play_one_match(int game_port) {
                        LOW threshold, but once retreating, a bot stays retreating until it's
                        actually topped back up (ARENA_BOT_TOPPED_UP_FRACTION, 90%), not just
                        barely above where it started. */
-                    /* S371-01: real per-match fountain positions from PACKET_ARENA_SNAPSHOT_LAYOUT,
+                    /* S376-01: real per-match fountain positions from PACKET_ARENA_SNAPSHOT_LAYOUT,
                        not a hand-copied literal -- the OLD literal here (-43.78/43.78, the
                        golden-ratio-only value from S170-191) was already stale before this pass,
                        having never been updated for ECOWAR-MAP-9X's later 3x widen, and per-match
-                       margin jitter (S371-01) means a single fixed literal can no longer be
+                       margin jitter (S376-01) means a single fixed literal can no longer be
                        "kept in sync by hand" at all even if someone DID remember to update it --
                        see PACKET_ARENA_SNAPSHOT_LAYOUT's own doc comment in protocol.h for why
                        this bot gets it over the wire instead of computing it locally like
@@ -1160,7 +1160,7 @@ static void play_one_match(int game_port) {
                     float hp_frac = last.heroes[my_owner].max_hp > 0
                         ? (float)last.heroes[my_owner].hp / (float)last.heroes[my_owner].max_hp : 0.0f;
                     if (!retreating_to_fountain && have_layout && hp_frac < ARENA_BOT_LOW_HP_FRACTION) {
-                        /* S371-01: gated on have_layout -- entering retreat before the first real
+                        /* S376-01: gated on have_layout -- entering retreat before the first real
                            fountain position has arrived would send this bot toward (0,0)
                            (Blacksmith, the map's true center), not a harmless no-op. */
                         retreating_to_fountain = 1;
@@ -1243,7 +1243,7 @@ static void play_one_match(int game_port) {
                            already-filled slot) does all the real work, this is just deciding
                            WHEN to go and WHICH item/shop to try next, not reasoning about build
                            strategy.
-                           S371-02 redesign: shops are no longer "my own team's corner" -- they're
+                           S376-02 redesign: shops are no longer "my own team's corner" -- they're
                            ARENA_SNAPSHOT_SHOP_COUNT neutral, procedurally placed shops (see
                            PACKET_ARENA_SNAPSHOT_LAYOUT's own doc comment), each stocking only a
                            real subset of the catalog. shop_next_item_id no longer advances

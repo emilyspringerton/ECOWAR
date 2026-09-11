@@ -731,7 +731,7 @@ static void server_broadcast(void) {
     memcpy(obstacles_buffer, &obstacles_head, sizeof(NetHeader));
     memcpy(obstacles_buffer + sizeof(NetHeader), &obstacles_msg, sizeof(ArenaSnapshotObstaclesMsg));
 
-    /* S371-01/02: fountain + shop layout packet -- see PACKET_ARENA_SNAPSHOT_LAYOUT's own doc
+    /* S376-01/02: fountain + shop layout packet -- see PACKET_ARENA_SNAPSHOT_LAYOUT's own doc
        comment in protocol.h for why this needs to exist over the wire at all (apps/arena_bot
        can't independently derive either, unlike apps/arena). Read straight out of arena_state --
        arena_fountain_position/arena_shop_position are the same real accessors apps/arena itself
@@ -977,7 +977,7 @@ static void server_handle_packet(struct sockaddr_in *sender, char *buffer, int s
         ArenaShopSellCmd *cmd = (ArenaShopSellCmd *)(buffer + sizeof(NetHeader));
         arena_shop_sell(client_id, (ArenaItemSlot)cmd->slot);
     } else if (head->type == PACKET_ARENA_APPLY_BUILD_TEMPLATE) {
-        /* RETIRED S371-02 -- see that packet id's own doc comment in protocol.h. Deliberately a
+        /* RETIRED S376-02 -- see that packet id's own doc comment in protocol.h. Deliberately a
            silent no-op (not removed from the dispatch chain) rather than falling through to "" an
            unrecognized type: a not-yet-rebuilt client could still send this for a while, and
            silently ignoring it is strictly safer than either crashing or resurrecting the

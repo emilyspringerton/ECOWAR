@@ -79,7 +79,7 @@ static void test_item_purchase_logs_real_buyer_item_and_cost(void) {
     h->flow = 999999; /* affordability never blocks this test */
 
     int item_id = 0;
-    /* S371-02: shops are now neutral and each stocks only a real subset of the catalog (per-match
+    /* S376-02: shops are now neutral and each stocks only a real subset of the catalog (per-match
        seeded split) -- item 0 isn't guaranteed to be at "h->team's shop" anymore (that whole
        per-team formula is gone). Find whichever of the 6 real shops this match's seed actually
        put it at. */

@@ -108,7 +108,7 @@ typedef enum {
 #define ARENA_HERO_COLLISION_RADIUS 0.6f /* how close a hero's own footprint can get to an obstacle's edge before being pushed back out */
 
 /* arena_set_match_seed (S370-01/02, 2026-09-11): stores the per-match seed the procedural
- * jungle generator (and, per S371-01, the fountain placement margin and the 6-shop layout/item
+ * jungle generator (and, per S376-01, the fountain placement margin and the 6-shop layout/item
  * split below) reads from. Deliberately NOT a field on arena_state -- every init path
  * (arena_init_with_heroes/arena_init_teams) does a blanket memset(&arena_state, 0, ...) as its
  * very first line, which would silently wipe a seed stored there before
@@ -152,7 +152,7 @@ void arena_set_match_seed(unsigned int seed);
 #define ARENA_FOUNTAIN_HEAL_PER_SEC 15 /* strong, deliberate -- "go here to top off," not a passive trickle */
 #define ARENA_FOUNTAIN_MANA_PER_SEC 15 /* S170-148, founder: "fountains should also restore mana" -- same rate as the heal, one consistent "resource top-off" spot */
 
-/* S371-01 (2026-09-11), founder: "it seems like we lost fountains - can you add them into the
+/* S376-01 (2026-09-11), founder: "it seems like we lost fountains - can you add them into the
  * procedural generation of the map?" -- code-wise the fountains were never actually removed
  * (arena_tick_fountains/arena_fountain_position/the client's own draw loop are all still real and
  * unconditional), but they'd been sitting at a plain fixed-formula corner since before the map
@@ -1476,8 +1476,8 @@ typedef struct {
  * same amount whether it's held for one second or the whole fight. */
 #define ARENA_MP_DRAIN_W_PER_SEC    5
 
-/* ---- Flow/XP economy + item shop (S170-175, shop placement/catalog redesigned S371-02) ----
- * S371-02 (2026-09-11): the original "2 shops, one per team corner, every shop sells the whole
+/* ---- Flow/XP economy + item shop (S170-175, shop placement/catalog redesigned S376-02) ----
+ * S376-02 (2026-09-11): the original "2 shops, one per team corner, every shop sells the whole
  * catalog" design described by the founder quote directly below was superseded by a real,
  * founder-requested redesign -- see the big comment above ARENA_SHOP_COUNT for the current
  * design (6 neutral shops, procedurally placed, catalog split randomly across them). Kept here,
@@ -1648,7 +1648,7 @@ void redgarden_host_log_king_spawn(int camp_id);
 #define ARENA_ITEM_SELL_REFUND_PCT 50 /* founder: "sell it back for less" */
 #define ARENA_SHOP_RADIUS 3.0f /* same "stand near it" convention as ARENA_FOUNTAIN_RADIUS */
 
-/* ---- S371-02 (2026-09-11): 6-shop neutral, catalog-split redesign ----
+/* ---- S376-02 (2026-09-11): 6-shop neutral, catalog-split redesign ----
  * Founder, real-time: "shops too? spawn like 6 shops on the map and divide the items on the
  * pages between them (fundamental change to how the shop system works in ECOWAR vs REDGARDEN)
  * the items will be randomized across the shops in the world so building towards a specifc kit
@@ -1667,7 +1667,7 @@ void redgarden_host_log_king_spawn(int camp_id);
  * server-side, same "no wire sync needed" precedent as the fountains/jungle -- see
  * arena_shops_reset_layout's own doc comment. */
 #define ARENA_SHOP_COUNT 6
-/* ARENA_SHOP_MIN_SEPARATION (S371-02): minimum center-to-center distance between any two of the
+/* ARENA_SHOP_MIN_SEPARATION (S376-02): minimum center-to-center distance between any two of the
  * 6 shops -- without this, pure rejection sampling could (rarely, but for real) land two shops
  * within a few units of each other on a huge map, reading as one shop with two counters instead
  * of six genuinely separate destinations. Well under 1/6 of the map's own diameter so six shops
@@ -1684,7 +1684,7 @@ typedef struct {
     unsigned long long item_mask;
 } ArenaShop;
 
-/* arena_shops_reset_layout (S371-02): (re)computes all ARENA_SHOP_COUNT shop positions and item
+/* arena_shops_reset_layout (S376-02): (re)computes all ARENA_SHOP_COUNT shop positions and item
  * catalogs for the current match, seeded from arena_set_match_seed the same way
  * arena_obstacles_reset_layout's own procedural jungle pass is -- MUST be called after
  * arena_obstacles_reset_layout (same call order arena_init_with_heroes/arena_init_teams/the
@@ -1700,14 +1700,14 @@ typedef struct {
  * doesn't divide evenly). */
 void arena_shops_reset_layout(void);
 
-/* arena_shop_has_item (S371-02): true if shop_index (0..ARENA_SHOP_COUNT-1) currently stocks
+/* arena_shop_has_item (S376-02): true if shop_index (0..ARENA_SHOP_COUNT-1) currently stocks
  * item_id -- the one real accessor for ArenaShop.item_mask, see that field's own doc comment for
  * why call sites should never test the bit directly. False for any out-of-range shop_index or
  * item_id rather than asserting -- same "fail closed, never crash on a bad index" convention
  * arena_shop_buy's own bounds checks already follow. */
 int arena_shop_has_item(int shop_index, int item_id);
 
-/* arena_find_shop_in_range (S371-02): returns the index (0..ARENA_SHOP_COUNT-1) of the first shop
+/* arena_find_shop_in_range (S376-02): returns the index (0..ARENA_SHOP_COUNT-1) of the first shop
  * within ARENA_SHOP_RADIUS of (x,z), or -1 if none. The one real "which shop, if any, am I
  * standing at" query -- arena_shop_buy/arena_shop_sell and the client's own proximity-open/HUD
  * code all route through this rather than each re-deriving it, so "the panel says you're at a
@@ -2873,7 +2873,7 @@ typedef struct {
     ArenaTower towers[ARENA_NODE_COUNT]; /* 2026-07-30: index-matched to nodes, same convention as creeps */
     ArenaProjectile projectiles[ARENA_MAX_PROJECTILES];
     ArenaObstacle obstacles[ARENA_OBSTACLE_COUNT];
-    ArenaShop shops[ARENA_SHOP_COUNT]; /* S371-02: neutral, procedurally placed, per-match item-split shops -- see ArenaShop's own doc comment */
+    ArenaShop shops[ARENA_SHOP_COUNT]; /* S376-02: neutral, procedurally placed, per-match item-split shops -- see ArenaShop's own doc comment */
     ArenaPowerup powerups[ARENA_POWERUP_COUNT]; /* S170-190 */
     ArenaLaneCreep lane_creeps[ARENA_MAX_LANE_CREEPS]; /* S170-139 */
     int lane_wave_timer_ms[2]; /* S170-139: per-team countdown to next wave; starts at 0 (memset), so both teams' first wave spawns on the first tick, matching a real MOBA's 0:00 wave */
@@ -3173,15 +3173,15 @@ void arena_graveyard_position(int team, float *x, float *z);
  * clear, so this re-applies the bonuses on top immediately after). */
 void arena_recompute_item_stats(ArenaHero *h);
 
-/* arena_shop_position (S170-175, redesigned S371-02): fills (x,z) with shop `index`'s
+/* arena_shop_position (S170-175, redesigned S376-02): fills (x,z) with shop `index`'s
  * (0..ARENA_SHOP_COUNT-1) location. Originally "team's shop, formula off that team's own
- * graveyard corner" -- the S371-02 redesign (see the big comment above ARENA_SHOP_COUNT) made
+ * graveyard corner" -- the S376-02 redesign (see the big comment above ARENA_SHOP_COUNT) made
  * shops neutral and procedurally placed, so `index` is now a plain shop index, not a team, and
  * the position is read out of arena_state.shops[index] (populated once per match by
  * arena_shops_reset_layout) rather than computed from a formula on every call. */
 void arena_shop_position(int index, float *x, float *z);
 
-/* arena_shop_buy (S170-175, redesigned S371-02): the real purchase path -- validates owner is a
+/* arena_shop_buy (S170-175, redesigned S376-02): the real purchase path -- validates owner is a
  * real, active, alive hero within ARENA_SHOP_RADIUS of ANY shop (arena_find_shop_in_range; no
  * longer "their own team's" shop -- shops are neutral, see ARENA_SHOP_COUNT's own doc comment),
  * that shop actually stocks item_id (arena_shop_has_item -- the real, new "strategy and luck"
@@ -3192,7 +3192,7 @@ void arena_shop_position(int index, float *x, float *z);
  * purchase. */
 int arena_shop_buy(int owner, int item_id);
 
-/* arena_shop_sell (S170-175, redesigned S371-02): sells whatever's in `slot` for
+/* arena_shop_sell (S170-175, redesigned S376-02): sells whatever's in `slot` for
  * ARENA_ITEM_SELL_REFUND_PCT of its purchase cost, emptying the slot. Same shop-proximity gate as
  * arena_shop_buy (any of the 6 neutral shops, not "your own team's" one) and silent-no-op-on-
  * failure convention -- selling doesn't check the local shop's own catalog (you're cashing out
@@ -3201,14 +3201,14 @@ int arena_shop_buy(int owner, int item_id);
  * bag to move it into, selling is the only way to clear a slot. */
 int arena_shop_sell(int owner, ArenaItemSlot slot);
 
-/* ---------------- Build templates (2026-08-25, REMOVED S371-02) ----------------
+/* ---------------- Build templates (2026-08-25, REMOVED S376-02) ----------------
  * Founder real-time, fragmented origin: "ok in redgarden lets experiment with the idea that tech
  * trees are just item templates" -> ... -> "all powered by parena scripting and parena mods" --
  * a named build a player could one-click auto-buy from at a shop (ArenaBuildTemplate,
  * arena_hero_apply_build_template, redgarden_host_buy_build_item, the PARENA-compiled
  * on_apply_build_template_item / build_template_mod.prn / build_template_mod_host.h, the shop
  * UI's own build-presets page, PACKET_ARENA_APPLY_BUILD_TEMPLATE).
- * Founder, real-time (2026-09-11), immediately after the S371-02 6-shop catalog-split redesign:
+ * Founder, real-time (2026-09-11), immediately after the S376-02 6-shop catalog-split redesign:
  * "oh yea you can rip out templates" / "not needed in this version" -- removed outright rather
  * than patched to fit the new shop design. It genuinely didn't fit anymore: a template assumed
  * one shop sells everything on its list, which stopped being true the moment a single shop only
