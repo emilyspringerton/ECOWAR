@@ -1,0 +1,61 @@
+# ops/playbook.toml — ECOWAR backend services.
+#
+# Real, standardized replacement target for this directory's own hand-written
+# ecowar-matchmaker.service/ecowar-bot-pool.service (see EMILY/docs/PARENACLOUD_OPS_NORTHSTAR.md
+# for the full format spec and why this exists — this directory also still contains several
+# REDGARDEN-named unit files, real, un-renamed copy-paste residue from the original hard fork,
+# exactly the duplication problem this playbook is meant to replace going forward). The two real
+# hand-written units above stay the live, deployed source of truth until a real deploy tool
+# actually renders and installs from this file instead — this playbook does not change what's
+# running on the box by existing.
+#
+# Generated units (once a real deploy tool exists) are written fresh each time, never hand-edited
+# — same "do not hand-edit, a re-provision will overwrite this" discipline
+# IDUNA_PRO/internal/tenantprovision.writeSystemdUnit already establishes for tenant units.
+
+[game]
+name = "ecowar"
+repo = "ECOWAR"
+
+[[service]]
+name = "matchmaker"
+kind = "persistent"
+description = "ECOWAR arena matchmaker — 1v1 queue with bots"
+binary = "build/red_garden_matchmaker"
+args = ["--listen-port", "{{listen_port}}", "--lobby-size", "{{lobby_size}}",
+        "--server-bin", "{{server_bin}}", "--first-game-port", "{{first_game_port}}"]
+port = "{{listen_port}}"
+environment = { REDGARDEN_TICKET_SECRET = "test-secret-for-vs0-vs1-validation" }
+environment_file = { path = "var/{{env_file_name}}", required = false }
+restart = "on-failure"
+restart_sec = 5
+memory_max = "256M"
+after = ["network-online.target"]
+
+[[service]]
+name = "bot-pool"
+kind = "persistent"
+description = "ECOWAR arena bot pool — fills the queue's open human slot(s)"
+binary = "scripts/run_bot_pool.sh"
+args = ["{{bot_count}}", "{{listen_port}}"]
+environment = { REDGARDEN_TICKET_SECRET = "test-secret-for-vs0-vs1-validation" }
+after = ["network-online.target", "ecowar-matchmaker.service"]
+wants = ["ecowar-matchmaker.service"]
+start_delay_sec = 2
+restart = "on-failure"
+restart_sec = 5
+memory_max = "128M"
+
+[[service]]
+name = "arena-server"
+kind = "spawned"
+description = "Per-match arena server, spawned on demand by the matchmaker's own --server-bin"
+binary = "build/red_garden_arena_server"
+
+[values]
+listen_port = 9779
+lobby_size = 2
+server_bin = "build/red_garden_arena_server"
+first_game_port = 9600
+bot_count = 1
+env_file_name = "ecowar-iduna-agent.env"
