@@ -72,6 +72,24 @@
     (conversion attempts, combat), so it has to actually go over the wire, same "real per-match
     state, not a fixed formula" reasoning PACKET_ARENA_SNAPSHOT_HEROES already established for
     heroes. Sent every broadcast tick. See ArenaSnapshotLivingMapMsg's own doc comment. */
+#define PACKET_ARENA_CARD_BATTLER_TOGGLE 24 /* client -> arena_server: flip the sending client's
+    own hero into (or out of) card-battler mode -- SECTION 377/S378's real, reversible experiment,
+    finally given a client entry point (founder: "go ahead and build the card battler UI"). No
+    payload: client_id from the sender's own connection IS the hero being toggled, same trust
+    model PACKET_ARENA_CARD_PLAY already uses. Turning ON sets ArenaHero.npc_controlled (the hero
+    is driven by arena_npc_hero_tick from then on, same as the existing bot) and calls
+    card_battler_init_hero; turning OFF just clears npc_controlled -- "the real rollback path,
+    kept cheap on purpose" SECTION 378 already named, now reachable at runtime instead of only by
+    editing a default. */
+#define PACKET_ARENA_CARD_BATTLER_PLAY 25 /* client -> arena_server: play one of the sending
+    client's own current card-battler hand slots (card_battler_play_slot) at the currently-hovered
+    target. Real no-op server-side unless that hero is actually in card-battler mode (npc_controlled)
+    -- see ArenaCardBattlerPlayCmd's own doc comment. */
+#define PACKET_ARENA_SNAPSHOT_CARD_BATTLER 26 /* arena_server -> client: both heroes' real
+    npc_controlled flag + card-battler hand contents -- neither is reproducible client-side (hand
+    state depends on real play + the server's own PRNG-seeded deck shuffle), same "real per-match
+    state has to go over the wire" reasoning PACKET_ARENA_SNAPSHOT_LIVING_MAP already established.
+    Sent every broadcast tick. See ArenaSnapshotCardBattlerMsg's own doc comment. */
 
 #define ARENA_PHASE_WAITING 0 /* fewer than 2 real players connected yet */
 #define ARENA_PHASE_DRAFT   1 /* both connected, waiting on hero picks */
@@ -795,6 +813,34 @@ typedef struct {
     uint8_t creep_alive[ARENA_SNAPSHOT_LIVING_MAP_CREEP_COUNT];
 } ArenaSnapshotLivingMapMsg;
 
+// PACKET_ARENA_CARD_BATTLER_PLAY payload -- same real shape ArenaCardPlayCmd already establishes
+// (see that struct's own doc comment). slot_index indexes the sending client's own current
+// CardHand (card_deck.h), not a card id directly -- the server looks up whatever card that slot
+// actually holds right now (card_battler_play_slot), since the human playing it may not know the
+// exact card_id, only which of their 4 visible hand tiles they dragged.
+typedef struct {
+    uint8_t slot_index;
+    int8_t hover_target;
+} ArenaCardBattlerPlayCmd;
+
+// ARENA_CARD_BATTLER_HAND_SIZE must match packages/simulation/card_deck.h's own CARD_HAND_SIZE,
+// same "protocol.h stays free of any packages/simulation include, sizes are duplicated instead"
+// convention ARENA_SNAPSHOT_LIVING_MAP_TOWN_COUNT/_CREEP_COUNT already establish above.
+#define ARENA_CARD_BATTLER_HAND_SIZE 4
+
+// PACKET_ARENA_SNAPSHOT_CARD_BATTLER payload -- see that packet id's own doc comment. Both heroes'
+// state is sent to both clients (same as ArenaSnapshotMsg's own "both heroes' state" convention),
+// not just the receiving client's own hand -- simplest real shape, and there's no real reason to
+// hide an opponent's hand today (ECOWAR has no hidden-information mechanic anywhere else yet).
+// hand_card_id is -1 for an empty/currently-redrawing slot (CardHandSlot's own real convention);
+// hand_redraw_ms is only meaningful when hand_card_id == -1, same "only meaningful while X" shape
+// CardHandSlot.redraw_ms_remaining's own doc comment already uses.
+typedef struct {
+    uint8_t npc_controlled[2];
+    int8_t hand_card_id[2][ARENA_CARD_BATTLER_HAND_SIZE];
+    uint16_t hand_redraw_ms[2][ARENA_CARD_BATTLER_HAND_SIZE];
+} ArenaSnapshotCardBattlerMsg;
+
 // Shared receive-buffer sizing for every PACKET_ARENA_SNAPSHOT*-handling
 // socket in this codebase (apps/arena_server's send side doesn't need this,
 // but every recvfrom call sizing a fixed rbuf does) -- one source of truth
@@ -813,8 +859,10 @@ typedef struct {
 #define PROTOCOL_MAX2(a, b) ((a) > (b) ? (a) : (b))
 #define ARENA_SNAPSHOT_RECV_BUF_SIZE (sizeof(NetHeader) + \
     PROTOCOL_MAX2( \
-        PROTOCOL_MAX2(PROTOCOL_MAX2(sizeof(ArenaSnapshotMsg), sizeof(ArenaSnapshotHeroesMsg)), \
-            PROTOCOL_MAX2(sizeof(ArenaSnapshotObstaclesMsg), sizeof(ArenaSnapshotLayoutMsg))), \
-        sizeof(ArenaSnapshotLivingMapMsg)))
+        PROTOCOL_MAX2( \
+            PROTOCOL_MAX2(PROTOCOL_MAX2(sizeof(ArenaSnapshotMsg), sizeof(ArenaSnapshotHeroesMsg)), \
+                PROTOCOL_MAX2(sizeof(ArenaSnapshotObstaclesMsg), sizeof(ArenaSnapshotLayoutMsg))), \
+            sizeof(ArenaSnapshotLivingMapMsg)), \
+        sizeof(ArenaSnapshotCardBattlerMsg)))
 
 #endif

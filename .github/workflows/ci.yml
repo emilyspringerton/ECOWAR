@@ -128,6 +128,8 @@ jobs:
             packages/livingmap/creep.c \
             packages/livingmap/living_map_events.c \
             packages/reflux/reflux_runtime.c \
+            packages/simulation/card_deck.c \
+            packages/simulation/card_battler.c \
             "${mod_sources[@]}" \
             packages/common/mlp_infer.c \
             packages/goldenband/gband.c \

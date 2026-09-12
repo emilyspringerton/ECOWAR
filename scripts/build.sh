@@ -70,6 +70,8 @@ gcc "${COMMON_FLAGS[@]}" \
   "${ROOT_DIR}/packages/reflux/reflux_mod.c" \
   "${ROOT_DIR}/packages/simulation/bloodflower_hostile_spawner_mod.c" \
   "${ROOT_DIR}/packages/simulation/allcap_mod.c" \
+  "${ROOT_DIR}/packages/simulation/card_deck.c" \
+  "${ROOT_DIR}/packages/simulation/card_battler.c" \
   "${ROOT_DIR}/packages/common/mlp_infer.c" \
   -lm
 
@@ -130,6 +132,8 @@ gcc -std=c99 -D_DEFAULT_SOURCE -O2 -Wall -Wextra -I"${ROOT_DIR}/packages" \
   "${ROOT_DIR}/packages/reflux/reflux_mod.c" \
   "${ROOT_DIR}/packages/simulation/bloodflower_hostile_spawner_mod.c" \
   "${ROOT_DIR}/packages/simulation/allcap_mod.c" \
+  "${ROOT_DIR}/packages/simulation/card_deck.c" \
+  "${ROOT_DIR}/packages/simulation/card_battler.c" \
   "${ROOT_DIR}/packages/common/mlp_infer.c" \
   "${ROOT_DIR}/packages/goldenband/gband.c" \
   "${ROOT_DIR}/packages/goldenband/gband_rig.c" \

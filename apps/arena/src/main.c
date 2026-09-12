@@ -37,6 +37,7 @@
 #include "../../../packages/common/http_client.h"
 #include "../../../packages/simulation/arena_game.h"
 #include "../../../packages/simulation/living_map_bridge.h"
+#include "../../../packages/simulation/card_battler.h"
 #include "../../../packages/simulation/arena_ai_bridge.h"
 #include "../../../packages/simulation/arena_replay.h"
 #include "../../../packages/goldenband/gband.h"
@@ -99,6 +100,31 @@ static void shop_panel_origin(int win_w, int win_h, float *sp_x, float *sp_y_top
     (void)win_w;
     *sp_x = 40.0f;
     *sp_y_top = (float)win_h - 70.0f;
+}
+/* card_battler_panel_origin -- one shared source of truth for the hand panel's own geometry, same
+ * "click hit-test and render pass share identical math, never independently drift" discipline
+ * shop_panel_origin just above already establishes (see that function's own call sites' doc
+ * comments for why). A row of ARENA_CARD_BATTLER_HAND_SIZE tiles, same tile_size/tile_pitch as the
+ * existing Q/W/E/G ability-tile row (drawn further down), positioned one full tile-height plus a
+ * gap above it so the two rows never overlap. */
+#define CARD_BATTLER_TILE_SIZE 56.0f
+#define CARD_BATTLER_TILE_PITCH 66.0f /* size + 10px gap, matches the ability-tile row's own spacing */
+static void card_battler_panel_origin(int win_w, float *cb_x0, float *cb_y) {
+    float total_w = CARD_BATTLER_TILE_PITCH * (float)(ARENA_CARD_BATTLER_HAND_SIZE - 1) + CARD_BATTLER_TILE_SIZE;
+    *cb_x0 = (float)win_w / 2.0f - total_w / 2.0f;
+    *cb_y = 90.0f + CARD_BATTLER_TILE_SIZE + 30.0f; /* ability-tile row's own tiles_y (90) + its own tile_size (56) + a 30px gap */
+}
+/* card_battler_slot_display_name -- the hand tile's own label. A generic card id (< ECOWAR_CARD_
+ * COUNT) is one of the 16 real ECOWAR_CARDS; CARD_ID_HERO_Q/_W/_R (card_deck.h) name that hero's
+ * own real ability instead ("the hero abilities cards shuffled into your deck," literally, per
+ * card_deck.h's own doc comment) -- same arena_ability_name() the Q/W/E ability tiles already use. */
+static const char *card_battler_slot_display_name(int card_id, int local_hero_id) {
+    if (card_id < 0) return "...";
+    if (card_id < ECOWAR_CARD_COUNT) return ECOWAR_CARDS[card_id].name;
+    if (card_id == CARD_ID_HERO_Q) return arena_ability_name(local_hero_id, 0);
+    if (card_id == CARD_ID_HERO_W) return arena_ability_name(local_hero_id, 1);
+    if (card_id == CARD_ID_HERO_R) return arena_ability_name(local_hero_id, 2);
+    return "?";
 }
 static const char *ARENA_ITEM_SLOT_NAMES[ARENA_ITEM_SLOT_COUNT] = {
     "WEAPON", "HEAD", "BODY", "HANDS", "LEGS", "FEET", "RING", "NECK", "BACK", "WAIST", "TRINKET"
@@ -581,6 +607,24 @@ static int g_ground_target_pending_slot = 0;
  * H/B, 1-9) is taken -- see that grep's own result before this was written, not guessed at. */
 static int g_ecowar_armed_card = 0;
 
+/* Card-battler experiment client UI (SECTION 377/S378, founder: "go ahead and build the card
+ * battler UI" -- the Hearthstone/Clash-Royale-style panel the founder originally asked for
+ * alongside Phase 2: "a panel opened on G ... drag onto the battlefield to cast a spell"). TAB
+ * toggles card-battler mode for the LOCAL PLAYER's own hero on/off (real, cheap, reversible --
+ * SECTION 378's own "just never flipping the flag" rollback path, now reachable at runtime); while
+ * ON, G's meaning changes from "cast the armed simple card" (the older V/G system above, left
+ * completely untouched for when this is OFF) to "open/close the hand panel." g_cb_net_npc_controlled/
+ * g_cb_net_hand_* mirror the server's own real state for net_mode (neither is reproducible
+ * client-side, see ArenaSnapshotCardBattlerMsg's own doc comment) -- the local (non-networked)
+ * demo path reads arena_state.heroes[my_owner].npc_controlled / card_battler_hand(my_owner)
+ * directly instead, same "local calls the shared function directly, networked path mirrors the
+ * wire" split every other card/cast dispatch in this file already uses. */
+static int g_cb_panel_open = 0;
+static int g_cb_dragging_slot = -1;    /* -1 = not currently dragging a hand tile */
+static int g_cb_net_npc_controlled[2] = {0, 0};
+static int g_cb_net_hand_card_id[2][ARENA_CARD_BATTLER_HAND_SIZE];
+static int g_cb_net_hand_redraw_ms[2][ARENA_CARD_BATTLER_HAND_SIZE];
+
 /* g_last_vp (2026-07-30, Tyler clone-control rework): the view-projection matrix from the most
  * recently rendered frame, needed so the drag-select box-test (event-loop code, which runs
  * BEFORE this frame's own `vp` is computed in the render pass further down) can call
@@ -643,6 +687,28 @@ static void net_send_card_play(int card_id, int hover_target) {
     h->type = PACKET_ARENA_CARD_PLAY;
     ArenaCardPlayCmd *cmd = (ArenaCardPlayCmd *)(buf + sizeof(NetHeader));
     cmd->card_id = (uint8_t)card_id;
+    cmd->hover_target = (int8_t)hover_target;
+    sendto(net_sock, buf, sizeof(buf), 0, (struct sockaddr *)&net_server_addr, sizeof(net_server_addr));
+}
+
+/* net_send_card_battler_toggle/_play -- the real client-side send halves of
+ * PACKET_ARENA_CARD_BATTLER_TOGGLE/_PLAY, same real shape net_send_card_play above already
+ * establishes. See those packet ids' own doc comments (protocol.h) for the wire format. */
+static void net_send_card_battler_toggle(void) {
+    char buf[sizeof(NetHeader)];
+    NetHeader *h = (NetHeader *)buf;
+    memset(h, 0, sizeof(NetHeader));
+    h->type = PACKET_ARENA_CARD_BATTLER_TOGGLE;
+    sendto(net_sock, buf, sizeof(buf), 0, (struct sockaddr *)&net_server_addr, sizeof(net_server_addr));
+}
+
+static void net_send_card_battler_play(int slot_index, int hover_target) {
+    char buf[sizeof(NetHeader) + sizeof(ArenaCardBattlerPlayCmd)];
+    NetHeader *h = (NetHeader *)buf;
+    memset(h, 0, sizeof(NetHeader));
+    h->type = PACKET_ARENA_CARD_BATTLER_PLAY;
+    ArenaCardBattlerPlayCmd *cmd = (ArenaCardBattlerPlayCmd *)(buf + sizeof(NetHeader));
+    cmd->slot_index = (uint8_t)slot_index;
     cmd->hover_target = (int8_t)hover_target;
     sendto(net_sock, buf, sizeof(buf), 0, (struct sockaddr *)&net_server_addr, sizeof(net_server_addr));
 }
@@ -1057,6 +1123,18 @@ static void net_poll_snapshots(uint32_t now_ms) {
                     g_living_map_creep_x[c] = lmsg->creep_x[c];
                     g_living_map_creep_z[c] = lmsg->creep_z[c];
                     g_living_map_creep_alive[c] = lmsg->creep_alive[c];
+                }
+            } else if (h->type == PACKET_ARENA_SNAPSHOT_CARD_BATTLER && len >= (int)(sizeof(NetHeader) + sizeof(ArenaSnapshotCardBattlerMsg))) {
+                /* SECTION 377/S378 -- see g_cb_net_* 's own doc comment above for why this has to
+                   be mirrored from the wire (neither npc_controlled nor hand contents is
+                   reproducible client-side). */
+                ArenaSnapshotCardBattlerMsg *cbmsg = (ArenaSnapshotCardBattlerMsg *)(rbuf + sizeof(NetHeader));
+                for (int cb = 0; cb < 2; cb++) {
+                    g_cb_net_npc_controlled[cb] = cbmsg->npc_controlled[cb];
+                    for (int s = 0; s < ARENA_CARD_BATTLER_HAND_SIZE; s++) {
+                        g_cb_net_hand_card_id[cb][s] = cbmsg->hand_card_id[cb][s];
+                        g_cb_net_hand_redraw_ms[cb][s] = cbmsg->hand_redraw_ms[cb][s];
+                    }
                 }
             }
         }
@@ -2494,6 +2572,7 @@ static float r_cooldown_peak_ms = 0.0f;
 static float blink_cooldown_peak_ms = 0.0f; /* S170-205 */
 static float donkey_glide_cooldown_peak_ms = 0.0f; /* S170-206 */
 static float ecowar_card_cooldown_peak_ms = 0.0f; /* Phase 2 card-cooldown HUD tile, 2026-08-28 */
+static float g_cb_hand_peak_ms[ARENA_CARD_BATTLER_HAND_SIZE] = {0}; /* card-battler hand tiles' own redraw-wipe peaks, SECTION 377/S378 UI */
 
 /* draw_ability_tile: one Overwatch-style square ability icon -- bordered
  * tile, a radial dark wedge (GL_TRIANGLE_FAN from the tile's center)
@@ -3157,6 +3236,51 @@ int main(int argc, char *argv[]) {
                 }
                 g_ground_target_pending_slot = 0;
             }
+            /* Card-battler hand panel (SECTION 377/S378 UI): real drag-to-cast, per the founder's
+               own original ask ("drag onto the battlefield to cast a spell"). Same real
+               "mousedown starts it, mouseup resolves it" shape the box-select drag below already
+               uses, and the same "consumed this exact click" idiom shop_click_consumed/
+               ground_target_click_consumed establish -- a click that starts or ends a card drag
+               must not also move the player or start a box-select. cb_click_consumed only ever
+               matters for a genuinely open panel; g_cb_panel_open itself only ever gets set while
+               this hero is in card-battler mode (the G-key handler above), so there's no real path
+               where a click here fires for a hero not actually in the experiment. */
+            int cb_click_consumed = 0;
+            if (g_cb_panel_open && !observing && e.type == SDL_MOUSEBUTTONDOWN && e.button.button == SDL_BUTTON_LEFT) {
+                float bx = (float)e.button.x, by = (float)(win_h - e.button.y);
+                float cb_x0, cb_y;
+                card_battler_panel_origin(win_w, &cb_x0, &cb_y);
+                float cb_total_w = CARD_BATTLER_TILE_PITCH * (float)(ARENA_CARD_BATTLER_HAND_SIZE - 1) + CARD_BATTLER_TILE_SIZE;
+                if (bx >= cb_x0 - 10.0f && bx <= cb_x0 - 10.0f + cb_total_w + 20.0f &&
+                    by >= cb_y - 10.0f && by <= cb_y + CARD_BATTLER_TILE_SIZE + 10.0f) {
+                    cb_click_consumed = 1;
+                    for (int s = 0; s < ARENA_CARD_BATTLER_HAND_SIZE; s++) {
+                        float tx = cb_x0 + (float)s * CARD_BATTLER_TILE_PITCH;
+                        if (bx >= tx && bx <= tx + CARD_BATTLER_TILE_SIZE && by >= cb_y && by <= cb_y + CARD_BATTLER_TILE_SIZE) {
+                            g_cb_dragging_slot = s;
+                            break;
+                        }
+                    }
+                }
+            }
+            if (g_cb_dragging_slot >= 0 && !observing && e.type == SDL_MOUSEBUTTONUP && e.button.button == SDL_BUTTON_LEFT) {
+                float bx = (float)e.button.x, by = (float)(win_h - e.button.y);
+                float cb_x0, cb_y;
+                card_battler_panel_origin(win_w, &cb_x0, &cb_y);
+                float cb_total_w = CARD_BATTLER_TILE_PITCH * (float)(ARENA_CARD_BATTLER_HAND_SIZE - 1) + CARD_BATTLER_TILE_SIZE;
+                /* Dropped back onto the panel itself -- a real, deliberate cancel (same "drag it
+                   back to your hand to change your mind" convention Hearthstone/Clash Royale both
+                   use), not a whiff/miscast. */
+                int dropped_on_panel = (bx >= cb_x0 - 10.0f && bx <= cb_x0 - 10.0f + cb_total_w + 20.0f &&
+                                         by >= cb_y - 10.0f && by <= cb_y + CARD_BATTLER_TILE_SIZE + 10.0f);
+                if (!dropped_on_panel) {
+                    if (net_mode) net_send_card_battler_play(g_cb_dragging_slot, g_hover_target);
+                    else card_battler_play_slot(my_owner, g_cb_dragging_slot, g_hover_target);
+                    apm_record_action(now);
+                }
+                g_cb_dragging_slot = -1;
+                cb_click_consumed = 1;
+            }
             /* Everything below drives a live match (movement clicks, kit
              * casts, restart-into-a-new-match) -- none of it applies while
              * observing a logged one. Camera control above still works, so
@@ -3174,7 +3298,7 @@ int main(int argc, char *argv[]) {
              * the mouseup branch below resolves to exactly one commander (my_owner) and behaves
              * byte-for-byte like the old mousedown-triggered code -- zero behavior change for
              * the other 27 heroes' existing muscle memory. */
-            if (!observing && !shop_click_consumed && !ground_target_click_consumed &&
+            if (!observing && !shop_click_consumed && !ground_target_click_consumed && !cb_click_consumed &&
                 e.type == SDL_MOUSEBUTTONDOWN && e.button.button == SDL_BUTTON_LEFT &&
                 arena_state.winner == 0) {
                 left_drag_active = 1;
@@ -3407,13 +3531,43 @@ int main(int argc, char *argv[]) {
                     printf("[card] armed: %s (%s)\n", ECOWAR_CARDS[g_ecowar_armed_card].name,
                            ECOWAR_CARDS[g_ecowar_armed_card].source_hero);
                 }
-                if (e.key.keysym.sym == SDLK_g) {
+                /* Card-battler mode (SECTION 377/S378 UI, founder: "go ahead and build the card
+                   battler UI"): TAB toggles it for the local player's own hero on/off -- real,
+                   cheap, reversible (SECTION 378's own "just never flipping the flag" rollback,
+                   now reachable at runtime instead of only by editing a default). While ON, G's
+                   meaning below changes from "cast the armed simple card" to "open/close the hand
+                   panel" -- the older V/G system is completely untouched for a hero that never
+                   toggles this on, same "nothing regresses for the live, working system" bar every
+                   other additive feature in this file already holds itself to. */
+                if (e.key.keysym.sym == SDLK_TAB) {
                     if (net_mode) {
-                        net_send_card_play(g_ecowar_armed_card, g_hover_target);
+                        net_send_card_battler_toggle();
                     } else {
-                        arena_ecowar_play_card(my_owner, g_ecowar_armed_card, g_hover_target);
+                        ArenaHero *cbh = &arena_state.heroes[my_owner];
+                        if (!cbh->npc_controlled) {
+                            cbh->npc_controlled = 1;
+                            card_battler_init_hero(my_owner, (unsigned int)time(NULL) ^ (((unsigned int)my_owner + 1u) * 2654435761u));
+                        } else {
+                            cbh->npc_controlled = 0;
+                            g_cb_panel_open = 0;
+                            g_cb_dragging_slot = -1;
+                        }
                     }
-                    apm_record_action(now);
+                }
+                {
+                    int cb_mode_active = net_mode ? g_cb_net_npc_controlled[my_owner] : arena_state.heroes[my_owner].npc_controlled;
+                    if (e.key.keysym.sym == SDLK_g) {
+                        if (cb_mode_active) {
+                            g_cb_panel_open = !g_cb_panel_open;
+                            if (!g_cb_panel_open) g_cb_dragging_slot = -1;
+                        } else if (net_mode) {
+                            net_send_card_play(g_ecowar_armed_card, g_hover_target);
+                            apm_record_action(now);
+                        } else {
+                            arena_ecowar_play_card(my_owner, g_ecowar_armed_card, g_hover_target);
+                            apm_record_action(now);
+                        }
+                    }
                 }
                 /* Active item (S170-205/S170-206, founder: "add blink dagger 1400 flow it gives
                    a new keybind on screen for tilda" -> "tilda should make the hero do the
@@ -3475,6 +3629,12 @@ int main(int argc, char *argv[]) {
         }
         else if (arena_state.winner == 0) {
             arena_update(dt);
+            /* Card-battler experiment (SECTION 377/S378): same real "local demo calls the shared
+               function directly" split net_mode's own mirrored-from-server path above uses --
+               advances hand-redraw timers for whichever local heroes are actually in card-battler
+               mode. Real no-op otherwise (card_battler_tick's own doc comment). */
+            card_battler_tick(0, (unsigned int)dt);
+            card_battler_tick(1, (unsigned int)dt);
             arena_log_since_snapshot_ms += dt;
             if (arena_log_since_snapshot_ms >= ARENA_LOG_SNAPSHOT_INTERVAL_MS) {
                 arena_log_snapshot();
@@ -5148,14 +5308,59 @@ int main(int argc, char *argv[]) {
             /* ECOWAR card tile (Phase 2 follow-up, 2026-08-28): tile_pitch * 5.0f, one slot past
                Donkey's own -- always shown (unlike Blink Dagger/Donkey, which only appear once
                equipped), since the 16-card system applies to every hero, not one item purchase.
-               Shows the currently-ARMED card's real name (g_ecowar_armed_card, cycled with V),
-               not a fixed "CARDS" label, so the tile always reflects what G will actually cast --
-               same "the affordance you're looking at is the one the key acts on" precedent this
-               file already holds itself to. Never mana-blocked (cards cost no mana, only the
-               shared cooldown itself gates them). */
-            draw_ability_tile(tiles_x0 + tile_pitch * 5.0f, tiles_y, tile_size, h->ecowar_card_cooldown_ms,
-                               &ecowar_card_cooldown_peak_ms, 0, 0, "G", ECOWAR_CARDS[g_ecowar_armed_card].name,
-                               0.85f, 0.75f, 0.3f);
+               Card-battler mode (SECTION 377/S378 UI) changes what G actually does (see that
+               key's own handler above), so this tile's label follows it -- "the affordance you're
+               looking at is the one the key acts on" precedent this file already holds itself to.
+               Not in card-battler mode: unchanged, shows the currently-armed simple card
+               (g_ecowar_armed_card, cycled with V). In card-battler mode: shows the real hand
+               panel's own open/closed state instead -- the old V/G armed-card system doesn't apply
+               to this hero anymore while it's on. Never mana-blocked either way (cards cost no
+               mana, only the shared cooldown/redraw timers gate them). */
+            {
+                int cb_mode_active = net_mode ? g_cb_net_npc_controlled[my_owner] : h->npc_controlled;
+                if (cb_mode_active) {
+                    draw_ability_tile(tiles_x0 + tile_pitch * 5.0f, tiles_y, tile_size, 0,
+                                       &ecowar_card_cooldown_peak_ms, g_cb_panel_open, 0, "G",
+                                       g_cb_panel_open ? "CLOSE HAND" : "OPEN HAND",
+                                       0.85f, 0.75f, 0.3f);
+                } else {
+                    draw_ability_tile(tiles_x0 + tile_pitch * 5.0f, tiles_y, tile_size, h->ecowar_card_cooldown_ms,
+                                       &ecowar_card_cooldown_peak_ms, 0, 0, "G", ECOWAR_CARDS[g_ecowar_armed_card].name,
+                                       0.85f, 0.75f, 0.3f);
+                }
+                /* The real Hearthstone/Clash-Royale-style hand row itself -- founder's original
+                   ask: "a panel opened on G ... drag onto the battlefield to cast a spell." One
+                   tile per hand slot, positioned via card_battler_panel_origin (shared with the
+                   click hit-test above, so they can never drift apart). Reuses draw_ability_tile's
+                   own real radial-wipe cooldown visual for a slot's redraw countdown -- a hand
+                   slot mid-redraw (card_id == -1) is mechanically "on cooldown" in every way this
+                   tile already knows how to draw, so no new rendering path was needed. A slot
+                   currently being dragged is highlighted via the `active` flag, the same visual
+                   language the W-toggle/R-active tiles already use for "this one's doing
+                   something right now." */
+                if (cb_mode_active && g_cb_panel_open) {
+                    float cb_x0, cb_y;
+                    card_battler_panel_origin(win_w, &cb_x0, &cb_y);
+                    for (int s = 0; s < ARENA_CARD_BATTLER_HAND_SIZE; s++) {
+                        int slot_card_id;
+                        int slot_redraw_ms;
+                        if (net_mode) {
+                            slot_card_id = g_cb_net_hand_card_id[my_owner][s];
+                            slot_redraw_ms = g_cb_net_hand_redraw_ms[my_owner][s];
+                        } else {
+                            const CardHand *hand = card_battler_hand(my_owner);
+                            slot_card_id = hand ? hand->slots[s].card_id : -1;
+                            slot_redraw_ms = (hand && hand->slots[s].card_id < 0) ? hand->slots[s].redraw_ms_remaining : 0;
+                        }
+                        char keybind[2] = {(char)('1' + s), 0};
+                        draw_ability_tile(cb_x0 + (float)s * CARD_BATTLER_TILE_PITCH, cb_y, CARD_BATTLER_TILE_SIZE,
+                                           slot_card_id < 0 ? slot_redraw_ms : 0, &g_cb_hand_peak_ms[s],
+                                           g_cb_dragging_slot == s, 0, keybind,
+                                           card_battler_slot_display_name(slot_card_id, h->hero_id),
+                                           0.6f, 0.4f, 0.85f);
+                    }
+                }
+            }
 
             /* Ability-help overlay (S170-151, "H should show an overlay with
                character ability descriptions"): a real quick-reference panel,

@@ -48,6 +48,7 @@
 #include "../../../packages/common/http_client.h"
 #include "../../../packages/simulation/arena_game.h"
 #include "../../../packages/simulation/living_map_bridge.h"
+#include "../../../packages/simulation/card_battler.h"
 
 static int lobby_size = 2; /* --lobby-size; 2 = original 1v1 mode, up to ARENA_MAX_HEROES for team mode */
 
@@ -778,6 +779,34 @@ static void server_broadcast(void) {
     memcpy(living_map_buffer, &living_map_head, sizeof(NetHeader));
     memcpy(living_map_buffer + sizeof(NetHeader), &living_map_msg, sizeof(ArenaSnapshotLivingMapMsg));
 
+    /* Card-battler experiment (SECTION 377/S378): neither npc_controlled nor hand contents is
+       reproducible client-side (hand state depends on real play + this server's own PRNG-seeded
+       shuffle), same "real per-match state has to go over the wire" reasoning living_map_msg just
+       above already established. Only lobby_size == 2 (1v1) has real card-battler heroes at all
+       today -- an all-zero message for a team match is a real, honest no-op (every field already
+       reads as "off"/"empty"), not a crash risk. */
+    ArenaSnapshotCardBattlerMsg card_battler_msg = {0};
+    if (lobby_size == 2) {
+        for (int cb = 0; cb < 2; cb++) {
+            card_battler_msg.npc_controlled[cb] = (uint8_t)arena_state.heroes[cb].npc_controlled;
+            const CardHand *hand = card_battler_hand(cb);
+            if (hand) {
+                for (int s = 0; s < ARENA_CARD_BATTLER_HAND_SIZE && s < CARD_HAND_SIZE; s++) {
+                    card_battler_msg.hand_card_id[cb][s] = (int8_t)hand->slots[s].card_id;
+                    card_battler_msg.hand_redraw_ms[cb][s] = (uint16_t)hand->slots[s].redraw_ms_remaining;
+                }
+            } else {
+                for (int s = 0; s < ARENA_CARD_BATTLER_HAND_SIZE; s++) card_battler_msg.hand_card_id[cb][s] = -1;
+            }
+        }
+    }
+    char card_battler_buffer[sizeof(NetHeader) + sizeof(ArenaSnapshotCardBattlerMsg)];
+    NetHeader card_battler_head = {0};
+    card_battler_head.type = PACKET_ARENA_SNAPSHOT_CARD_BATTLER;
+    card_battler_head.timestamp = head.timestamp;
+    memcpy(card_battler_buffer, &card_battler_head, sizeof(NetHeader));
+    memcpy(card_battler_buffer + sizeof(NetHeader), &card_battler_msg, sizeof(ArenaSnapshotCardBattlerMsg));
+
     for (int i = 0; i < lobby_size; i++) {
         if (!client_active[i]) continue;
         sendto(sock, buffer, sizeof(buffer), 0, (struct sockaddr *)&clients[i], sizeof(struct sockaddr_in));
@@ -788,6 +817,7 @@ static void server_broadcast(void) {
         sendto(sock, obstacles_buffer, sizeof(obstacles_buffer), 0, (struct sockaddr *)&clients[i], sizeof(struct sockaddr_in));
         sendto(sock, layout_buffer, sizeof(layout_buffer), 0, (struct sockaddr *)&clients[i], sizeof(struct sockaddr_in));
         sendto(sock, living_map_buffer, sizeof(living_map_buffer), 0, (struct sockaddr *)&clients[i], sizeof(struct sockaddr_in));
+        sendto(sock, card_battler_buffer, sizeof(card_battler_buffer), 0, (struct sockaddr *)&clients[i], sizeof(struct sockaddr_in));
     }
 
     /* cast_flash_slot is a one-tick wire signal (S170-124) -- already
@@ -965,6 +995,34 @@ static void server_handle_packet(struct sockaddr_in *sender, char *buffer, int s
            ever play a card as its own connection), same trust model PACKET_ARENA_CAST already
            uses for Q/W/R just above -- no separate authorization check needed. */
         arena_ecowar_play_card(client_id, cmd->card_id, cmd->hover_target);
+    } else if (head->type == PACKET_ARENA_CARD_BATTLER_TOGGLE) {
+        /* Card-battler mode toggle (SECTION 377/S378, founder: "go ahead and build the card
+           battler UI") -- client_id IS whose hero flips, same trust model PACKET_ARENA_CARD_PLAY
+           already uses just above. Turning ON hands this hero to arena_npc_hero_tick (the same
+           real AI loop already driving practice-mode bots) and seeds a fresh shuffled hand;
+           turning OFF is the real, cheap rollback SECTION 378 always intended -- direct control
+           resumes exactly as if npc_controlled had never been set, no state to unwind. */
+        if (client_id >= 0 && client_id < ARENA_MAX_HEROES) {
+            ArenaHero *cbh = &arena_state.heroes[client_id];
+            if (!cbh->npc_controlled) {
+                cbh->npc_controlled = 1;
+                unsigned int seed = (unsigned int)time(NULL) ^ (((unsigned int)client_id + 1u) * 2654435761u);
+                card_battler_init_hero(client_id, seed);
+            } else {
+                cbh->npc_controlled = 0;
+            }
+        }
+    } else if (head->type == PACKET_ARENA_CARD_BATTLER_PLAY) {
+        if (size < (int)(sizeof(NetHeader) + sizeof(ArenaCardBattlerPlayCmd))) return;
+        ArenaCardBattlerPlayCmd *cmd = (ArenaCardBattlerPlayCmd *)(buffer + sizeof(NetHeader));
+        /* Real no-op unless this hero is actually in card-battler mode -- card_battler_hand
+           returns NULL for a client_id that was never card_battler_init_hero'd (never toggled
+           on), same defensive contract every other whiffed action in this codebase already
+           holds itself to. */
+        if (client_id >= 0 && client_id < ARENA_MAX_HEROES &&
+            arena_state.heroes[client_id].npc_controlled && card_battler_hand(client_id)) {
+            card_battler_play_slot(client_id, cmd->slot_index, cmd->hover_target);
+        }
     } else if (head->type == PACKET_ARENA_ATTACK) {
         if (size < (int)(sizeof(NetHeader) + sizeof(ArenaAttackCmd))) return;
         ArenaAttackCmd *cmd = (ArenaAttackCmd *)(buffer + sizeof(NetHeader));
@@ -1199,6 +1257,15 @@ int main(int argc, char *argv[]) {
         if (match_phase == ARENA_PHASE_LIVE) {
             if (lobby_size == 2) arena_update(tick_ms);
             else arena_update_teams(tick_ms);
+            /* Card-battler experiment (SECTION 377/S378): advances hand-redraw timers for
+               whichever heroes are actually in card-battler mode right now. Real no-op for any
+               owner never card_battler_init_hero'd (card_battler_tick's own doc comment) --
+               1v1-only (lobby_size == 2), matching arena_npc_hero_tick's own existing "for (i <
+               2)" scope this experiment has always had, team-mode is real, separate, later work. */
+            if (lobby_size == 2) {
+                card_battler_tick(0, (unsigned int)tick_ms);
+                card_battler_tick(1, (unsigned int)tick_ms);
+            }
             snapshot_log_timer_ms += tick_ms;
             if (snapshot_log_timer_ms >= 500) {
                 snapshot_log_timer_ms = 0;
