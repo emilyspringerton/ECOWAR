@@ -762,6 +762,20 @@ static int obstacle_hp_prev_valid[ARENA_OBSTACLE_COUNT];
  * fountains/shops (PACKET_ARENA_SNAPSHOT_LAYOUT, deliberately NOT handled by this client -- see
  * that packet's own doc comment), Living Map town/creep state genuinely can't be recomputed
  * locally from the match seed, so it has to be mirrored from the wire like heroes are. */
+/* g_last_net_activity_ms (2026-09-12, real client-side self-healing, founder: "how can we make it
+ * self healing?" / live incident: a match stuck at 1/2 connected left the founder's own client
+ * sitting with no automatic recovery at all -- "i always kkill my client and restart it"). Same
+ * real "give up after real silence" idiom apps/arena_bot/src/main.c's own silent_ticks watchdog
+ * already uses (that file's own doc comment: "~10s of nothing at all -- server's gone"), applied
+ * to the human client for the first time. Updated in net_poll_snapshots on any real packet
+ * received; seeded fresh right after every successful connect/reconnect (net_connect's own
+ * success, and client_requeue's own successful reconnect) so the window starts counting from a
+ * real baseline, never from 0. The main loop's own watchdog check (see its call site) fires
+ * client_requeue automatically once this goes stale -- bounded, real recovery instead of an
+ * indefinite freeze needing a manual kill-and-relaunch. */
+static uint32_t g_last_net_activity_ms = 0;
+#define ARENA_CLIENT_NET_SILENCE_GIVEUP_MS 10000
+
 static int g_living_map_town_count = 0;
 static float g_living_map_town_x[ARENA_SNAPSHOT_LIVING_MAP_TOWN_COUNT];
 static float g_living_map_town_z[ARENA_SNAPSHOT_LIVING_MAP_TOWN_COUNT];
@@ -814,6 +828,7 @@ static void net_poll_snapshots(uint32_t now_ms) {
     socklen_t slen = sizeof(sender);
     int len = recvfrom(net_sock, rbuf, sizeof(rbuf), 0, (struct sockaddr *)&sender, &slen);
     while (len > 0) {
+        g_last_net_activity_ms = now_ms; /* real packet from the server, whatever type -- proof the connection is still alive; see this variable's own doc comment */
         if (len >= (int)sizeof(NetHeader)) {
             NetHeader *h = (NetHeader *)rbuf;
             if (h->type == PACKET_ARENA_SNAPSHOT_HEROES && len >= (int)(sizeof(NetHeader) + sizeof(ArenaSnapshotHeroesMsg))) {
@@ -2839,6 +2854,47 @@ static void draw_starfield(float eye_x, float eye_y, float eye_z, const Mat4 *vp
     glEnable(GL_DEPTH_TEST);
 }
 
+/* client_requeue -- the real "leave this match, queue for a fresh one" sequence: originally only
+ * the OK-REQUEUE button's own inline mousedown handler, extracted (2026-09-12) so the new
+ * stuck-connection auto-give-up timeout below (client_net_activity_watchdog) can call the exact
+ * same real logic instead of duplicating it. Behavior unchanged from the button's own original
+ * inline version -- see each step's own doc comment further down at the button's call site for
+ * the full history of why each one is there (S170-148 obstacle-resync bug, S370-02 seed-freshness
+ * fix, etc.). */
+static void client_requeue(SDL_Window *win, int win_w, int win_h,
+                            const char *queue_host, int queue_port,
+                            const char *connect_host, int connect_port,
+                            int *win_logged) {
+#ifdef _WIN32
+    if (net_sock >= 0) closesocket(net_sock);
+#else
+    if (net_sock >= 0) close(net_sock);
+#endif
+    net_sock = -1;
+    memset(&arena_state, 0, sizeof(arena_state));
+    arena_set_match_seed(g_net_match_seed);
+    arena_obstacles_reset_layout();
+    arena_shops_reset_layout();
+    memset(rings, 0, sizeof(rings));
+    *win_logged = 0;
+    net_picked = 0;
+    selected_unit_count = 0;
+    net_phase = ARENA_PHASE_WAITING;
+    draw_queuing_screen(win, win_w, win_h);
+    int reconnected = queue_host ? net_find_and_connect(queue_host, queue_port)
+                                  : net_connect(connect_host, connect_port);
+    if (!reconnected) {
+        fprintf(stderr, "[arena client] requeue failed -- matchmaker/bot pool may be down\n");
+    } else {
+        arena_set_match_seed(g_net_match_seed);
+        arena_obstacles_reset_layout();
+        arena_shops_reset_layout();
+        g_last_net_activity_ms = SDL_GetTicks(); /* real fresh baseline for the silence watchdog -- see that variable's own doc comment */
+        printf("[arena client] requeue connected -- hero slot %d\n", my_owner);
+    }
+    fflush(stdout);
+}
+
 /* Intersects the mouse ray with the y=0 ground plane. Returns 1 on hit. */
 static int screen_to_ground(int mx, int my, int w, int h, float fov_deg,
                              float focus_x, float focus_z, float *out_x, float *out_z) {
@@ -3029,6 +3085,7 @@ int main(int argc, char *argv[]) {
             return 1;
         }
     }
+    if (net_mode) g_last_net_activity_ms = SDL_GetTicks(); /* real fresh baseline for the silence watchdog -- see that variable's own doc comment */
 
     SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO);
     audio_init();
@@ -3552,51 +3609,7 @@ int main(int argc, char *argv[]) {
                 if (bx >= ok_left && bx <= ok_right && by >= ok_bottom && by <= ok_top) {
                     printf("[arena client] requeuing for another match...\n");
                     fflush(stdout);
-#ifdef _WIN32
-                    if (net_sock >= 0) closesocket(net_sock);
-#else
-                    if (net_sock >= 0) close(net_sock);
-#endif
-                    net_sock = -1;
-                    memset(&arena_state, 0, sizeof(arena_state));
-                    /* S170-148 bugfix: obstacles (and fountains, position-only/
-                       always-recomputed so no explicit call needed there) are
-                       never wire-synced -- the memset above just wiped this
-                       client's own local obstacles[] to all-zero with nothing to
-                       repopulate it, since server_broadcast() never sends this
-                       static layout in the first place. Was the real cause of
-                       "first game had jungle rocks and trees, subsequent games
-                       didn't" -- every match after the first requeue silently
-                       lost its jungle terrain.
-                       S370-02 (2026-09-11): this first call still uses the PREVIOUS match's
-                       g_net_match_seed (net_find_and_connect below hasn't run yet, so there's
-                       no new one yet) -- deliberately, same "never show an empty map" reasoning
-                       as the bugfix above, just applied to seed freshness too. Regenerated for
-                       real with the actual new seed right after a successful reconnect, below. */
-                    arena_set_match_seed(g_net_match_seed);
-                    arena_obstacles_reset_layout();
-                    arena_shops_reset_layout(); /* S376-02: same "never show an empty map" reasoning as the jungle regen above */
-                    memset(rings, 0, sizeof(rings));
-                    win_logged = 0;
-                    net_picked = 0;
-                    selected_unit_count = 0; /* 2026-07-30: a stale clone owner-index from the previous match means nothing in this one */
-                    net_phase = ARENA_PHASE_WAITING;
-                    draw_queuing_screen(win, win_w, win_h);
-                    int reconnected = queue_host ? net_find_and_connect(queue_host, queue_port)
-                                                  : net_connect(connect_host, connect_port);
-                    if (!reconnected) {
-                        fprintf(stderr, "[arena client] requeue failed -- matchmaker/bot pool may be down\n");
-                    } else {
-                        /* S370-02: net_find_and_connect just captured this NEW match's own
-                           g_net_match_seed -- regenerate the jungle from it so this client's
-                           layout actually matches the server it just connected to, not the
-                           previous match's placeholder set above. */
-                        arena_set_match_seed(g_net_match_seed);
-                        arena_obstacles_reset_layout();
-                        arena_shops_reset_layout(); /* S376-02: regenerate for the real new match seed, same reasoning as the jungle regen right above */
-                        printf("[arena client] requeue connected -- hero slot %d\n", my_owner);
-                    }
-                    fflush(stdout);
+                    client_requeue(win, win_w, win_h, queue_host, queue_port, connect_host, connect_port, &win_logged);
                 }
             }
             if (!net_mode && e.type == SDL_KEYDOWN && e.key.keysym.sym == SDLK_r) {
@@ -3754,6 +3767,17 @@ int main(int argc, char *argv[]) {
                rather than running arena_update() locally (that would
                double-simulate and diverge from the server's own state). */
             net_poll_snapshots(now);
+            /* Stuck-connection self-healing watchdog (2026-09-12) -- see g_last_net_activity_ms's
+               own doc comment for the full incident this fixes. Real, bounded recovery: if the
+               server that stranded this client at 1/2-connected has since hit its own 60s
+               no-progress WAITING timeout and exited, this client will have received genuinely
+               nothing at all for a while, and now auto-requeues instead of sitting frozen forever
+               waiting for a manual kill-and-relaunch. */
+            if (now - g_last_net_activity_ms > ARENA_CLIENT_NET_SILENCE_GIVEUP_MS) {
+                fprintf(stderr, "[arena client] no server activity for %ds -- auto-requeuing\n",
+                        ARENA_CLIENT_NET_SILENCE_GIVEUP_MS / 1000);
+                client_requeue(win, win_w, win_h, queue_host, queue_port, connect_host, connect_port, &win_logged);
+            }
         }
         else if (arena_state.winner == 0) {
             arena_update(dt);
