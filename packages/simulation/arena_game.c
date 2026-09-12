@@ -105,6 +105,13 @@ void arena_daynight_ambient_rgb(float *out_r, float *out_g, float *out_b) {
     if (out_b) *out_b = 0.04f + sun_visibility * 0.08f;
 }
 
+float arena_daynight_night_amount(void) {
+    float orbit_t = arena_state.time_of_day_sec * ARENA_DAYNIGHT_ORBIT_SPEED;
+    float sun_height = sinf(orbit_t) * cosf(ARENA_DAYNIGHT_TILT);
+    float sun_visibility = arena_daynight_smoothstep(0.0f, 0.22f, sun_height);
+    return 1.0f - sun_visibility;
+}
+
 /* arena_daynight_light_dir (EMILY/BACKLOG.md SECTION 380, founder: "add the day night rendering
  * - we can take the graphics of the day night rendering from OG SHANKPIT i love the way the
  * lighting shifts from day to night in shankpit"). Real, checked-first finding: this codebase
@@ -1037,6 +1044,7 @@ void arena_init_with_heroes(ArenaHeroID player_hero, ArenaHeroID bot_hero) {
        at all, see that function's own doc comment. */
 
     arena_state.winner = 0;
+    arena_state.time_of_day_sec = ARENA_DAYNIGHT_NOON_START_SEC; /* founder: "start in the day" -- see that constant's own doc comment for why 0.0 (the memset default) actually rendered as night */
 
     /* Living Map bridge (BACKLOG.md SECTION 377 Phase 7): founds the real hex-grid towns/cows
      * for this match. See living_map_bridge.c's own doc comment for the real starting layout --
@@ -7694,6 +7702,7 @@ void arena_init_teams(void) {
         h->alive = 1;
         h->hero_id = ARENA_HERO_UNICORN; /* placeholder until the real client's draft pick overrides it */
     }
+    arena_state.time_of_day_sec = ARENA_DAYNIGHT_NOON_START_SEC; /* same "start in the day" fix as arena_init_with_heroes -- see that constant's own doc comment */
     arena_nodes_reset_layout();
     arena_powerups_reset_layout(); /* S170-190 */
     arena_obstacles_reset_layout();

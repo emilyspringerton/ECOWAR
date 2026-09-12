@@ -2711,6 +2711,134 @@ static void camera_basis(float focus_x, float focus_z,
     *up_z = *right_x * *fwd_y - *right_y * *fwd_x;
 }
 
+/* Starfield (2026-09-12, founder: "can we add the stars and clouds like in shankpit?" -- see
+ * NORTHSTAR_LIVING_MAP.md/CHANGELOG's own earlier honest "no SHANKPIT starfield ported" note,
+ * this closes that gap). Ported from SHANKPIT's own packages/render/retro_sky.c
+ * (init_starfield/draw_starfield) -- same deterministic-seed LCG (so stars are stable frame to
+ * frame, not re-randomized), same hemisphere-biased-toward-zenith distribution, same "hero" stars
+ * (brighter/bigger, first 12) idea. Deliberately NOT a full port of SHANKPIT's own RetroSky:
+ * that struct also carries cloud/sun/moon PROCEDURAL TEXTURES (packages/render/proc_tex.h), a
+ * whole separate generated-texture subsystem this pass doesn't take on -- stars alone are
+ * self-contained (plain colored GL_POINTS, no texture unit needed) and this game already has its
+ * own real sun/moon light DIRECTION (arena_daynight_light_dir) even without a textured disc to
+ * show it. Clouds are real, separate, not-yet-built follow-on work, named honestly rather than
+ * guessed at blind (no display in this sandbox to visually tune a cloud layer against). */
+#define ARENA_STAR_COUNT 144
+#define ARENA_STAR_DIST 85.0f /* comfortably inside the 100-unit far clip plane (mat4_perspective call in the render loop) */
+typedef struct {
+    float dir_x, dir_y, dir_z; /* unit direction, y-biased toward the zenith (dir_y > 0 only -- this game's camera never looks below the horizon anyway) */
+    float size;
+    float brightness;
+    float twinkle_phase;
+} ArenaStar;
+static ArenaStar g_stars[ARENA_STAR_COUNT];
+static int g_stars_initialized = 0;
+
+static unsigned int star_lcg_next(unsigned int *state) {
+    *state = (*state * 1664525u) + 1013904223u;
+    return *state;
+}
+static float star_rand01(unsigned int *state) {
+    return (float)(star_lcg_next(state) & 0x00FFFFFFu) / 16777215.0f;
+}
+
+static void init_starfield(void) {
+    unsigned int rng = 0x534B5931u; /* "SKY1" -- same deterministic seed SHANKPIT's own retro_sky.c uses, for the same "stable stars, not reshuffled every frame" reason */
+    for (int i = 0; i < ARENA_STAR_COUNT; i++) {
+        ArenaStar *star = &g_stars[i];
+        float azimuth = star_rand01(&rng) * 2.0f * (float)M_PI;
+        float horizon_bias = star_rand01(&rng);
+        float y = 0.06f + horizon_bias * horizon_bias * 0.94f; /* biased toward the zenith, same as SHANKPIT's own real distribution -- most stars overhead, a few near the horizon */
+        float radial = sqrtf(fmaxf(0.0f, 1.0f - y * y));
+        star->dir_x = cosf(azimuth) * radial;
+        star->dir_y = y;
+        star->dir_z = sinf(azimuth) * radial;
+        float hero = (i < 12) ? 1.0f : 0.0f;
+        star->size = 2.0f + star_rand01(&rng) * 2.0f + hero * 1.5f;
+        star->brightness = 0.35f + star_rand01(&rng) * 0.45f + hero * 0.2f;
+        star->twinkle_phase = star_rand01(&rng) * 2.0f * (float)M_PI;
+    }
+    g_stars_initialized = 1;
+}
+
+/* draw_starfield -- camera-centered (each star's real world position is the CURRENT camera eye
+ * plus its own fixed direction * ARENA_STAR_DIST, recomputed fresh every frame), so it holds
+ * still relative to look direction and never shows parallax as the hero/camera moves, same
+ * "appears infinitely far" convention SHANKPIT's own retro_sky_draw doc comment names. Plain
+ * immediate-mode GL_POINTS (no shader program, no texture) -- this file already uses immediate-
+ * mode calls for its 2D HUD (glRectf/glBegin(GL_LINE_LOOP) elsewhere in this file), confirming
+ * the context supports it; stars are the same idiom in 3D space instead of 2D. Depth test is
+ * disabled around this call by its own caller so stars can never wrongly occlude (or be occluded
+ * by) real world geometry -- they're background, not an object at a real depth. */
+static void draw_starfield(float eye_x, float eye_y, float eye_z, const Mat4 *vp, float night_amount, uint32_t now_ms) {
+    if (night_amount <= 0.001f) return;
+    if (!g_stars_initialized) init_starfield();
+
+    float time_sec = (float)now_ms / 1000.0f;
+    /* Depth test off for the whole call, restored after -- stars are conceptually "at infinity,"
+       drawn first (right after glClear, before any real world geometry this frame), and must
+       never write a depth value that could wrongly occlude the ground/heroes drawn right after
+       them, matching this function's own doc comment. */
+    glDisable(GL_DEPTH_TEST);
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    /* This file's own 3D pass draws everything through the shader program (glUseProgram_ + an
+       explicit MVP uniform, never the legacy fixed-function matrix stack) -- the GL_PROJECTION/
+       GL_MODELVIEW stack's actual current contents at this point in the frame are therefore
+       whatever the LAST 2D HUD glOrtho call left them as (or unset entirely on the very first
+       frame), not something safe to assume is identity. Since these points are hand-projected
+       into NDC space below (real numbers, not raw world coordinates), the fixed-function stack
+       has to be forced to identity for exactly this one draw call -- push/load-identity on both,
+       pop back after, so nothing here leaks into the shader-based draws around it or the 2D HUD's
+       own real glOrtho setup later this same frame. */
+    glMatrixMode(GL_PROJECTION);
+    glPushMatrix();
+    glLoadIdentity();
+    glMatrixMode(GL_MODELVIEW);
+    glPushMatrix();
+    glLoadIdentity();
+    glBegin(GL_POINTS);
+    for (int i = 0; i < ARENA_STAR_COUNT; i++) {
+        const ArenaStar *star = &g_stars[i];
+        /* Horizon fade -- same smoothstep-shaped falloff SHANKPIT's own draw_starfield uses, so
+           stars right at the horizon don't pop in/out with a hard edge. */
+        float horizon_t = (star->dir_y - 0.08f) / (0.32f - 0.08f);
+        if (horizon_t < 0.0f) horizon_t = 0.0f;
+        if (horizon_t > 1.0f) horizon_t = 1.0f;
+        float horizon_fade = horizon_t * horizon_t * (3.0f - 2.0f * horizon_t);
+        float twinkle = 0.97f + 0.03f * sinf(time_sec * 0.65f + star->twinkle_phase);
+        float alpha = star->brightness * night_amount * horizon_fade * twinkle;
+        if (alpha <= 0.01f) continue;
+        glColor4f(0.85f, 0.9f, 1.0f, alpha);
+        glPointSize(star->size);
+        float wx = eye_x + star->dir_x * ARENA_STAR_DIST;
+        float wy = eye_y + star->dir_y * ARENA_STAR_DIST;
+        float wz = eye_z + star->dir_z * ARENA_STAR_DIST;
+        /* Manual point transform through vp (same column-major convention world_to_screen's own
+           doc comment already documents for this file) -- points don't go through the shader's
+           own MVP uniform path (no shader bound for this immediate-mode call), so the projection
+           has to be applied by hand before glVertex3f, in clip space via glVertex4f-equivalent
+           (OpenGL 1.x GL_POINTS honors glVertex3f as object-space only under a matching
+           projection/modelview matrix stack, which this immediate-mode call doesn't set up --
+           instead, project to NDC here and feed glVertex3f NDC-space coordinates directly, since
+           no matrix stack is pushed for this call at all). */
+        const Mat4 *m = vp;
+        float cx = m->m[0]*wx + m->m[4]*wy + m->m[8]*wz + m->m[12];
+        float cy = m->m[1]*wx + m->m[5]*wy + m->m[9]*wz + m->m[13];
+        float cz = m->m[2]*wx + m->m[6]*wy + m->m[10]*wz + m->m[14];
+        float cw = m->m[3]*wx + m->m[7]*wy + m->m[11]*wz + m->m[15];
+        if (cw <= 0.0001f) continue; /* behind the eye -- never true in practice (stars are placed relative to the eye's own forward hemisphere on average), but a real, cheap guard against a divide-by-zero/negative-w point */
+        glVertex3f(cx / cw, cy / cw, cz / cw);
+    }
+    glEnd();
+    glPointSize(1.0f);
+    glMatrixMode(GL_PROJECTION);
+    glPopMatrix();
+    glMatrixMode(GL_MODELVIEW);
+    glPopMatrix();
+    glEnable(GL_DEPTH_TEST);
+}
+
 /* Intersects the mouse ray with the y=0 ground plane. Returns 1 on hit. */
 static int screen_to_ground(int mx, int my, int w, int h, float fov_deg,
                              float focus_x, float focus_z, float *out_x, float *out_z) {
@@ -3879,6 +4007,20 @@ int main(int argc, char *argv[]) {
         Mat4 proj = mat4_perspective(60.0f, (float)win_w / (float)win_h, 0.1f, 100.0f);
         Mat4 vp = mat4_multiply(&proj, &view);
         g_last_vp = vp; /* 2026-07-30: see this variable's own doc comment -- next frame's drag-select box-test reads this */
+
+        /* Starfield (SECTION 380 cont'd, 2026-09-12): drawn right after the clear, before any
+           real world geometry this frame -- see draw_starfield's own doc comment for why depth
+           test is handled entirely inside that call. Camera-centered on the SAME eye position the
+           shader-based world draw below uses (camera_basis), so stars hold still relative to look
+           direction as the hero/camera moves. Real no-op call in full daylight (night_amount ~0),
+           same "cheap enough to just call unconditionally" idiom this file already uses for other
+           per-frame effects. */
+        {
+            float star_eye_x, star_eye_y, star_eye_z, sfx, sfy, sfz, srx, sry, srz, sux, suy, suz;
+            camera_basis(focus_x, focus_z, &star_eye_x, &star_eye_y, &star_eye_z,
+                         &sfx, &sfy, &sfz, &srx, &sry, &srz, &sux, &suy, &suz);
+            draw_starfield(star_eye_x, star_eye_y, star_eye_z, &vp, arena_daynight_night_amount(), now);
+        }
 
         glUseProgram_(prog);
         /* Day/night dynamic scene lighting (BACKLOG.md SECTION 380, founder: "i love the way the

@@ -2089,6 +2089,17 @@ typedef struct {
 #define ARENA_DAYNIGHT_ORBIT_SPEED 0.025f /* radians/sec, ported verbatim from SHANKPIT retro_sky.c's retro_sky_eval_sun_dir -- same real orbit rate, not re-tuned for this game. Natural period = 2*PI/0.025 = ~251s (~4:11), giving roughly two full day/night cycles in a typical under-15-min match */
 #define ARENA_DAYNIGHT_TILT        0.40f /* radians, same ported constant as SHANKPIT's own `tilt` local in retro_sky_eval_sun_dir */
 #define ARENA_DAYNIGHT_ZENITH_REARM_THRESHOLD 0.30f /* moon_height must drop back below this before daynight_zenith_fired re-arms -- clearly past the peak, not a near-zenith wobble; same smoothstep-scale magnitude retro_lighting.c's own sun_visibility/moon_visibility thresholds use (0.22-0.28) */
+/* ARENA_DAYNIGHT_NOON_START_SEC (2026-09-12, founder real-time: "instead of starting at night can
+ * we start in the day?"): time_of_day_sec starts at a plain memset-zero 0.0 (arena_init_with_
+ * heroes/arena_init_teams), which orbit_t/sun_height's own math (this function's own header
+ * comment) puts at sun_height == 0.0 -- the smoothstep(0, 0.22, ...) in arena_daynight_ambient_rgb
+ * reads that as the FULL night floor (sun_visibility == 0 exactly at its own lower edge), not
+ * dawn, even though sun_height is technically climbing from that instant. A real, found root
+ * cause, not a guess: every match visibly started at full night for the first several real
+ * seconds. sin(x) peaks (sun_height at its real maximum, true "high noon") at orbit_t == PI/2 --
+ * a plain literal here, not M_PI (this file cross-compiles for Windows via mingw, where M_PI
+ * isn't guaranteed defined without a feature-test macro this codebase doesn't otherwise need). */
+#define ARENA_DAYNIGHT_NOON_START_SEC 62.83f /* (PI/2) / ARENA_DAYNIGHT_ORBIT_SPEED */
 
 /* Bloodflower (2026-08-25): a real, server-authoritative world object that spawns at map
  * center (0,0 -- same "deterministic, real coordinate" convention as arena_fountain_position/
@@ -3474,6 +3485,13 @@ void arena_daynight_ambient_rgb(float *out_r, float *out_g, float *out_b);
  * effects, recompute-fresh-every-call shape. Caller: apps/arena/src/main.c's in-match render
  * loop, replacing what used to be a hardcoded, never-moving uLightDir uniform value. */
 void arena_daynight_light_dir(float *out_x, float *out_y, float *out_z);
+
+/* arena_daynight_night_amount (2026-09-12, founder: "can we add the stars and clouds like in
+ * shankpit?"): 1.0 at full night, 0.0 at full day -- exactly `1.0 - sun_visibility`, the same
+ * smoothstep(0, 0.22, sun_height) arena_daynight_ambient_rgb already computes internally, just
+ * exposed as its own real query instead of re-derived (fragilely, by inverting the ambient color)
+ * client-side. The starfield's own real fade-in-at-night uses this directly. */
+float arena_daynight_night_amount(void);
 
 /* redgarden_host_spawn_bloodflower: the real host-side implementation the PARENA-compiled
  * on_moon_zenith calls back into (see bloodflower_mod_host.h). Sets bloodflower_active/x/z/
