@@ -7502,6 +7502,11 @@ void bot_cast_kit_if_ready(ArenaHero *bot, ArenaHero *foe) {
     }
 }
 
+/* arena_tick_respawns forward decl -- defined later in this file (team-mode's own wave-respawn
+ * pass, S170-153/154), needed here too as of the ALLCAP win-condition fix below: see that call
+ * site's own doc comment. */
+static void arena_tick_respawns(unsigned int dt_ms);
+
 void arena_update(unsigned int dt_ms) {
     if (arena_state.winner != 0) return;
     float dt_sec = (float)dt_ms / 1000.0f;
@@ -7621,8 +7626,25 @@ void arena_update(unsigned int dt_ms) {
     arena_tick_obstacles(dt_ms);
     arena_hero_tree_passive(dt_ms);
 
-    if (!arena_state.heroes[0].alive) arena_state.winner = 2;
-    else if (!arena_state.heroes[1].alive) arena_state.winner = 1;
+    /* Win condition fix (2026-09-12, founder real-time, live-testing: "KO the opponent still
+       ends the game it should not - capping all bases wins the game"). Real, confirmed bug: this
+       function used to set arena_state.winner the instant either hero died -- unconditionally,
+       with no `if (arena_state.winner == 0)` guard -- so it ran AFTER and silently overwrote
+       ALLCAP's own win (set above, lines 7590-7597) on the same tick, and in ordinary practice
+       always fired first anyway (a 1v1 duel produces a hero death long before any faction manages
+       to capture every Living Map town). ALLCAP's own comment claiming "the hero-death check
+       above already follows [the same guarded convention]" was simply wrong -- there was no such
+       guard here. Real, honest architecture question this raises, resolved per the founder's own
+       explicit words: hero death in THIS mode is a temporary setback, not a loss -- exactly like
+       team mode's own wave-respawn system (arena_tick_respawns, S170-121/153/154) already treats
+       it, and (checked directly) arena_tick_respawns is fully mode-agnostic: it drives off
+       arena_state's own single global respawn_wave_timer_ms and arena_respawn_hero's own
+       team/node-ownership-based spawn-point logic, neither of which is team-mode-specific despite
+       only ever being called from arena_update_teams until now. So the real fix is two lines, not
+       a new respawn system: call the SAME existing tick here, and stop treating death as a win at
+       all. ALLCAP (living_map_bridge_faction_to_owner via the check above) is now the only real
+       way to win a 1v1 match. */
+    arena_tick_respawns(dt_ms);
 }
 
 /* ---- Team mode (2026-07-24, NORTHSTAR §13 cont'd: 10v10 (S170-183: reverted after briefly

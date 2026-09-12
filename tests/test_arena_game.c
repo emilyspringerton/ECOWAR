@@ -63,7 +63,16 @@ static void test_bounds_clamped(void) {
           "move target clamped to arena bounds (z)");
 }
 
-static void test_combat_and_win_condition(void) {
+/* Win condition fix (2026-09-12, founder real-time, live-testing: "KO the opponent still ends
+ * the game it should not - capping all bases wins the game"): this test used to be named
+ * test_combat_and_win_condition and asserted the OLD, real bug -- a hero's death alone ending the
+ * match. That's exactly the behavior the founder's own live test just confirmed was wrong (ECOWAR
+ * runs the Living Map/ALLCAP layer arena_game.c doesn't know about at test scope, so this
+ * headless test can't exercise ALLCAP itself -- see tests/test_allcap.c/test_living_map_bridge.c
+ * for that), but it CAN and must prove the real, corrected local invariant: dying in a 1v1 match
+ * is a real, temporary setback (the same wave-respawn system team mode already used), never a WIN
+ * on its own. */
+static void test_death_respawns_not_wins(void) {
     arena_init();
     /* Place the heroes already adjacent so combat starts immediately. */
     arena_state.heroes[0].x = 0; arena_state.heroes[0].z = 0;
@@ -72,13 +81,19 @@ static void test_combat_and_win_condition(void) {
     arena_set_move_target(0, 0.0f, 0.0f); /* player holds position */
 
     int ticks = 0;
-    while (arena_state.winner == 0 && ticks < 5000) {
+    int saw_death = 0;
+    /* 5000 ticks @ 16ms = 80s of real simulated time -- comfortably more than
+       ARENA_RESPAWN_WAVE_MS (30s) even in the unluckiest case (the hero dies the instant a wave
+       just fired, so it has to wait almost the full 30s for the next one). */
+    while (ticks < 5000) {
         arena_update(16);
+        if (!arena_state.heroes[1].alive) saw_death = 1;
         ticks++;
     }
-    CHECK(arena_state.winner != 0, "match reaches a winner instead of running forever");
-    CHECK(arena_state.winner == 1, "player wins when bot's HP is set near zero");
-    CHECK(!arena_state.heroes[1].alive, "loser is marked not-alive");
+    CHECK(saw_death, "the low-HP hero genuinely died at some point during the fight");
+    CHECK(arena_state.winner == 0, "a hero dying never sets a winner in this mode anymore -- only ALLCAP (living_map_bridge, tested separately) can");
+    CHECK(arena_state.heroes[1].alive, "the dead hero respawned via the same wave-respawn system team mode already used (arena_tick_respawns), not left permanently dead");
+    CHECK(arena_state.heroes[1].hp == arena_state.heroes[1].max_hp, "a fresh respawn comes back at full HP");
 }
 
 static void test_bot_steers_toward_player(void) {
@@ -7287,7 +7302,7 @@ int main(void) {
     printf("RED GARDEN arena_game headless smoke test\n\n");
     test_movement_reaches_target();
     test_bounds_clamped();
-    test_combat_and_win_condition();
+    test_death_respawns_not_wins();
     test_bot_steers_toward_player();
     test_click_near_enemy_becomes_attack_move();
     test_unicorn_q_dashes_and_damages();
