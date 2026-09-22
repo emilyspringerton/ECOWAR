@@ -46,6 +46,9 @@
 
 typedef struct {
     struct sockaddr_in addr;
+    uint32_t requested_seed; // NORTHSTAR_MAP_LEAGUE.md Phase 1 -- 0 = no preference, same real
+                              // default every existing sender (apps/arena_bot included) already
+                              // produces by not sending a FindMatchMsg payload at all.
 } QueuedClient;
 
 static QueuedClient wait_queue[MAX_QUEUE];
@@ -155,7 +158,7 @@ static int spawn_game_server(int port, unsigned int seed) {
     return 1;
 }
 
-static void enqueue(struct sockaddr_in *sender) {
+static void enqueue(struct sockaddr_in *sender, uint32_t requested_seed) {
     for (int i = 0; i < queue_count; i++) {
         if (addr_eq(&wait_queue[i].addr, sender)) return; // already queued
     }
@@ -169,6 +172,7 @@ static void enqueue(struct sockaddr_in *sender) {
     }
     if (queue_count >= MAX_QUEUE) return;
     wait_queue[queue_count].addr = *sender;
+    wait_queue[queue_count].requested_seed = requested_seed;
     queue_count++;
     printf("MATCHMAKER: queued %s:%d (queue=%d/%d)\n",
            inet_ntoa(sender->sin_addr), ntohs(sender->sin_port), queue_count, lobby_size);
@@ -177,7 +181,18 @@ static void enqueue(struct sockaddr_in *sender) {
 static void try_match(void) {
     while (queue_count >= lobby_size) {
         struct sockaddr_in group[MAX_QUEUE];
-        for (int i = 0; i < lobby_size; i++) group[i] = wait_queue[i].addr;
+        uint32_t group_requested_seed = 0; // NORTHSTAR_MAP_LEAGUE.md Phase 1
+        for (int i = 0; i < lobby_size; i++) {
+            group[i] = wait_queue[i].addr;
+            // Real, honest v0 rule: first queued client in this group with a nonzero preference
+            // wins -- "whoever specified a map gets it." Fair home-and-away (BOTH players' own
+            // maps played, one per leg) is Phase 2's real 2-leg series, not attempted here; a
+            // single match can only carry one seed, so this doesn't pretend to resolve fairness
+            // between two conflicting preferences.
+            if (group_requested_seed == 0 && wait_queue[i].requested_seed != 0) {
+                group_requested_seed = wait_queue[i].requested_seed;
+            }
+        }
         for (int i = lobby_size; i < queue_count; i++) wait_queue[i - lobby_size] = wait_queue[i];
         queue_count -= lobby_size;
 
@@ -190,8 +205,14 @@ static void try_match(void) {
            server via --seed (spawn_game_server) and to every client in this group via
            MatchFoundMsg.seed below, so both sides' procedural jungle generation
            (arena_set_match_seed, packages/simulation/arena_game.c) agree without a separate
-           round trip. */
-        unsigned int seed = ((unsigned int)time(NULL) << 16) ^ now_ms() ^ (unsigned int)port;
+           round trip.
+           NORTHSTAR_MAP_LEAGUE.md Phase 1: a real player-requested seed (group_requested_seed,
+           computed above) takes priority over this random default when present -- "build a map"
+           made concrete: queuing with a chosen seed reproduces the identical procedural layout
+           every time. */
+        unsigned int seed = group_requested_seed != 0
+            ? group_requested_seed
+            : ((unsigned int)time(NULL) << 16) ^ now_ms() ^ (unsigned int)port;
         if (!spawn_game_server(port, seed)) {
             printf("MATCHMAKER: failed to spawn game server on port %d\n", port);
             continue;
@@ -256,7 +277,17 @@ int main(int argc, char *argv[]) {
             if (len >= (int)sizeof(NetHeader)) {
                 NetHeader *head = (NetHeader *)buffer;
                 if (head->type == PACKET_FIND_MATCH) {
-                    enqueue(&sender);
+                    // NORTHSTAR_MAP_LEAGUE.md Phase 1: an optional FindMatchMsg payload may
+                    // follow the header -- a client that predates this (apps/arena_bot's own
+                    // send_find_match sends a bare NetHeader) is read as requested_seed=0, same
+                    // "no preference" default the matchmaker already produced for every match
+                    // before this change.
+                    uint32_t requested_seed = 0;
+                    if (len >= (int)(sizeof(NetHeader) + sizeof(FindMatchMsg))) {
+                        FindMatchMsg *fm = (FindMatchMsg *)(buffer + sizeof(NetHeader));
+                        requested_seed = fm->requested_seed;
+                    }
+                    enqueue(&sender, requested_seed);
                 }
             }
             len = recvfrom(sock, buffer, sizeof(buffer), 0, (struct sockaddr *)&sender, &slen);

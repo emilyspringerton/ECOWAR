@@ -160,6 +160,23 @@ typedef struct {
     uint32_t seed;
 } MatchFoundMsg;
 
+// FindMatchMsg -- optional payload following PACKET_FIND_MATCH's own NetHeader (NORTHSTAR_MAP_
+// LEAGUE.md Phase 1, founder real-time: "you build a map your army fites their army in your map
+// then in their map"). requested_seed = 0 means "no preference" (today's exact prior behavior,
+// unchanged default -- every existing sender, apps/arena_bot's own send_find_match included,
+// that only sends a bare NetHeader with no payload at all is read identically to sending this
+// struct zeroed, so nothing breaks for a client that doesn't know this struct exists). A nonzero
+// value is this player's own real map seed (arena_set_match_seed, packages/simulation/
+// arena_game.c) -- "the map I built" made concrete as the same real, already-shipped
+// deterministic-procedural-layout seed S370-02 introduced, just player-chosen instead of
+// matchmaker-randomized. try_match (apps/matchmaker/src/main.c) decides which queued client's
+// preference (if either) governs a given match -- see that function's own doc comment for the
+// real, honest v0 rule (Phase 2's real home-and-away 2-leg series, where BOTH players' maps get
+// played, is real, separate, not-yet-built follow-up, not attempted here).
+typedef struct {
+    uint32_t requested_seed;
+} FindMatchMsg;
+
 // ---- apps/arena_server wire structs (2026-07-24 pivot: the MOBA is the
 // product) ----
 

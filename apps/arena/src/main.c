@@ -181,6 +181,11 @@ static unsigned int g_net_match_seed = 0;
  * identity, and self-registration would silently mint a throwaway one instead. */
 static const char *g_supplied_ticket_hex = NULL;
 
+/* g_requested_map_seed (NORTHSTAR_MAP_LEAGUE.md Phase 1) -- same global-flag shape
+ * g_supplied_ticket_hex above already uses, so net_find_and_connect (called from both main()
+ * and client_requeue()) doesn't need a signature change at either call site. 0 = no preference. */
+static uint32_t g_requested_map_seed = 0;
+
 static char iduna_host[128] = "127.0.0.1";
 static int iduna_port = 8080;
 static char iduna_agent_name[128] = "";
@@ -396,9 +401,17 @@ static int net_find_and_connect(const char *mm_host, int mm_port) {
     mm_addr.sin_port = htons((uint16_t)mm_port);
     mm_addr.sin_addr.s_addr = inet_addr(mm_host);
 
-    NetHeader find = {0};
-    find.type = PACKET_FIND_MATCH;
-    sendto(net_sock, (const char *)&find, sizeof(find), 0, (struct sockaddr *)&mm_addr, sizeof(mm_addr));
+    /* NORTHSTAR_MAP_LEAGUE.md Phase 1: NetHeader + a real FindMatchMsg payload carrying this
+       client's own requested map seed (0 = no preference) -- the matchmaker (apps/matchmaker/
+       src/main.c's own enqueue/try_match) reads it if present, same backward-compatible shape
+       FindMatchMsg's own doc comment in protocol.h describes. */
+    char find_buf[sizeof(NetHeader) + sizeof(FindMatchMsg)];
+    memset(find_buf, 0, sizeof(find_buf));
+    NetHeader *find = (NetHeader *)find_buf;
+    find->type = PACKET_FIND_MATCH;
+    FindMatchMsg *find_msg = (FindMatchMsg *)(find_buf + sizeof(NetHeader));
+    find_msg->requested_seed = g_requested_map_seed;
+    sendto(net_sock, find_buf, sizeof(find_buf), 0, (struct sockaddr *)&mm_addr, sizeof(mm_addr));
 
     printf("Queuing for a match at %s:%d ...\n", mm_host, mm_port);
     int game_port = -1;
@@ -422,7 +435,7 @@ static int net_find_and_connect(const char *mm_host, int mm_port) {
            resending too eagerly can race the matchmaker's own near-instant
            reply and re-enqueue a phantom entry. */
         if (retry_ticks % 50 == 0 && retry_ticks > 0) {
-            sendto(net_sock, (const char *)&find, sizeof(find), 0, (struct sockaddr *)&mm_addr, sizeof(mm_addr));
+            sendto(net_sock, find_buf, sizeof(find_buf), 0, (struct sockaddr *)&mm_addr, sizeof(mm_addr));
         }
     }
     if (game_port < 0) {
@@ -3034,6 +3047,7 @@ int main(int argc, char *argv[]) {
     int connect_port = 7200;
     const char *queue_host = NULL;
     int queue_port = 7778; /* apps/matchmaker's documented arena listen-port */
+    uint32_t requested_map_seed = 0; /* NORTHSTAR_MAP_LEAGUE.md Phase 1 -- 0 = no preference */
     for (int i = 1; i < argc; i++) {
         if (strcmp(argv[i], "--observe") == 0 && i + 1 < argc) {
             if (!arena_replay_load(argv[i + 1], &replay)) {
@@ -3057,8 +3071,15 @@ int main(int argc, char *argv[]) {
             queue_port = atoi(argv[++i]);
         } else if (strcmp(argv[i], "--ticket") == 0 && i + 1 < argc) {
             g_supplied_ticket_hex = argv[++i];
+        } else if (strcmp(argv[i], "--map-seed") == 0 && i + 1 < argc) {
+            /* NORTHSTAR_MAP_LEAGUE.md Phase 1 ("build a map... your army fites their army in
+               your map"): a real, player-chosen procedural-obstacle-layout seed, sent to the
+               matchmaker with PACKET_FIND_MATCH below. 0 (the default if this flag is omitted)
+               means "no preference," matching every prior queue's own random-seed behavior. */
+            requested_map_seed = (uint32_t)strtoul(argv[++i], NULL, 10);
         }
     }
+    g_requested_map_seed = requested_map_seed; /* NORTHSTAR_MAP_LEAGUE.md Phase 1 */
 #ifdef _WIN32
     /* Sockets need WSAStartup before any socket() call on Windows -- only
        needed if this run actually uses the network (--connect/--queue),
