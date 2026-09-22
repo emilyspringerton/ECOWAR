@@ -72,7 +72,7 @@ Real, buildable in phases, grounded in what's actually there today:
 | # | Phase | Status |
 |---|---|---|
 | 0 | This doc | DONE |
-| 1 | Client-supplied match seed (`PACKET_FIND_MATCH` payload + matchmaker) | NOT STARTED |
+| 1 | Client-supplied match seed (`PACKET_FIND_MATCH` payload + matchmaker) | DONE -- `5ee8aed`, live-verified (matchmaker log confirms the exact requested seed, not a random one) |
 | 2 | Home-and-away 2-leg series | NOT STARTED |
 | 3 | Slow/fast league split (second matchmaker+bot-pool deployment) | NOT STARTED |
 | 4 | Persistent IDUNA-backed player map ownership | NOT STARTED |
