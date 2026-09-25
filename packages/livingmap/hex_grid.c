@@ -28,6 +28,7 @@ void hex_grid_init(HexGrid *grid) {
             grid->cells[idx].faction_owner = 0;
             grid->cells[idx].town_id = -1;
             grid->cells[idx].corruption = 0;
+            grid->cells[idx].biome = BIOME_VERDANT_WILDS;
             grid->index_lookup[q + HEX_MAP_RADIUS][r + HEX_MAP_RADIUS] = idx;
             idx++;
         }
@@ -123,4 +124,50 @@ HexCoord hex_world_to_axial(float x, float z, float hex_size) {
     float qf = (2.0f / 3.0f * x) / hex_size;
     float rf = (-1.0f / 3.0f * x + sqrtf(3.0f) / 3.0f * z) / hex_size;
     return hex_round(qf, rf);
+}
+
+/* Isolated xorshift32 -- see hex_grid_generate_biomes' own doc comment for why not libc rand(). */
+static unsigned int hex_biome_xorshift32(unsigned int *state) {
+    unsigned int x = *state;
+    x ^= x << 13;
+    x ^= x >> 17;
+    x ^= x << 5;
+    *state = x;
+    return x;
+}
+
+void hex_grid_generate_biomes(HexGrid *grid, unsigned int seed) {
+    unsigned int rng = seed != 0 ? seed : 1; /* xorshift32 can't be seeded with 0 -- same real convention card_deck.c's own shuffle already uses */
+
+    int seed_cell_index[HEX_BIOME_SEED_COUNT];
+    for (int i = 0; i < HEX_BIOME_SEED_COUNT; i++) {
+        seed_cell_index[i] = (int)(hex_biome_xorshift32(&rng) % (unsigned int)grid->cell_count);
+    }
+
+    for (int i = 0; i < grid->cell_count; i++) {
+        int best_biome = 0;
+        int best_dist = -1;
+        for (int s = 0; s < HEX_BIOME_SEED_COUNT; s++) {
+            int d = hex_distance(grid->cells[i].coord, grid->cells[seed_cell_index[s]].coord);
+            if (best_dist == -1 || d < best_dist) {
+                best_dist = d;
+                best_biome = s;
+            }
+        }
+        grid->cells[i].biome = best_biome;
+    }
+}
+
+void hex_grid_tick_corruption(HexGrid *grid, unsigned int dt_ms) {
+    for (int i = 0; i < grid->cell_count; i++) {
+        HexCell *cell = &grid->cells[i];
+        if (cell->biome != BIOME_BLIGHTED_GRID) continue;
+
+        cell->corruption += (int)dt_ms;
+
+        if (cell->corruption >= HEX_CORRUPTION_FLIP_THRESHOLD_MS && cell->faction_owner == 0) {
+            cell->faction_owner = 3; /* Corruption -- environmental spread, HexCell.corruption's own first real writer */
+            cell->corruption = 0;
+        }
+    }
 }
