@@ -54,10 +54,19 @@ entry, mapped to 5 already-proven engine mechanics (damage/heal/slow/silence/Flo
 magnitude for each card is computed by a real PARENA mod (`PARENA/stdlib/ecowar/
 card_effect_mod.prn`, ECOWAR's own new mod namespace) doing genuine I32 decision logic — a real
 branch over all 16 card ids, not just a bare trigger like every REDGARDEN mod before it — per the
-founder's own "do the whole game in pure parena as much as you can." 9 new tests
-(`tests/test_ecowar_cards.c`), all passing. **Not yet wired into a real in-match input** — no
-deck/hand UI exists yet, since "more specific mechanic direction to follow" per the founder's own
-words; the system is callable and tested end-to-end today, real UI wiring is separate, later work.
+founder's own "do the whole game in pure parena as much as you can." 14 tests
+(`tests/test_ecowar_cards.c`), all passing.
+
+**First BIG_O bridge (EMPIRE NORTHSTAR §3.1, kanban #576):** each player carries a BIG_O
+attention/decorum meter. The caster's BIG_O decorum band (`packages/simulation/bigo_witness_rules.c`,
+vendored from `BIG_O/core/witness_rules.c`, generated from `PARENA/stdlib/big_o/witness_rules.prn`)
+gates casting: CANCELLED (BIG_O's fail state) can't play a card, every other band casts normally. A
+successful cast writes decorum back through BIG_O's own `decorum_after()`. The MYTHIC/MUNDANE action
+mapping (MYTHIC = -25, MUNDANE = +1) is an invented v1 tuning, flagged for founder sign-off. Decorum
+is not on the wire snapshot and no HUD shows it yet, so it is a host-side mechanic only for now.
+
+**Card input is wired:** V/G keybinds send `PACKET_ARENA_CARD_PLAY` into `arena_ecowar_play_card`,
+with a shared cooldown. No deck/hand UI exists yet (EMPIRE NORTHSTAR §3.3, separate later work).
 
 **Card art: queued, not yet generated.** All 16 real Prompt-o-verse generation requests (one per
 card, matching its real source hero) are queued in the shared, durable `emily promptoverse` queue

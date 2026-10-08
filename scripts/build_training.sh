@@ -51,6 +51,7 @@ gcc -std=c99 -D_DEFAULT_SOURCE -O2 -Wall -Wextra -fPIC -shared \
   "${ROOT_DIR}/packages/simulation/abraham_fireball_mod.c" \
   "${ROOT_DIR}/packages/simulation/bacon_puck_intangible_speed_mod.c" \
   "${ROOT_DIR}/packages/simulation/card_effect_mod.c" \
+  "${ROOT_DIR}/packages/simulation/bigo_witness_rules.c" \
   "${ROOT_DIR}/packages/simulation/combat_log_mod.c" \
   "${ROOT_DIR}/packages/common/mlp_infer.c" \
   -lm

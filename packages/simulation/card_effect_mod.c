@@ -7,6 +7,8 @@
 
 int is_mythic_card_(int);
 int on_ecowar_resolve_card_magnitude(int, int);
+int on_ecowar_resolve_card_faction(int, int, int);
+int on_ecowar_card_decorum_action(int);
 
 int is_mythic_card_(int card_id __attribute__((unused))) {
     return (((((((((((card_id == 3) || (card_id == 6)) || (card_id == 7)) || (card_id == 8)) || (card_id == 9)) || (card_id == 10)) || (card_id == 11)) || (card_id == 12)) || (card_id == 13)) || (card_id == 14)) || (card_id == 15));
@@ -17,6 +19,22 @@ int on_ecowar_resolve_card_magnitude(int card_id __attribute__((unused)), int ba
     return (base_magnitude + (base_magnitude / 2));
     } else {
     return base_magnitude;
+    }
+}
+
+int on_ecowar_resolve_card_faction(int card_id __attribute__((unused)), int base_magnitude __attribute__((unused)), int band __attribute__((unused))) {
+    if ((band == 3)) {
+    return 0;
+    } else {
+    return on_ecowar_resolve_card_magnitude(card_id, base_magnitude);
+    }
+}
+
+int on_ecowar_card_decorum_action(int card_id __attribute__((unused))) {
+    if (is_mythic_card_(card_id)) {
+    return 1;
+    } else {
+    return 5;
     }
 }
 

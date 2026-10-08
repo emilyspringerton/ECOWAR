@@ -1,5 +1,16 @@
 # Changelog
 
+## 2026-10-08
+- First BIG_O faction bridge (EMPIRE NORTHSTAR §3.1, kanban #576): card resolution now reads the
+  caster's BIG_O decorum band and gates CANCELLED casters out, and writes the cast back to decorum.
+  `card_effect_mod.prn` gains `on-ecowar-resolve-card-faction` (band gate) and
+  `on-ecowar-card-decorum-action` (MYTHIC = SAY_APOCALYPSE, MUNDANE = QUIET_TICK, an invented v1
+  mapping pending founder sign-off). BIG_O's `witness_rules.c` is vendored as
+  `packages/simulation/bigo_witness_rules.{c,h}` and added to every build path (build.sh,
+  build_arena.sh, build_training.sh, test_arena.sh, BUILD.bazel). 5 new tests (14 total in
+  test_ecowar_cards), full `scripts/test_arena.sh` passes. Decorum is host-side only: not on the wire
+  snapshot, no HUD yet. Vendored copy must be re-synced by hand if BIG_O's witness_rules.prn changes.
+
 ## 2026-09-22
 - Map-League Phase 1 shipped (docs/NORTHSTAR_MAP_LEAGUE.md, kanban T13806138) -- a queuing
   client can now supply its own preferred procedural-map seed (`apps/arena --map-seed N`), via a

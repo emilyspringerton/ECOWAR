@@ -2313,6 +2313,12 @@ typedef struct {
      * single shared cooldown is the honest, obvious v0 that still makes the mechanic real
      * without guessing at that larger, undecided design. */
     int ecowar_card_cooldown_ms;
+    /* ecowar_decorum_offset (EMPIRE NORTHSTAR §3.1, kanban #576): this hero's BIG_O faction decorum,
+     * stored as an offset from decorum_start() (80) so the all-zero memset every arena_init path does
+     * already means "starting standing" with no per-init-path wiring. Read through
+     * ecowar_hero_decorum(); cards read it through BIG_O's own decorum_band() and write back via
+     * BIG_O's decorum_after(). Not on the wire snapshot yet -- no HUD reads it. */
+    int ecowar_decorum_offset;
     /* Cast-time ability state (S170-203, founder: "switch gary w to aimed shot just like wow
      * hunter cast time big damage for now movement interrupts cast damage does not interrupt
      * cast silence does"). Generic across any slot/hero, same "shared field names across kits"
@@ -3663,5 +3669,9 @@ int ecowar_resolve_card_effect(int caster_owner, int card_id, ArenaHero *target)
  * hover_target the same way bacon_puck_cast_w already does and calls ecowar_resolve_card_effect.
  * See its own doc comment in arena_game.c for the full reasoning. */
 void arena_ecowar_play_card(int owner, int card_id, int hover_target);
+
+/* ecowar_hero_decorum: the caster's current BIG_O decorum (0..decorum_cap()), derived from
+ * ecowar_decorum_offset. See ArenaHero.ecowar_decorum_offset's own doc comment. */
+int ecowar_hero_decorum(const ArenaHero *h);
 
 #endif

@@ -14,6 +14,7 @@
 #include "living_map_bridge.h"
 #include "bloodflower_hostile_spawner_mod_host.h"
 #include "allcap_mod_host.h"
+#include "bigo_witness_rules.h" /* EMPIRE NORTHSTAR §3.1 (kanban #576): BIG_O attention/decorum rules, vendored from BIG_O/core/witness_rules.c */
 
 ArenaState arena_state;
 int arena_bot_enabled = 1;
@@ -8126,10 +8127,18 @@ int ecowar_resolve_card_effect(int caster_owner, int card_id, ArenaHero *target)
     if (!target || !target->active || !hero_is_hittable(target)) return 0;
 
     const EcowarCardDef *card = &ECOWAR_CARDS[card_id];
-    /* The real PARENA mod call -- on_ecowar_resolve_card_magnitude does the actual tier-scaling
-       decision (MYTHIC-tier cards get +50%), not this C function; see card_effect_mod.prn's own
-       doc comment for why that logic lives in PARENA instead of here. */
-    int magnitude = on_ecowar_resolve_card_magnitude(card_id, card->base_magnitude);
+    /* EMPIRE NORTHSTAR §3.1 (kanban #576): read the caster's BIG_O decorum band. An inactive or
+       out-of-range caster has no faction to read, so it gets the neutral OK band and no write-back
+       below -- the pre-bridge behaviour, unchanged. */
+    ArenaHero *caster = (caster_owner >= 0 && caster_owner < ARENA_MAX_HEROES && arena_state.heroes[caster_owner].active)
+        ? &arena_state.heroes[caster_owner] : NULL;
+    int band = caster ? decorum_band(ecowar_hero_decorum(caster)) : 0;
+    /* The real PARENA mod call -- on_ecowar_resolve_card_faction gates on the band (CANCELLED = 0)
+       and otherwise runs on_ecowar_resolve_card_magnitude's own tier-scaling decision (MYTHIC-tier
+       cards get +50%), not this C function; see card_effect_mod.prn's own doc comment for why that
+       logic lives in PARENA instead of here. */
+    int magnitude = on_ecowar_resolve_card_faction(card_id, card->base_magnitude, band);
+    if (band == 3) return 0; /* BIG_O CANCELLED: a cancelled faction can't play a card at all */
 
     switch (card->effect) {
     case ECOWAR_CARD_EFFECT_DAMAGE:
@@ -8150,8 +8159,18 @@ int ecowar_resolve_card_effect(int caster_owner, int card_id, ArenaHero *target)
         target->flow_earned += magnitude;
         break;
     }
-    (void)caster_owner; /* not yet used -- no caster-relative effects (e.g. "heal self for X% of damage dealt") exist among these 16 cards, kept as a real parameter for the effect types that will need it once real mechanic direction arrives */
+    /* Decorum write-back for a real, successful cast (EMPIRE NORTHSTAR §3.1). The action id comes
+       from the PARENA mod; the delta itself is BIG_O's decorum_after(), so the numbers stay owned by
+       BIG_O's own rules module. */
+    if (caster) {
+        int after = decorum_after(ecowar_hero_decorum(caster), on_ecowar_card_decorum_action(card_id));
+        caster->ecowar_decorum_offset = after - decorum_start();
+    }
     return 1;
+}
+
+int ecowar_hero_decorum(const ArenaHero *h) {
+    return clamp_decorum(decorum_start() + h->ecowar_decorum_offset);
 }
 
 /* arena_ecowar_play_card: the real in-match input path ecowar_resolve_card_effect's own header

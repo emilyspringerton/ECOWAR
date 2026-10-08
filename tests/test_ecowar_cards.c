@@ -13,6 +13,7 @@
 #include <math.h>
 
 #include "../packages/simulation/arena_game.h"
+#include "../packages/simulation/bigo_witness_rules.h"
 
 static int failures = 0;
 
@@ -203,6 +204,69 @@ static void test_card_cooldown_ticks_down_through_the_real_team_mode_tick(void) 
           "arena_update_teams() decrements ecowar_card_cooldown_ms toward 0, same shared-tick placement as duck_smoke_ms -- the exact S202-23 bug class (wired into only one of the two top-level ticks) this test exists to catch");
 }
 
+/* EMPIRE NORTHSTAR §3.1 (kanban #576): BIG_O faction bridge. Real round-trip through the real
+ * PARENA mod (on_ecowar_resolve_card_faction / on_ecowar_card_decorum_action) and the vendored
+ * BIG_O decorum rules (decorum_band / decorum_after) -- not a hand-copied substitute. */
+static void test_faction_gate_blocks_cancelled_band_only(void) {
+    CHECK(on_ecowar_resolve_card_faction(3, 10, 3) == 0, "BIG_O CANCELLED band (3) blocks a card -- magnitude 0");
+    CHECK(on_ecowar_resolve_card_faction(3, 10, 0) == on_ecowar_resolve_card_magnitude(3, 10),
+          "an OK band leaves the card's own tier-scaled magnitude untouched -- the band gates casting, it does not dilute the card");
+    CHECK(on_ecowar_resolve_card_faction(3, 10, 2) == on_ecowar_resolve_card_magnitude(3, 10),
+          "a HYSTERIC band still casts at full magnitude -- only CANCELLED is the fail state");
+}
+
+static void test_cancelled_caster_cannot_play_a_card(void) {
+    arena_init_with_heroes(ARENA_HERO_UNICORN, ARENA_HERO_DUCK);
+    ArenaHero *caster = &arena_state.heroes[0];
+    ArenaHero *target = &arena_state.heroes[1];
+    target->hp = target->max_hp / 2;
+    int hp_before = target->hp;
+    caster->ecowar_decorum_offset = -ecowar_hero_decorum(caster); /* drive decorum to 0 = CANCELLED */
+
+    int ok = ecowar_resolve_card_effect(caster->owner, 5, target); /* card 5 = a real heal */
+
+    CHECK(ok == 0, "a CANCELLED caster's card resolve reports failure");
+    CHECK(target->hp == hp_before, "a CANCELLED caster's card lands no effect on the target");
+    CHECK(ecowar_hero_decorum(caster) == 0, "a blocked cast does not write back decorum (it stays cancelled, not further reduced)");
+}
+
+static void test_mythic_cast_spends_decorum_via_big_o_delta(void) {
+    arena_init_with_heroes(ARENA_HERO_UNICORN, ARENA_HERO_DUCK);
+    ArenaHero *caster = &arena_state.heroes[0];
+    ArenaHero *target = &arena_state.heroes[1];
+    CHECK(ecowar_hero_decorum(caster) == 80, "setup: a fresh hero starts at BIG_O decorum_start() = 80");
+
+    int ok = ecowar_resolve_card_effect(caster->owner, 3, target); /* card 3 = He Sees You, MYTHIC */
+
+    CHECK(ok == 1, "a MYTHIC card resolves for an OK-band caster");
+    CHECK(ecowar_hero_decorum(caster) == 55,
+          "a MYTHIC cast spends 25 decorum (BIG_O decorum_delta(SAY_APOCALYPSE)) -- the write-back is BIG_O's own number");
+}
+
+static void test_mundane_cast_earns_quiet_tick(void) {
+    arena_init_with_heroes(ARENA_HERO_UNICORN, ARENA_HERO_DUCK);
+    ArenaHero *caster = &arena_state.heroes[0];
+    ArenaHero *target = &arena_state.heroes[1];
+    target->hp = target->max_hp / 2;
+
+    ecowar_resolve_card_effect(caster->owner, 5, target); /* card 5 = The Seal, MUNDANE */
+
+    CHECK(ecowar_hero_decorum(caster) == 81, "a MUNDANE cast earns the ordinary +1 QUIET_TICK, not a visible-act penalty");
+}
+
+static void test_suspicion_band_still_casts_and_writes_back(void) {
+    arena_init_with_heroes(ARENA_HERO_UNICORN, ARENA_HERO_DUCK);
+    ArenaHero *caster = &arena_state.heroes[0];
+    ArenaHero *target = &arena_state.heroes[1];
+    target->hp = target->max_hp / 2;
+    caster->ecowar_decorum_offset = -30; /* decorum 50 -> SUSPICION band (1), below suspicion_below() = 60 */
+
+    int ok = ecowar_resolve_card_effect(caster->owner, 5, target);
+
+    CHECK(ok == 1, "a SUSPICION-band caster can still cast -- only CANCELLED blocks");
+    CHECK(ecowar_hero_decorum(caster) == 51, "the write-back still applies from a SUSPICION-band start");
+}
+
 int main(void) {
     test_card_catalog_has_16_real_entries();
     test_resolve_rejects_bad_card_id();
@@ -219,6 +283,11 @@ int main(void) {
     test_play_card_blocked_by_cooldown_is_a_real_noop();
     test_whiffed_card_play_spends_no_cooldown();
     test_card_cooldown_ticks_down_through_the_real_team_mode_tick();
+    test_faction_gate_blocks_cancelled_band_only();
+    test_cancelled_caster_cannot_play_a_card();
+    test_mythic_cast_spends_decorum_via_big_o_delta();
+    test_mundane_cast_earns_quiet_tick();
+    test_suspicion_band_still_casts_and_writes_back();
     printf("\n%s\n", failures == 0 ? "ALL PASS" : "SOME FAILED");
     return failures == 0 ? 0 : 1;
 }
